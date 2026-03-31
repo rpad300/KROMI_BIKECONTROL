@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "online.kromi.blebridge.app-mergeDebugResources-30:/values-ldrtl-v17/values-ldrtl-v17.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\rdias\\.gradle\\caches\\8.11.1\\transforms\\121d76b7bf17c293030823dd8fc6e18b\\transformed\\material-1.12.0\\res\\values-ldrtl-v17\\values-ldrtl-v17.xml",
+                    "from": {
+                        "startLines": "2,3",
+                        "startColumns": "4,4",
+                        "startOffsets": "55,191",
+                        "endColumns": "135,140",
+                        "endOffsets": "186,327"
+                    }
+                }
+            ]
+        }
+    ]
+}

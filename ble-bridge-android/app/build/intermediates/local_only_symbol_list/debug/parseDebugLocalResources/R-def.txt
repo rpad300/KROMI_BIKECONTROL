@@ -1,0 +1,8 @@
+R_DEF: Internal format may change without notice
+local
+drawable ic_launcher
+id connectBtn
+id statusText
+id wsStatusText
+layout activity_main
+string app_name

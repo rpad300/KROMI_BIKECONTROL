@@ -1,0 +1,10 @@
+[
+    {
+        "merged": "online.kromi.blebridge.app-debug-32:/drawable_ic_launcher.xml.flat",
+        "source": "online.kromi.blebridge.app-main-34:/drawable/ic_launcher.xml"
+    },
+    {
+        "merged": "online.kromi.blebridge.app-debug-32:/layout_activity_main.xml.flat",
+        "source": "online.kromi.blebridge.app-main-34:/layout/activity_main.xml"
+    }
+]

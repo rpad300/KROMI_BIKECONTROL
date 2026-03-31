@@ -1,0 +1,10 @@
+#Tue Mar 31 22:09:08 WEST 2026
+base.0=C\:\\Users\\rdias\\Documents\\PROJETOS GITHUB\\KROMI_BIKECONTROL\\ble-bridge-android\\app\\build\\intermediates\\dex\\debug\\mergeExtDexDebug\\classes.dex
+base.1=C\:\\Users\\rdias\\Documents\\PROJETOS GITHUB\\KROMI_BIKECONTROL\\ble-bridge-android\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\0\\classes.dex
+base.2=C\:\\Users\\rdias\\Documents\\PROJETOS GITHUB\\KROMI_BIKECONTROL\\ble-bridge-android\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\15\\classes.dex
+path.0=classes.dex
+path.1=0/classes.dex
+path.2=15/classes.dex
+renamed.0=classes.dex
+renamed.1=classes2.dex
+renamed.2=classes3.dex
