@@ -1,5 +1,4 @@
 import { BLE_UUIDS } from '../../types/gev.types';
-// GIANT_DEVICE_NAME used for reference: 'GBHA25704'
 import { parseCSC, createInitialCSCState } from './CSCParser';
 import { parsePower } from './PowerParser';
 import { parseGEVPacket, buildAssistUp, buildAssistDown, buildAssistModeCommand } from './GEVProtocol';
@@ -18,6 +17,10 @@ class GiantBLEService {
   private reconnectAttempt = 0;
   private pendingCommand = false;
 
+  // Separate devices for HR and Di2
+  private hrDevice: BluetoothDevice | null = null;
+  private di2Device: BluetoothDevice | null = null;
+
   static getInstance(): GiantBLEService {
     if (!GiantBLEService.instance) {
       GiantBLEService.instance = new GiantBLEService();
@@ -25,18 +28,13 @@ class GiantBLEService {
     return GiantBLEService.instance;
   }
 
-  /** Request BLE device and connect to all services.
-   * Uses namePrefix filter ('GBHA' or 'Giant') to flexibly match the bike.
-   * After connection, subscribes to all available BLE services. */
+  /** Connect to the Giant Smart Gateway (motor, battery, speed, power).
+   * HR and Di2 are separate devices — use connectHR() and connectDi2(). */
   async connect(): Promise<void> {
     const store = useBikeStore.getState();
     store.setBLEStatus('connecting');
 
     try {
-      // Use namePrefix for more flexible matching — the bike may advertise
-      // as "GBHA25704", "Giant GBHA25704", etc. If exact name known, try that first.
-      // All services that we may access MUST be listed in optionalServices,
-      // otherwise Chrome silently blocks access after connection.
       this.device = await navigator.bluetooth.requestDevice({
         filters: [
           { namePrefix: 'GBHA' },
@@ -47,13 +45,9 @@ class GiantBLEService {
           BLE_UUIDS.CSC_SERVICE,
           BLE_UUIDS.POWER_SERVICE,
           BLE_UUIDS.GEV_SERVICE,
-          BLE_UUIDS.HR_SERVICE,
-          BLE_UUIDS.DI2_SERVICE,
-          BLE_UUIDS.SRAM_SERVICE,
         ],
       });
 
-      // Save device name for auto-connect next time
       if (this.device.name) {
         this.saveDeviceName(this.device.name);
       }
@@ -66,10 +60,71 @@ class GiantBLEService {
       this.reconnectAttempt = 0;
       store.setBLEStatus('connected');
 
-      await this.subscribeAll();
+      // Only subscribe to services that live on the Smart Gateway
+      await this.subscribeGatewayServices();
     } catch (err) {
       console.error('[BLE] Connection failed:', err);
       store.setBLEStatus('disconnected');
+      throw err;
+    }
+  }
+
+  /** Connect to a Heart Rate monitor (Polar, Garmin, Wahoo, etc.) */
+  async connectHR(): Promise<void> {
+    try {
+      this.hrDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [BLE_UUIDS.HR_SERVICE] }],
+      });
+
+      const server = await this.hrDevice.gatt!.connect();
+      const service = await server.getPrimaryService(BLE_UUIDS.HR_SERVICE);
+      const char = await service.getCharacteristic(BLE_UUIDS.HR_MEASUREMENT);
+
+      await char.startNotifications();
+      char.addEventListener('characteristicvaluechanged', (e) => {
+        const value = (e.target as BluetoothRemoteGATTCharacteristic).value!;
+        const flags = value.getUint8(0);
+        const is16bit = flags & 0x01;
+        const bpm = is16bit ? value.getUint16(1, true) : value.getUint8(1);
+        const zone = bpm < 100 ? 1 : bpm < 130 ? 2 : bpm < 155 ? 3 : bpm < 175 ? 4 : 5;
+        useBikeStore.getState().setHR(bpm, zone);
+      });
+
+      useBikeStore.getState().setServiceConnected('heartRate', true);
+      console.log('[BLE] HR connected:', this.hrDevice.name);
+    } catch (err) {
+      console.warn('[BLE] HR connection failed:', err);
+      throw err;
+    }
+  }
+
+  /** Connect to a Shimano Di2 wireless unit (EW-WU111) */
+  async connectDi2(): Promise<void> {
+    try {
+      this.di2Device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [BLE_UUIDS.DI2_SERVICE] }],
+        optionalServices: [BLE_UUIDS.DI2_SERVICE],
+      });
+
+      const server = await this.di2Device.gatt!.connect();
+      const service = await server.getPrimaryService(BLE_UUIDS.DI2_SERVICE);
+      const char = await service.getCharacteristic(BLE_UUIDS.DI2_NOTIFY);
+
+      await char.startNotifications();
+      char.addEventListener('characteristicvaluechanged', (e) => {
+        const value = (e.target as BluetoothRemoteGATTCharacteristic).value!;
+        if (value.byteLength >= 5) {
+          const gear = value.getUint8(4);
+          if (gear >= 1 && gear <= 12) {
+            useBikeStore.getState().setGear(gear);
+          }
+        }
+      });
+
+      useBikeStore.getState().setServiceConnected('di2', true);
+      console.log('[BLE] Di2 connected:', this.di2Device.name);
+    } catch (err) {
+      console.warn('[BLE] Di2 connection failed:', err);
       throw err;
     }
   }
@@ -85,15 +140,29 @@ class GiantBLEService {
     useBikeStore.getState().setBLEStatus('disconnected');
   }
 
-  /** Subscribe to all available BLE services (silent fail per service) */
-  private async subscribeAll(): Promise<void> {
+  disconnectHR(): void {
+    if (this.hrDevice?.gatt?.connected) {
+      this.hrDevice.gatt.disconnect();
+    }
+    this.hrDevice = null;
+    useBikeStore.getState().setServiceConnected('heartRate', false);
+  }
+
+  disconnectDi2(): void {
+    if (this.di2Device?.gatt?.connected) {
+      this.di2Device.gatt.disconnect();
+    }
+    this.di2Device = null;
+    useBikeStore.getState().setServiceConnected('di2', false);
+  }
+
+  /** Subscribe only to services on the Smart Gateway */
+  private async subscribeGatewayServices(): Promise<void> {
     await Promise.allSettled([
       this.subscribeBattery(),
       this.subscribeCSC(),
       this.subscribePower(),
       this.subscribeGEV(),
-      this.subscribeHeartRate(),
-      this.subscribeDi2(),
     ]);
   }
 
@@ -109,7 +178,6 @@ class GiantBLEService {
         useBikeStore.getState().setBatteryPercent(value.getUint8(0));
       });
 
-      // Initial read
       const initial = await char.readValue();
       useBikeStore.getState().setBatteryPercent(initial.getUint8(0));
       useBikeStore.getState().setServiceConnected('battery', true);
@@ -185,53 +253,7 @@ class GiantBLEService {
       });
       useBikeStore.getState().setServiceConnected('gev', true);
     } catch (err) {
-      console.warn('[BLE] GEV service not available (expected without pairing):', err);
-    }
-  }
-
-  // ── Heart Rate (0x180D) ────────────────────────────────
-  private async subscribeHeartRate(): Promise<void> {
-    try {
-      const service = await this.server!.getPrimaryService(BLE_UUIDS.HR_SERVICE);
-      const char = await service.getCharacteristic(BLE_UUIDS.HR_MEASUREMENT);
-
-      await char.startNotifications();
-      char.addEventListener('characteristicvaluechanged', (e) => {
-        const value = (e.target as BluetoothRemoteGATTCharacteristic).value!;
-        // HR Measurement: flags byte, then HR value (uint8 or uint16 depending on bit 0)
-        const flags = value.getUint8(0);
-        const is16bit = flags & 0x01;
-        const bpm = is16bit ? value.getUint16(1, true) : value.getUint8(1);
-        // Simple zone calc (will be refined by HRZoneEngine)
-        const zone = bpm < 100 ? 1 : bpm < 130 ? 2 : bpm < 155 ? 3 : bpm < 175 ? 4 : 5;
-        useBikeStore.getState().setHR(bpm, zone);
-      });
-      useBikeStore.getState().setServiceConnected('heartRate', true);
-    } catch (err) {
-      console.warn('[BLE] Heart Rate service not available:', err);
-    }
-  }
-
-  // ── Shimano Di2 (6e40fec1) ────────────────────────────
-  private async subscribeDi2(): Promise<void> {
-    try {
-      const service = await this.server!.getPrimaryService(BLE_UUIDS.DI2_SERVICE);
-      const char = await service.getCharacteristic(BLE_UUIDS.DI2_NOTIFY);
-
-      await char.startNotifications();
-      char.addEventListener('characteristicvaluechanged', (e) => {
-        const value = (e.target as BluetoothRemoteGATTCharacteristic).value!;
-        // Di2 gear position: byte 4 is rear gear index (1-12)
-        if (value.byteLength >= 5) {
-          const gear = value.getUint8(4);
-          if (gear >= 1 && gear <= 12) {
-            useBikeStore.getState().setGear(gear);
-          }
-        }
-      });
-      useBikeStore.getState().setServiceConnected('di2', true);
-    } catch (err) {
-      console.warn('[BLE] Di2 service not available:', err);
+      console.warn('[BLE] GEV service not available (may need pairing via RideControl):', err);
     }
   }
 
@@ -247,7 +269,6 @@ class GiantBLEService {
   async sendAssistMode(mode: number): Promise<void> {
     this.pendingCommand = true;
     await this.writeGEV(buildAssistModeCommand(mode));
-    // Clear pending flag after a short delay
     setTimeout(() => { this.pendingCommand = false; }, 500);
   }
 
@@ -257,7 +278,7 @@ class GiantBLEService {
 
   private async writeGEV(packet: Uint8Array): Promise<void> {
     if (!this.gevCharacteristic) {
-      console.warn('[BLE] GEV characteristic not available for writing');
+      console.warn('[BLE] GEV not available — motor control requires pairing via Giant RideControl app first');
       return;
     }
     try {
@@ -282,7 +303,7 @@ class GiantBLEService {
           this.server = await this.device.gatt.connect();
           this.reconnectAttempt = 0;
           useBikeStore.getState().setBLEStatus('connected');
-          await this.subscribeAll();
+          await this.subscribeGatewayServices();
           console.log('[BLE] Reconnected successfully');
           return;
         }
@@ -299,11 +320,27 @@ class GiantBLEService {
     return this.device?.gatt?.connected ?? false;
   }
 
+  isHRConnected(): boolean {
+    return this.hrDevice?.gatt?.connected ?? false;
+  }
+
+  isDi2Connected(): boolean {
+    return this.di2Device?.gatt?.connected ?? false;
+  }
+
   getDeviceName(): string | null {
     return this.device?.name ?? null;
   }
 
-  // ── Device Name Persistence (per user) ────────────────
+  getHRDeviceName(): string | null {
+    return this.hrDevice?.name ?? null;
+  }
+
+  getDi2DeviceName(): string | null {
+    return this.di2Device?.name ?? null;
+  }
+
+  // ── Device Name Persistence ────────────────────────────
   private saveDeviceName(name: string): void {
     localStorage.setItem('bikecontrol_ble_device', name);
   }
