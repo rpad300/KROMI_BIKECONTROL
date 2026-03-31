@@ -66,9 +66,15 @@ export const BLE_UUIDS = {
   HR_SERVICE: '0000180d-0000-1000-8000-00805f9b34fb',
   HR_MEASUREMENT: '00002a37-0000-1000-8000-00805f9b34fb',
 
-  // Giant proprietary
+  // Giant proprietary — Legacy GEV (AES encrypted binary)
   GEV_SERVICE: 'f0ba3012-6cac-4c99-9089-4b0a1df45002',
   GEV_NOTIFY: 'f0ba3013-6cac-4c99-9089-4b0a1df45002',
+
+  // Giant proprietary — Protobuf service (newer protocol, app_menuProto.proto)
+  PROTO_SERVICE: 'f0ba5201-6cac-4c99-9089-4b0a1df45002',
+  PROTO_WRITE: 'f0ba5202-6cac-4c99-9089-4b0a1df45002',
+  PROTO_NOTIFY: 'f0ba5203-6cac-4c99-9089-4b0a1df45002',
+  PROTO_EXTRA: 'f0ba5204-6cac-4c99-9089-4b0a1df45002',
 
   // SRAM AXS (Flight Attendant)
   SRAM_SERVICE: '4d500001-4745-5630-3031-e50e24dcca9e',

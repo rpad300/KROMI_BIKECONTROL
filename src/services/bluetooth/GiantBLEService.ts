@@ -2,6 +2,7 @@ import { BLE_UUIDS } from '../../types/gev.types';
 import { parseCSC, createInitialCSCState } from './CSCParser';
 import { parsePower } from './PowerParser';
 import { parseGEVPacket, buildAssistUp, buildAssistDown, buildAssistModeCommand } from './GEVProtocol';
+import { giantProtobufService } from './GiantProtobufService';
 import { useBikeStore } from '../../store/bikeStore';
 import type { CSCState } from '../../types/bike.types';
 
@@ -13,6 +14,7 @@ class GiantBLEService {
   private device: BluetoothDevice | null = null;
   private server: BluetoothRemoteGATTServer | null = null;
   private gevCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
+  private protoConnected = false;
   private cscState: CSCState = createInitialCSCState();
   private reconnectAttempt = 0;
   private pendingCommand = false;
@@ -45,6 +47,7 @@ class GiantBLEService {
           BLE_UUIDS.CSC_SERVICE,
           BLE_UUIDS.POWER_SERVICE,
           BLE_UUIDS.GEV_SERVICE,
+          BLE_UUIDS.PROTO_SERVICE,
         ],
       });
 
@@ -136,6 +139,7 @@ class GiantBLEService {
     this.device = null;
     this.server = null;
     this.gevCharacteristic = null;
+    this.protoConnected = false;
     this.cscState = createInitialCSCState();
     useBikeStore.getState().setBLEStatus('disconnected');
   }
@@ -156,14 +160,29 @@ class GiantBLEService {
     useBikeStore.getState().setServiceConnected('di2', false);
   }
 
-  /** Subscribe only to services on the Smart Gateway */
+  /** Subscribe to services on the Smart Gateway.
+   * Tries Protobuf service (F0BA5201) first, then legacy GEV (F0BA3012). */
   private async subscribeGatewayServices(): Promise<void> {
+    // Try protobuf service first (newer bikes)
+    this.protoConnected = await giantProtobufService.tryConnect(this.server!);
+    if (this.protoConnected) {
+      console.log('[BLE] Protobuf service connected — requesting bike data...');
+      // Request initial data from the bike
+      giantProtobufService.requestAllData().catch(() => {});
+    }
+
     await Promise.allSettled([
       this.subscribeBattery(),
       this.subscribeCSC(),
       this.subscribePower(),
-      this.subscribeGEV(),
+      // Only try legacy GEV if protobuf is not available
+      !this.protoConnected ? this.subscribeGEV() : Promise.resolve(),
     ]);
+  }
+
+  /** Check if protobuf service is connected */
+  isProtoConnected(): boolean {
+    return this.protoConnected;
   }
 
   // ── Battery (0x180F) ──────────────────────────────────
