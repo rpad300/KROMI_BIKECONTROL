@@ -4,7 +4,9 @@ import { useAuthStore } from '../../store/authStore';
 import { giantBLEService } from '../../services/bluetooth/GiantBLEService';
 import { ProfileInsightsWidget } from '../Dashboard/ProfileInsightsWidget';
 
-export function Settings() {
+type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
+
+export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void }) {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const bleStatus = useBikeStore((s) => s.ble_status);
@@ -138,9 +140,25 @@ export function Settings() {
         </div>
       </section>
 
+      {/* Ride History link */}
+      {onNavigate && (
+        <section>
+          <button
+            onClick={() => onNavigate('history')}
+            className="w-full bg-gray-800 rounded-xl p-4 flex items-center justify-between active:bg-gray-700 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-emerald-400">history</span>
+              <span className="text-gray-300 font-medium">Historico de Rides</span>
+            </div>
+            <span className="material-symbols-outlined text-gray-600">chevron_right</span>
+          </button>
+        </section>
+      )}
+
       {/* Version */}
       <div className="text-center text-xs text-gray-600 pb-4">
-        KROMI BikeControl v0.2.0
+        KROMI BikeControl v0.3.0
       </div>
     </div>
   );

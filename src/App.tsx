@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { MapView } from './components/Map/MapView';
+import { ClimbApproach } from './components/Climb/ClimbApproach';
+import { Connections } from './components/Connections/Connections';
 import { Settings } from './components/Settings/Settings';
+import { RideHistory } from './components/History/RideHistory';
 import { LoginPage } from './components/Auth/LoginPage';
 import { ConnectionStatus } from './components/shared/ConnectionStatus';
 import { useGeolocation } from './hooks/useGeolocation';
 import { useAutoAssist } from './hooks/useAutoAssist';
 import { useAuthStore } from './store/authStore';
 
-type Screen = 'dashboard' | 'map' | 'settings';
+type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
 
 export function App() {
   const user = useAuthStore((s) => s.user);
@@ -24,7 +27,7 @@ export function App() {
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-950">
-        <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -48,16 +51,21 @@ function MainApp() {
   return (
     <div className="h-full flex flex-col bg-gray-950 text-white">
       {/* Main content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {screen === 'dashboard' && <Dashboard />}
         {screen === 'map' && <MapView />}
-        {screen === 'settings' && <Settings />}
+        {screen === 'climb' && <ClimbApproach />}
+        {screen === 'connections' && <Connections />}
+        {screen === 'settings' && <Settings onNavigate={setScreen} />}
+        {screen === 'history' && <RideHistory />}
       </div>
 
-      {/* Bottom navigation - big touch targets for gloves */}
-      <nav className="flex-none grid grid-cols-3 border-t border-gray-800 bg-gray-900">
-        <NavButton label="Dashboard" icon="speed" active={screen === 'dashboard'} onClick={() => setScreen('dashboard')} />
+      {/* Bottom navigation — 5 tabs, green accent */}
+      <nav className="flex-none grid grid-cols-5 border-t border-gray-800 bg-gray-900">
+        <NavButton label="Dash" icon="speed" active={screen === 'dashboard'} onClick={() => setScreen('dashboard')} />
         <NavButton label="Mapa" icon="map" active={screen === 'map'} onClick={() => setScreen('map')} />
+        <NavButton label="Climb" icon="terrain" active={screen === 'climb'} onClick={() => setScreen('climb')} />
+        <NavButton label="BLE" icon="bluetooth" active={screen === 'connections'} onClick={() => setScreen('connections')} />
         <NavButton label="Config" icon="settings" active={screen === 'settings'} onClick={() => setScreen('settings')} />
       </nav>
 
@@ -71,10 +79,12 @@ function NavButton({ label, icon, active, onClick }: { label: string; icon: stri
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col items-center justify-center py-3 transition-colors ${active ? 'text-blue-400' : 'text-gray-500'}`}
+      className={`flex flex-col items-center justify-center py-3 transition-colors min-h-[56px] ${
+        active ? 'text-emerald-400' : 'text-gray-500'
+      }`}
     >
       <span className="material-symbols-outlined text-2xl">{icon}</span>
-      <span className="text-xs mt-0.5">{label}</span>
+      <span className="text-[10px] mt-0.5 font-medium">{label}</span>
     </button>
   );
 }
