@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
-import { giantBLEService } from '../../services/bluetooth/GiantBLEService';
+import * as BLE from '../../services/bluetooth/BLEBridge';
 
 const GATEWAY_SERVICES = ['battery', 'csc', 'power', 'gev'] as const;
 
@@ -26,7 +26,7 @@ export function Connections() {
   const handleConnectBike = async () => {
     setScanning(true);
     try {
-      await giantBLEService.connect();
+      await BLE.connectBike();
     } catch {
       // User cancelled or connection failed
     } finally {
@@ -35,12 +35,12 @@ export function Connections() {
   };
 
   const handleDisconnectBike = () => {
-    giantBLEService.disconnect();
+    BLE.disconnectBike();
   };
 
   const handleConnectHR = async () => {
     try {
-      await giantBLEService.connectHR();
+      await BLE.connectHR();
     } catch {
       // User cancelled or no device found
     }
@@ -48,7 +48,7 @@ export function Connections() {
 
   const handleConnectDi2 = async () => {
     try {
-      await giantBLEService.connectDi2();
+      await BLE.connectDi2();
     } catch {
       // User cancelled or no device found
     }
@@ -80,7 +80,7 @@ export function Connections() {
           <div>
             <div className="text-xs text-gray-500 uppercase">Giant Smart Gateway</div>
             <div className="text-lg font-bold text-white mt-0.5">
-              {giantBLEService.getDeviceName() ?? 'GBHA25704'}
+              {BLE.getDeviceName() ?? 'GBHA25704'}
             </div>
             <div className="text-xs text-gray-500 mt-1">Motor | Battery | Speed | Power</div>
           </div>
@@ -129,17 +129,17 @@ export function Connections() {
           name="Heart Rate Monitor"
           icon="monitor_heart"
           connected={services.heartRate}
-          deviceName={giantBLEService.getHRDeviceName()}
+          deviceName={BLE.getHRDeviceName()}
           onConnect={handleConnectHR}
-          onDisconnect={() => giantBLEService.disconnectHR()}
+          onDisconnect={() => BLE.disconnectHR()}
         />
         <StandaloneDevice
           name="Shimano Di2"
           icon="settings_suggest"
           connected={services.di2}
-          deviceName={giantBLEService.getDi2DeviceName()}
+          deviceName={BLE.getDi2DeviceName()}
           onConnect={handleConnectDi2}
-          onDisconnect={() => giantBLEService.disconnectDi2()}
+          onDisconnect={() => BLE.disconnectDi2()}
         />
       </div>
 

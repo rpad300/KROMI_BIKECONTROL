@@ -1,12 +1,12 @@
 import { useBikeStore } from '../../store/bikeStore';
-import { giantBLEService } from '../../services/bluetooth/GiantBLEService';
+import { connectBike } from '../../services/bluetooth/BLEBridge';
 
 export function ConnectionStatus() {
   const bleStatus = useBikeStore((s) => s.ble_status);
 
   const handleConnect = async () => {
     try {
-      await giantBLEService.connect();
+      await connectBike();
     } catch (err) {
       console.error('Connection failed:', err);
     }

@@ -1,7 +1,7 @@
 import { useSettingsStore } from '../../store/settingsStore';
 import { useBikeStore } from '../../store/bikeStore';
 import { useAuthStore } from '../../store/authStore';
-import { giantBLEService } from '../../services/bluetooth/GiantBLEService';
+import { connectBike, disconnectBike } from '../../services/bluetooth/BLEBridge';
 import { ProfileInsightsWidget } from '../Dashboard/ProfileInsightsWidget';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
@@ -18,14 +18,14 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
 
   const handleConnect = async () => {
     try {
-      await giantBLEService.connect();
+      await connectBike();
     } catch (err) {
       console.error('Connection failed:', err);
     }
   };
 
   const handleDisconnect = () => {
-    giantBLEService.disconnect();
+    disconnectBike();
   };
 
   return (

@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { initBLE } from './services/bluetooth/BLEBridge';
 import './index.css';
 
 // Request Wake Lock to keep screen on while riding
@@ -19,6 +20,7 @@ async function requestWakeLock(): Promise<void> {
 }
 
 requestWakeLock();
+initBLE();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

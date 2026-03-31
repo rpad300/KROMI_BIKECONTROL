@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BikeControl</string>
+    <string name="title_activity_main">BikeControl</string>
+    <string name="package_name">online.kromi.bikecontrol</string>
+    <string name="custom_url_scheme">online.kromi.bikecontrol</string>
+</resources>

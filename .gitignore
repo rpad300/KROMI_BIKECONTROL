@@ -50,3 +50,7 @@ Project Plan KROMI_BIKECONTROL.txt
 tsconfig.tsbuildinfo
 
 .vercel
+
+# APK analysis
+APKRIDECONTROL/
+screen_*.png

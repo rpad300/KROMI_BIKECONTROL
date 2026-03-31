@@ -1,5 +1,5 @@
 import { useBikeStore } from '../../store/bikeStore';
-import { giantBLEService } from '../../services/bluetooth/GiantBLEService';
+import { sendAssistMode, isMotorControlAvailable, bleMode } from '../../services/bluetooth/BLEBridge';
 import { AssistMode, ASSIST_MODE_LABELS, ASSIST_MODE_COLORS } from '../../types/bike.types';
 
 const MAIN_MODES = [AssistMode.ECO, AssistMode.TOUR, AssistMode.SPORT, AssistMode.POWER] as const;
@@ -7,17 +7,11 @@ const MAIN_MODES = [AssistMode.ECO, AssistMode.TOUR, AssistMode.SPORT, AssistMod
 export function AssistModeWidget() {
   const assistMode = useBikeStore((s) => s.assist_mode);
   const gevConnected = useBikeStore((s) => s.ble_services.gev);
+  const motorAvailable = gevConnected || isMotorControlAvailable();
 
   const handleModeChange = async (mode: AssistMode) => {
-    // Always update local state so the UI reflects the selection
     useBikeStore.getState().setAssistMode(mode);
-
-    // Try to send to bike if GEV is available
-    if (gevConnected) {
-      await giantBLEService.sendAssistMode(mode);
-    }
-
-    // Haptic feedback
+    await sendAssistMode(mode);
     if ('vibrate' in navigator) navigator.vibrate(50);
   };
 
@@ -62,9 +56,16 @@ export function AssistModeWidget() {
       </div>
 
       {/* Motor control status */}
-      {!gevConnected && (
+      {!motorAvailable && (
         <div className="text-center text-xs text-gray-600 px-2">
-          Modo local — usa os botoes Ergo 3 na bike para mudar no motor
+          {bleMode === 'native'
+            ? 'A ligar ao motor...'
+            : 'Modo local — instala a app Android para controlo do motor'}
+        </div>
+      )}
+      {motorAvailable && (
+        <div className="text-center text-xs text-emerald-600 px-2">
+          Motor control activo
         </div>
       )}
     </div>
