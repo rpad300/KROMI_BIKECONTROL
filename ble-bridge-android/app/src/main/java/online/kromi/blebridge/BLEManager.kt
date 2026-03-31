@@ -72,13 +72,25 @@ class BLEManager(private val context: Context) {
     private var hasRediscovered = false
 
     val isConnected: Boolean get() = gatt != null
+    val isScanning: Boolean get() = scanCallback != null
 
-    // Callback for scan results — each device found is reported individually
-    var onDeviceFound: ((BluetoothDevice, Int, String) -> Unit)? = null  // device, rssi, uuids
-    var onScanComplete: (() -> Unit)? = null
     private var scanCallback: ScanCallback? = null
 
-    fun startScan() {
+    /**
+     * Scan for BLE devices. Each found device is reported via onFound callback.
+     * onDone is called when scan completes (timeout or manual stop).
+     * Scan is owned by the caller — concurrent scan requests are rejected.
+     */
+    fun startScan(onFound: (BluetoothDevice, Int, String) -> Unit, onDone: () -> Unit) {
+        if (scanCallback != null) {
+            Log.w(TAG, "Scan already in progress — ignoring")
+            return
+        }
+        if (gatt != null) {
+            Log.w(TAG, "Already connected — ignoring scan")
+            return
+        }
+
         val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
         onStatusChanged?.invoke("Scanning...")
         hasRediscovered = false
@@ -95,13 +107,13 @@ class BLEManager(private val context: Context) {
                 if (addr in seen) return
                 seen.add(addr)
 
-                val name = result.device.name ?: return  // skip unnamed
+                val name = result.device.name ?: return
                 val uuids = result.scanRecord?.serviceUuids?.joinToString(",") {
                     it.toString().substring(4, 8).uppercase()
                 } ?: "-"
 
                 Log.i(TAG, "Scan: $name ($addr) RSSI:${result.rssi} UUID:$uuids bond:${result.device.bondState}")
-                onDeviceFound?.invoke(result.device, result.rssi, uuids)
+                onFound(result.device, result.rssi, uuids)
             }
 
             override fun onScanFailed(errorCode: Int) {
@@ -114,18 +126,18 @@ class BLEManager(private val context: Context) {
 
         // Auto-stop after 12s
         handler.postDelayed({
-            stopScan()
+            stopScan(onDone)
         }, 12000)
     }
 
-    fun stopScan() {
+    fun stopScan(onDone: (() -> Unit)? = null) {
         scanCallback?.let { cb ->
             try {
                 bluetoothAdapter?.bluetoothLeScanner?.stopScan(cb)
             } catch (_: Exception) {}
         }
         scanCallback = null
-        onScanComplete?.invoke()
+        onDone?.invoke()
     }
 
     fun connectToDevice(device: BluetoothDevice) {

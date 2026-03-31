@@ -220,71 +220,66 @@ class MainActivity : AppCompatActivity() {
             appendLog("ERR", "Service not running!")
             return
         }
+        if (ble.isConnected) {
+            appendLog("UI", "Already connected — disconnect first")
+            return
+        }
 
         val devices = mutableListOf<BluetoothDevice>()
         val deviceLabels = mutableListOf<String>()
-        var dialog: AlertDialog? = null
+        val adapter = android.widget.ArrayAdapter<String>(
+            this, android.R.layout.simple_list_item_1, deviceLabels)
 
-        // Build a dialog that updates as devices are found
-        val builder = AlertDialog.Builder(this, com.google.android.material.R.style.ThemeOverlay_MaterialComponents_Dialog_Alert)
+        // Create dialog with a ListView that updates live
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Scanning for devices...")
+            .setAdapter(adapter) { _, which ->
+                ble.stopScan()
+                val chosen = devices[which]
+                appendLog("UI", "Selected: ${chosen.name} (${chosen.address})")
+                ble.connectToDevice(chosen)
+            }
             .setNegativeButton("Cancel") { d, _ ->
                 ble.stopScan()
                 d.dismiss()
             }
+            .create()
 
-        dialog = builder.create()
+        appendLog("UI", "Starting scan...")
+        dialog.show()
 
-        ble.onDeviceFound = { device, rssi, uuids ->
-            // Highlight likely bikes
-            val name = device.name ?: "?"
-            val marker = when {
-                name.contains("GBHA", true) || name.contains("Giant", true) -> " [GIANT]"
-                uuids.contains("F0BA", true) -> " [GEV]"
-                uuids.contains("1816") || uuids.contains("1818") -> " [BIKE?]"
-                uuids.contains("180D") -> " [HR]"
-                else -> ""
-            }
-            val label = "$name  ${device.address}  RSSI:$rssi  $uuids$marker"
+        ble.startScan(
+            onFound = { device, rssi, uuids ->
+                val name = device.name ?: "?"
+                val marker = when {
+                    name.contains("GBHA", true) || name.contains("Giant", true) -> " [GIANT]"
+                    uuids.contains("F0BA", true) -> " [GEV]"
+                    uuids.contains("1816") || uuids.contains("1818") -> " [BIKE?]"
+                    uuids.contains("180D") -> " [HR]"
+                    else -> ""
+                }
+                val label = "$name  RSSI:$rssi  $uuids$marker"
 
-            runOnUiThread {
-                devices.add(device)
-                deviceLabels.add(label)
-                appendLog("SCAN", label)
-
-                // Rebuild dialog items
-                dialog?.dismiss()
-                dialog = AlertDialog.Builder(this, com.google.android.material.R.style.ThemeOverlay_MaterialComponents_Dialog_Alert)
-                    .setTitle("Found ${devices.size} devices (scanning...)")
-                    .setItems(deviceLabels.toTypedArray()) { _, which ->
-                        ble.stopScan()
-                        val chosen = devices[which]
-                        appendLog("UI", "Selected: ${chosen.name} (${chosen.address})")
-                        ble.connectToDevice(chosen)
+                runOnUiThread {
+                    devices.add(device)
+                    deviceLabels.add(label)
+                    adapter.notifyDataSetChanged()
+                    dialog.setTitle("Found ${devices.size} devices (scanning...)")
+                    appendLog("SCAN", "$name | ${device.address} | RSSI:$rssi | $uuids$marker")
+                }
+            },
+            onDone = {
+                runOnUiThread {
+                    if (devices.isEmpty()) {
+                        dialog.dismiss()
+                        Toast.makeText(this, "No devices found", Toast.LENGTH_SHORT).show()
+                    } else {
+                        dialog.setTitle("${devices.size} devices found — tap to connect")
                     }
-                    .setNegativeButton("Cancel") { d, _ ->
-                        ble.stopScan()
-                        d.dismiss()
-                    }
-                    .show()
-            }
-        }
-
-        ble.onScanComplete = {
-            runOnUiThread {
-                appendLog("SCAN", "Scan complete: ${devices.size} devices found")
-                if (devices.isEmpty()) {
-                    dialog?.dismiss()
-                    Toast.makeText(this, "No devices found", Toast.LENGTH_SHORT).show()
-                } else {
-                    // Update title to show scan is done
-                    dialog?.setTitle("${devices.size} devices found — tap to connect")
+                    appendLog("SCAN", "Scan complete: ${devices.size} devices")
                 }
             }
-        }
-
-        dialog?.show()
-        ble.startScan()
+        )
     }
 
     @SuppressLint("MissingPermission")
