@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useBikeStore } from '../../store/bikeStore';
 import { useAuthStore } from '../../store/authStore';
 import { connectBike, disconnectBike } from '../../services/bluetooth/BLEBridge';
 import { ProfileInsightsWidget } from '../Dashboard/ProfileInsightsWidget';
+import { importKomootRoute } from '../../services/maps/KomootService';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
 
@@ -15,6 +17,26 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
   const autoAssist = useSettingsStore((s) => s.autoAssist);
   const updateProfile = useSettingsStore((s) => s.updateRiderProfile);
   const updateAutoAssist = useSettingsStore((s) => s.updateAutoAssist);
+
+  const [komootUrl, setKomootUrl] = useState('');
+  const [komootLoading, setKomootLoading] = useState(false);
+  const [komootResult, setKomootResult] = useState<string | null>(null);
+
+  const handleKomootImport = async () => {
+    if (!komootUrl.trim()) return;
+    setKomootLoading(true);
+    setKomootResult(null);
+    try {
+      const points = await importKomootRoute(komootUrl);
+      setKomootResult(`Importados ${points.length} pontos`);
+      // Store in sessionStorage for use by map/elevation components
+      sessionStorage.setItem('komoot_route', JSON.stringify(points));
+    } catch (err) {
+      setKomootResult(err instanceof Error ? err.message : 'Import failed');
+    } finally {
+      setKomootLoading(false);
+    }
+  };
 
   const handleConnect = async () => {
     try {
@@ -121,6 +143,36 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
       <section className="space-y-3">
         <h2 className="text-lg font-semibold text-gray-300">Perfil Atleta</h2>
         <ProfileInsightsWidget />
+      </section>
+
+      {/* Komoot Import */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-gray-300">Import Komoot Route</h2>
+        <div className="bg-gray-800 rounded-xl p-4 space-y-3">
+          <input
+            type="text"
+            value={komootUrl}
+            onChange={(e) => setKomootUrl(e.target.value)}
+            placeholder="Komoot tour URL or ID"
+            className="w-full bg-gray-700 text-white rounded-lg p-3 text-sm placeholder-gray-500"
+          />
+          <button
+            onClick={handleKomootImport}
+            disabled={komootLoading || !komootUrl.trim()}
+            className={`w-full h-12 rounded-xl font-bold text-sm active:scale-95 transition-transform ${
+              komootLoading || !komootUrl.trim()
+                ? 'bg-gray-700 text-gray-500'
+                : 'bg-emerald-500/20 text-emerald-400'
+            }`}
+          >
+            {komootLoading ? 'Importing...' : 'Import'}
+          </button>
+          {komootResult && (
+            <div className={`text-xs ${komootResult.startsWith('Importados') ? 'text-emerald-400' : 'text-red-400'}`}>
+              {komootResult}
+            </div>
+          )}
+        </div>
       </section>
 
       {/* Account */}

@@ -51,6 +51,7 @@ class GiantBLEService {
           BLE_UUIDS.POWER_SERVICE,
           BLE_UUIDS.GEV_SERVICE,
           BLE_UUIDS.PROTO_SERVICE,
+          BLE_UUIDS.DEVICE_INFO_SERVICE,
         ],
       });
 
@@ -254,6 +255,7 @@ class GiantBLEService {
       this.subscribePower(),
       // Only try legacy GEV if protobuf is not available
       !this.protoConnected ? this.subscribeGEV() : Promise.resolve(),
+      this.readDeviceInfo(),
     ]);
   }
 
@@ -361,6 +363,38 @@ class GiantBLEService {
       useBikeStore.getState().setServiceConnected('gev', true);
     } catch (err) {
       console.warn('[BLE] GEV service not available (may need pairing via RideControl):', err);
+    }
+  }
+
+  // ── Device Information (0x180A) ────────────────────────
+  private async readDeviceInfo(): Promise<void> {
+    try {
+      const service = await this.server!.getPrimaryService(BLE_UUIDS.DEVICE_INFO_SERVICE);
+      const store = useBikeStore.getState();
+      const decoder = new TextDecoder();
+
+      const readString = async (uuid: string): Promise<string> => {
+        try {
+          const char = await service.getCharacteristic(uuid);
+          const value = await char.readValue();
+          return decoder.decode(value.buffer);
+        } catch {
+          return '';
+        }
+      };
+
+      const [fw, hw, sw] = await Promise.all([
+        readString(BLE_UUIDS.FIRMWARE_REVISION),
+        readString(BLE_UUIDS.HARDWARE_REVISION),
+        readString(BLE_UUIDS.SOFTWARE_REVISION),
+      ]);
+
+      if (fw) store.setFirmwareVersion(fw);
+      if (hw) store.setHardwareVersion(hw);
+      if (sw) store.setSoftwareVersion(sw);
+      console.log(`[BLE] Device Info — FW: ${fw}, HW: ${hw}, SW: ${sw}`);
+    } catch (err) {
+      console.warn('[BLE] Device Info service not available:', err);
     }
   }
 

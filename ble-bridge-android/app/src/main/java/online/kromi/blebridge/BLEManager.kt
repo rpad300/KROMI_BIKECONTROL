@@ -36,6 +36,11 @@ class BLEManager(private val context: Context) {
         val PROTO_WRITE = UUID.fromString("f0ba5202-6cac-4c99-9089-4b0a1df45002")
         val PROTO_NOTIFY = UUID.fromString("f0ba5203-6cac-4c99-9089-4b0a1df45002")
 
+        val DEVICE_INFO_SERVICE = UUID.fromString("0000180a-0000-1000-8000-00805f9b34fb")
+        val FIRMWARE_REVISION = UUID.fromString("00002a26-0000-1000-8000-00805f9b34fb")
+        val HARDWARE_REVISION = UUID.fromString("00002a27-0000-1000-8000-00805f9b34fb")
+        val SOFTWARE_REVISION = UUID.fromString("00002a28-0000-1000-8000-00805f9b34fb")
+
         val CCC_DESCRIPTOR = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
 
@@ -334,6 +339,9 @@ class BLEManager(private val context: Context) {
 
             onDataReceived?.invoke(JSONObject().put("type", "services").put("data", services))
 
+            // Device Information Service (0x180A)
+            readDeviceInfo(g)
+
             enableNextNotification(g)
         }
 
@@ -401,6 +409,29 @@ class BLEManager(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Parse error: ${e.message}")
         }
+    }
+
+    private fun readDeviceInfo(g: BluetoothGatt) {
+        val service = g.getService(DEVICE_INFO_SERVICE) ?: return
+        val info = JSONObject().put("type", "deviceInfo")
+
+        fun readString(uuid: UUID): String? {
+            return try {
+                val char = service.getCharacteristic(uuid) ?: return null
+                g.readCharacteristic(char)
+                char.getStringValue(0)
+            } catch (_: Exception) { null }
+        }
+
+        val fw = readString(FIRMWARE_REVISION) ?: ""
+        val hw = readString(HARDWARE_REVISION) ?: ""
+        val sw = readString(SOFTWARE_REVISION) ?: ""
+
+        info.put("firmware", fw)
+        info.put("hardware", hw)
+        info.put("software", sw)
+        onDataReceived?.invoke(info)
+        Log.i(TAG, "Device Info — FW: $fw, HW: $hw, SW: $sw")
     }
 
     private fun parseCSC(data: ByteArray) {

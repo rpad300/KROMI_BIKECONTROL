@@ -45,6 +45,15 @@ interface BikeState {
   gear: number;
   is_shifting: boolean;
 
+  // Device info
+  firmware_version: string;
+  hardware_version: string;
+  software_version: string;
+
+  // TPMS
+  tpms_front_psi: number;
+  tpms_rear_psi: number;
+
   // Phone sensors
   barometric_altitude_m: number;
   pressure_hpa: number;
@@ -79,6 +88,11 @@ interface BikeState {
   setBarometer: (pressure: number, altitude: number) => void;
   setLeanAngle: (deg: number) => void;
   setTemperature: (c: number) => void;
+  setFirmwareVersion: (v: string) => void;
+  setHardwareVersion: (v: string) => void;
+  setSoftwareVersion: (v: string) => void;
+  setTPMSFront: (psi: number) => void;
+  setTPMSRear: (psi: number) => void;
   setShifting: (v: boolean) => void;
   setBLEStatus: (status: BLEConnectionStatus) => void;
   setServiceConnected: (service: keyof BLEServiceStatus, connected: boolean) => void;
@@ -123,6 +137,11 @@ export const useBikeStore = create<BikeState>((set) => ({
   hr_zone: 0,
   gear: 0,
   is_shifting: false,
+  firmware_version: '',
+  hardware_version: '',
+  software_version: '',
+  tpms_front_psi: 0,
+  tpms_rear_psi: 0,
   barometric_altitude_m: 0,
   pressure_hpa: 0,
   lean_angle_deg: 0,
@@ -189,6 +208,12 @@ export const useBikeStore = create<BikeState>((set) => ({
   setLeanAngle: (deg) => set({ lean_angle_deg: Math.round(deg * 10) / 10 }),
 
   setTemperature: (c) => set({ temperature_c: Math.round(c * 10) / 10 }),
+
+  setFirmwareVersion: (v) => set({ firmware_version: v }),
+  setHardwareVersion: (v) => set({ hardware_version: v }),
+  setSoftwareVersion: (v) => set({ software_version: v }),
+  setTPMSFront: (psi) => set({ tpms_front_psi: Math.round(psi * 10) / 10 }),
+  setTPMSRear: (psi) => set({ tpms_rear_psi: Math.round(psi * 10) / 10 }),
 
   setShifting: (v) => set({ is_shifting: v }),
 

@@ -18,6 +18,7 @@
 import { wsClient } from './WebSocketBLEClient';
 import { isCapacitorNative, capacitorBLEService } from './CapacitorBLEService';
 import { giantBLEService } from './GiantBLEService';
+import { tpmsService } from './TPMSService';
 
 export type BLEMode = 'websocket' | 'native' | 'web';
 
@@ -209,6 +210,44 @@ export function getSRAMDeviceName(): string | null {
 /** Get external power meter device name */
 export function getExtPowerDeviceName(): string | null {
   return giantBLEService.getExtPowerDeviceName();
+}
+
+/** Connect front TPMS sensor */
+export async function connectFrontTPMS(): Promise<void> {
+  if (bleMode === 'websocket') {
+    wsClient.send({ type: 'scanSensor', sensor: 'tpmsFront' });
+  } else {
+    await tpmsService.connectFront();
+  }
+}
+
+/** Connect rear TPMS sensor */
+export async function connectRearTPMS(): Promise<void> {
+  if (bleMode === 'websocket') {
+    wsClient.send({ type: 'scanSensor', sensor: 'tpmsRear' });
+  } else {
+    await tpmsService.connectRear();
+  }
+}
+
+/** Disconnect front TPMS */
+export function disconnectFrontTPMS(): void {
+  if (bleMode === 'web') tpmsService.disconnectFront();
+}
+
+/** Disconnect rear TPMS */
+export function disconnectRearTPMS(): void {
+  if (bleMode === 'web') tpmsService.disconnectRear();
+}
+
+/** Get front TPMS device name */
+export function getFrontTPMSDeviceName(): string | null {
+  return tpmsService.getFrontDeviceName();
+}
+
+/** Get rear TPMS device name */
+export function getRearTPMSDeviceName(): string | null {
+  return tpmsService.getRearDeviceName();
 }
 
 /** Get current BLE mode description */

@@ -71,6 +71,8 @@ export function Connections() {
   const baroAlt = useBikeStore((s) => s.barometric_altitude_m);
   const leanAngle = useBikeStore((s) => s.lean_angle_deg);
   const temperature = useBikeStore((s) => s.temperature_c);
+  const tpmsFront = useBikeStore((s) => s.tpms_front_psi);
+  const tpmsRear = useBikeStore((s) => s.tpms_rear_psi);
 
   const [scanning, setScanning] = useState(false);
   const [sensorScanning, setSensorScanning] = useState<string | null>(null);
@@ -279,6 +281,35 @@ export function Connections() {
         </div>
       </div>
 
+      {/* ── Section 3b: TPMS Sensors ──────────────────────────── */}
+      <div>
+        <div className="text-xs text-gray-500 uppercase tracking-wide mb-2 px-1">Tire Pressure (TPMS)</div>
+        <div className="space-y-2">
+          <TPMSSensorCard
+            label="TPMS Front"
+            icon="tire_repair"
+            psi={tpmsFront}
+            onConnect={() => BLE.connectFrontTPMS()}
+            onDisconnect={() => BLE.disconnectFrontTPMS()}
+            getDeviceName={() => BLE.getFrontTPMSDeviceName()}
+            scanning={sensorScanning === 'tpmsFront'}
+            onScanStart={() => setSensorScanning('tpmsFront')}
+            onScanEnd={() => setSensorScanning(null)}
+          />
+          <TPMSSensorCard
+            label="TPMS Rear"
+            icon="tire_repair"
+            psi={tpmsRear}
+            onConnect={() => BLE.connectRearTPMS()}
+            onDisconnect={() => BLE.disconnectRearTPMS()}
+            getDeviceName={() => BLE.getRearTPMSDeviceName()}
+            scanning={sensorScanning === 'tpmsRear'}
+            onScanStart={() => setSensorScanning('tpmsRear')}
+            onScanEnd={() => setSensorScanning(null)}
+          />
+        </div>
+      </div>
+
       {/* ── Section 4: Phone Sensors ────────────────────────── */}
       <div>
         <div className="flex items-center justify-between mb-2 px-1">
@@ -367,6 +398,80 @@ function PhoneSensorRow({
           {value}
         </div>
       </div>
+    </div>
+  );
+}
+
+function TPMSSensorCard({
+  label,
+  icon,
+  psi,
+  onConnect,
+  onDisconnect,
+  getDeviceName,
+  scanning,
+  onScanStart,
+  onScanEnd,
+}: {
+  label: string;
+  icon: string;
+  psi: number;
+  onConnect: () => Promise<void>;
+  onDisconnect: () => void;
+  getDeviceName: () => string | null;
+  scanning: boolean;
+  onScanStart: () => void;
+  onScanEnd: () => void;
+}) {
+  const connected = psi > 0;
+
+  const handleConnect = async () => {
+    onScanStart();
+    try {
+      await onConnect();
+    } catch {
+      // User cancelled or no device found
+    } finally {
+      onScanEnd();
+    }
+  };
+
+  return (
+    <div
+      className={`bg-gray-800/60 rounded-xl p-3 flex items-center gap-3 border ${
+        connected ? 'border-emerald-500/20' : 'border-gray-700/50'
+      }`}
+    >
+      <span
+        className={`material-symbols-outlined text-2xl ${
+          connected ? 'text-emerald-400' : 'text-gray-600'
+        }`}
+      >
+        {icon}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-bold text-white">{label}</div>
+        <div className="text-xs text-gray-500 truncate">
+          {connected
+            ? `${psi.toFixed(1)} PSI${getDeviceName() ? ` — ${getDeviceName()}` : ''}`
+            : scanning
+              ? 'Scanning...'
+              : 'Not connected'}
+        </div>
+      </div>
+      <button
+        onClick={() => (connected ? onDisconnect() : handleConnect())}
+        disabled={scanning}
+        className={`h-10 px-4 rounded-lg text-xs font-bold active:scale-95 transition-transform ${
+          connected
+            ? 'bg-red-600/20 text-red-400'
+            : scanning
+              ? 'bg-gray-700 text-gray-500'
+              : 'bg-emerald-500/20 text-emerald-400'
+        }`}
+      >
+        {connected ? 'Off' : scanning ? '...' : 'Scan'}
+      </button>
     </div>
   );
 }

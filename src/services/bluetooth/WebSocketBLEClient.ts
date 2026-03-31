@@ -201,6 +201,20 @@ class WebSocketBLEClient {
           });
           break;
 
+        case 'deviceInfo':
+          if (msg.firmware) store.setFirmwareVersion(msg.firmware);
+          if (msg.hardware) store.setHardwareVersion(msg.hardware);
+          if (msg.software) store.setSoftwareVersion(msg.software);
+          break;
+
+        case 'tpmsFront':
+          store.setTPMSFront(msg.psi);
+          break;
+
+        case 'tpmsRear':
+          store.setTPMSRear(msg.psi);
+          break;
+
         case 'gevRaw':
         case 'protoRaw':
           // Raw data for debugging — logged but not processed here

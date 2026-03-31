@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../../store/authStore';
+import { exportRideAsGPX, type TrackPoint } from '../../services/export/GPXExportService';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -129,6 +130,46 @@ export function RideHistory() {
 
 function RideCard({ ride, highlight }: { ride: RideSummary; highlight: boolean }) {
   const { day, weekday } = formatDate(ride.created_at);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportGPX = async () => {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return;
+    setExporting(true);
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/ride_snapshots?session_id=eq.${ride.id}&order=timestamp.asc`,
+        {
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+          },
+        }
+      );
+      if (!res.ok) return;
+      const snapshots = await res.json();
+
+      const points: TrackPoint[] = snapshots
+        .filter((s: Record<string, unknown>) => s.lat && s.lng)
+        .map((s: Record<string, unknown>) => ({
+          lat: s.lat as number,
+          lng: s.lng as number,
+          elevation: (s.elevation as number) ?? 0,
+          timestamp: new Date(s.timestamp as string).getTime(),
+          speed: s.speed_kmh as number | undefined,
+          power: s.power_w as number | undefined,
+          hr: s.hr_bpm as number | undefined,
+          cadence: s.cadence_rpm as number | undefined,
+        }));
+
+      if (points.length === 0) return;
+      const rideName = `BikeControl_${formatDate(ride.created_at).day.replace(/\s/g, '_')}`;
+      exportRideAsGPX(rideName, points);
+    } catch {
+      // Export failed silently
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div
@@ -156,8 +197,18 @@ function RideCard({ ride, highlight }: { ride: RideSummary; highlight: boolean }
         </div>
       </div>
 
-      {/* Intensity dot */}
-      <div className="flex items-center">
+      {/* Export GPX + Intensity dot */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleExportGPX}
+          disabled={exporting}
+          className="w-9 h-9 rounded-lg bg-gray-700/60 flex items-center justify-center active:scale-95 transition-transform"
+          title="Export GPX"
+        >
+          <span className={`material-symbols-outlined text-base ${exporting ? 'text-gray-600 animate-spin' : 'text-emerald-400'}`}>
+            {exporting ? 'progress_activity' : 'download'}
+          </span>
+        </button>
         <div className={`w-3 h-3 rounded-full ${intensityColor(ride.tss || 0)}`} />
       </div>
     </div>
