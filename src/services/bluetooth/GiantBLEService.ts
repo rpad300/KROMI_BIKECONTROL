@@ -4,6 +4,7 @@ import { parsePower } from './PowerParser';
 import { parseGEVPacket, buildAssistUp, buildAssistDown, buildAssistModeCommand } from './GEVProtocol';
 import { giantProtobufService } from './GiantProtobufService';
 import { useBikeStore } from '../../store/bikeStore';
+import { batteryEstimationService } from '../battery/BatteryEstimationService';
 import type { CSCState } from '../../types/bike.types';
 
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -219,6 +220,11 @@ class GiantBLEService {
         store.setSpeed(result.speed_kmh);
         store.setCadence(result.cadence_rpm);
         store.setDistance(result.distance_km);
+
+        // Update range estimation
+        batteryEstimationService.addSample(result.speed_kmh, store.power_watts, store.battery_percent);
+        const range = batteryEstimationService.getEstimatedRange(store.battery_percent);
+        store.setRange(range);
       });
       useBikeStore.getState().setServiceConnected('csc', true);
     } catch (err) {
@@ -236,7 +242,13 @@ class GiantBLEService {
       char.addEventListener('characteristicvaluechanged', (e) => {
         const value = (e.target as BluetoothRemoteGATTCharacteristic).value!;
         const result = parsePower(value);
-        useBikeStore.getState().setPower(result.power_watts);
+        const store = useBikeStore.getState();
+        store.setPower(result.power_watts);
+
+        // Update range estimation
+        batteryEstimationService.addSample(store.speed_kmh, result.power_watts, store.battery_percent);
+        const range = batteryEstimationService.getEstimatedRange(store.battery_percent);
+        store.setRange(range);
       });
       useBikeStore.getState().setServiceConnected('power', true);
     } catch (err) {

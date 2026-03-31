@@ -10,6 +10,27 @@ interface BikeState {
   assist_mode: AssistMode;
   distance_km: number;
 
+  // Range & ODO
+  range_km: number;
+  odo_km: number;
+  service_interval_km: number;
+
+  // Dual battery
+  battery_main_pct: number;
+  battery_sub_pct: number;
+  battery_voltage: number;
+
+  // Motor details
+  torque_nm: number;
+  assist_current_a: number;
+
+  // Trip
+  calories: number;
+  elevation_gain_m: number;
+
+  // Error
+  error_code: number;
+
   // Session stats
   ride_time_s: number;
   power_avg: number;
@@ -36,6 +57,17 @@ interface BikeState {
   setPower: (v: number) => void;
   setAssistMode: (v: number) => void;
   setDistance: (v: number) => void;
+  setRange: (v: number) => void;
+  setOdo: (v: number) => void;
+  setServiceInterval: (v: number) => void;
+  setBatteryMain: (v: number) => void;
+  setBatterySub: (v: number) => void;
+  setBatteryVoltage: (v: number) => void;
+  setTorque: (v: number) => void;
+  setAssistCurrent: (v: number) => void;
+  setCalories: (v: number) => void;
+  setElevationGain: (v: number) => void;
+  setErrorCode: (v: number) => void;
   setHR: (bpm: number, zone: number) => void;
   setGear: (gear: number) => void;
   setShifting: (v: boolean) => void;
@@ -52,6 +84,28 @@ export const useBikeStore = create<BikeState>((set) => ({
   power_watts: 0,
   assist_mode: AssistMode.ECO,
   distance_km: 0,
+
+  // Range & ODO
+  range_km: 0,
+  odo_km: 0,
+  service_interval_km: 0,
+
+  // Dual battery
+  battery_main_pct: 0,
+  battery_sub_pct: 0,
+  battery_voltage: 0,
+
+  // Motor details
+  torque_nm: 0,
+  assist_current_a: 0,
+
+  // Trip
+  calories: 0,
+  elevation_gain_m: 0,
+
+  // Error
+  error_code: 0,
+
   ride_time_s: 0,
   power_avg: 0,
   power_max: 0,
@@ -97,6 +151,18 @@ export const useBikeStore = create<BikeState>((set) => ({
   setAssistMode: (v) => set({ assist_mode: v as AssistMode }),
 
   setDistance: (v) => set({ distance_km: Math.round(v * 100) / 100 }),
+
+  setRange: (v) => set({ range_km: Math.round(v * 10) / 10 }),
+  setOdo: (v) => set({ odo_km: v }),
+  setServiceInterval: (v) => set({ service_interval_km: v }),
+  setBatteryMain: (v) => set({ battery_main_pct: v }),
+  setBatterySub: (v) => set({ battery_sub_pct: v }),
+  setBatteryVoltage: (v) => set({ battery_voltage: v }),
+  setTorque: (v) => set({ torque_nm: v }),
+  setAssistCurrent: (v) => set({ assist_current_a: v }),
+  setCalories: (v) => set({ calories: Math.round(v) }),
+  setElevationGain: (v) => set({ elevation_gain_m: Math.round(v) }),
+  setErrorCode: (v) => set({ error_code: v }),
 
   setHR: (bpm, zone) => set({ hr_bpm: bpm, hr_zone: zone }),
 
