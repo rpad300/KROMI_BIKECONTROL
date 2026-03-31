@@ -208,11 +208,62 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
         </section>
       )}
 
+      {/* Bike Info */}
+      <BikeInfoSection />
+
       {/* Version */}
       <div className="text-center text-xs text-gray-600 pb-4">
-        KROMI BikeControl v0.3.0
+        KROMI BikeControl v0.5.0
       </div>
     </div>
+  );
+}
+
+function BikeInfoSection() {
+  const fw = useBikeStore((s) => s.firmware_version);
+  const hw = useBikeStore((s) => s.hardware_version);
+  const sw = useBikeStore((s) => s.software_version);
+  const tpmsF = useBikeStore((s) => s.tpms_front_psi);
+  const tpmsR = useBikeStore((s) => s.tpms_rear_psi);
+
+  if (!fw && !hw && !sw && !tpmsF && !tpmsR) return null;
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-lg font-semibold text-gray-300">Bike Info</h2>
+      <div className="bg-gray-800 rounded-xl p-4 space-y-2">
+        {fw && (
+          <div className="flex justify-between">
+            <span className="text-gray-400 text-sm">Firmware</span>
+            <span className="text-white text-sm font-mono">{fw}</span>
+          </div>
+        )}
+        {hw && (
+          <div className="flex justify-between">
+            <span className="text-gray-400 text-sm">Hardware</span>
+            <span className="text-white text-sm font-mono">{hw}</span>
+          </div>
+        )}
+        {sw && (
+          <div className="flex justify-between">
+            <span className="text-gray-400 text-sm">Software</span>
+            <span className="text-white text-sm font-mono">{sw}</span>
+          </div>
+        )}
+        {tpmsF > 0 && (
+          <div className="flex justify-between">
+            <span className="text-gray-400 text-sm">TPMS Front</span>
+            <span className="text-white text-sm">{tpmsF.toFixed(1)} PSI</span>
+          </div>
+        )}
+        {tpmsR > 0 && (
+          <div className="flex justify-between">
+            <span className="text-gray-400 text-sm">TPMS Rear</span>
+            <span className="text-white text-sm">{tpmsR.toFixed(1)} PSI</span>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
