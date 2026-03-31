@@ -86,12 +86,8 @@ export function BridgeSetup() {
   }
 
   if (state === 'connected') {
-    return (
-      <div className="fixed top-0 left-0 right-0 bg-emerald-900/90 px-4 py-3 z-50 flex items-center gap-3 border-b border-emerald-700">
-        <span className="material-symbols-outlined text-emerald-400">bluetooth_connected</span>
-        <span className="text-sm text-emerald-300 font-bold">BLE Bridge activo — motor control disponivel</span>
-      </div>
-    );
+    // Don't show banner — ConnectionStatus handles the status display
+    return null;
   }
 
   // state === 'install'
