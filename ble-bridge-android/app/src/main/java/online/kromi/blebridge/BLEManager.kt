@@ -63,19 +63,31 @@ class BLEManager(private val context: Context) {
         val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
         onStatusChanged?.invoke("Scanning...")
 
+        // RideControl scans by SERVICE UUID (F0BA3012), not by name
+        // This is critical — the SG may only respond to UUID-filtered scans
+        val gevFilter = android.bluetooth.le.ScanFilter.Builder()
+            .setServiceUuid(android.os.ParcelUuid(GEV_SERVICE))
+            .build()
+        val nameFilter = android.bluetooth.le.ScanFilter.Builder()
+            .setDeviceName(null) // fallback: accept all
+            .build()
+
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
-        scanner.startScan(null, settings, object : ScanCallback() {
+        // Try scanning with GEV UUID filter first (like RideControl does)
+        val filters = listOf(gevFilter)
+
+        scanner.startScan(filters, settings, object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val name = result.device.name ?: return
-                if (name.startsWith("GBHA") || name.startsWith("Giant")) {
-                    scanner.stopScan(this)
-                    Log.i(TAG, "Found device: $name (bond state: ${result.device.bondState})")
-                    onStatusChanged?.invoke("Found $name")
-                    startBondAndConnect(result.device)
-                }
+                val name = result.device.name ?: "Unknown"
+                scanner.stopScan(this)
+                Log.i(TAG, "Found device via UUID scan: $name (bond: ${result.device.bondState})")
+                Log.i(TAG, "  Address: ${result.device.address}")
+                Log.i(TAG, "  UUIDs: ${result.scanRecord?.serviceUuids}")
+                onStatusChanged?.invoke("Found $name")
+                startBondAndConnect(result.device)
             }
 
             override fun onScanFailed(errorCode: Int) {
@@ -84,9 +96,31 @@ class BLEManager(private val context: Context) {
             }
         })
 
+        // Fallback: if UUID scan finds nothing in 5s, retry with name-based scan
         handler.postDelayed({
             try { scanner.stopScan(object : ScanCallback() {}) } catch (_: Exception) {}
-        }, 15000)
+            if (gatt != null) return@postDelayed // Already connected
+
+            Log.i(TAG, "UUID scan timeout, trying name-based scan...")
+            onStatusChanged?.invoke("Scanning by name...")
+
+            scanner.startScan(null, settings, object : ScanCallback() {
+                override fun onScanResult(callbackType: Int, result: ScanResult) {
+                    val n = result.device.name ?: return
+                    if (n.startsWith("GBHA") || n.startsWith("Giant")) {
+                        scanner.stopScan(this)
+                        Log.i(TAG, "Found device via name scan: $n")
+                        onStatusChanged?.invoke("Found $n")
+                        startBondAndConnect(result.device)
+                    }
+                }
+            })
+
+            handler.postDelayed({
+                try { scanner.stopScan(object : ScanCallback() {}) } catch (_: Exception) {}
+                if (gatt == null) onStatusChanged?.invoke("No bike found")
+            }, 10000)
+        }, 5000)
     }
 
     /**
@@ -181,7 +215,9 @@ class BLEManager(private val context: Context) {
     }
 
     private fun connectGatt(device: BluetoothDevice) {
-        gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        // RideControl uses connectGatt WITHOUT TRANSPORT_LE
+        // This is critical — auto transport lets Android choose the right mode
+        gatt = device.connectGatt(context, false, gattCallback)
     }
 
     fun disconnect() {
