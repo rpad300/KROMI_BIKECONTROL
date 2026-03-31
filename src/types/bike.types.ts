@@ -1,0 +1,70 @@
+// === Assist Modes (Giant SyncDrive Pro) ===
+export enum AssistMode {
+  OFF = 0,
+  ECO = 1,
+  TOUR = 2,
+  SPORT = 3,
+  POWER = 4,
+  AUTO = 5,
+  WALK = 6,
+}
+
+export const ASSIST_MODE_LABELS: Record<AssistMode, string> = {
+  [AssistMode.OFF]: 'OFF',
+  [AssistMode.ECO]: 'ECO',
+  [AssistMode.TOUR]: 'TOUR',
+  [AssistMode.SPORT]: 'SPORT',
+  [AssistMode.POWER]: 'PWR',
+  [AssistMode.AUTO]: 'AUTO',
+  [AssistMode.WALK]: 'WALK',
+};
+
+export const ASSIST_MODE_COLORS: Record<AssistMode, string> = {
+  [AssistMode.OFF]: 'bg-gray-600',
+  [AssistMode.ECO]: 'bg-green-600',
+  [AssistMode.TOUR]: 'bg-blue-600',
+  [AssistMode.SPORT]: 'bg-yellow-600',
+  [AssistMode.POWER]: 'bg-red-600',
+  [AssistMode.AUTO]: 'bg-purple-600',
+  [AssistMode.WALK]: 'bg-cyan-600',
+};
+
+// === CSC (Cycling Speed and Cadence) ===
+export interface CSCState {
+  wheelRevs: number;
+  wheelTime: number;
+  crankRevs: number;
+  crankTime: number;
+  distance_km: number;
+}
+
+export interface CSCResult {
+  speed_kmh: number;
+  cadence_rpm: number;
+  distance_km: number;
+}
+
+// === Cycling Power ===
+export interface PowerResult {
+  power_watts: number;
+}
+
+// === BLE Connection State ===
+export type BLEConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+
+export interface BLEServiceStatus {
+  battery: boolean;
+  csc: boolean;
+  power: boolean;
+  gev: boolean;
+  sram: boolean;
+  heartRate: boolean;
+  di2: boolean;
+}
+
+// === Bike Constants ===
+export const WHEEL_CIRCUMFERENCE_MM = 2290; // 29" wheel
+export const WHEEL_CIRCUMFERENCE_M = WHEEL_CIRCUMFERENCE_MM / 1000;
+
+// === Giant Smart Gateway ===
+export const GIANT_DEVICE_NAME = 'GBHA25704';

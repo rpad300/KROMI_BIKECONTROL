@@ -1,0 +1,50 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/settings.local.json
+
+# Logs
+*.log
+logs/
+
+# Coverage
+coverage/
+.coverage
+
+# SSL certs (dev)
+*.pem
+*.key
+*.crt
+
+# PWA generated
+dev-dist/
+sw.js
+workbox-*.js
+
+# Blueprints & Skills (shared, not project-specific)
+1prompt-env/
+claude-code-blueprint/
+claude-code-skills/
+giant_ebike_pwa_prompt.md
+Project Plan KROMI_BIKECONTROL.txt
+
+# TypeScript build info
+tsconfig.tsbuildinfo

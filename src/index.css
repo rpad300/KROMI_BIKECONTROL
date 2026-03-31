@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* Giant eBike Command Center - MTB optimized */
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
