@@ -35,7 +35,7 @@ class BLEBridgeService : Service() {
 
         // Start phone sensors and forward data to WebSocket
         phoneSensorService = PhoneSensorService(this) { sensorJson ->
-            wsServer?.broadcastData(sensorJson.toString())
+            wsServer?.broadcastData(sensorJson)
         }
         phoneSensorService?.start()
         bleManager.onStatusChanged = { status ->
