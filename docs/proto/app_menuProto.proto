@@ -1,0 +1,341 @@
+// message名稱     = lowerCamelCase
+// message欄位名稱 = lower_snake_case
+// enum名稱        = UpperCamelCase
+// enum欄位名稱    = UPPER_SNAKE_CASE
+
+
+
+syntax = "proto3";
+
+/*========================================================================
+ProtocolVersion proto_version = 99;  //必帶
+========================================================================== */
+enum ProtocolVersion {
+  VERSION_UNDEFINED = 0;  // first version or forget input version
+                          // VERSION_0_0       = 1; //first version
+                          // VERSION_0_1       = 2; //jamie 20250429
+                          // VERSION_0_2       = 3; //jamie 20250724
+                          // VERSION_0_2_1     = 4; //jamie 20250820
+                          // VERSION_0_2_2     = 5;  // jamie 20250822
+  VERSION_0_2_3     = 6;  // jamie 20260108
+}
+
+/*========================================================================
+主要的最大結構
+==========================================================================*/
+message hmi_menu {
+  ProtocolVersion proto_version = 99;  //必帶
+  Method          method        = 98;  //必帶
+
+  dataSource          source        = 1;  //必帶
+  ePartModule         eParts        = 2;
+  accessoryModule     accessories   = 3;
+  bikeConfigModule    bikeConfig    = 4;
+  bikeInfoModule      bike          = 5;
+  displayConfigModule displayConfig = 6;
+  commandModule       commands      = 7;
+  accessoryScanFunc   accessoryScan = 8;  //20250724000 Jamie
+  calibrationFunc     cal_func      = 9;  //20250820000 Jamie
+  
+}
+
+/*========================================================================
+Method method = 98;  //必帶
+這筆資料的方法
+             0 : set 上位機請求下位機設定數值 (上位機 > 下位機) 
+             1 : get 上位機請求下位機請求資料(上位機 > 下位機)  
+             2 : response 下位機回覆上位機請求的資料  (上位機 < 下位機　被動) 
+             3 : notify 上位機啟動後，下位機主動上報資料 (上位機 < 下位機　主動)
+==========================================================================*/
+enum Method {
+  METHOD_NULL = 0;  // first version or forget input version
+  SET         = 1;
+  GET         = 2;
+  RESPONSE    = 3;
+  NOTIFY      = 4;
+}
+
+/*========================================================================
+dataSource source = 1;  //必帶
+==========================================================================*/
+enum dataSource {
+  SOURCE_NULL = 0;
+  SG20        = 1;
+  DASH2       = 2;
+  GO2         = 3;
+  GOMINI      = 4;
+  EVO3        = 5;
+  APP         = 6;
+  SP          = 7;
+  FP          = 8;
+}
+
+/*========================================================================
+ePartModule eParts = 2;
+==========================================================================*/
+message ePartInfo {
+  optional string modelName       = 1;
+  optional string firmwareVersion = 2;
+  optional string hardwareVersion = 3;
+  optional string serialNumber    = 4;
+  optional string macAddress      = 5;
+}
+
+message ePartModule {
+  ePartInfo sg           = 1;
+  ePartInfo sensor       = 2;
+  ePartInfo display      = 3;
+  ePartInfo remote1      = 4;
+  ePartInfo remote2      = 5;
+  ePartInfo driveChain   = 6;
+  ePartInfo eShifting    = 7;
+  ePartInfo eSuspension  = 8;
+  ePartInfo subEnergyPak = 9;
+  ePartInfo energyPak    = 10;
+  ePartInfo charger      = 11;
+  ePartInfo iotDevice    = 12;
+  ePartInfo radar        = 13;
+  ePartInfo tailLight    = 14;
+}
+
+/*========================================================================
+accessoryModule accessories= 3;
+==========================================================================*/
+message accessoryModule {
+  accessoryInfo heartRate  = 1;
+  giantTpmsInfo giant_tpms = 2;
+}
+
+message accessoryInfo {
+  optional protocolType protocol = 1;
+  optional uint32       ant_id   = 2;
+  optional string       mac_id   = 3;
+  optional string       ble_name = 4;
+  optional bool         conn     = 5;  // 狀態: 連線/斷線
+  optional bool         forget   = 6;  // HMI -> SG 忘記此裝置
+}
+
+enum protocolType {
+  NOTYPE = 0;
+  BLE    = 1;
+  ANT    = 2;
+}
+
+message giantTpmsInfo {
+  tpmsInfo front = 1;
+  tpmsInfo rear  = 2;
+}
+
+message tpmsInfo {
+  accessoryInfo info           = 1;
+  optional      uint32 psi_max = 2;  // 單位 0.1psi
+  optional      uint32 psi_min = 3;  // 單位 0.1psi
+}
+
+/*========================================================================
+bikeConfigModule bikeConfig = 4;
+==========================================================================*/
+message bikeConfigModule {
+  optional uint32         language         = 1;
+  optional uint32         sys_unit         = 2; // 20250818棄用
+  optional uint32         dayMode_value    = 3;
+  optional uint32         nightMode_value  = 4;
+  optional bool           backlight_auto   = 5;  // 棄用
+  optional uint32         timestamp        = 6;
+  radarConfig             radar_config_value     = 7;
+  optional bool           first_use        = 8;
+  elockConfig             elock_config_value     = 9;  // 20250429000 Jamie 新增 E-Lock設定
+  antBroadcast            ant_broadcast_value    = 10; // 20250822 JamieHuang
+  optional BrightnessMode brightness_mode  = 11; // 20250728
+  optional unitConfig     unit_config_value      = 12; // 20250818
+}
+
+message radarConfig {
+  optional bool alarm_func_enable = 1;
+  optional bool alarm_beep_enable = 2;
+}
+
+ /*========================================================================
+bikeInfoModule bike = 5;
+ ==========================================================================*/
+message bikeInfoModule {
+  optional string frameNumber = 1;
+  optional uint32 odo         = 2;
+}
+
+ /*========================================================================
+displayConfigModule displayConfig = 6;
+ ==========================================================================*/
+message displayConfigModule { 
+  repeated screenInfo screen = 1;
+}
+
+message screenInfo {
+  uint32                 index   = 1;
+  repeated fieldDataType field   = 2;
+  bool                   enable  = 3;
+  bool                   visible = 4;
+}
+
+enum fieldDataType {
+  NoData          = 0;
+  SPEED           = 1;
+  REMAINING_RANGE = 2;
+  DISTANCE        = 3;
+  TRIP_TIME       = 4;
+  CADENCE         = 5;
+  ODO             = 6;
+  TIME            = 7;
+  CALORIES        = 8;
+  ELEVATION       = 9;
+  PHONE_BATTERY   = 10;
+  AVG_SPEED       = 11;
+  AVG_CADENCE     = 12;
+  POWER           = 13;
+  AVG_POWER       = 14;
+  BATTERY_LEVEL   = 15;
+  BATTERY_MAIN    = 16;
+  BATTERY_SUB     = 17;
+  HEART_RATE      = 18;
+  MAX_SPEED       = 19;
+  MAX_POWER       = 20;
+  MAX_CADENCE     = 21;
+  FRONT_TPMS      = 22;
+  REAR_TPMS       = 23;
+  NAVIGATION      = 24;
+}
+
+/*========================================================================
+commandModule commands = 7;
+==========================================================================*/
+message commandModule {
+  elockCommand elock = 1;  // 20250429000 Jamie E-Lock指令
+}
+
+message elockCommand {
+  elockCommandType elock_cmd    = 1;  // 20250429000 Jamie
+  optional uint32  box_index    = 2;  // 可傳 0~15
+  optional bytes   password_key = 3;  // 20250429000 Jamie 限定16Byte，的AES加密後的值 裡面包含timestamp跟用
+}
+
+enum elockCommandType { // 20250429000 Jamie
+  ELCK_CMD_NULL   = 0;  // first version or forget input version
+  ELCK_CMD_UNLOCK = 1;
+  ELCK_CMD_LOCK   = 2;
+}
+/*========================================================================
+accessoryScanFunc accessoryScan = 8; 20250724Jamie
+==========================================================================*/
+message accessoryScanFunc {
+  accessoryScanRequest request = 1;
+  accessoryScanResult  result  = 2;
+}
+enum accessoryScanTime {
+  ACCESSORY_SCAN_NULL = 0;
+  ACCESSORY_SCAN_STOP = 1;
+  ACCESSORY_SCAN_10S  = 2;
+  ACCESSORY_SCAN_20S  = 3; 
+  ACCESSORY_SCAN_30S  = 4; 
+  }
+message accessoryScanRequest {
+  accessoryScanTime   scan_active_time = 1;
+  accessoryDeviceType device_type      = 2;
+  protocolType        protocol         = 3;
+}
+message scannedAccessory {
+  accessoryDeviceType device_type = 1;
+  protocolType        protocol    = 2;
+  optional int32      rssi        = 3;
+  optional string     mac_id      = 4;  // BLE only
+  optional uint32     ant_id      = 5;  // ANT+ only
+  optional string     name        = 6;  // 選配，顯示名稱
+}
+message accessoryScanResult {
+  repeated scannedAccessory devices       = 1;
+  bool                      scan_complete = 2;
+}
+enum accessoryDeviceType {
+  ACCESSORY_UNKNOWN      = 0;
+  ACCESSORY_ALL          = 1;
+  ACCESSORY_GIANT_TPMS   = 2;
+  ACCESSORY_HEART_RATE   = 3;
+  ACCESSORY_SPEEDCADENCE = 4;
+  ACCESSORY_POWER_METER  = 5;
+}
+
+ /*========================================================================
+elockConfig elock_config = 9;
+ ==========================================================================*/
+ 
+message elockConfig {
+  optional bool               poweron_lock_enable = 1;  // 20250429000 Jamie 開機自動上鎖
+  optional StationaryLockMode stationary_mode     = 2;  // 20250429000 Jamie 待機自動上鎖模式
+  optional bool               op_sound_enable     = 3;  // 20250429000 Jamie 操作音效開關
+  optional bool               motion_alarm_enable = 4;  // 20250429000 Jamie 動作警報開關
+}
+
+enum StationaryLockMode {        // 20250429000 Jamie
+  STATIONARY_LOCK_MODE_NULL = 0;  // first version or forget input version
+  STATIONARY_OFF            = 1;
+  STATIONARY_30S            = 2;
+  STATIONARY_60S            = 3;
+  STATIONARY_120S           = 4;
+}
+
+ /*========================================================================
+antBroadcast ant_broadcast    = 10; // 20250822 True = 開始廣播 false = 關閉廣播 JamieHuang
+ ==========================================================================*/
+ 
+message antBroadcast {
+	antStruct         lev = 1;
+}
+
+message antStruct {
+  optional bool       ant_enable = 1;  //True = 開始廣播 false = 關閉廣播 JamieHuang
+  optional uint32     ant_id     = 2;
+}
+
+
+ /*========================================================================
+BrightnessMode brightness_mode  = 11; // 20250728
+ ==========================================================================*/
+ 
+enum BrightnessMode{
+  BRIGHTNESSMODE_DEFAULT = 0;
+  BRIGHTNESSMODE_AUTO    = 1;
+  BRIGHTNESSMODE_DAY     = 2;
+  BRIGHTNESSMODE_NIGHT   = 3;
+}
+
+ /*========================================================================
+unitConfig     unit_config      = 12; // 20250818
+若收到sys_unit = 2，則以sys_unit為主的舊UINT機制，不辨別unit_config，HMI不顯示相關設定
+ ==========================================================================*/
+ 
+message unitConfig{
+  UnitSystem global_unit     = 1; // 全域公英制設定
+  UnitSystem tpms_unit       = 2; // TPMS 壓力單位，若與 global 不同則以此為準
+}
+
+enum UnitSystem {
+  UNIT_SYSTEM_UNSPECIFIED = 0; // 預設，走系統Default
+  // 國際常用單位系統
+  UNIT_SYSTEM_METRIC      = 1; // 公制 (kg, km, °C, bar, etc.)
+  UNIT_SYSTEM_IMPERIAL    = 2; // 英制 (lbs, mile, °F, psi, etc.)
+}
+
+/*========================================================================
+  calibrationFunc     cal_func 	    = 9;  //20250820000 Jamie
+==========================================================================*/
+message calibrationFunc {
+  CalEshiftType eshift_type = 1; //Eshift校正功能是否啟動，以及啟動的型態
+}
+
+enum CalEshiftType {
+  CAL_ES_TYPE_NULL    = 0; // 無校正功能啟動
+  CAL_ES_TYPE_SHIMANO = 4; // Shimano 校正功能啟動
+}
+
+/*========================================================================
+else?
+==========================================================================*/

@@ -1,0 +1,50 @@
+syntax = "proto2";
+
+//These are the controller/button types that can be requested
+enum CONTROL_TYPE {
+    UNASSIGNED = 0; //Indicates button type is not assigned
+    LEFT_BLIP = 1;
+    RIGHT_BLIP = 2;
+    LEFT_WIRELESS_BLIP = 3;
+    RIGHT_WIRELESS_BLIP = 4;
+    SIMULTANEOUS_WB = 5;
+    SIMULTANEOUS_WIRED = 6;
+
+    UNKNOWN = 255; //new/unsupported control type
+}
+
+//These are the button numbers that will be transmitted via ANT+ to indicate a
+//button has been pressed
+enum BUTTON_NUMBER {
+    BUTTON_1 = 1;
+    BUTTON_2 = 2;
+    BUTTON_3 = 3;
+    BUTTON_4 = 4;
+    BUTTON_5 = 5;
+    BUTTON_6 = 6;
+    BUTTON_7 = 7;
+    BUTTON_8 = 8;
+}
+
+//Op codes
+enum OP_CODE {
+    RESERVATION_READ = 0;
+    RESERVATION_REQUEST = 1;
+    RESERVATION_ACCEPT = 2;
+    RESERVATION_REJECT = 3;
+    RESERVATION_ERROR = 4;
+    RESERVATION_CHANGED = 5; //In the event of a change in configuration by the AXS app such that the system configuration does not match the reservation, the system will respond to a "read" with a reservation changed op code, and the current assignment of the button numbers will be reported
+}
+
+//Show a mapping between a control type and an event type
+message control_mapping_t {
+    optional CONTROL_TYPE control = 1;
+    optional BUTTON_NUMBER btn_num = 2;
+}
+
+//This is the payload of the characteristic
+message reservation_t {
+    optional uint32 UUID = 1; //always send 0x0001
+    optional OP_CODE opcode = 2;
+    repeated control_mapping_t mappings = 3;
+}

@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+ 
+message RideDataSequence {
+    repeated RideData data = 1;
+    string user_sub = 50;
+    int64 started_at = 51;
+    oneof rc_type {
+        bool rc_type_null = 441;
+        string rc_type_value = 442;
+    }
+};
+
+message RideData {
+    int64 timestamp = 4;
+    int32 calories_consumption = 5;
+    int32 elevation = 3;
+    int32 riding_time = 17;
+    float riding_distance = 18;
+    oneof trip_time {
+        bool trip_time_null = 191;
+        int32 trip_time_value = 192;
+    }
+    oneof trip_distance {
+        bool trip_distance_null = 201;
+        float trip_distance_value = 202;
+    }
+
+    float speed = 21;
+    float average_speed = 23;
+    float max_speed = 231;
+    oneof cadence {
+        bool cadence_null = 241;
+        float cadence_value = 242;
+    }
+    oneof max_cadence {
+        bool max_cadence_null = 251;
+        float max_cadence_value = 252;
+    }
+    oneof average_cadence {
+        bool average_cadence_null = 261;
+        float average_cadence_value = 262;
+    }
+    oneof power {
+        bool power_null = 271;
+        float power_value = 272;
+    }
+    oneof average_power {
+        bool average_power_null = 281;
+        float average_power_value = 282;
+    }
+    oneof max_power {
+        bool max_power_null = 291;
+        float max_power_value = 292;
+    }
+    oneof battery_total {
+        bool battery_total_null = 301;
+        int32 battery_total_value = 302;
+    }
+    oneof remaining_range {
+        bool remaining_range_null = 331;
+        int32 remaining_range_value = 332;
+    }
+    oneof mileage {
+        bool mileage_null = 341;
+        int32 mileage_value = 342;
+    }
+    oneof remaining_service_interval {
+        bool remaining_service_interval_null = 351;
+        float remaining_service_interval_value = 352;
+    }
+    oneof assist_mode {
+        bool assist_mode_null = 361;
+        float assist_mode_value = 362;
+    }
+    oneof heart_rate {
+        bool heart_rate_null = 371;
+        float heart_rate_value = 372;
+    }
+    oneof torque {
+        bool torque_null = 411;
+        float torque_value = 412;
+    }
+    oneof assist_current {
+        bool assist_current_null = 421;
+        float assist_current_value = 422;
+    }
+    oneof error_code {
+        bool error_code_null = 431;
+        int32 error_code_value = 432;
+    }
+    bool connection = 45;
+    int32 gps_strength = 47;
+    double latitude = 48;
+    double longitude = 49;
+}
