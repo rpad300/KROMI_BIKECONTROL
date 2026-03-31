@@ -48,3 +48,5 @@ Project Plan KROMI_BIKECONTROL.txt
 
 # TypeScript build info
 tsconfig.tsbuildinfo
+
+.vercel
