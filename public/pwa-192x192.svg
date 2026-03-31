@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="32" fill="#030712"/>
+  <circle cx="60" cy="120" r="28" fill="none" stroke="#00E676" stroke-width="4"/>
+  <circle cx="132" cy="120" r="28" fill="none" stroke="#00E676" stroke-width="4"/>
+  <path d="M60 120 L80 72 L112 72 L132 120" fill="none" stroke="#00E676" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M80 72 L96 120 L112 72" fill="none" stroke="#00E676" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="60" cy="120" r="4" fill="#00E676"/>
+  <circle cx="132" cy="120" r="4" fill="#00E676"/>
+  <text x="96" y="52" text-anchor="middle" fill="#00E676" font-family="sans-serif" font-weight="bold" font-size="18">BC</text>
+</svg>
