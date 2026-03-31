@@ -3,10 +3,12 @@ package online.kromi.blebridge
 import android.annotation.SuppressLint
 import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -19,7 +21,6 @@ class BLEManager(private val context: Context) {
     companion object {
         const val TAG = "BLEManager"
 
-        // Standard BLE
         val BATTERY_SERVICE = UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb")
         val BATTERY_LEVEL = UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb")
         val CSC_SERVICE = UUID.fromString("00001816-0000-1000-8000-00805f9b34fb")
@@ -29,14 +30,12 @@ class BLEManager(private val context: Context) {
         val HR_SERVICE = UUID.fromString("0000180d-0000-1000-8000-00805f9b34fb")
         val HR_MEASUREMENT = UUID.fromString("00002a37-0000-1000-8000-00805f9b34fb")
 
-        // Giant proprietary
         val GEV_SERVICE = UUID.fromString("f0ba3012-6cac-4c99-9089-4b0a1df45002")
         val GEV_NOTIFY = UUID.fromString("f0ba3013-6cac-4c99-9089-4b0a1df45002")
         val PROTO_SERVICE = UUID.fromString("f0ba5201-6cac-4c99-9089-4b0a1df45002")
         val PROTO_WRITE = UUID.fromString("f0ba5202-6cac-4c99-9089-4b0a1df45002")
         val PROTO_NOTIFY = UUID.fromString("f0ba5203-6cac-4c99-9089-4b0a1df45002")
 
-        // CCC descriptor for enabling notifications
         val CCC_DESCRIPTOR = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
 
@@ -50,11 +49,13 @@ class BLEManager(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private val pendingNotifications = mutableListOf<BluetoothGattCharacteristic>()
 
-    // CSC state for speed calculation
     private var lastWheelRevs = 0L
     private var lastWheelTime = 0L
     private var totalDistance = 0.0
-    private val wheelCircumference = 2.290 // meters (29" wheel)
+    private val wheelCircumference = 2.290
+
+    private var pendingDevice: BluetoothDevice? = null
+    private var bondReceiver: BroadcastReceiver? = null
 
     val isConnected: Boolean get() = gatt != null
 
@@ -62,19 +63,18 @@ class BLEManager(private val context: Context) {
         val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
         onStatusChanged?.invoke("Scanning...")
 
-        val filter = ScanFilter.Builder().setDeviceName(null).build()
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
-        scanner.startScan(listOf(filter), settings, object : ScanCallback() {
+        scanner.startScan(null, settings, object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val name = result.device.name ?: return
                 if (name.startsWith("GBHA") || name.startsWith("Giant")) {
                     scanner.stopScan(this)
-                    Log.i(TAG, "Found device: $name")
-                    onStatusChanged?.invoke("Connecting to $name...")
-                    connectToDevice(result.device)
+                    Log.i(TAG, "Found device: $name (bond state: ${result.device.bondState})")
+                    onStatusChanged?.invoke("Found $name")
+                    startBondAndConnect(result.device)
                 }
             }
 
@@ -84,23 +84,109 @@ class BLEManager(private val context: Context) {
             }
         })
 
-        // Stop scan after 15 seconds
         handler.postDelayed({
             try { scanner.stopScan(object : ScanCallback() {}) } catch (_: Exception) {}
         }, 15000)
     }
 
-    private fun connectToDevice(device: BluetoothDevice) {
-        // Create bond first (triggers pairing dialog)
-        if (device.bondState != BluetoothDevice.BOND_BONDED) {
-            device.createBond()
-            onStatusChanged?.invoke("Pairing with ${device.name}...")
+    /**
+     * Bond first, THEN connect to GATT.
+     * This is critical — without bonding, Giant hides GEV/Proto services.
+     */
+    private fun startBondAndConnect(device: BluetoothDevice) {
+        if (device.bondState == BluetoothDevice.BOND_BONDED) {
+            // Already bonded — connect directly
+            Log.i(TAG, "Device already bonded, connecting GATT...")
+            onStatusChanged?.invoke("Bonded, connecting...")
+            connectGatt(device)
+            return
         }
 
+        // Not bonded — initiate bonding and wait for completion
+        Log.i(TAG, "Starting bonding with ${device.name}...")
+        onStatusChanged?.invoke("Pairing with ${device.name}...")
+        pendingDevice = device
+
+        // Register receiver to wait for bonding result
+        bondReceiver?.let {
+            try { context.unregisterReceiver(it) } catch (_: Exception) {}
+        }
+
+        bondReceiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                if (intent.action != BluetoothDevice.ACTION_BOND_STATE_CHANGED) return
+
+                val bondDevice = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)
+                val prevState = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.BOND_NONE)
+
+                Log.i(TAG, "Bond state changed: $prevState -> $bondState for ${bondDevice?.name}")
+
+                when (bondState) {
+                    BluetoothDevice.BOND_BONDED -> {
+                        Log.i(TAG, "Bonding successful! Connecting GATT...")
+                        onStatusChanged?.invoke("Paired! Connecting...")
+                        unregisterBondReceiver()
+
+                        // Small delay after bonding before GATT connect
+                        handler.postDelayed({
+                            pendingDevice?.let { connectGatt(it) }
+                            pendingDevice = null
+                        }, 1000)
+                    }
+                    BluetoothDevice.BOND_NONE -> {
+                        Log.e(TAG, "Bonding failed!")
+                        onStatusChanged?.invoke("Pairing failed — try again")
+                        unregisterBondReceiver()
+                        pendingDevice = null
+
+                        // Fall back to connecting without bond
+                        handler.postDelayed({
+                            Log.i(TAG, "Connecting without bond (limited services)...")
+                            connectGatt(device)
+                        }, 500)
+                    }
+                }
+            }
+        }
+
+        context.registerReceiver(bondReceiver, IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED))
+
+        // Initiate bonding — this triggers the Android pairing dialog
+        val bondStarted = device.createBond()
+        Log.i(TAG, "createBond() returned: $bondStarted")
+
+        if (!bondStarted) {
+            Log.w(TAG, "createBond failed, connecting without bond")
+            unregisterBondReceiver()
+            connectGatt(device)
+        }
+
+        // Timeout — if bonding takes too long, connect anyway
+        handler.postDelayed({
+            if (pendingDevice != null) {
+                Log.w(TAG, "Bonding timeout, connecting without full bond")
+                unregisterBondReceiver()
+                connectGatt(device)
+                pendingDevice = null
+            }
+        }, 30000)
+    }
+
+    private fun unregisterBondReceiver() {
+        bondReceiver?.let {
+            try { context.unregisterReceiver(it) } catch (_: Exception) {}
+        }
+        bondReceiver = null
+    }
+
+    private fun connectGatt(device: BluetoothDevice) {
         gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
     fun disconnect() {
+        unregisterBondReceiver()
+        pendingDevice = null
         gatt?.disconnect()
         gatt?.close()
         gatt = null
@@ -114,13 +200,21 @@ class BLEManager(private val context: Context) {
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    Log.i(TAG, "Connected to ${g.device.name}")
+                    Log.i(TAG, "GATT connected to ${g.device.name} (bond: ${g.device.bondState})")
                     onStatusChanged?.invoke("Connected, discovering services...")
-                    g.discoverServices()
+
+                    // If bonded, services should include GEV/Proto
+                    // Small delay before service discovery for stability
+                    handler.postDelayed({
+                        g.discoverServices()
+                    }, 500)
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    Log.i(TAG, "Disconnected")
+                    Log.i(TAG, "GATT disconnected")
+                    gatt?.close()
                     gatt = null
+                    gevChar = null
+                    protoWriteChar = null
                     onDataReceived?.invoke(JSONObject().put("type", "disconnected"))
                     onStatusChanged?.invoke("Disconnected")
                 }
@@ -128,14 +222,30 @@ class BLEManager(private val context: Context) {
         }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
-            if (status != BluetoothGatt.GATT_SUCCESS) return
-            Log.i(TAG, "Services discovered: ${g.services.map { it.uuid }}")
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.e(TAG, "Service discovery failed: $status")
+                return
+            }
+
+            // Log ALL discovered services for debugging
+            Log.i(TAG, "=== Services discovered (${g.services.size} total) ===")
+            for (service in g.services) {
+                Log.i(TAG, "  Service: ${service.uuid}")
+                for (char in service.characteristics) {
+                    Log.i(TAG, "    Char: ${char.uuid} props=${char.properties}")
+                }
+            }
 
             val deviceName = g.device.name ?: "Unknown"
-            onDataReceived?.invoke(JSONObject().put("type", "connected").put("device", deviceName))
-            onStatusChanged?.invoke("Connected: $deviceName")
+            val bondState = g.device.bondState
+            Log.i(TAG, "Device: $deviceName, Bond state: $bondState")
 
-            // Collect services status
+            onDataReceived?.invoke(JSONObject()
+                .put("type", "connected")
+                .put("device", deviceName)
+                .put("bonded", bondState == BluetoothDevice.BOND_BONDED))
+            onStatusChanged?.invoke("Connected: $deviceName (bond: $bondState)")
+
             val services = JSONObject()
             pendingNotifications.clear()
 
@@ -143,7 +253,6 @@ class BLEManager(private val context: Context) {
             g.getService(BATTERY_SERVICE)?.getCharacteristic(BATTERY_LEVEL)?.let { char ->
                 services.put("battery", true)
                 pendingNotifications.add(char)
-                // Read initial value
                 g.readCharacteristic(char)
             } ?: services.put("battery", false)
 
@@ -164,14 +273,22 @@ class BLEManager(private val context: Context) {
                 services.put("gev", true)
                 gevChar = char
                 pendingNotifications.add(char)
-            } ?: services.put("gev", false)
+                Log.i(TAG, "*** GEV SERVICE FOUND! Motor control available! ***")
+            } ?: run {
+                services.put("gev", false)
+                Log.w(TAG, "GEV service NOT found (bond state: $bondState)")
+            }
 
             // Proto
             g.getService(PROTO_SERVICE)?.let { service ->
                 services.put("proto", true)
                 service.getCharacteristic(PROTO_WRITE)?.let { protoWriteChar = it }
                 service.getCharacteristic(PROTO_NOTIFY)?.let { pendingNotifications.add(it) }
-            } ?: services.put("proto", false)
+                Log.i(TAG, "*** PROTO SERVICE FOUND! ***")
+            } ?: run {
+                services.put("proto", false)
+                Log.w(TAG, "Proto service NOT found (bond state: $bondState)")
+            }
 
             // HR
             g.getService(HR_SERVICE)?.getCharacteristic(HR_MEASUREMENT)?.let { char ->
@@ -181,7 +298,6 @@ class BLEManager(private val context: Context) {
 
             onDataReceived?.invoke(JSONObject().put("type", "services").put("data", services))
 
-            // Enable notifications one by one (Android requires sequential)
             enableNextNotification(g)
         }
 
@@ -195,7 +311,6 @@ class BLEManager(private val context: Context) {
         }
 
         override fun onDescriptorWrite(g: BluetoothGatt, desc: BluetoothGattDescriptor, status: Int) {
-            // Continue enabling next notification
             enableNextNotification(g)
         }
     }
@@ -207,52 +322,42 @@ class BLEManager(private val context: Context) {
         char.getDescriptor(CCC_DESCRIPTOR)?.let { desc ->
             desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             g.writeDescriptor(desc)
-        } ?: enableNextNotification(g) // Skip if no descriptor, try next
+        } ?: enableNextNotification(g)
     }
 
     private fun handleCharacteristicData(char: BluetoothGattCharacteristic) {
         val data = char.value ?: return
-        val serviceUuid = char.service.uuid
         val charUuid = char.uuid
 
         try {
-            when {
-                charUuid == BATTERY_LEVEL -> {
+            when (charUuid) {
+                BATTERY_LEVEL -> {
                     val pct = data[0].toInt() and 0xFF
                     onDataReceived?.invoke(JSONObject().put("type", "battery").put("value", pct))
                 }
-
-                charUuid == CSC_MEASUREMENT -> parseCSC(data)
-
-                charUuid == POWER_MEASUREMENT -> {
+                CSC_MEASUREMENT -> parseCSC(data)
+                POWER_MEASUREMENT -> {
                     if (data.size >= 4) {
                         val watts = (data[2].toInt() and 0xFF) or ((data[3].toInt() and 0xFF) shl 8)
                         onDataReceived?.invoke(JSONObject().put("type", "power").put("value", watts))
                     }
                 }
-
-                charUuid == HR_MEASUREMENT -> {
+                HR_MEASUREMENT -> {
                     val flags = data[0].toInt() and 0xFF
-                    val is16bit = flags and 0x01 != 0
-                    val bpm = if (is16bit) {
+                    val bpm = if (flags and 0x01 != 0) {
                         (data[1].toInt() and 0xFF) or ((data[2].toInt() and 0xFF) shl 8)
                     } else {
                         data[1].toInt() and 0xFF
                     }
-                    val zone = when {
-                        bpm < 100 -> 1; bpm < 130 -> 2; bpm < 155 -> 3; bpm < 175 -> 4; else -> 5
-                    }
+                    val zone = when { bpm < 100 -> 1; bpm < 130 -> 2; bpm < 155 -> 3; bpm < 175 -> 4; else -> 5 }
                     onDataReceived?.invoke(JSONObject().put("type", "hr").put("bpm", bpm).put("zone", zone))
                 }
-
-                charUuid == GEV_NOTIFY -> {
-                    // Forward raw GEV data as hex
+                GEV_NOTIFY -> {
                     val hex = data.joinToString("") { "%02x".format(it) }
                     onDataReceived?.invoke(JSONObject().put("type", "gevRaw").put("hex", hex))
                     parseGEV(data)
                 }
-
-                serviceUuid == PROTO_SERVICE -> {
+                PROTO_NOTIFY -> {
                     val hex = data.joinToString("") { "%02x".format(it) }
                     onDataReceived?.invoke(JSONObject().put("type", "protoRaw").put("hex", hex))
                 }
@@ -267,7 +372,7 @@ class BLEManager(private val context: Context) {
         val flags = data[0].toInt() and 0xFF
         var offset = 1
 
-        if (flags and 0x01 != 0) { // Wheel revolution data present
+        if (flags and 0x01 != 0) {
             val wheelRevs = ((data[offset].toLong() and 0xFF) or
                     ((data[offset + 1].toLong() and 0xFF) shl 8) or
                     ((data[offset + 2].toLong() and 0xFF) shl 16) or
@@ -279,7 +384,7 @@ class BLEManager(private val context: Context) {
             if (lastWheelRevs > 0 && wheelRevs > lastWheelRevs) {
                 val revDiff = wheelRevs - lastWheelRevs
                 var timeDiff = wheelTime - lastWheelTime
-                if (timeDiff < 0) timeDiff += 65536 // Handle rollover
+                if (timeDiff < 0) timeDiff += 65536
 
                 if (timeDiff > 0) {
                     val speedMps = (revDiff * wheelCircumference) / (timeDiff / 1024.0)
@@ -298,10 +403,9 @@ class BLEManager(private val context: Context) {
             lastWheelTime = wheelTime
         }
 
-        if (flags and 0x02 != 0 && offset + 3 < data.size) { // Crank revolution data
+        if (flags and 0x02 != 0 && offset + 3 < data.size) {
             val crankTime = ((data[offset + 2].toInt() and 0xFF) or
                     ((data[offset + 3].toInt() and 0xFF) shl 8))
-            // Simple cadence from crank time
             if (crankTime > 0) {
                 val cadence = (60 * 1024) / crankTime
                 onDataReceived?.invoke(JSONObject().put("type", "cadence").put("value", cadence))
@@ -315,13 +419,13 @@ class BLEManager(private val context: Context) {
 
         val cmdId = data[2].toInt() and 0xFF
         when (cmdId) {
-            0x15 -> { // Assist data
+            0x15 -> {
                 val mode = data[4].toInt() and 0xFF
                 val current = if (data.size > 5) data[5].toInt() and 0xFF else 0
                 onDataReceived?.invoke(JSONObject()
                     .put("type", "assistMode").put("value", mode).put("current", current))
             }
-            0x03 -> { // Battery
+            0x03 -> {
                 if (data.size >= 8) {
                     val pct = data[4].toInt() and 0xFF
                     val voltage = ((data[5].toInt() and 0xFF) or ((data[6].toInt() and 0xFF) shl 8)) / 100.0
@@ -330,7 +434,7 @@ class BLEManager(private val context: Context) {
                         .put("type", "gevBattery").put("percent", pct).put("voltage", voltage).put("temp", temp))
                 }
             }
-            0x38 -> { // Riding data
+            0x38 -> {
                 if (data.size >= 12) {
                     val speed = ((data[4].toInt() and 0xFF) or ((data[5].toInt() and 0xFF) shl 8)) / 10.0
                     val power = ((data[10].toInt() and 0xFF) or ((data[11].toInt() and 0xFF) shl 8))
@@ -343,9 +447,11 @@ class BLEManager(private val context: Context) {
 
     fun writeAssistMode(mode: Int) {
         val g = gatt ?: return
-        val char = gevChar ?: return
+        val char = gevChar ?: run {
+            Log.w(TAG, "GEV not available — cannot change assist mode")
+            return
+        }
 
-        // Build GEV command: FC 21 E2 01 [mode] [checksum_hi] [checksum_lo]
         val packet = byteArrayOf(
             0xFC.toByte(), 0x21, 0xE2.toByte(), 0x01, mode.toByte()
         )
@@ -356,14 +462,12 @@ class BLEManager(private val context: Context) {
         char.value = fullPacket
         char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
         g.writeCharacteristic(char)
-        Log.i(TAG, "Sent assist mode: $mode")
+        Log.i(TAG, "Sent assist mode: $mode (packet: ${fullPacket.joinToString("") { "%02x".format(it) }})")
     }
 
     fun writeProtoGet(module: String) {
         val g = gatt ?: return
         val char = protoWriteChar ?: return
-        // Build minimal protobuf GET request based on module
-        // This is a simplified version — full implementation in GiantProtobufService
         Log.i(TAG, "Proto GET request: $module")
     }
 }
