@@ -1,9 +1,12 @@
 import { useSettingsStore } from '../../store/settingsStore';
 import { useBikeStore } from '../../store/bikeStore';
+import { useAuthStore } from '../../store/authStore';
 import { giantBLEService } from '../../services/bluetooth/GiantBLEService';
 import { ProfileInsightsWidget } from '../Dashboard/ProfileInsightsWidget';
 
 export function Settings() {
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
   const bleStatus = useBikeStore((s) => s.ble_status);
   const services = useBikeStore((s) => s.ble_services);
   const profile = useSettingsStore((s) => s.riderProfile);
@@ -118,9 +121,26 @@ export function Settings() {
         <ProfileInsightsWidget />
       </section>
 
+      {/* Account */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-gray-300">Conta</h2>
+        <div className="bg-gray-800 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-gray-400 text-sm">Email</span>
+            <span className="text-white text-sm">{user?.email}</span>
+          </div>
+          <button
+            onClick={logout}
+            className="w-full h-12 rounded-xl font-bold text-red-400 text-sm bg-gray-700 active:scale-95 transition-transform"
+          >
+            Terminar sessao
+          </button>
+        </div>
+      </section>
+
       {/* Version */}
       <div className="text-center text-xs text-gray-600 pb-4">
-        KROMI BikeControl v0.1.0
+        KROMI BikeControl v0.2.0
       </div>
     </div>
   );

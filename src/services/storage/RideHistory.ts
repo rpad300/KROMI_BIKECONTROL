@@ -21,6 +21,7 @@
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
+import { useAuthStore } from '../../store/authStore';
 import { useTorqueStore } from '../../store/torqueStore';
 import { useAthleteStore } from '../../store/athleteStore';
 import { autoAssistEngine } from '../autoAssist/AutoAssistEngine';
@@ -123,6 +124,7 @@ class RideSessionManager {
           body: JSON.stringify({
             id: this.sessionId,
             athlete_id: athleteProfile.id,
+            user_id: useAuthStore.getState().getUserId(),
             status: 'active',
             battery_start: bike.battery_percent,
             start_lat: map.latitude || null,

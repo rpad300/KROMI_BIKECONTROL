@@ -25,14 +25,18 @@ class GiantBLEService {
     return GiantBLEService.instance;
   }
 
-  /** Request BLE device and connect to all services */
-  async connect(): Promise<void> {
+  /** Request BLE device and connect to all services.
+   * If deviceName is provided, filters by that name (auto-connect saved bike).
+   * Otherwise uses default Giant device name. */
+  async connect(deviceName?: string): Promise<void> {
     const store = useBikeStore.getState();
     store.setBLEStatus('connecting');
 
+    const targetName = deviceName ?? this.getSavedDeviceName() ?? GIANT_DEVICE_NAME;
+
     try {
       this.device = await navigator.bluetooth.requestDevice({
-        filters: [{ name: GIANT_DEVICE_NAME }],
+        filters: [{ name: targetName }],
         optionalServices: [
           BLE_UUIDS.BATTERY_SERVICE,
           BLE_UUIDS.CSC_SERVICE,
@@ -41,6 +45,11 @@ class GiantBLEService {
           BLE_UUIDS.SRAM_SERVICE,
         ],
       });
+
+      // Save device name for auto-connect next time
+      if (this.device.name) {
+        this.saveDeviceName(this.device.name);
+      }
 
       this.device.addEventListener('gattserverdisconnected', () => {
         this.handleDisconnect();
@@ -233,6 +242,23 @@ class GiantBLEService {
 
   isConnected(): boolean {
     return this.device?.gatt?.connected ?? false;
+  }
+
+  getDeviceName(): string | null {
+    return this.device?.name ?? null;
+  }
+
+  // ── Device Name Persistence (per user) ────────────────
+  private saveDeviceName(name: string): void {
+    localStorage.setItem('bikecontrol_ble_device', name);
+  }
+
+  getSavedDeviceName(): string | null {
+    return localStorage.getItem('bikecontrol_ble_device');
+  }
+
+  hasSavedDevice(): boolean {
+    return !!this.getSavedDeviceName();
   }
 }
 
