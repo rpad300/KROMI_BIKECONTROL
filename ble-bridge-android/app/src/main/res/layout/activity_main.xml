@@ -3,59 +3,173 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp"
     android:background="#030712">
 
-    <TextView
-        android:layout_width="wrap_content"
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="BikeControl"
-        android:textSize="32sp"
-        android:textColor="#00E676"
-        android:textStyle="bold"
-        android:layout_marginBottom="8dp"/>
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="16dp">
 
-    <TextView
-        android:layout_width="wrap_content"
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="BikeControl BLE Bridge"
+            android:textSize="20sp"
+            android:textColor="#00E676"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/wsClientsText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="WS: 0"
+            android:textSize="12sp"
+            android:textColor="#6B7280"
+            android:background="#1F2937"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"/>
+    </LinearLayout>
+
+    <!-- Status + Connect -->
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="BLE Bridge"
-        android:textSize="18sp"
-        android:textColor="#9CA3AF"
-        android:layout_marginBottom="48dp"/>
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="12dp">
 
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Disconnected"
+            android:textSize="16sp"
+            android:textColor="#9CA3AF"/>
+
+        <Button
+            android:id="@+id/connectBtn"
+            android:layout_width="140dp"
+            android:layout_height="48dp"
+            android:text="Connect"
+            android:textSize="14sp"
+            android:backgroundTint="#00E676"
+            android:textColor="#000000"/>
+    </LinearLayout>
+
+    <!-- Services Grid -->
     <TextView
-        android:id="@+id/statusText"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Ready"
-        android:textSize="20sp"
-        android:textColor="#FFFFFF"
-        android:layout_marginBottom="32dp"/>
-
-    <Button
-        android:id="@+id/connectBtn"
-        android:layout_width="240dp"
-        android:layout_height="64dp"
-        android:text="Connect Bike"
-        android:textSize="18sp"
-        android:backgroundTint="#00E676"
-        android:textColor="#000000"
-        android:layout_marginBottom="48dp"/>
-
-    <TextView
-        android:id="@+id/wsStatusText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="WebSocket: ws://localhost:8765"
-        android:textSize="14sp"
+        android:text="SERVICES"
+        android:textSize="11sp"
         android:textColor="#6B7280"
-        android:layout_marginBottom="8dp"/>
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="4dp"
+        android:letterSpacing="0.1"/>
 
     <TextView
-        android:layout_width="wrap_content"
+        android:id="@+id/servicesText"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Open kromi.online in Chrome to use"
-        android:textSize="14sp"
-        android:textColor="#6B7280"/>
+        android:text="Battery: -  CSC: -  Power: -  GEV: -  Proto: -  HR: -"
+        android:textSize="12sp"
+        android:textColor="#9CA3AF"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="8dp"
+        android:fontFamily="monospace"/>
+
+    <!-- Sensors -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="PHONE SENSORS"
+        android:textSize="11sp"
+        android:textColor="#6B7280"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="4dp"
+        android:letterSpacing="0.1"/>
+
+    <TextView
+        android:id="@+id/sensorsText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Baro: -  Light: -  Lean: -  Temp: -"
+        android:textSize="12sp"
+        android:textColor="#9CA3AF"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="8dp"
+        android:fontFamily="monospace"/>
+
+    <!-- Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#1F2937"/>
+
+    <!-- Log Console Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="LOG CONSOLE"
+            android:textSize="11sp"
+            android:textColor="#6B7280"
+            android:letterSpacing="0.1"/>
+
+        <Button
+            android:id="@+id/clearLogBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:text="Clear"
+            android:textSize="11sp"
+            android:backgroundTint="#1F2937"
+            android:textColor="#9CA3AF"
+            android:minWidth="60dp"/>
+    </LinearLayout>
+
+    <!-- Log Console ScrollView -->
+    <ScrollView
+        android:id="@+id/logScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#0A0A0A"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="4dp">
+
+        <TextView
+            android:id="@+id/logText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="[Ready] Waiting for connection...\n"
+            android:textSize="11sp"
+            android:textColor="#6B7280"
+            android:fontFamily="monospace"
+            android:lineSpacingExtra="2dp"/>
+    </ScrollView>
+
+    <!-- Footer -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="ws://localhost:8765 — Open kromi.online in Chrome"
+        android:textSize="11sp"
+        android:textColor="#4B5563"
+        android:gravity="center"
+        android:padding="8dp"
+        android:background="#0F0F0F"/>
 </LinearLayout>
