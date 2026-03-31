@@ -4,6 +4,9 @@ import { PowerCadenceWidget } from './PowerCadenceWidget';
 import { AssistModeWidget } from './AssistModeWidget';
 import { ElevationProfile } from './ElevationProfile';
 import { AutoAssistWidget } from './AutoAssistWidget';
+import { HRWidget } from './HRWidget';
+import { GearWidget } from './GearWidget';
+import { TorqueWidget } from './TorqueWidget';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 
@@ -27,11 +30,20 @@ export function Dashboard() {
       {/* Assist mode buttons */}
       <AssistModeWidget />
 
+      {/* Heart rate */}
+      <HRWidget />
+
       {/* Elevation profile (needs GPS) */}
       {gpsActive && <ElevationProfile />}
 
       {/* Auto-assist status */}
       <AutoAssistWidget />
+
+      {/* Gear (Di2) */}
+      <GearWidget />
+
+      {/* Torque control */}
+      <TorqueWidget />
     </div>
   );
 }
