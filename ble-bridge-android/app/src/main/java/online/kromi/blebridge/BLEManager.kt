@@ -5,10 +5,7 @@ import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -36,6 +33,9 @@ class BLEManager(private val context: Context) {
         val PROTO_WRITE = UUID.fromString("f0ba5202-6cac-4c99-9089-4b0a1df45002")
         val PROTO_NOTIFY = UUID.fromString("f0ba5203-6cac-4c99-9089-4b0a1df45002")
 
+        // UUID 0x0001 — advertised by Giant SG, possibly auth/gateway service
+        val UNKNOWN_0001_SERVICE = UUID.fromString("00000001-0000-1000-8000-00805f9b34fb")
+
         val DEVICE_INFO_SERVICE = UUID.fromString("0000180a-0000-1000-8000-00805f9b34fb")
         val FIRMWARE_REVISION = UUID.fromString("00002a26-0000-1000-8000-00805f9b34fb")
         val HARDWARE_REVISION = UUID.fromString("00002a27-0000-1000-8000-00805f9b34fb")
@@ -59,164 +59,50 @@ class BLEManager(private val context: Context) {
     private var totalDistance = 0.0
     private val wheelCircumference = 2.290
 
-    private var pendingDevice: BluetoothDevice? = null
-    private var bondReceiver: BroadcastReceiver? = null
+    // Queues for reading unknown characteristics (0x0001 exploration)
+    private val pendingReads = mutableListOf<BluetoothGattCharacteristic>()
+    private var isExploring0x0001 = false
+    private var hasRediscovered = false
 
     val isConnected: Boolean get() = gatt != null
 
     fun connect() {
         val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
         onStatusChanged?.invoke("Scanning...")
-
-        // RideControl scans by SERVICE UUID (F0BA3012), not by name
-        // This is critical — the SG may only respond to UUID-filtered scans
-        val gevFilter = android.bluetooth.le.ScanFilter.Builder()
-            .setServiceUuid(android.os.ParcelUuid(GEV_SERVICE))
-            .build()
-        val nameFilter = android.bluetooth.le.ScanFilter.Builder()
-            .setDeviceName(null) // fallback: accept all
-            .build()
+        hasRediscovered = false
 
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
-        // Try scanning with GEV UUID filter first (like RideControl does)
-        val filters = listOf(gevFilter)
-
-        scanner.startScan(filters, settings, object : ScanCallback() {
+        // Scan by name — bike advertises 0x0001, NOT F0BA3012
+        val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val name = result.device.name ?: "Unknown"
-                scanner.stopScan(this)
-                Log.i(TAG, "Found device via UUID scan: $name (bond: ${result.device.bondState})")
-                Log.i(TAG, "  Address: ${result.device.address}")
-                Log.i(TAG, "  UUIDs: ${result.scanRecord?.serviceUuids}")
-                onStatusChanged?.invoke("Found $name")
-                startBondAndConnect(result.device)
+                val n = result.device.name ?: return
+                if (n.startsWith("GBHA") || n.startsWith("Giant")) {
+                    scanner.stopScan(this)
+                    Log.i(TAG, "Found: $n (${result.device.address}) bond:${result.device.bondState}")
+                    Log.i(TAG, "  Advertised UUIDs: ${result.scanRecord?.serviceUuids}")
+                    Log.i(TAG, "  RSSI: ${result.rssi}")
+                    onStatusChanged?.invoke("Found $n — connecting...")
+                    // Connect directly — NO createBond(), like RideControl
+                    connectGatt(result.device)
+                }
             }
 
             override fun onScanFailed(errorCode: Int) {
                 Log.e(TAG, "Scan failed: $errorCode")
-                onStatusChanged?.invoke("Scan failed")
+                onStatusChanged?.invoke("Scan failed ($errorCode)")
             }
-        })
+        }
 
-        // Fallback: if UUID scan finds nothing in 5s, retry with name-based scan
+        scanner.startScan(null, settings, callback)
+
+        // Timeout after 15s
         handler.postDelayed({
-            try { scanner.stopScan(object : ScanCallback() {}) } catch (_: Exception) {}
-            if (gatt != null) return@postDelayed // Already connected
-
-            Log.i(TAG, "UUID scan timeout, trying name-based scan...")
-            onStatusChanged?.invoke("Scanning by name...")
-
-            scanner.startScan(null, settings, object : ScanCallback() {
-                override fun onScanResult(callbackType: Int, result: ScanResult) {
-                    val n = result.device.name ?: return
-                    if (n.startsWith("GBHA") || n.startsWith("Giant")) {
-                        scanner.stopScan(this)
-                        Log.i(TAG, "Found device via name scan: $n")
-                        onStatusChanged?.invoke("Found $n")
-                        startBondAndConnect(result.device)
-                    }
-                }
-            })
-
-            handler.postDelayed({
-                try { scanner.stopScan(object : ScanCallback() {}) } catch (_: Exception) {}
-                if (gatt == null) onStatusChanged?.invoke("No bike found")
-            }, 10000)
-        }, 5000)
-    }
-
-    /**
-     * Bond first, THEN connect to GATT.
-     * This is critical — without bonding, Giant hides GEV/Proto services.
-     */
-    private fun startBondAndConnect(device: BluetoothDevice) {
-        if (device.bondState == BluetoothDevice.BOND_BONDED) {
-            // Already bonded — connect directly
-            Log.i(TAG, "Device already bonded, connecting GATT...")
-            onStatusChanged?.invoke("Bonded, connecting...")
-            connectGatt(device)
-            return
-        }
-
-        // Not bonded — initiate bonding and wait for completion
-        Log.i(TAG, "Starting bonding with ${device.name}...")
-        onStatusChanged?.invoke("Pairing with ${device.name}...")
-        pendingDevice = device
-
-        // Register receiver to wait for bonding result
-        bondReceiver?.let {
-            try { context.unregisterReceiver(it) } catch (_: Exception) {}
-        }
-
-        bondReceiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context, intent: Intent) {
-                if (intent.action != BluetoothDevice.ACTION_BOND_STATE_CHANGED) return
-
-                val bondDevice = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
-                val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)
-                val prevState = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.BOND_NONE)
-
-                Log.i(TAG, "Bond state changed: $prevState -> $bondState for ${bondDevice?.name}")
-
-                when (bondState) {
-                    BluetoothDevice.BOND_BONDED -> {
-                        Log.i(TAG, "Bonding successful! Connecting GATT...")
-                        onStatusChanged?.invoke("Paired! Connecting...")
-                        unregisterBondReceiver()
-
-                        // Small delay after bonding before GATT connect
-                        handler.postDelayed({
-                            pendingDevice?.let { connectGatt(it) }
-                            pendingDevice = null
-                        }, 1000)
-                    }
-                    BluetoothDevice.BOND_NONE -> {
-                        Log.e(TAG, "Bonding failed!")
-                        onStatusChanged?.invoke("Pairing failed — try again")
-                        unregisterBondReceiver()
-                        pendingDevice = null
-
-                        // Fall back to connecting without bond
-                        handler.postDelayed({
-                            Log.i(TAG, "Connecting without bond (limited services)...")
-                            connectGatt(device)
-                        }, 500)
-                    }
-                }
-            }
-        }
-
-        context.registerReceiver(bondReceiver, IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED))
-
-        // Initiate bonding — this triggers the Android pairing dialog
-        val bondStarted = device.createBond()
-        Log.i(TAG, "createBond() returned: $bondStarted")
-
-        if (!bondStarted) {
-            Log.w(TAG, "createBond failed, connecting without bond")
-            unregisterBondReceiver()
-            connectGatt(device)
-        }
-
-        // Timeout — if bonding takes too long, connect anyway
-        handler.postDelayed({
-            if (pendingDevice != null) {
-                Log.w(TAG, "Bonding timeout, connecting without full bond")
-                unregisterBondReceiver()
-                connectGatt(device)
-                pendingDevice = null
-            }
-        }, 30000)
-    }
-
-    private fun unregisterBondReceiver() {
-        bondReceiver?.let {
-            try { context.unregisterReceiver(it) } catch (_: Exception) {}
-        }
-        bondReceiver = null
+            try { scanner.stopScan(callback) } catch (_: Exception) {}
+            if (gatt == null) onStatusChanged?.invoke("No bike found")
+        }, 15000)
     }
 
     private fun connectGatt(device: BluetoothDevice) {
@@ -226,8 +112,6 @@ class BLEManager(private val context: Context) {
     }
 
     fun disconnect() {
-        unregisterBondReceiver()
-        pendingDevice = null
         gatt?.disconnect()
         gatt?.close()
         gatt = null
@@ -268,33 +152,62 @@ class BLEManager(private val context: Context) {
                 return
             }
 
-            // Log ALL discovered services for debugging
-            Log.i(TAG, "=== Services discovered (${g.services.size} total) ===")
-            for (service in g.services) {
-                Log.i(TAG, "  Service: ${service.uuid}")
-                for (char in service.characteristics) {
-                    Log.i(TAG, "    Char: ${char.uuid} props=${char.properties}")
-                }
-            }
-
             val deviceName = g.device.name ?: "Unknown"
             val bondState = g.device.bondState
-            Log.i(TAG, "Device: $deviceName, Bond state: $bondState")
+
+            // Log ALL discovered services with full detail
+            Log.i(TAG, "╔══════════════════════════════════════════╗")
+            Log.i(TAG, "║ SERVICES DISCOVERED (${g.services.size} total)")
+            Log.i(TAG, "║ Device: $deviceName  Bond: $bondState")
+            Log.i(TAG, "║ Rediscovery: $hasRediscovered")
+            Log.i(TAG, "╚══════════════════════════════════════════╝")
+            for (service in g.services) {
+                val svcShort = service.uuid.toString().substring(4, 8).uppercase()
+                Log.i(TAG, "┌─ Service: ${service.uuid} [$svcShort]")
+                for (char in service.characteristics) {
+                    val cShort = char.uuid.toString().substring(4, 8).uppercase()
+                    val props = describeProperties(char.properties)
+                    Log.i(TAG, "│  Char: ${char.uuid} [$cShort] props=$props (${char.properties})")
+                    for (desc in char.descriptors) {
+                        Log.i(TAG, "│    Desc: ${desc.uuid}")
+                    }
+                }
+                Log.i(TAG, "└───────────────────────────────────")
+            }
 
             onDataReceived?.invoke(JSONObject()
                 .put("type", "connected")
                 .put("device", deviceName)
                 .put("bonded", bondState == BluetoothDevice.BOND_BONDED))
-            onStatusChanged?.invoke("Connected: $deviceName (bond: $bondState)")
+            onStatusChanged?.invoke("Connected: $deviceName (bond:$bondState, svc:${g.services.size})")
+
+            // Send full service map to UI
+            val allServices = org.json.JSONArray()
+            for (service in g.services) {
+                val sObj = JSONObject()
+                    .put("uuid", service.uuid.toString())
+                    .put("short", service.uuid.toString().substring(4, 8).uppercase())
+                val chars = org.json.JSONArray()
+                for (char in service.characteristics) {
+                    chars.put(JSONObject()
+                        .put("uuid", char.uuid.toString())
+                        .put("short", char.uuid.toString().substring(4, 8).uppercase())
+                        .put("props", char.properties)
+                        .put("propsStr", describeProperties(char.properties)))
+                }
+                sObj.put("chars", chars)
+                allServices.put(sObj)
+            }
+            onDataReceived?.invoke(JSONObject().put("type", "allServices").put("data", allServices))
 
             val services = JSONObject()
             pendingNotifications.clear()
+            pendingReads.clear()
 
             // Battery
             g.getService(BATTERY_SERVICE)?.getCharacteristic(BATTERY_LEVEL)?.let { char ->
                 services.put("battery", true)
                 pendingNotifications.add(char)
-                g.readCharacteristic(char)
             } ?: services.put("battery", false)
 
             // CSC
@@ -314,10 +227,10 @@ class BLEManager(private val context: Context) {
                 services.put("gev", true)
                 gevChar = char
                 pendingNotifications.add(char)
-                Log.i(TAG, "*** GEV SERVICE FOUND! Motor control available! ***")
+                Log.i(TAG, "★★★ GEV SERVICE FOUND! Motor control available! ★★★")
             } ?: run {
                 services.put("gev", false)
-                Log.w(TAG, "GEV service NOT found (bond state: $bondState)")
+                Log.w(TAG, "GEV service NOT found (bond:$bondState)")
             }
 
             // Proto
@@ -325,10 +238,10 @@ class BLEManager(private val context: Context) {
                 services.put("proto", true)
                 service.getCharacteristic(PROTO_WRITE)?.let { protoWriteChar = it }
                 service.getCharacteristic(PROTO_NOTIFY)?.let { pendingNotifications.add(it) }
-                Log.i(TAG, "*** PROTO SERVICE FOUND! ***")
+                Log.i(TAG, "★★★ PROTO SERVICE FOUND! ★★★")
             } ?: run {
                 services.put("proto", false)
-                Log.w(TAG, "Proto service NOT found (bond state: $bondState)")
+                Log.w(TAG, "Proto service NOT found (bond:$bondState)")
             }
 
             // HR
@@ -339,22 +252,120 @@ class BLEManager(private val context: Context) {
 
             onDataReceived?.invoke(JSONObject().put("type", "services").put("data", services))
 
+            // Explore UUID 0x0001 service (and any other unknown services)
+            for (service in g.services) {
+                val svcShort = service.uuid.toString().substring(4, 8).uppercase()
+                val known = setOf("180F", "1816", "1818", "180D", "180A", "1800", "1801")
+                val isGev = service.uuid == GEV_SERVICE || service.uuid == PROTO_SERVICE
+                if (svcShort !in known && !isGev) {
+                    Log.i(TAG, ">>> EXPLORING unknown service: ${service.uuid} [$svcShort] <<<")
+                    for (char in service.characteristics) {
+                        val readable = (char.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0
+                        if (readable) {
+                            pendingReads.add(char)
+                        }
+                        // Subscribe to notifiable characteristics
+                        val notifiable = (char.properties and
+                            (BluetoothGattCharacteristic.PROPERTY_NOTIFY or BluetoothGattCharacteristic.PROPERTY_INDICATE)) != 0
+                        if (notifiable) {
+                            pendingNotifications.add(char)
+                            Log.i(TAG, ">>> Will subscribe to: ${char.uuid}")
+                        }
+                    }
+                }
+            }
+
+            isExploring0x0001 = pendingReads.isNotEmpty()
+
             // Device Information Service (0x180A)
             readDeviceInfo(g)
 
-            enableNextNotification(g)
+            // Start reading unknown chars first, then enable notifications
+            if (pendingReads.isNotEmpty()) {
+                Log.i(TAG, ">>> Reading ${pendingReads.size} unknown characteristics...")
+                readNextUnknown(g)
+            } else {
+                // Read battery first, then start notifications
+                g.getService(BATTERY_SERVICE)?.getCharacteristic(BATTERY_LEVEL)?.let {
+                    g.readCharacteristic(it)
+                } ?: enableNextNotification(g)
+            }
         }
 
         override fun onCharacteristicRead(g: BluetoothGatt, char: BluetoothGattCharacteristic, status: Int) {
-            if (status != BluetoothGatt.GATT_SUCCESS) return
-            handleCharacteristicData(char)
+            val cShort = char.uuid.toString().substring(4, 8).uppercase()
+            val hex = char.value?.joinToString("") { "%02x".format(it) } ?: "(null)"
+            val ascii = char.value?.let { bytes ->
+                String(bytes.filter { it in 0x20..0x7E }.toByteArray())
+            } ?: ""
+
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                Log.i(TAG, ">>> READ [$cShort] ${char.uuid}: hex=$hex ascii=\"$ascii\" len=${char.value?.size ?: 0}")
+                onDataReceived?.invoke(JSONObject()
+                    .put("type", "charRead")
+                    .put("uuid", char.uuid.toString())
+                    .put("short", cShort)
+                    .put("hex", hex)
+                    .put("ascii", ascii)
+                    .put("size", char.value?.size ?: 0))
+                handleCharacteristicData(char)
+            } else {
+                Log.w(TAG, ">>> READ FAILED [$cShort] ${char.uuid}: status=$status")
+                onDataReceived?.invoke(JSONObject()
+                    .put("type", "charReadFail")
+                    .put("uuid", char.uuid.toString())
+                    .put("short", cShort)
+                    .put("status", status))
+            }
+
+            // Continue reading unknown chars, or move to notifications
+            if (isExploring0x0001) {
+                if (pendingReads.isNotEmpty()) {
+                    handler.postDelayed({ readNextUnknown(g) }, 100)
+                } else {
+                    isExploring0x0001 = false
+                    Log.i(TAG, ">>> 0x0001 exploration complete")
+
+                    // Re-discover services to see if new ones appeared
+                    if (!hasRediscovered) {
+                        hasRediscovered = true
+                        Log.i(TAG, ">>> Triggering service RE-DISCOVERY...")
+                        onStatusChanged?.invoke("Re-discovering services...")
+                        handler.postDelayed({ g.discoverServices() }, 500)
+                    } else {
+                        // Already rediscovered — start notifications
+                        g.getService(BATTERY_SERVICE)?.getCharacteristic(BATTERY_LEVEL)?.let {
+                            g.readCharacteristic(it)
+                        } ?: enableNextNotification(g)
+                    }
+                }
+                return
+            }
+
+            // Normal flow: after battery read, start notifications
+            if (char.uuid == BATTERY_LEVEL) {
+                enableNextNotification(g)
+            }
         }
 
         override fun onCharacteristicChanged(g: BluetoothGatt, char: BluetoothGattCharacteristic) {
+            val cShort = char.uuid.toString().substring(4, 8).uppercase()
+            val known = setOf("2A19", "2A5B", "2A63", "2A37")
+            if (cShort !in known) {
+                val hex = char.value?.joinToString("") { "%02x".format(it) } ?: ""
+                Log.i(TAG, ">>> NOTIFY [$cShort] ${char.uuid}: hex=$hex len=${char.value?.size ?: 0}")
+                onDataReceived?.invoke(JSONObject()
+                    .put("type", "unknownNotify")
+                    .put("uuid", char.uuid.toString())
+                    .put("short", cShort)
+                    .put("hex", hex)
+                    .put("size", char.value?.size ?: 0))
+            }
             handleCharacteristicData(char)
         }
 
         override fun onDescriptorWrite(g: BluetoothGatt, desc: BluetoothGattDescriptor, status: Int) {
+            Log.i(TAG, "Descriptor write: ${desc.characteristic.uuid} status=$status")
             enableNextNotification(g)
         }
     }
@@ -510,6 +521,27 @@ class BLEManager(private val context: Context) {
                 }
             }
         }
+    }
+
+    private fun readNextUnknown(g: BluetoothGatt) {
+        if (pendingReads.isEmpty()) return
+        val char = pendingReads.removeAt(0)
+        val cShort = char.uuid.toString().substring(4, 8).uppercase()
+        Log.i(TAG, ">>> Reading unknown char [$cShort] ${char.uuid}...")
+        g.readCharacteristic(char)
+    }
+
+    private fun describeProperties(props: Int): String {
+        val flags = mutableListOf<String>()
+        if (props and 0x01 != 0) flags.add("BROADCAST")
+        if (props and 0x02 != 0) flags.add("READ")
+        if (props and 0x04 != 0) flags.add("WRITE_NO_RSP")
+        if (props and 0x08 != 0) flags.add("WRITE")
+        if (props and 0x10 != 0) flags.add("NOTIFY")
+        if (props and 0x20 != 0) flags.add("INDICATE")
+        if (props and 0x40 != 0) flags.add("SIGNED_WRITE")
+        if (props and 0x80 != 0) flags.add("EXTENDED")
+        return flags.joinToString("|")
     }
 
     fun writeAssistMode(mode: Int) {

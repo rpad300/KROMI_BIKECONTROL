@@ -114,7 +114,7 @@ class MainActivity : AppCompatActivity() {
         registerReceiver(statusReceiver, IntentFilter("online.kromi.blebridge.STATUS"),
             RECEIVER_NOT_EXPORTED)
 
-        appendLog("INIT", "BLE Bridge v0.5.3 started")
+        appendLog("INIT", "BLE Bridge v0.6.0 started")
         appendLog("WS", "Server on ws://localhost:8765")
 
         // Setup service logging after a short delay (service may not be ready immediately)
@@ -178,6 +178,23 @@ class MainActivity : AppCompatActivity() {
             "gevBattery" -> appendLog("GEV", "Bat:${json.optInt("percent")}% ${json.optDouble("voltage")}V ${json.optInt("temp")}°C")
             "gevRiding" -> appendLog("GEV", "Spd:${json.optDouble("speed")} Pwr:${json.optInt("power")}")
             "deviceInfo" -> appendLog("DEV", "FW:${json.optString("firmware")} HW:${json.optString("hardware")} SW:${json.optString("software")}")
+            "allServices" -> {
+                val arr = json.optJSONArray("data") ?: return
+                appendLog("SVC", "══ Full service map (${arr.length()} services) ══")
+                for (i in 0 until arr.length()) {
+                    val svc = arr.getJSONObject(i)
+                    appendLog("SVC", "┌ ${svc.optString("short")}: ${svc.optString("uuid")}")
+                    val chars = svc.optJSONArray("chars") ?: continue
+                    for (j in 0 until chars.length()) {
+                        val c = chars.getJSONObject(j)
+                        appendLog("SVC", "│  ${c.optString("short")} ${c.optString("propsStr")} (${c.optInt("props")})")
+                    }
+                }
+                appendLog("SVC", "══════════════════════════════════")
+            }
+            "charRead" -> appendLog("RD", "[${json.optString("short")}] hex=${json.optString("hex")} ascii=\"${json.optString("ascii")}\" len=${json.optInt("size")}")
+            "charReadFail" -> appendLog("RD!", "[${json.optString("short")}] FAILED status=${json.optInt("status")}")
+            "unknownNotify" -> appendLog("NTF", "[${json.optString("short")}] hex=${json.optString("hex")} len=${json.optInt("size")}")
             "barometer" -> updateSensor("Baro", "${json.optDouble("pressure").toInt()}hPa/${json.optDouble("altitude").toInt()}m")
             "light" -> updateSensor("Light", "${json.optDouble("lux").toInt()}lux")
             "accel" -> updateSensor("Lean", "${json.optDouble("lean").toInt()}°")
