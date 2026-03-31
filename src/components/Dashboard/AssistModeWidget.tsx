@@ -6,9 +6,17 @@ const MAIN_MODES = [AssistMode.ECO, AssistMode.TOUR, AssistMode.SPORT, AssistMod
 
 export function AssistModeWidget() {
   const assistMode = useBikeStore((s) => s.assist_mode);
+  const gevConnected = useBikeStore((s) => s.ble_services.gev);
 
   const handleModeChange = async (mode: AssistMode) => {
-    await giantBLEService.sendAssistMode(mode);
+    // Always update local state so the UI reflects the selection
+    useBikeStore.getState().setAssistMode(mode);
+
+    // Try to send to bike if GEV is available
+    if (gevConnected) {
+      await giantBLEService.sendAssistMode(mode);
+    }
+
     // Haptic feedback
     if ('vibrate' in navigator) navigator.vibrate(50);
   };
@@ -52,6 +60,13 @@ export function AssistModeWidget() {
           WALK
         </button>
       </div>
+
+      {/* Motor control status */}
+      {!gevConnected && (
+        <div className="text-center text-xs text-gray-600 px-2">
+          Modo local — usa os botoes Ergo 3 na bike para mudar no motor
+        </div>
+      )}
     </div>
   );
 }
