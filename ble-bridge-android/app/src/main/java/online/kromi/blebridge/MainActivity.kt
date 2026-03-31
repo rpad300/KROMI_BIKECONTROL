@@ -59,6 +59,37 @@ class MainActivity : AppCompatActivity() {
 
         registerReceiver(statusReceiver, IntentFilter("online.kromi.blebridge.STATUS"),
             RECEIVER_NOT_EXPORTED)
+
+        // If opened via kromi-bridge:// deep link, auto-start and go to background
+        handleDeepLink(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleDeepLink(intent)
+    }
+
+    private fun handleDeepLink(intent: Intent?) {
+        if (intent?.scheme == "kromi-bridge") {
+            val action = intent.data?.host ?: "start"
+
+            when (action) {
+                "start" -> {
+                    // Service is already started in onCreate
+                    // Auto-connect if not connected
+                    BLEBridgeService.instance?.let { service ->
+                        if (!service.bleManager.isConnected) {
+                            service.bleManager.connect()
+                        }
+                    }
+                    // Minimize to background — return to Chrome
+                    moveTaskToBack(true)
+                }
+                "stop" -> {
+                    BLEBridgeService.instance?.bleManager?.disconnect()
+                }
+            }
+        }
     }
 
     override fun onDestroy() {

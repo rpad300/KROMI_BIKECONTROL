@@ -7,6 +7,7 @@ import { Settings } from './components/Settings/Settings';
 import { RideHistory } from './components/History/RideHistory';
 import { LoginPage } from './components/Auth/LoginPage';
 import { ConnectionStatus } from './components/shared/ConnectionStatus';
+import { BridgeSetup } from './components/shared/BridgeSetup';
 import { useGeolocation } from './hooks/useGeolocation';
 import { useAutoAssist } from './hooks/useAutoAssist';
 import { useAuthStore } from './store/authStore';
@@ -71,6 +72,9 @@ function MainApp() {
 
       {/* Floating connection status */}
       <ConnectionStatus />
+
+      {/* BLE Bridge auto-setup (Android only) */}
+      <BridgeSetup />
     </div>
   );
 }
