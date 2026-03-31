@@ -20,9 +20,11 @@ class GiantBLEService {
   private reconnectAttempt = 0;
   private pendingCommand = false;
 
-  // Separate devices for HR and Di2
+  // Separate devices for HR, Di2, SRAM, external power
   private hrDevice: BluetoothDevice | null = null;
   private di2Device: BluetoothDevice | null = null;
+  private sramDevice: BluetoothDevice | null = null;
+  private extPowerDevice: BluetoothDevice | null = null;
 
   static getInstance(): GiantBLEService {
     if (!GiantBLEService.instance) {
@@ -133,6 +135,64 @@ class GiantBLEService {
     }
   }
 
+  /** Connect to a SRAM AXS device (Flight Attendant) */
+  async connectSRAM(): Promise<void> {
+    try {
+      this.sramDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [BLE_UUIDS.SRAM_SERVICE] }],
+        optionalServices: [BLE_UUIDS.SRAM_SERVICE],
+      });
+
+      const server = await this.sramDevice.gatt!.connect();
+      const service = await server.getPrimaryService(BLE_UUIDS.SRAM_SERVICE);
+      const char = await service.getCharacteristic(BLE_UUIDS.SRAM_NOTIFY);
+
+      await char.startNotifications();
+      char.addEventListener('characteristicvaluechanged', (e) => {
+        const value = (e.target as BluetoothRemoteGATTCharacteristic).value!;
+        // SRAM AXS data — gear position from flight attendant
+        if (value.byteLength >= 3) {
+          const gear = value.getUint8(2);
+          if (gear >= 1 && gear <= 12) {
+            useBikeStore.getState().setGear(gear);
+          }
+        }
+      });
+
+      useBikeStore.getState().setServiceConnected('sram', true);
+      console.log('[BLE] SRAM AXS connected:', this.sramDevice.name);
+    } catch (err) {
+      console.warn('[BLE] SRAM connection failed:', err);
+      throw err;
+    }
+  }
+
+  /** Connect to an external Power Meter (separate from gateway) */
+  async connectExtPower(): Promise<void> {
+    try {
+      this.extPowerDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [BLE_UUIDS.POWER_SERVICE] }],
+      });
+
+      const server = await this.extPowerDevice.gatt!.connect();
+      const service = await server.getPrimaryService(BLE_UUIDS.POWER_SERVICE);
+      const char = await service.getCharacteristic(BLE_UUIDS.POWER_MEASUREMENT);
+
+      await char.startNotifications();
+      char.addEventListener('characteristicvaluechanged', (e) => {
+        const value = (e.target as BluetoothRemoteGATTCharacteristic).value!;
+        const result = parsePower(value);
+        useBikeStore.getState().setPower(result.power_watts);
+      });
+
+      useBikeStore.getState().setServiceConnected('power', true);
+      console.log('[BLE] External power meter connected:', this.extPowerDevice.name);
+    } catch (err) {
+      console.warn('[BLE] External power meter connection failed:', err);
+      throw err;
+    }
+  }
+
   disconnect(): void {
     if (this.device?.gatt?.connected) {
       this.device.gatt.disconnect();
@@ -159,6 +219,22 @@ class GiantBLEService {
     }
     this.di2Device = null;
     useBikeStore.getState().setServiceConnected('di2', false);
+  }
+
+  disconnectSRAM(): void {
+    if (this.sramDevice?.gatt?.connected) {
+      this.sramDevice.gatt.disconnect();
+    }
+    this.sramDevice = null;
+    useBikeStore.getState().setServiceConnected('sram', false);
+  }
+
+  disconnectExtPower(): void {
+    if (this.extPowerDevice?.gatt?.connected) {
+      this.extPowerDevice.gatt.disconnect();
+    }
+    this.extPowerDevice = null;
+    useBikeStore.getState().setServiceConnected('power', false);
   }
 
   /** Subscribe to services on the Smart Gateway.
@@ -369,6 +445,14 @@ class GiantBLEService {
 
   getDi2DeviceName(): string | null {
     return this.di2Device?.name ?? null;
+  }
+
+  getSRAMDeviceName(): string | null {
+    return this.sramDevice?.name ?? null;
+  }
+
+  getExtPowerDeviceName(): string | null {
+    return this.extPowerDevice?.name ?? null;
   }
 
   // ── Device Name Persistence ────────────────────────────

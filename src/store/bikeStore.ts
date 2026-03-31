@@ -45,6 +45,12 @@ interface BikeState {
   gear: number;
   is_shifting: boolean;
 
+  // Phone sensors
+  barometric_altitude_m: number;
+  pressure_hpa: number;
+  lean_angle_deg: number;
+  temperature_c: number;
+
   // BLE state
   ble_status: BLEConnectionStatus;
   ble_services: BLEServiceStatus;
@@ -70,6 +76,9 @@ interface BikeState {
   setErrorCode: (v: number) => void;
   setHR: (bpm: number, zone: number) => void;
   setGear: (gear: number) => void;
+  setBarometer: (pressure: number, altitude: number) => void;
+  setLeanAngle: (deg: number) => void;
+  setTemperature: (c: number) => void;
   setShifting: (v: boolean) => void;
   setBLEStatus: (status: BLEConnectionStatus) => void;
   setServiceConnected: (service: keyof BLEServiceStatus, connected: boolean) => void;
@@ -114,6 +123,10 @@ export const useBikeStore = create<BikeState>((set) => ({
   hr_zone: 0,
   gear: 0,
   is_shifting: false,
+  barometric_altitude_m: 0,
+  pressure_hpa: 0,
+  lean_angle_deg: 0,
+  temperature_c: 0,
   ble_status: 'disconnected',
   ble_services: {
     battery: false,
@@ -167,6 +180,15 @@ export const useBikeStore = create<BikeState>((set) => ({
   setHR: (bpm, zone) => set({ hr_bpm: bpm, hr_zone: zone }),
 
   setGear: (gear) => set({ gear, is_shifting: false }),
+
+  setBarometer: (pressure, altitude) => set({
+    pressure_hpa: Math.round(pressure * 10) / 10,
+    barometric_altitude_m: Math.round(altitude * 10) / 10,
+  }),
+
+  setLeanAngle: (deg) => set({ lean_angle_deg: Math.round(deg * 10) / 10 }),
+
+  setTemperature: (c) => set({ temperature_c: Math.round(c * 10) / 10 }),
 
   setShifting: (v) => set({ is_shifting: v }),
 

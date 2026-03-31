@@ -175,6 +175,25 @@ class WebSocketBLEClient {
           break;
         }
 
+        case 'barometer':
+          store.setBarometer(msg.pressure, msg.altitude);
+          break;
+
+        case 'accel':
+          store.setLeanAngle(msg.lean);
+          break;
+
+        case 'temperature':
+          store.setTemperature(msg.value);
+          break;
+
+        case 'crash':
+          console.warn('[WSClient] CRASH DETECTED — magnitude:', msg.magnitude);
+          if ('vibrate' in navigator) {
+            navigator.vibrate([500, 200, 500, 200, 500]);
+          }
+          break;
+
         case 'gevRaw':
         case 'protoRaw':
           // Raw data for debugging — logged but not processed here

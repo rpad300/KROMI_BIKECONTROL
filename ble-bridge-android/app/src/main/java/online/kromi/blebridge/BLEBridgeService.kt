@@ -21,6 +21,7 @@ class BLEBridgeService : Service() {
 
     lateinit var bleManager: BLEManager
     var wsServer: BridgeWebSocketServer? = null
+    var phoneSensorService: PhoneSensorService? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -31,6 +32,12 @@ class BLEBridgeService : Service() {
         bleManager.onDataReceived = { json ->
             wsServer?.broadcastData(json)
         }
+
+        // Start phone sensors and forward data to WebSocket
+        phoneSensorService = PhoneSensorService(this) { sensorJson ->
+            wsServer?.broadcastData(sensorJson.toString())
+        }
+        phoneSensorService?.start()
         bleManager.onStatusChanged = { status ->
             updateNotification(status)
             // Broadcast status to activity
@@ -56,6 +63,7 @@ class BLEBridgeService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        phoneSensorService?.stop()
         wsServer?.stop()
         bleManager.disconnect()
         instance = null

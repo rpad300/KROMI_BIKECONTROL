@@ -135,14 +135,40 @@ export function getDeviceName(): string | null {
   }
 }
 
-/** Connect HR (Web BLE only — bridge/native handle via main connection) */
+/** Connect HR */
 export async function connectHR(): Promise<void> {
-  if (bleMode === 'web') await giantBLEService.connectHR();
+  if (bleMode === 'websocket') {
+    wsClient.send({ type: 'scanSensor', sensor: 'hr' });
+  } else {
+    await giantBLEService.connectHR();
+  }
 }
 
-/** Connect Di2 (Web BLE only) */
+/** Connect Di2 */
 export async function connectDi2(): Promise<void> {
-  if (bleMode === 'web') await giantBLEService.connectDi2();
+  if (bleMode === 'websocket') {
+    wsClient.send({ type: 'scanSensor', sensor: 'di2' });
+  } else {
+    await giantBLEService.connectDi2();
+  }
+}
+
+/** Connect SRAM AXS */
+export async function connectSRAM(): Promise<void> {
+  if (bleMode === 'websocket') {
+    wsClient.send({ type: 'scanSensor', sensor: 'sram' });
+  } else {
+    await giantBLEService.connectSRAM();
+  }
+}
+
+/** Connect external Power Meter */
+export async function connectExtPower(): Promise<void> {
+  if (bleMode === 'websocket') {
+    wsClient.send({ type: 'scanSensor', sensor: 'power' });
+  } else {
+    await giantBLEService.connectExtPower();
+  }
 }
 
 /** Disconnect HR */
@@ -155,14 +181,34 @@ export function disconnectDi2(): void {
   if (bleMode === 'web') giantBLEService.disconnectDi2();
 }
 
+/** Disconnect SRAM */
+export function disconnectSRAM(): void {
+  if (bleMode === 'web') giantBLEService.disconnectSRAM();
+}
+
+/** Disconnect external Power Meter */
+export function disconnectExtPower(): void {
+  if (bleMode === 'web') giantBLEService.disconnectExtPower();
+}
+
 /** Get HR device name */
 export function getHRDeviceName(): string | null {
-  return bleMode === 'web' ? giantBLEService.getHRDeviceName() : null;
+  return giantBLEService.getHRDeviceName();
 }
 
 /** Get Di2 device name */
 export function getDi2DeviceName(): string | null {
-  return bleMode === 'web' ? giantBLEService.getDi2DeviceName() : null;
+  return giantBLEService.getDi2DeviceName();
+}
+
+/** Get SRAM device name */
+export function getSRAMDeviceName(): string | null {
+  return giantBLEService.getSRAMDeviceName();
+}
+
+/** Get external power meter device name */
+export function getExtPowerDeviceName(): string | null {
+  return giantBLEService.getExtPowerDeviceName();
 }
 
 /** Get current BLE mode description */
