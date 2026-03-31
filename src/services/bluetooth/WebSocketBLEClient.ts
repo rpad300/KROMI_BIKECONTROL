@@ -18,6 +18,7 @@ class WebSocketBLEClient {
   private reconnectTimer: ReturnType<typeof setInterval> | null = null;
   private _connected = false;
   private _bridgeAvailable = false;
+  private _bikeConnected = false;
 
   /** Try to connect to the BLE Bridge middleware */
   connect(): void {
@@ -59,8 +60,14 @@ class WebSocketBLEClient {
     this._connected = false;
   }
 
+  /** Whether WebSocket to bridge is open */
   get isConnected(): boolean {
     return this._connected;
+  }
+
+  /** Whether the bike is connected (via bridge) */
+  get isBikeConnected(): boolean {
+    return this._bikeConnected;
   }
 
   /** Whether the bridge has ever been detected in this session */
@@ -111,11 +118,13 @@ class WebSocketBLEClient {
 
       switch (msg.type) {
         case 'connected':
+          this._bikeConnected = true;
           store.setBLEStatus('connected');
-          console.log('[WSClient] Bike connected:', msg.device);
+          console.log('[WSClient] Bike connected:', msg.device, 'bonded:', msg.bonded);
           break;
 
         case 'disconnected':
+          this._bikeConnected = false;
           store.setBLEStatus('disconnected');
           break;
 
@@ -217,8 +226,24 @@ class WebSocketBLEClient {
 
         case 'gevRaw':
         case 'protoRaw':
-          // Raw data for debugging — logged but not processed here
           console.log(`[WSClient] ${msg.type}:`, msg.hex);
+          break;
+
+        case 'sgNotify':
+          // Smart Gateway motor data — log for now, parse when protocol is known
+          console.log('[WSClient] SG:', msg.hex, 'len:', msg.size);
+          break;
+
+        case 'charRead':
+          // Device info from serial reads
+          if (msg.short === '2A27') store.setHardwareVersion(msg.ascii);
+          if (msg.short === '2A28') store.setSoftwareVersion(msg.ascii);
+          if (msg.short === '2A26') store.setFirmwareVersion(msg.ascii);
+          console.log(`[WSClient] Read [${msg.short}]: ${msg.ascii || msg.hex}`);
+          break;
+
+        case 'allServices':
+          console.log('[WSClient] Full service map:', msg.data);
           break;
       }
     } catch {

@@ -116,7 +116,7 @@ export function isMotorControlAvailable(): boolean {
 export function isBikeConnected(): boolean {
   switch (bleMode) {
     case 'websocket':
-      return wsClient.isConnected;
+      return wsClient.isBikeConnected;
     case 'native':
       return capacitorBLEService.isConnected();
     case 'web':
