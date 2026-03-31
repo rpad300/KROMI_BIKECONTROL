@@ -120,10 +120,16 @@ class MainActivity : AppCompatActivity() {
         // Setup service logging after a short delay (service may not be ready immediately)
         handler.postDelayed({ setupServiceLogging() }, 500)
 
-        handleDeepLink(intent)
+        // Don't handle deep link on fresh start — let user use SCAN button
+        if (intent?.scheme == "kromi-bridge") {
+            appendLog("LINK", "Launched via deep link")
+        }
     }
 
+    private var serviceHooked = false
+
     private fun setupServiceLogging() {
+        if (serviceHooked) return  // Only hook once
         val service = BLEBridgeService.instance
         if (service == null) {
             appendLog("WARN", "Service not ready, retrying...")
@@ -147,7 +153,8 @@ class MainActivity : AppCompatActivity() {
             sendBroadcast(intent)
         }
 
-        appendLog("INIT", "Service hooked OK")
+        serviceHooked = true
+        appendLog("INIT", "Service ready — tap SCAN to find devices")
     }
 
     private fun handleDataForUI(json: JSONObject) {
@@ -215,38 +222,55 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("MissingPermission")
     private fun showDevicePicker() {
+        appendLog("UI", "showDevicePicker() called")
+
         val ble = BLEBridgeService.instance?.bleManager
         if (ble == null) {
-            appendLog("ERR", "Service not running!")
+            appendLog("ERR", "Service not running! instance=${BLEBridgeService.instance != null}")
             return
         }
         if (ble.isConnected) {
             appendLog("UI", "Already connected — disconnect first")
             return
         }
+        if (ble.isScanning) {
+            appendLog("UI", "Scan already running — wait...")
+            return
+        }
 
         val devices = mutableListOf<BluetoothDevice>()
         val deviceLabels = mutableListOf<String>()
-        val adapter = android.widget.ArrayAdapter<String>(
+        val listAdapter = android.widget.ArrayAdapter<String>(
             this, android.R.layout.simple_list_item_1, deviceLabels)
 
         // Create dialog with a ListView that updates live
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Scanning for devices...")
-            .setAdapter(adapter) { _, which ->
-                ble.stopScan()
-                val chosen = devices[which]
-                appendLog("UI", "Selected: ${chosen.name} (${chosen.address})")
-                ble.connectToDevice(chosen)
-            }
-            .setNegativeButton("Cancel") { d, _ ->
-                ble.stopScan()
-                d.dismiss()
-            }
-            .create()
+        val dialog = try {
+            AlertDialog.Builder(this)
+                .setTitle("Scanning for devices...")
+                .setAdapter(listAdapter) { _, which ->
+                    ble.stopScan()
+                    val chosen = devices[which]
+                    appendLog("UI", "Selected: ${chosen.name} (${chosen.address})")
+                    ble.connectToDevice(chosen)
+                }
+                .setNegativeButton("Cancel") { d, _ ->
+                    ble.stopScan()
+                    d.dismiss()
+                }
+                .create()
+        } catch (e: Exception) {
+            appendLog("ERR", "Dialog create failed: ${e.message}")
+            return
+        }
 
-        appendLog("UI", "Starting scan...")
-        dialog.show()
+        appendLog("UI", "Showing picker dialog...")
+        try {
+            dialog.show()
+            appendLog("UI", "Dialog shown OK — scanning...")
+        } catch (e: Exception) {
+            appendLog("ERR", "Dialog show failed: ${e.message}")
+            return
+        }
 
         ble.startScan(
             onFound = { device, rssi, uuids ->
@@ -263,7 +287,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     devices.add(device)
                     deviceLabels.add(label)
-                    adapter.notifyDataSetChanged()
+                    listAdapter.notifyDataSetChanged()
                     dialog.setTitle("Found ${devices.size} devices (scanning...)")
                     appendLog("SCAN", "$name | ${device.address} | RSSI:$rssi | $uuids$marker")
                 }
@@ -409,24 +433,17 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        handleDeepLink(intent)
-    }
-
-    private fun handleDeepLink(intent: Intent?) {
-        if (intent?.scheme == "kromi-bridge") {
-            appendLog("LINK", "Deep link received")
-            BLEBridgeService.instance?.bleManager?.let {
-                if (!it.isConnected) {
-                    appendLog("LINK", "Not connected — tap SCAN to select device")
-                }
-            }
-            moveTaskToBack(true)
+        if (intent.scheme == "kromi-bridge") {
+            appendLog("LINK", "Deep link — tap SCAN to connect")
         }
     }
 
     override fun onResume() {
         super.onResume()
-        handler.postDelayed({ setupServiceLogging() }, 300)
+        // Re-hook service if it restarted while we were paused
+        if (!serviceHooked) {
+            handler.postDelayed({ setupServiceLogging() }, 300)
+        }
     }
 
     override fun onDestroy() {
