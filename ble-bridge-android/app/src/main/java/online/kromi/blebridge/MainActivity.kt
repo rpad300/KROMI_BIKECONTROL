@@ -85,6 +85,9 @@ class MainActivity : AppCompatActivity() {
             appendLog("LOG", "Console cleared")
         }
 
+        val testBtn: Button = findViewById(R.id.testBtn)
+        testBtn.setOnClickListener { runBLETest() }
+
         // Start foreground service
         val serviceIntent = Intent(this, BLEBridgeService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -212,6 +215,95 @@ class MainActivity : AppCompatActivity() {
         }
         logText.text = logLines.joinToString("\n")
         logScrollView.post { logScrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun runBLETest() {
+        appendLog("TEST", "========== BLE TEST START ==========")
+
+        // 1. Check Bluetooth adapter
+        val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+        if (adapter == null) {
+            appendLog("TEST", "FAIL: No Bluetooth adapter")
+            return
+        }
+        appendLog("TEST", "OK: Bluetooth adapter present")
+        appendLog("TEST", "Bluetooth enabled: ${adapter.isEnabled}")
+
+        // 2. Check permissions
+        val perms = mutableListOf(
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        )
+        for (p in perms) {
+            val granted = ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
+            appendLog("TEST", "${if (granted) "OK" else "FAIL"}: $p")
+        }
+
+        // 3. Check WebSocket server
+        val ws = BLEBridgeService.instance?.wsServer
+        if (ws != null) {
+            val clients = ws.connections.size
+            appendLog("TEST", "OK: WebSocket server running (port 8765, $clients clients)")
+        } else {
+            appendLog("TEST", "FAIL: WebSocket server not running")
+        }
+
+        // 4. Check phone sensors
+        val sensorService = BLEBridgeService.instance?.phoneSensorService
+        if (sensorService != null) {
+            appendLog("TEST", "Barometer: ${if (sensorService.hasBarometer) "OK" else "N/A"}")
+            appendLog("TEST", "Accelerometer: ${if (sensorService.hasAccelerometer) "OK" else "N/A"}")
+            appendLog("TEST", "Gyroscope: ${if (sensorService.hasGyroscope) "OK" else "N/A"}")
+            appendLog("TEST", "Light: ${if (sensorService.hasLight) "OK" else "N/A"}")
+            appendLog("TEST", "Temperature: ${if (sensorService.hasTemperature) "OK" else "N/A"}")
+        }
+
+        // 5. Check bonded devices
+        val bondedDevices = adapter.bondedDevices
+        appendLog("TEST", "Bonded devices: ${bondedDevices.size}")
+        for (device in bondedDevices) {
+            appendLog("TEST", "  ${device.name ?: "?"} (${device.address}) bond:${device.bondState}")
+        }
+
+        // 6. Check BLE connection
+        val ble = BLEBridgeService.instance?.bleManager
+        if (ble != null && ble.isConnected) {
+            appendLog("TEST", "OK: BLE connected")
+        } else {
+            appendLog("TEST", "INFO: BLE not connected — starting scan...")
+            ble?.connect()
+        }
+
+        // 7. Auto-scan test — scan for 10s and report all found devices
+        appendLog("TEST", "Scanning for BLE devices (10s)...")
+        val scanner = adapter.bluetoothLeScanner
+        val foundDevices = mutableSetOf<String>()
+
+        val callback = object : android.bluetooth.le.ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: android.bluetooth.le.ScanResult) {
+                val name = result.device.name ?: return
+                val addr = result.device.address
+                val rssi = result.rssi
+                val key = "$name ($addr)"
+                if (key !in foundDevices) {
+                    foundDevices.add(key)
+                    val uuids = result.scanRecord?.serviceUuids?.joinToString(", ") { it.toString().substring(4, 8) } ?: "none"
+                    runOnUiThread {
+                        appendLog("SCAN", "$name | $addr | RSSI:$rssi | UUIDs:$uuids")
+                    }
+                }
+            }
+        }
+
+        scanner?.startScan(callback)
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            scanner?.stopScan(callback)
+            appendLog("TEST", "Scan complete. Found ${foundDevices.size} devices")
+            appendLog("TEST", "========== BLE TEST END ==========")
+            appendLog("TEST", "Copy this log and paste to Claude for analysis")
+        }, 10000)
     }
 
     override fun onNewIntent(intent: Intent) {
