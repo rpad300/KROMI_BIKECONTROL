@@ -17,6 +17,7 @@ import android.widget.Button
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -74,9 +75,8 @@ class MainActivity : AppCompatActivity() {
         requestPermissions()
 
         connectBtn.setOnClickListener {
-            appendLog("UI", "Connect tapped")
-            BLEBridgeService.instance?.bleManager?.connect()
-                ?: appendLog("ERR", "Service not running!")
+            appendLog("UI", "Scan tapped")
+            showDevicePicker()
         }
 
         disconnectBtn.setOnClickListener {
@@ -213,6 +213,80 @@ class MainActivity : AppCompatActivity() {
     }
 
     @SuppressLint("MissingPermission")
+    private fun showDevicePicker() {
+        val ble = BLEBridgeService.instance?.bleManager
+        if (ble == null) {
+            appendLog("ERR", "Service not running!")
+            return
+        }
+
+        val devices = mutableListOf<BluetoothDevice>()
+        val deviceLabels = mutableListOf<String>()
+        var dialog: AlertDialog? = null
+
+        // Build a dialog that updates as devices are found
+        val builder = AlertDialog.Builder(this, com.google.android.material.R.style.ThemeOverlay_MaterialComponents_Dialog_Alert)
+            .setTitle("Scanning for devices...")
+            .setNegativeButton("Cancel") { d, _ ->
+                ble.stopScan()
+                d.dismiss()
+            }
+
+        dialog = builder.create()
+
+        ble.onDeviceFound = { device, rssi, uuids ->
+            // Highlight likely bikes
+            val name = device.name ?: "?"
+            val marker = when {
+                name.contains("GBHA", true) || name.contains("Giant", true) -> " [GIANT]"
+                uuids.contains("F0BA", true) -> " [GEV]"
+                uuids.contains("1816") || uuids.contains("1818") -> " [BIKE?]"
+                uuids.contains("180D") -> " [HR]"
+                else -> ""
+            }
+            val label = "$name  ${device.address}  RSSI:$rssi  $uuids$marker"
+
+            runOnUiThread {
+                devices.add(device)
+                deviceLabels.add(label)
+                appendLog("SCAN", label)
+
+                // Rebuild dialog items
+                dialog?.dismiss()
+                dialog = AlertDialog.Builder(this, com.google.android.material.R.style.ThemeOverlay_MaterialComponents_Dialog_Alert)
+                    .setTitle("Found ${devices.size} devices (scanning...)")
+                    .setItems(deviceLabels.toTypedArray()) { _, which ->
+                        ble.stopScan()
+                        val chosen = devices[which]
+                        appendLog("UI", "Selected: ${chosen.name} (${chosen.address})")
+                        ble.connectToDevice(chosen)
+                    }
+                    .setNegativeButton("Cancel") { d, _ ->
+                        ble.stopScan()
+                        d.dismiss()
+                    }
+                    .show()
+            }
+        }
+
+        ble.onScanComplete = {
+            runOnUiThread {
+                appendLog("SCAN", "Scan complete: ${devices.size} devices found")
+                if (devices.isEmpty()) {
+                    dialog?.dismiss()
+                    Toast.makeText(this, "No devices found", Toast.LENGTH_SHORT).show()
+                } else {
+                    // Update title to show scan is done
+                    dialog?.setTitle("${devices.size} devices found — tap to connect")
+                }
+            }
+        }
+
+        dialog?.show()
+        ble.startScan()
+    }
+
+    @SuppressLint("MissingPermission")
     private fun unbondBikeDevices() {
         val adapter = BluetoothAdapter.getDefaultAdapter() ?: return
         var count = 0
@@ -346,7 +420,9 @@ class MainActivity : AppCompatActivity() {
         if (intent?.scheme == "kromi-bridge") {
             appendLog("LINK", "Deep link received")
             BLEBridgeService.instance?.bleManager?.let {
-                if (!it.isConnected) it.connect()
+                if (!it.isConnected) {
+                    appendLog("LINK", "Not connected — tap SCAN to select device")
+                }
             }
             moveTaskToBack(true)
         }

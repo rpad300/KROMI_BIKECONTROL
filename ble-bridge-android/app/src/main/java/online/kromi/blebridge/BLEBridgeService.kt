@@ -72,7 +72,19 @@ class BLEBridgeService : Service() {
 
     private fun handleCommand(json: JSONObject) {
         when (json.optString("type")) {
-            "connect" -> bleManager.connect()
+            "connect" -> {
+                // WebSocket connect: scan and auto-connect to first bike-like device
+                bleManager.onDeviceFound = { device, _, uuids ->
+                    val name = device.name ?: ""
+                    val isBike = name.contains("GBHA", true) || name.contains("Giant", true)
+                        || uuids.contains("F0BA", true) || uuids.contains("1816") || uuids.contains("1818")
+                    if (isBike) {
+                        bleManager.stopScan()
+                        bleManager.connectToDevice(device)
+                    }
+                }
+                bleManager.startScan()
+            }
             "disconnect" -> bleManager.disconnect()
             "assistMode" -> bleManager.writeAssistMode(json.optInt("value", 1))
             "assistUp" -> {

@@ -66,7 +66,12 @@ class BLEManager(private val context: Context) {
 
     val isConnected: Boolean get() = gatt != null
 
-    fun connect() {
+    // Callback for scan results — each device found is reported individually
+    var onDeviceFound: ((BluetoothDevice, Int, String) -> Unit)? = null  // device, rssi, uuids
+    var onScanComplete: (() -> Unit)? = null
+    private var scanCallback: ScanCallback? = null
+
+    fun startScan() {
         val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
         onStatusChanged?.invoke("Scanning...")
         hasRediscovered = false
@@ -75,19 +80,21 @@ class BLEManager(private val context: Context) {
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
-        // Scan by name — bike advertises 0x0001, NOT F0BA3012
-        val callback = object : ScanCallback() {
+        val seen = mutableSetOf<String>()
+
+        scanCallback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val n = result.device.name ?: return
-                if (n.startsWith("GBHA") || n.startsWith("Giant")) {
-                    scanner.stopScan(this)
-                    Log.i(TAG, "Found: $n (${result.device.address}) bond:${result.device.bondState}")
-                    Log.i(TAG, "  Advertised UUIDs: ${result.scanRecord?.serviceUuids}")
-                    Log.i(TAG, "  RSSI: ${result.rssi}")
-                    onStatusChanged?.invoke("Found $n — connecting...")
-                    // Connect directly — NO createBond(), like RideControl
-                    connectGatt(result.device)
-                }
+                val addr = result.device.address
+                if (addr in seen) return
+                seen.add(addr)
+
+                val name = result.device.name ?: return  // skip unnamed
+                val uuids = result.scanRecord?.serviceUuids?.joinToString(",") {
+                    it.toString().substring(4, 8).uppercase()
+                } ?: "-"
+
+                Log.i(TAG, "Scan: $name ($addr) RSSI:${result.rssi} UUID:$uuids bond:${result.device.bondState}")
+                onDeviceFound?.invoke(result.device, result.rssi, uuids)
             }
 
             override fun onScanFailed(errorCode: Int) {
@@ -96,13 +103,28 @@ class BLEManager(private val context: Context) {
             }
         }
 
-        scanner.startScan(null, settings, callback)
+        scanner.startScan(null, settings, scanCallback)
 
-        // Timeout after 15s
+        // Auto-stop after 12s
         handler.postDelayed({
-            try { scanner.stopScan(callback) } catch (_: Exception) {}
-            if (gatt == null) onStatusChanged?.invoke("No bike found")
-        }, 15000)
+            stopScan()
+        }, 12000)
+    }
+
+    fun stopScan() {
+        scanCallback?.let { cb ->
+            try {
+                bluetoothAdapter?.bluetoothLeScanner?.stopScan(cb)
+            } catch (_: Exception) {}
+        }
+        scanCallback = null
+        onScanComplete?.invoke()
+    }
+
+    fun connectToDevice(device: BluetoothDevice) {
+        Log.i(TAG, "Connecting to ${device.name} (${device.address}) bond:${device.bondState}")
+        onStatusChanged?.invoke("Connecting to ${device.name}...")
+        connectGatt(device)
     }
 
     private fun connectGatt(device: BluetoothDevice) {
