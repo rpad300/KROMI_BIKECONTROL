@@ -1,120 +1,175 @@
 /**
- * BLE Bridge — auto-detects Capacitor native vs browser and routes BLE calls.
+ * BLE Bridge — three-tier connection strategy:
  *
- * - Capacitor native app: uses @capacitor-community/bluetooth-le (supports bonding)
- * - Browser PWA: uses Web Bluetooth (standard services only)
+ * 1. WebSocket Bridge (highest priority)
+ *    → Android middleware app running BLE Bridge on ws://localhost:8765
+ *    → Full BLE access: bonding, GEV motor control, Proto, all sensors
+ *    → Best option: PWA updates instantly, middleware is stable
  *
- * Components should import from here instead of directly using GiantBLEService.
+ * 2. Capacitor Native (when running as native app)
+ *    → Direct BLE via @capacitor-community/bluetooth-le
+ *    → Full access with bonding
+ *
+ * 3. Web Bluetooth (fallback for browser PWA)
+ *    → Standard BLE services only (Battery, CSC, Power)
+ *    → No motor control (GEV/Proto require bonding)
  */
 
+import { wsClient } from './WebSocketBLEClient';
 import { isCapacitorNative, capacitorBLEService } from './CapacitorBLEService';
 import { giantBLEService } from './GiantBLEService';
 
-export const bleMode = isCapacitorNative() ? 'native' : 'web';
+export type BLEMode = 'websocket' | 'native' | 'web';
 
-/** Initialize BLE subsystem (call once on app start) */
+/** Current active BLE mode */
+export let bleMode: BLEMode = 'web';
+
+/** Initialize BLE subsystem — tries WebSocket bridge first */
 export async function initBLE(): Promise<void> {
-  if (bleMode === 'native') {
+  if (isCapacitorNative()) {
+    bleMode = 'native';
     await capacitorBLEService.initialize();
-    console.log('[BLE Bridge] Using Capacitor native BLE — bonding + motor control available');
+    console.log('[BLE Bridge] Mode: Capacitor Native — full BLE with bonding');
+    return;
+  }
+
+  // Try connecting to WebSocket bridge (middleware app)
+  wsClient.connect();
+
+  // Wait briefly to see if bridge is available
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+
+  if (wsClient.isConnected) {
+    bleMode = 'websocket';
+    console.log('[BLE Bridge] Mode: WebSocket Bridge — full BLE via middleware');
   } else {
-    console.log('[BLE Bridge] Using Web Bluetooth — standard services only');
+    bleMode = 'web';
+    console.log('[BLE Bridge] Mode: Web Bluetooth — standard services only');
+    console.log('[BLE Bridge] Install the BLE Bridge app for motor control');
   }
 }
 
 /** Connect to the Giant Smart Gateway */
 export async function connectBike(): Promise<void> {
-  if (bleMode === 'native') {
-    await capacitorBLEService.connect();
-  } else {
-    await giantBLEService.connect();
+  switch (bleMode) {
+    case 'websocket':
+      wsClient.connectBike();
+      break;
+    case 'native':
+      await capacitorBLEService.connect();
+      break;
+    case 'web':
+      // Check if bridge became available since init
+      if (wsClient.isConnected) {
+        bleMode = 'websocket';
+        wsClient.connectBike();
+        return;
+      }
+      await giantBLEService.connect();
+      break;
   }
 }
 
 /** Disconnect from the bike */
 export function disconnectBike(): void {
-  if (bleMode === 'native') {
-    capacitorBLEService.disconnect();
-  } else {
-    giantBLEService.disconnect();
+  switch (bleMode) {
+    case 'websocket':
+      wsClient.disconnectBike();
+      break;
+    case 'native':
+      capacitorBLEService.disconnect();
+      break;
+    case 'web':
+      giantBLEService.disconnect();
+      break;
   }
 }
 
-/** Send assist mode command to motor */
+/** Send assist mode command */
 export async function sendAssistMode(mode: number): Promise<boolean> {
-  if (bleMode === 'native') {
-    return capacitorBLEService.sendAssistMode(mode);
-  } else {
-    // Web Bluetooth — local mode only (no GEV access)
-    await giantBLEService.sendAssistMode(mode);
-    return giantBLEService.isConnected() && giantBLEService.isProtoConnected();
+  switch (bleMode) {
+    case 'websocket':
+      wsClient.sendAssistMode(mode);
+      return true;
+    case 'native':
+      return capacitorBLEService.sendAssistMode(mode);
+    case 'web':
+      await giantBLEService.sendAssistMode(mode);
+      return false; // Web BLE can't control motor
   }
 }
 
-/** Check if motor control (GEV/Proto) is available */
+/** Check if motor control is available */
 export function isMotorControlAvailable(): boolean {
-  if (bleMode === 'native') {
-    return capacitorBLEService.isGEVAvailable() || capacitorBLEService.isProtoAvailable();
+  switch (bleMode) {
+    case 'websocket':
+      return wsClient.isConnected;
+    case 'native':
+      return capacitorBLEService.isGEVAvailable() || capacitorBLEService.isProtoAvailable();
+    case 'web':
+      return false;
   }
-  return false;
 }
 
 /** Check if connected to bike */
 export function isBikeConnected(): boolean {
-  if (bleMode === 'native') {
-    return capacitorBLEService.isConnected();
+  switch (bleMode) {
+    case 'websocket':
+      return wsClient.isConnected;
+    case 'native':
+      return capacitorBLEService.isConnected();
+    case 'web':
+      return giantBLEService.isConnected();
   }
-  return giantBLEService.isConnected();
 }
 
 /** Get connected device name */
 export function getDeviceName(): string | null {
-  if (bleMode === 'native') {
-    return capacitorBLEService.getDeviceName();
+  switch (bleMode) {
+    case 'websocket':
+      return null; // Device name comes via WS messages
+    case 'native':
+      return capacitorBLEService.getDeviceName();
+    case 'web':
+      return giantBLEService.getDeviceName();
   }
-  return giantBLEService.getDeviceName();
 }
 
-/** Connect HR monitor (Web BLE only — Capacitor handles via main connection) */
+/** Connect HR (Web BLE only — bridge/native handle via main connection) */
 export async function connectHR(): Promise<void> {
-  if (bleMode === 'web') {
-    await giantBLEService.connectHR();
-  }
+  if (bleMode === 'web') await giantBLEService.connectHR();
 }
 
 /** Connect Di2 (Web BLE only) */
 export async function connectDi2(): Promise<void> {
-  if (bleMode === 'web') {
-    await giantBLEService.connectDi2();
-  }
+  if (bleMode === 'web') await giantBLEService.connectDi2();
 }
 
 /** Disconnect HR */
 export function disconnectHR(): void {
-  if (bleMode === 'web') {
-    giantBLEService.disconnectHR();
-  }
+  if (bleMode === 'web') giantBLEService.disconnectHR();
 }
 
 /** Disconnect Di2 */
 export function disconnectDi2(): void {
-  if (bleMode === 'web') {
-    giantBLEService.disconnectDi2();
-  }
+  if (bleMode === 'web') giantBLEService.disconnectDi2();
 }
 
 /** Get HR device name */
 export function getHRDeviceName(): string | null {
-  if (bleMode === 'web') {
-    return giantBLEService.getHRDeviceName();
-  }
-  return null;
+  return bleMode === 'web' ? giantBLEService.getHRDeviceName() : null;
 }
 
 /** Get Di2 device name */
 export function getDi2DeviceName(): string | null {
-  if (bleMode === 'web') {
-    return giantBLEService.getDi2DeviceName();
+  return bleMode === 'web' ? giantBLEService.getDi2DeviceName() : null;
+}
+
+/** Get current BLE mode description */
+export function getBLEModeDescription(): string {
+  switch (bleMode) {
+    case 'websocket': return 'Bridge (full control)';
+    case 'native': return 'Native (full control)';
+    case 'web': return 'Web BLE (read only)';
   }
-  return null;
 }
