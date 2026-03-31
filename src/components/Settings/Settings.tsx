@@ -1,6 +1,7 @@
 import { useSettingsStore } from '../../store/settingsStore';
 import { useBikeStore } from '../../store/bikeStore';
 import { giantBLEService } from '../../services/bluetooth/GiantBLEService';
+import { ProfileInsightsWidget } from '../Dashboard/ProfileInsightsWidget';
 
 export function Settings() {
   const bleStatus = useBikeStore((s) => s.ble_status);
@@ -109,6 +110,12 @@ export function Settings() {
             onChange={(v) => updateAutoAssist({ override_duration_s: v })}
           />
         </div>
+      </section>
+
+      {/* Athlete Profile Insights */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-gray-300">Perfil Atleta</h2>
+        <ProfileInsightsWidget />
       </section>
 
       {/* Version */}
