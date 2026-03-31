@@ -33,8 +33,14 @@ class BLEManager(private val context: Context) {
         val PROTO_WRITE = UUID.fromString("f0ba5202-6cac-4c99-9089-4b0a1df45002")
         val PROTO_NOTIFY = UUID.fromString("f0ba5203-6cac-4c99-9089-4b0a1df45002")
 
-        // UUID 0x0001 — advertised by Giant SG, possibly auth/gateway service
-        val UNKNOWN_0001_SERVICE = UUID.fromString("00000001-0000-1000-8000-00805f9b34fb")
+        // Giant Smart Gateway proprietary service (advertised as "0001")
+        // Full UUID: 4d500001-4745-5630-3031-e50e24dcca9e (base: 4D50 = "MP")
+        val SG_SERVICE = UUID.fromString("4d500001-4745-5630-3031-e50e24dcca9e")
+        val SG_WRITE   = UUID.fromString("4d500002-4745-5630-3031-e50e24dcca9e")
+        val SG_NOTIFY  = UUID.fromString("4d500003-4745-5630-3031-e50e24dcca9e")
+
+        // Nordic DFU Secure (FE59)
+        val DFU_SERVICE = UUID.fromString("0000fe59-0000-1000-8000-00805f9b34fb")
 
         val DEVICE_INFO_SERVICE = UUID.fromString("0000180a-0000-1000-8000-00805f9b34fb")
         val FIRMWARE_REVISION = UUID.fromString("00002a26-0000-1000-8000-00805f9b34fb")
@@ -51,6 +57,7 @@ class BLEManager(private val context: Context) {
     private var gatt: BluetoothGatt? = null
     private var gevChar: BluetoothGattCharacteristic? = null
     private var protoWriteChar: BluetoothGattCharacteristic? = null
+    private var sgWriteChar: BluetoothGattCharacteristic? = null
     private val handler = Handler(Looper.getMainLooper())
     private val pendingNotifications = mutableListOf<BluetoothGattCharacteristic>()
 
@@ -122,6 +129,12 @@ class BLEManager(private val context: Context) {
     }
 
     fun connectToDevice(device: BluetoothDevice) {
+        // Prevent double connections
+        if (gatt != null) {
+            Log.w(TAG, "Already connected — disconnect first")
+            onStatusChanged?.invoke("Already connected — disconnect first")
+            return
+        }
         Log.i(TAG, "Connecting to ${device.name} (${device.address}) bond:${device.bondState}")
         onStatusChanged?.invoke("Connecting to ${device.name}...")
         connectGatt(device)
@@ -139,6 +152,7 @@ class BLEManager(private val context: Context) {
         gatt = null
         gevChar = null
         protoWriteChar = null
+        sgWriteChar = null
         onDataReceived?.invoke(JSONObject().put("type", "disconnected"))
         onStatusChanged?.invoke("Disconnected")
     }
@@ -162,6 +176,7 @@ class BLEManager(private val context: Context) {
                     gatt = null
                     gevChar = null
                     protoWriteChar = null
+                    sgWriteChar = null
                     onDataReceived?.invoke(JSONObject().put("type", "disconnected"))
                     onStatusChanged?.invoke("Disconnected")
                 }
@@ -272,21 +287,37 @@ class BLEManager(private val context: Context) {
                 pendingNotifications.add(char)
             } ?: services.put("hr", false)
 
+            // Smart Gateway proprietary service (4d500001)
+            g.getService(SG_SERVICE)?.let { service ->
+                services.put("sg", true)
+                Log.i(TAG, "★★★ SMART GATEWAY SERVICE FOUND (4d500001)! ★★★")
+                service.getCharacteristic(SG_WRITE)?.let {
+                    sgWriteChar = it
+                    Log.i(TAG, "★ SG Write char available (WRITE_NO_RSP|WRITE)")
+                }
+                service.getCharacteristic(SG_NOTIFY)?.let { char ->
+                    pendingNotifications.add(char)
+                    Log.i(TAG, "★ SG Notify char — subscribing")
+                }
+            } ?: services.put("sg", false)
+
             onDataReceived?.invoke(JSONObject().put("type", "services").put("data", services))
 
-            // Explore UUID 0x0001 service (and any other unknown services)
+            // Explore any remaining unknown services (not SG, not standard)
+            val knownServices = setOf(
+                BATTERY_SERVICE, CSC_SERVICE, POWER_SERVICE, HR_SERVICE,
+                DEVICE_INFO_SERVICE, GEV_SERVICE, PROTO_SERVICE, SG_SERVICE, DFU_SERVICE,
+                UUID.fromString("00001800-0000-1000-8000-00805f9b34fb"),  // GAP
+                UUID.fromString("00001801-0000-1000-8000-00805f9b34fb")   // GATT
+            )
             for (service in g.services) {
-                val svcShort = service.uuid.toString().substring(4, 8).uppercase()
-                val known = setOf("180F", "1816", "1818", "180D", "180A", "1800", "1801")
-                val isGev = service.uuid == GEV_SERVICE || service.uuid == PROTO_SERVICE
-                if (svcShort !in known && !isGev) {
-                    Log.i(TAG, ">>> EXPLORING unknown service: ${service.uuid} [$svcShort] <<<")
+                if (service.uuid !in knownServices) {
+                    Log.i(TAG, ">>> EXPLORING unknown service: ${service.uuid} <<<")
                     for (char in service.characteristics) {
                         val readable = (char.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0
                         if (readable) {
                             pendingReads.add(char)
                         }
-                        // Subscribe to notifiable characteristics
                         val notifiable = (char.properties and
                             (BluetoothGattCharacteristic.PROPERTY_NOTIFY or BluetoothGattCharacteristic.PROPERTY_INDICATE)) != 0
                         if (notifiable) {
@@ -372,8 +403,9 @@ class BLEManager(private val context: Context) {
 
         override fun onCharacteristicChanged(g: BluetoothGatt, char: BluetoothGattCharacteristic) {
             val cShort = char.uuid.toString().substring(4, 8).uppercase()
-            val known = setOf("2A19", "2A5B", "2A63", "2A37")
-            if (cShort !in known) {
+            val knownChars = setOf("2A19", "2A5B", "2A63", "2A37")
+            val isSG = char.uuid == SG_NOTIFY
+            if (cShort !in knownChars && !isSG) {
                 val hex = char.value?.joinToString("") { "%02x".format(it) } ?: ""
                 Log.i(TAG, ">>> NOTIFY [$cShort] ${char.uuid}: hex=$hex len=${char.value?.size ?: 0}")
                 onDataReceived?.invoke(JSONObject()
@@ -437,6 +469,16 @@ class BLEManager(private val context: Context) {
                 PROTO_NOTIFY -> {
                     val hex = data.joinToString("") { "%02x".format(it) }
                     onDataReceived?.invoke(JSONObject().put("type", "protoRaw").put("hex", hex))
+                }
+                SG_NOTIFY -> {
+                    val hex = data.joinToString("") { "%02x".format(it) }
+                    val ascii = String(data.filter { it in 0x20..0x7E }.toByteArray())
+                    Log.i(TAG, "★ SG NOTIFY: hex=$hex ascii=\"$ascii\" len=${data.size}")
+                    onDataReceived?.invoke(JSONObject()
+                        .put("type", "sgNotify")
+                        .put("hex", hex)
+                        .put("ascii", ascii)
+                        .put("size", data.size))
                 }
             }
         } catch (e: Exception) {

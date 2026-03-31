@@ -159,7 +159,7 @@ class MainActivity : AppCompatActivity() {
             "disconnected" -> appendLog("BLE", "Disconnected")
             "services" -> {
                 val d = json.optJSONObject("data") ?: return
-                val s = listOf("battery", "csc", "power", "gev", "proto", "hr")
+                val s = listOf("battery", "csc", "power", "sg", "gev", "proto", "hr")
                     .joinToString(" ") { k ->
                         val v = if (d.optBoolean(k)) "✅" else "❌"
                         "${k.take(3).uppercase()}:$v"
@@ -195,6 +195,7 @@ class MainActivity : AppCompatActivity() {
             "charRead" -> appendLog("RD", "[${json.optString("short")}] hex=${json.optString("hex")} ascii=\"${json.optString("ascii")}\" len=${json.optInt("size")}")
             "charReadFail" -> appendLog("RD!", "[${json.optString("short")}] FAILED status=${json.optInt("status")}")
             "unknownNotify" -> appendLog("NTF", "[${json.optString("short")}] hex=${json.optString("hex")} len=${json.optInt("size")}")
+            "sgNotify" -> appendLog("SG!", "hex=${json.optString("hex")} ascii=\"${json.optString("ascii")}\" len=${json.optInt("size")}")
             "barometer" -> updateSensor("Baro", "${json.optDouble("pressure").toInt()}hPa/${json.optDouble("altitude").toInt()}m")
             "light" -> updateSensor("Light", "${json.optDouble("lux").toInt()}lux")
             "accel" -> updateSensor("Lean", "${json.optDouble("lean").toInt()}°")

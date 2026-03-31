@@ -92,7 +92,7 @@
         android:id="@+id/servicesText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Bat:- CSC:- Pwr:- GEV:- Proto:- HR:-"
+        android:text="Bat:- CSC:- Pwr:- SG:- GEV:- Proto:- HR:-"
         android:textSize="12sp"
         android:textColor="#6B7280"
         android:paddingHorizontal="12dp"
