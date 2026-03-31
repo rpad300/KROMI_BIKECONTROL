@@ -1,18 +1,26 @@
 import { useState } from 'react';
 import { Dashboard } from './components/Dashboard/Dashboard';
+import { MapView } from './components/Map/MapView';
 import { Settings } from './components/Settings/Settings';
 import { ConnectionStatus } from './components/shared/ConnectionStatus';
+import { useGeolocation } from './hooks/useGeolocation';
+import { useAutoAssist } from './hooks/useAutoAssist';
 
 type Screen = 'dashboard' | 'map' | 'settings';
 
 export function App() {
   const [screen, setScreen] = useState<Screen>('dashboard');
 
+  // Global hooks — GPS + auto-assist run regardless of active screen
+  useGeolocation();
+  useAutoAssist();
+
   return (
     <div className="h-full flex flex-col bg-gray-950 text-white">
       {/* Main content */}
       <div className="flex-1 overflow-y-auto">
         {screen === 'dashboard' && <Dashboard />}
+        {screen === 'map' && <MapView />}
         {screen === 'settings' && <Settings />}
       </div>
 

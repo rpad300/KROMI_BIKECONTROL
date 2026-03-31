@@ -2,10 +2,13 @@ import { SpeedDisplay } from './SpeedDisplay';
 import { BatteryWidget } from './BatteryWidget';
 import { PowerCadenceWidget } from './PowerCadenceWidget';
 import { AssistModeWidget } from './AssistModeWidget';
+import { ElevationProfile } from './ElevationProfile';
+import { AutoAssistWidget } from './AutoAssistWidget';
 import { useBikeStore } from '../../store/bikeStore';
+import { useMapStore } from '../../store/mapStore';
 
 export function Dashboard() {
-  const bleStatus = useBikeStore((s) => s.ble_status);
+  const gpsActive = useMapStore((s) => s.gpsActive);
 
   return (
     <div className="flex flex-col gap-3 p-3 pb-1">
@@ -24,12 +27,11 @@ export function Dashboard() {
       {/* Assist mode buttons */}
       <AssistModeWidget />
 
-      {/* Elevation profile placeholder - Phase 2 */}
-      {bleStatus === 'connected' && (
-        <div className="bg-gray-800 rounded-xl p-3 h-20 flex items-center justify-center">
-          <span className="text-gray-500 text-sm">Perfil elevacao (Fase 2)</span>
-        </div>
-      )}
+      {/* Elevation profile (needs GPS) */}
+      {gpsActive && <ElevationProfile />}
+
+      {/* Auto-assist status */}
+      <AutoAssistWidget />
     </div>
   );
 }
@@ -37,6 +39,7 @@ export function Dashboard() {
 function StatusBar() {
   const bleStatus = useBikeStore((s) => s.ble_status);
   const battery = useBikeStore((s) => s.battery_percent);
+  const gpsActive = useMapStore((s) => s.gpsActive);
 
   const now = new Date();
   const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
@@ -53,6 +56,9 @@ function StatusBar() {
       <div className="flex items-center gap-3">
         <span className={bleIndicator[bleStatus]}>
           {bleStatus === 'connected' ? '● BLE' : '○ BLE'}
+        </span>
+        <span className={gpsActive ? 'text-green-400' : 'text-gray-600'}>
+          {gpsActive ? '● GPS' : '○ GPS'}
         </span>
       </div>
       <div className="flex items-center gap-3">
