@@ -7,6 +7,7 @@ import { AutoAssistWidget } from './AutoAssistWidget';
 import { HRWidget } from './HRWidget';
 import { GearWidget } from './GearWidget';
 import { TorqueWidget } from './TorqueWidget';
+import { RideSessionWidget } from './RideSessionWidget';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 
@@ -44,6 +45,9 @@ export function Dashboard() {
 
       {/* Torque control */}
       <TorqueWidget />
+
+      {/* Ride session start/stop */}
+      <RideSessionWidget />
     </div>
   );
 }
