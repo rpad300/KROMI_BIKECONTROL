@@ -34,7 +34,20 @@
             android:paddingVertical="2dp"/>
     </LinearLayout>
 
-    <!-- Connect + Disconnect + Unbond row -->
+    <!-- SCAN — big prominent button -->
+    <Button
+        android:id="@+id/connectBtn"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_marginHorizontal="12dp"
+        android:layout_marginBottom="8dp"
+        android:text="SCAN FOR DEVICES"
+        android:textSize="20sp"
+        android:backgroundTint="#00E676"
+        android:textColor="#000000"
+        android:textStyle="bold"/>
+
+    <!-- Disconnect + Unbond row -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -43,37 +56,25 @@
         android:paddingBottom="8dp">
 
         <Button
-            android:id="@+id/connectBtn"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
-            android:text="SCAN"
-            android:textSize="14sp"
-            android:backgroundTint="#00E676"
-            android:textColor="#000000"
-            android:textStyle="bold"
-            android:layout_marginEnd="4dp"/>
-
-        <Button
             android:id="@+id/disconnectBtn"
             android:layout_width="0dp"
-            android:layout_height="48dp"
+            android:layout_height="40dp"
             android:layout_weight="1"
             android:text="DISCONNECT"
-            android:textSize="14sp"
+            android:textSize="12sp"
             android:backgroundTint="#EF4444"
             android:textColor="#FFFFFF"
             android:layout_marginEnd="4dp"/>
 
         <Button
             android:id="@+id/unbondBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="48dp"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
             android:text="UNBOND"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:backgroundTint="#374151"
-            android:textColor="#F59E0B"
-            android:minWidth="70dp"/>
+            android:textColor="#F59E0B"/>
     </LinearLayout>
 
     <!-- Status -->
