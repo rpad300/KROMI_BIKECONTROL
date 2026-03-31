@@ -66,9 +66,8 @@ class BLEManager(private val context: Context) {
     private var totalDistance = 0.0
     private val wheelCircumference = 2.290
 
-    // Queues for reading unknown characteristics (0x0001 exploration)
+    // Serial GATT operation queues
     private val pendingReads = mutableListOf<BluetoothGattCharacteristic>()
-    private var isExploring0x0001 = false
     private var hasRediscovered = false
 
     val isConnected: Boolean get() = gatt != null
@@ -315,46 +314,45 @@ class BLEManager(private val context: Context) {
 
             onDataReceived?.invoke(JSONObject().put("type", "services").put("data", services))
 
-            // Explore any remaining unknown services (not SG, not standard)
+            // Queue Device Info reads (serialized via pendingReads)
+            g.getService(DEVICE_INFO_SERVICE)?.let { svc ->
+                for (char in svc.characteristics) {
+                    if (char.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0) {
+                        pendingReads.add(char)
+                    }
+                }
+            }
+
+            // Queue Battery read
+            g.getService(BATTERY_SERVICE)?.getCharacteristic(BATTERY_LEVEL)?.let {
+                pendingReads.add(it)
+            }
+
+            // Queue reads from unknown services
             val knownServices = setOf(
                 BATTERY_SERVICE, CSC_SERVICE, POWER_SERVICE, HR_SERVICE,
                 DEVICE_INFO_SERVICE, GEV_SERVICE, PROTO_SERVICE, SG_SERVICE, DFU_SERVICE,
-                UUID.fromString("00001800-0000-1000-8000-00805f9b34fb"),  // GAP
-                UUID.fromString("00001801-0000-1000-8000-00805f9b34fb")   // GATT
+                UUID.fromString("00001800-0000-1000-8000-00805f9b34fb"),
+                UUID.fromString("00001801-0000-1000-8000-00805f9b34fb")
             )
             for (service in g.services) {
                 if (service.uuid !in knownServices) {
                     Log.i(TAG, ">>> EXPLORING unknown service: ${service.uuid} <<<")
                     for (char in service.characteristics) {
-                        val readable = (char.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0
-                        if (readable) {
+                        if (char.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0) {
                             pendingReads.add(char)
                         }
-                        val notifiable = (char.properties and
-                            (BluetoothGattCharacteristic.PROPERTY_NOTIFY or BluetoothGattCharacteristic.PROPERTY_INDICATE)) != 0
-                        if (notifiable) {
+                        if (char.properties and (BluetoothGattCharacteristic.PROPERTY_NOTIFY or BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
                             pendingNotifications.add(char)
-                            Log.i(TAG, ">>> Will subscribe to: ${char.uuid}")
                         }
                     }
                 }
             }
 
-            isExploring0x0001 = pendingReads.isNotEmpty()
+            Log.i(TAG, ">>> Queue: ${pendingReads.size} reads, ${pendingNotifications.size} notifications")
 
-            // Device Information Service (0x180A)
-            readDeviceInfo(g)
-
-            // Start reading unknown chars first, then enable notifications
-            if (pendingReads.isNotEmpty()) {
-                Log.i(TAG, ">>> Reading ${pendingReads.size} unknown characteristics...")
-                readNextUnknown(g)
-            } else {
-                // Read battery first, then start notifications
-                g.getService(BATTERY_SERVICE)?.getCharacteristic(BATTERY_LEVEL)?.let {
-                    g.readCharacteristic(it)
-                } ?: enableNextNotification(g)
-            }
+            // Start serial read chain → then notifications
+            processNextRead(g)
         }
 
         override fun onCharacteristicRead(g: BluetoothGatt, char: BluetoothGattCharacteristic, status: Int) {
@@ -365,7 +363,7 @@ class BLEManager(private val context: Context) {
             } ?: ""
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                Log.i(TAG, ">>> READ [$cShort] ${char.uuid}: hex=$hex ascii=\"$ascii\" len=${char.value?.size ?: 0}")
+                Log.i(TAG, "READ [$cShort]: hex=$hex ascii=\"$ascii\" len=${char.value?.size ?: 0}")
                 onDataReceived?.invoke(JSONObject()
                     .put("type", "charRead")
                     .put("uuid", char.uuid.toString())
@@ -375,42 +373,11 @@ class BLEManager(private val context: Context) {
                     .put("size", char.value?.size ?: 0))
                 handleCharacteristicData(char)
             } else {
-                Log.w(TAG, ">>> READ FAILED [$cShort] ${char.uuid}: status=$status")
-                onDataReceived?.invoke(JSONObject()
-                    .put("type", "charReadFail")
-                    .put("uuid", char.uuid.toString())
-                    .put("short", cShort)
-                    .put("status", status))
+                Log.w(TAG, "READ FAILED [$cShort]: status=$status")
             }
 
-            // Continue reading unknown chars, or move to notifications
-            if (isExploring0x0001) {
-                if (pendingReads.isNotEmpty()) {
-                    handler.postDelayed({ readNextUnknown(g) }, 100)
-                } else {
-                    isExploring0x0001 = false
-                    Log.i(TAG, ">>> 0x0001 exploration complete")
-
-                    // Re-discover services to see if new ones appeared
-                    if (!hasRediscovered) {
-                        hasRediscovered = true
-                        Log.i(TAG, ">>> Triggering service RE-DISCOVERY...")
-                        onStatusChanged?.invoke("Re-discovering services...")
-                        handler.postDelayed({ g.discoverServices() }, 500)
-                    } else {
-                        // Already rediscovered — start notifications
-                        g.getService(BATTERY_SERVICE)?.getCharacteristic(BATTERY_LEVEL)?.let {
-                            g.readCharacteristic(it)
-                        } ?: enableNextNotification(g)
-                    }
-                }
-                return
-            }
-
-            // Normal flow: after battery read, start notifications
-            if (char.uuid == BATTERY_LEVEL) {
-                enableNextNotification(g)
-            }
+            // Chain: next read, or start notifications
+            handler.postDelayed({ processNextRead(g) }, 50)
         }
 
         override fun onCharacteristicChanged(g: BluetoothGatt, char: BluetoothGattCharacteristic) {
@@ -498,28 +465,7 @@ class BLEManager(private val context: Context) {
         }
     }
 
-    private fun readDeviceInfo(g: BluetoothGatt) {
-        val service = g.getService(DEVICE_INFO_SERVICE) ?: return
-        val info = JSONObject().put("type", "deviceInfo")
-
-        fun readString(uuid: UUID): String? {
-            return try {
-                val char = service.getCharacteristic(uuid) ?: return null
-                g.readCharacteristic(char)
-                char.getStringValue(0)
-            } catch (_: Exception) { null }
-        }
-
-        val fw = readString(FIRMWARE_REVISION) ?: ""
-        val hw = readString(HARDWARE_REVISION) ?: ""
-        val sw = readString(SOFTWARE_REVISION) ?: ""
-
-        info.put("firmware", fw)
-        info.put("hardware", hw)
-        info.put("software", sw)
-        onDataReceived?.invoke(info)
-        Log.i(TAG, "Device Info — FW: $fw, HW: $hw, SW: $sw")
-    }
+    // DeviceInfo reads are serialized via pendingReads queue — no separate method needed
 
     private fun parseCSC(data: ByteArray) {
         if (data.size < 7) return
@@ -599,12 +545,17 @@ class BLEManager(private val context: Context) {
         }
     }
 
-    private fun readNextUnknown(g: BluetoothGatt) {
-        if (pendingReads.isEmpty()) return
-        val char = pendingReads.removeAt(0)
-        val cShort = char.uuid.toString().substring(4, 8).uppercase()
-        Log.i(TAG, ">>> Reading unknown char [$cShort] ${char.uuid}...")
-        g.readCharacteristic(char)
+    private fun processNextRead(g: BluetoothGatt) {
+        if (pendingReads.isNotEmpty()) {
+            val char = pendingReads.removeAt(0)
+            val cShort = char.uuid.toString().substring(4, 8).uppercase()
+            Log.i(TAG, "Reading [$cShort]... (${pendingReads.size} remaining)")
+            g.readCharacteristic(char)
+        } else {
+            // All reads done → start notification subscriptions
+            Log.i(TAG, "All reads done → enabling ${pendingNotifications.size} notifications...")
+            enableNextNotification(g)
+        }
     }
 
     private fun describeProperties(props: Int): String {
