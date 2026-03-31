@@ -8,3 +8,21 @@ html, body, #root {
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
+
+/* Adaptive brightness — night mode (red tints, preserves night vision) */
+html.night-mode {
+  filter: var(--brightness-filter, brightness(0.6));
+}
+html.night-mode .text-emerald-400 { color: #ff6666 !important; }
+html.night-mode .bg-emerald-500 { background-color: #cc3333 !important; }
+html.night-mode .border-emerald-500\/30 { border-color: rgba(204, 51, 51, 0.3) !important; }
+html.night-mode .text-white { color: #cc8888 !important; }
+
+/* Adaptive brightness — high contrast (maximum visibility in sunlight) */
+html.high-contrast-mode {
+  filter: var(--brightness-filter, brightness(1.2));
+}
+html.high-contrast-mode .text-gray-400 { color: #cccccc !important; }
+html.high-contrast-mode .text-gray-500 { color: #aaaaaa !important; }
+html.high-contrast-mode .bg-gray-800 { background-color: #000000 !important; }
+html.high-contrast-mode .bg-gray-950 { background-color: #000000 !important; }

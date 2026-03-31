@@ -43,10 +43,12 @@ class PhoneSensorService(
     private var accelerometerSensor: Sensor? = null
     private var gyroscopeSensor: Sensor? = null
     private var temperatureSensor: Sensor? = null
+    private var lightSensor: Sensor? = null
 
     private var lastAccelSendMs = 0L
     private var lastBaroSendMs = 0L
     private var lastTempSendMs = 0L
+    private var lastLightSendMs = 0L
 
     private var running = false
 
@@ -55,6 +57,7 @@ class PhoneSensorService(
     var hasAccelerometer = false; private set
     var hasGyroscope = false; private set
     var hasTemperature = false; private set
+    var hasLight = false; private set
 
     fun start() {
         if (running) return
@@ -64,11 +67,13 @@ class PhoneSensorService(
         accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         gyroscopeSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
         temperatureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_AMBIENT_TEMPERATURE)
+        lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
 
         hasBarometer = barometerSensor != null
         hasAccelerometer = accelerometerSensor != null
         hasGyroscope = gyroscopeSensor != null
         hasTemperature = temperatureSensor != null
+        hasLight = lightSensor != null
 
         // Register with appropriate delays
         barometerSensor?.let {
@@ -86,6 +91,10 @@ class PhoneSensorService(
         temperatureSensor?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
             Log.i(TAG, "Ambient temperature registered")
+        }
+        lightSensor?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
+            Log.i(TAG, "Light sensor registered")
         }
 
         Log.i(TAG, "Sensors started — baro=$hasBarometer accel=$hasAccelerometer gyro=$hasGyroscope temp=$hasTemperature")
@@ -166,6 +175,18 @@ class PhoneSensorService(
                 val json = JSONObject().apply {
                     put("type", "temperature")
                     put("value", roundTo(event.values[0].toDouble(), 1))
+                }
+                onData(json)
+            }
+
+            Sensor.TYPE_LIGHT -> {
+                if (now - lastLightSendMs < BARO_MIN_INTERVAL_MS) return
+                lastLightSendMs = now
+
+                val lux = event.values[0].toDouble()
+                val json = JSONObject().apply {
+                    put("type", "light")
+                    put("lux", roundTo(lux, 0))
                 }
                 onData(json)
             }

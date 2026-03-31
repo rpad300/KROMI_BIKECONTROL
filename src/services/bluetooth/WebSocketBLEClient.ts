@@ -194,6 +194,13 @@ class WebSocketBLEClient {
           }
           break;
 
+        case 'light':
+          // Forward to AdaptiveBrightnessService for dynamic theme
+          import('../sensors/AdaptiveBrightnessService').then(({ adaptiveBrightnessService }) => {
+            adaptiveBrightnessService.updateLux(msg.lux);
+          });
+          break;
+
         case 'gevRaw':
         case 'protoRaw':
           // Raw data for debugging — logged but not processed here
