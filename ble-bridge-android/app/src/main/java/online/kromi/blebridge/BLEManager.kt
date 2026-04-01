@@ -669,7 +669,21 @@ class BLEManager(private val context: Context) {
                                             .put("soc", batSoc))
                                     }
                                 }
-                                // cmd 0x41: motor/assist state, log only
+                                0x41 -> {
+                                    // MOTOR/ASSIST STATE — track byte[14] as potential assist level
+                                    val assistLvl = data[14].toInt() and 0xFF
+                                    val b5 = data[5].toInt() and 0xFF
+                                    val b7 = data[7].toInt() and 0xFF
+                                    if (now - fc23LogTimes.getOrDefault("cmd41", 0L) > 2000) {
+                                        fc23LogTimes["cmd41"] = now
+                                        Log.i(TAG, "CMD41: assist?=%d b5=%02X b7=%02X".format(assistLvl, b5, b7))
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "fc23cmd41")
+                                            .put("assistLevel", assistLvl)
+                                            .put("b5", b5)
+                                            .put("b7", b7))
+                                    }
+                                }
                             }
                         }
                         0x22 -> {
@@ -722,6 +736,13 @@ class BLEManager(private val context: Context) {
                                     }
                                     0x1B -> {
                                         // READ_RIDING_DATA response — accumulate bytes[2..15] (14 bytes)
+                                        // Log FULL decrypted block to check for framing issues
+                                        val fullDec = dec.joinToString(" ") { "%02X".format(it) }
+                                        Log.i(TAG, "★ RIDE_FC21 full: $fullDec")
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "fc21RideRaw")
+                                            .put("hex", fullDec)
+                                            .put("chunk", rideDataAccum.size / 14 + 1))
                                         if (rideDataPending) {
                                             val chunk = dec.copyOfRange(2, 16)
                                             for (b in chunk) rideDataAccum.add(b)
