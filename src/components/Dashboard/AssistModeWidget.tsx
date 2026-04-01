@@ -2,12 +2,14 @@ import { useBikeStore } from '../../store/bikeStore';
 import { AssistMode, ASSIST_MODE_LABELS, ASSIST_MODE_COLORS } from '../../types/bike.types';
 
 // Physical RideControl order on Trance X E+ 2 (2023)
+// SMART is startup-only (not in UP/DOWN cycle)
 const ALL_MODES = [
   AssistMode.ECO,
   AssistMode.TOUR,
   AssistMode.ACTIVE,
   AssistMode.SPORT,
   AssistMode.POWER,
+  AssistMode.SMART,
 ] as const;
 
 /**
@@ -20,7 +22,7 @@ const ALL_MODES = [
 export function AssistModeWidget() {
   const assistMode = useBikeStore((s) => s.assist_mode);
   const bleConnected = useBikeStore((s) => s.ble_status === 'connected');
-  const kromiActive = assistMode === AssistMode.POWER;
+  const kromiActive = assistMode === AssistMode.POWER || assistMode === AssistMode.SMART;
 
   return (
     <div className="space-y-1.5">

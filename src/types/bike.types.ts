@@ -8,7 +8,7 @@ export enum AssistMode {
   ACTIVE = 3,
   SPORT = 4,
   POWER = 5,
-  WALK = 6,
+  SMART = 6,  // Startup default — SyncDrive Pro smart assist, not in UP/DOWN cycle
 }
 
 export const ASSIST_MODE_LABELS: Record<AssistMode, string> = {
@@ -18,7 +18,7 @@ export const ASSIST_MODE_LABELS: Record<AssistMode, string> = {
   [AssistMode.ACTIVE]: 'ACTIVE',
   [AssistMode.SPORT]: 'SPORT',
   [AssistMode.POWER]: 'PWR',
-  [AssistMode.WALK]: 'WALK',
+  [AssistMode.SMART]: 'SMART',
 };
 
 export const ASSIST_MODE_COLORS: Record<AssistMode, string> = {
@@ -28,7 +28,7 @@ export const ASSIST_MODE_COLORS: Record<AssistMode, string> = {
   [AssistMode.ACTIVE]: 'bg-orange-500',
   [AssistMode.SPORT]: 'bg-yellow-600',
   [AssistMode.POWER]: 'bg-red-600',
-  [AssistMode.WALK]: 'bg-cyan-600',
+  [AssistMode.SMART]: 'bg-purple-600',
 };
 
 // === CSC (Cycling Speed and Cadence) ===

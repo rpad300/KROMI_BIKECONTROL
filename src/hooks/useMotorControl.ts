@@ -46,8 +46,8 @@ export function useMotorControl() {
 
       const bike = useBikeStore.getState();
 
-      // === KROMI only active in POWER mode ===
-      if (bike.assist_mode !== AssistMode.POWER) {
+      // === KROMI only active in POWER or SMART mode ===
+      if (bike.assist_mode !== AssistMode.POWER && bike.assist_mode !== AssistMode.SMART) {
         // Passive: update UI state but don't send commands
         useAutoAssistStore.getState().setLastDecision({
           action: 'none',

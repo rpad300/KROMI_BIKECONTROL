@@ -61,12 +61,12 @@ function torqueCommandToTuning(
   // Only change the active mode's level — leave others untouched
   const modeMap: Record<number, TuningMode | null> = {
     [AssistMode.POWER]: 'power',
+    [AssistMode.SMART]: 'power',  // SMART startup uses POWER tuning
     [AssistMode.SPORT]: 'sport',
     [AssistMode.ACTIVE]: 'active',
     [AssistMode.TOUR]: 'tour',
     [AssistMode.ECO]: 'eco',
     [AssistMode.OFF]: null,
-    [AssistMode.WALK]: null,
   };
 
   const tuningMode = modeMap[activeMode];
