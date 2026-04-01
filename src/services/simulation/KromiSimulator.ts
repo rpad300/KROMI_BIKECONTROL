@@ -106,7 +106,6 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
   const points: SimulationPoint[] = [];
   let prevAlt: number | null = null;
   let currentLevel: 1 | 2 | 3 = 2;
-  const levelHistory: (1 | 2 | 3)[] = [];
   let levelChanges = 0;
   let batteryWh = totalWh;
   let batteryFixedWh = totalWh;
@@ -116,6 +115,12 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
   let scoreSum = 0;
   let maxScore = 0;
   let countMax = 0, countMid = 0, countMin = 0, countActive = 0;
+
+  // Smoothing state — prevents oscillation, gives time for HR to react
+  let smoothedScore = 30;          // EMA of score (starts at neutral)
+  let lastLevelChangeElapsed = 0;  // elapsed_s of last level change
+  const HOLD_TIME_S = 15;          // minimum seconds between level changes
+  const EMA_ALPHA = 0.15;          // smoothing factor (lower = slower reaction)
 
   for (let i = 0; i < records.length; i++) {
     const r = records[i]!;
@@ -203,7 +208,26 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
       anticipation -= Math.round(((r.speed_kmh - speedPenaltyStart) / (range || 1)) * 25);
     }
 
-    // Scale by rider comfort (Option B)
+    // === CONTEXT OVERRIDE: speed increasing or downhill → reduce assist ===
+    // If speed is rising, rider doesn't need help (even if HR is high from adrenaline)
+    let contextPenalty = 0;
+    if (speedHist.length >= 3) {
+      const speedDelta = r.speed_kmh - speedHist[0]!;
+      // Speed increasing >3 km/h over last samples → reduce assist proportionally
+      if (speedDelta > 3 && r.speed_kmh > 15) {
+        contextPenalty -= Math.min(20, Math.round(speedDelta * 2));
+      }
+    }
+    // Downhill: gradient negative → motor not needed, scale by steepness
+    if (gradient < -2) {
+      contextPenalty -= Math.min(30, Math.round(Math.abs(gradient) * 3));
+    }
+    // Above speed limit: motor off
+    if (r.speed_kmh > bike.speed_limit_kmh) {
+      contextPenalty = -100;
+    }
+
+    // Scale anticipation by rider comfort
     if (hasHR) {
       let anticipationScale = 0.3;
       if (r.hr_bpm > targetZone.max_bpm) {
@@ -229,21 +253,24 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
 
     // === COMBINE: layered ===
     const stoppedPenalty = r.speed_kmh < 2 ? -20 : 0;
-    const rawScore = Math.max(0, Math.min(100, hrTarget + anticipation + stoppedPenalty));
-    const score = Math.round(rawScore * batteryMod);
+    const rawScore = Math.max(0, Math.min(100, hrTarget + anticipation + contextPenalty + stoppedPenalty));
+    const instantScore = Math.round(rawScore * batteryMod);
 
-    // Display level for summary stats (which "zone" the score falls in)
-    const displayLevel: 1 | 2 | 3 = score > 62 ? 1 : score > 38 ? 2 : 3;
+    // === SMOOTHING: EMA prevents oscillation, gives time for HR to react ===
+    smoothedScore = smoothedScore + EMA_ALPHA * (instantScore - smoothedScore);
+    const score = Math.round(smoothedScore);
 
-    // Detect level changes for stats (with 3-frame hysteresis)
-    levelHistory.push(displayLevel);
-    if (levelHistory.length > 3) levelHistory.shift();
-    if (levelHistory.length >= 3 && levelHistory.every((l) => l === levelHistory[0])) {
-      if (currentLevel !== levelHistory[0]!) { levelChanges++; currentLevel = levelHistory[0]!; }
+    // Display level for summary stats
+    const targetLevel: 1 | 2 | 3 = score > 62 ? 1 : score > 38 ? 2 : 3;
+
+    // Level changes: only if held long enough (HOLD_TIME_S minimum)
+    if (targetLevel !== currentLevel && (r.elapsed_s - lastLevelChangeElapsed) >= HOLD_TIME_S) {
+      levelChanges++;
+      currentLevel = targetLevel;
+      lastLevelChangeElapsed = r.elapsed_s;
     }
 
-    // === INTERPOLATE ASMO VALUES from continuous score ===
-    // score 0 → MIN specs, score 50 → MID specs, score 100 → MAX specs
+    // === INTERPOLATE ASMO VALUES from smoothed score ===
     const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
     const asmo = score <= 50
       ? {
