@@ -4,6 +4,7 @@ import { useBikeStore } from '../../store/bikeStore';
 import { useAuthStore } from '../../store/authStore';
 import { connectBike, disconnectBike } from '../../services/bluetooth/BLEBridge';
 import { ProfileInsightsWidget } from '../Dashboard/ProfileInsightsWidget';
+import { TuningPreview } from './TuningPreview';
 import { importKomootRoute } from '../../services/maps/KomootService';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
@@ -177,6 +178,9 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
               </div>
             );
           })}
+
+          {/* Live preview of tuning impact */}
+          <TuningPreview />
         </div>
       </section>
 
