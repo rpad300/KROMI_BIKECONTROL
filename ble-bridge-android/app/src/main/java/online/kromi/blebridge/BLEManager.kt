@@ -766,16 +766,15 @@ class BLEManager(private val context: Context) {
      * Phase 3: Mode change attempts
      */
     /**
-     * b13: Based on nRF Connect capture analysis.
+     * b18: PROTOCOL CRACKED from jadx decompilation of RideControl v1.33.
      *
-     * DISCOVERIES:
-     * - Checksum is XOR (not sum!)
-     * - Device 0x23 = plaintext telemetry, 0x22 = heartbeat, 0x21 = AES encrypted
-     * - Format: [FC][device][len][cmd][payload][XOR_checksum]
-     * - SG sends data spontaneously (FC23 packets) — we weren't receiving them
-     * - FC 22 00 DE = heartbeat/keepalive
-     *
-     * This test: send heartbeat + correct-format queries + start a heartbeat timer
+     * KEY FINDINGS:
+     * - APP→SG starts with 0xFB (not 0xFC!)
+     * - 0xFC is for SG→APP responses
+     * - CONNECT_GEV: [FB,21,AES(02,00,zeros,key0),keyIdx=0,XOR_CRC] = 20 bytes
+     * - enableRidingNotification: [FB,22,01,CRC] = 4 bytes → triggers FC23 telemetry
+     * - CRC = XOR of all preceding bytes
+     * - ASSIST_UP: [FB,21,AES(1C,03,02,00,00,zeros,key3),keyIdx=3,CRC]
      */
     fun testSGWrite() {
         val g = gatt ?: return
@@ -787,29 +786,64 @@ class BLEManager(private val context: Context) {
 
         val tests = mutableListOf<Pair<String, ByteArray>>()
 
-        // Heartbeat — FC 22 00 DE (from nRF capture, sent periodically by RideControl)
-        tests.add("HEARTBEAT" to byteArrayOf(0xFC.toByte(), 0x22, 0x00, 0xDE.toByte()))
+        // === STEP 1: CONNECT_GEV ===
+        // Plaintext: [0x02, 0x00, zeros×14] = 16 bytes
+        // Encrypt with key 0, packet: [FB, 21, AES(16), keyIdx=0, CRC]
+        val connectPlain = ByteArray(16).also { it[0] = 0x02; it[1] = 0x00 }
+        val connectEnc = GEVCrypto.encrypt(connectPlain, 0)
+        val connectPkt = ByteArray(20)
+        connectPkt[0] = 0xFB.toByte()
+        connectPkt[1] = 0x21
+        System.arraycopy(connectEnc, 0, connectPkt, 2, 16)
+        connectPkt[18] = 0x00  // key index
+        var xor = 0; for (i in 0..18) xor = xor xor (connectPkt[i].toInt() and 0xFF)
+        connectPkt[19] = xor.toByte()
+        tests.add("CONNECT_GEV" to connectPkt)
 
-        // Query with device 0x23 (plaintext) + XOR checksum
-        tests.add("D23_CMD40" to buildSGPacket(0x23, 0x40, byteArrayOf()))
-        tests.add("D23_CMD41" to buildSGPacket(0x23, 0x41, byteArrayOf()))
-        tests.add("D23_CMD42" to buildSGPacket(0x23, 0x42, byteArrayOf()))
-        tests.add("D23_CMD43" to buildSGPacket(0x23, 0x43, byteArrayOf()))
+        // === STEP 2: enableRidingNotification ===
+        // [FB, 22, 01, CRC] where CRC = FB^22^01 = D8
+        tests.add("ENABLE_RIDING" to byteArrayOf(0xFB.toByte(), 0x22, 0x01, 0xD8.toByte()))
 
-        // Another heartbeat
-        tests.add("HEARTBEAT2" to byteArrayOf(0xFC.toByte(), 0x22, 0x00, 0xDE.toByte()))
+        // === STEP 3: Wait and check for telemetry (FC 23 packets) ===
+        // (handled by the heartbeat timer below)
 
-        // Query with device 0x22 (app commands) + XOR checksum
-        tests.add("D22_CMD00" to buildSGPacket(0x22, 0x00, byteArrayOf()))
-        tests.add("D22_CMD01" to buildSGPacket(0x22, 0x01, byteArrayOf()))
-        tests.add("D22_CMD02" to buildSGPacket(0x22, 0x02, byteArrayOf()))
+        // === STEP 4: ASSIST_UP ===
+        // Plaintext: [1C, 03, 02, 00, 00, zeros×11]
+        val assistUpPlain = ByteArray(16).also { it[0] = 0x1C; it[1] = 0x03; it[2] = 0x02 }
+        val assistUpEnc = GEVCrypto.encrypt(assistUpPlain, 3)
+        val assistUpPkt = ByteArray(20)
+        assistUpPkt[0] = 0xFB.toByte()
+        assistUpPkt[1] = 0x21
+        System.arraycopy(assistUpEnc, 0, assistUpPkt, 2, 16)
+        assistUpPkt[18] = 0x03  // key index
+        xor = 0; for (i in 0..18) xor = xor xor (assistUpPkt[i].toInt() and 0xFF)
+        assistUpPkt[19] = xor.toByte()
+        tests.add("ASSIST_UP" to assistUpPkt)
 
-        // Old format with corrected XOR checksum (device 0x21)
-        tests.add("D21_XOR_MODE" to buildSGPacket(0x21, 0x02, byteArrayOf()))
+        // === STEP 5: READ_BATTERY ===
+        // cmd=19 (0x13), bike data command, key 0
+        val battPlain = ByteArray(16).also { it[0] = 0x13; it[1] = 0x00 }
+        val battEnc = GEVCrypto.encrypt(battPlain, 0)
+        val battPkt = ByteArray(20)
+        battPkt[0] = 0xFB.toByte()
+        battPkt[1] = 0x21
+        System.arraycopy(battEnc, 0, battPkt, 2, 16)
+        battPkt[18] = 0x00
+        xor = 0; for (i in 0..18) xor = xor xor (battPkt[i].toInt() and 0xFF)
+        battPkt[19] = xor.toByte()
+        tests.add("READ_BATTERY" to battPkt)
 
-        // AES K4 with CORRECTED XOR checksum format
-        val modePkt = buildSGPacket(0x21, 0x02, byteArrayOf())
-        tests.add("AES_K4_XOR" to GEVCrypto.encrypt(modePkt, 4))
+        // === STEP 6: READ_TUNING ===
+        val tunePlain = ByteArray(16).also { it[0] = 0x2C; it[1] = 0x00 }
+        val tuneEnc = GEVCrypto.encrypt(tunePlain, 0)
+        val tunePkt = ByteArray(20)
+        tunePkt[0] = 0xFB.toByte()
+        tunePkt[1] = 0x21
+        System.arraycopy(tuneEnc, 0, tunePkt, 2, 16)
+        tunePkt[18] = 0x00
+        xor = 0; for (i in 0..18) xor = xor xor (tunePkt[i].toInt() and 0xFF)
+        tunePkt[19] = xor.toByte()
+        tests.add("READ_TUNING" to tunePkt)
 
         // Heartbeat again
         tests.add("HEARTBEAT3" to byteArrayOf(0xFC.toByte(), 0x22, 0x00, 0xDE.toByte()))
@@ -835,24 +869,25 @@ class BLEManager(private val context: Context) {
                     .put("size", data.size))
 
                 char.value = data
-                char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                // RideControl uses WRITE_TYPE_NO_RESPONSE (WriteType=1)
+                char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
                 val ok = g.writeCharacteristic(char)
                 onDataReceived?.invoke(JSONObject()
                     .put("type", "sgWriteResult")
                     .put("name", name)
                     .put("ok", ok))
-            }, (i * 600).toLong())
+            }, (i * 1000).toLong())  // 1s between to observe responses
         }
 
-        // After writes, continue heartbeat
-        val heartbeat = byteArrayOf(0xFC.toByte(), 0x22, 0x00, 0xDE.toByte())
-        val startDelay = (tests.size * 600 + 500).toLong()
+        // After writes, send enableRiding again periodically (in case first one was missed)
+        val enableRiding = byteArrayOf(0xFB.toByte(), 0x22, 0x01, 0xD8.toByte())
+        val startDelay = (tests.size * 1000 + 500).toLong()
         for (i in 0..14) {
             handler.postDelayed({
-                char.value = heartbeat
+                char.value = enableRiding
                 char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
                 g.writeCharacteristic(char)
-                if (i == 0) Log.i(TAG, ">>> Heartbeat 15s...")
+                if (i == 0) Log.i(TAG, ">>> Repeating enableRiding 15s...")
                 if (i == 14) {
                     Log.i(TAG, ">>> TEST COMPLETE")
                     onStatusChanged?.invoke("Test done — check log for SG data")
