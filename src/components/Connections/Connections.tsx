@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import * as BLE from '../../services/bluetooth/BLEBridge';
 import { webSensorService } from '../../services/sensors/WebSensorService';
+import { DeviceScanner } from '../shared/DeviceScanner';
 
 // ── Section 2: Gateway services (auto-detected) ──────────────
 const GATEWAY_SERVICES = [
@@ -75,6 +76,7 @@ export function Connections() {
   const tpmsRear = useBikeStore((s) => s.tpms_rear_psi);
 
   const [scanning, setScanning] = useState(false);
+  const [showDevicePicker, setShowDevicePicker] = useState(false);
   const [sensorScanning, setSensorScanning] = useState<string | null>(null);
   const [phoneSensorsOn, setPhoneSensorsOn] = useState(webSensorService.isRunning);
 
@@ -117,6 +119,15 @@ export function Connections() {
       setPhoneSensorsOn(ok);
     }
   };
+
+  if (showDevicePicker) {
+    return (
+      <DeviceScanner
+        onConnected={() => setShowDevicePicker(false)}
+        onCancel={() => setShowDevicePicker(false)}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col h-full p-3 gap-3 overflow-y-auto">
@@ -185,16 +196,43 @@ export function Connections() {
           </span>
         </div>
 
-        <button
-          onClick={bleStatus === 'connected' ? handleDisconnectBike : handleConnectBike}
-          className={`w-full h-12 rounded-xl font-bold text-base mt-3 active:scale-95 transition-transform ${
-            bleStatus === 'connected'
-              ? 'bg-red-600/20 text-red-400 border border-red-600/30'
-              : 'bg-emerald-500 text-black'
-          }`}
-        >
-          {bleStatus === 'connected' ? 'Disconnect' : scanning ? 'Scanning...' : 'Connect Bike'}
-        </button>
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={bleStatus === 'connected' ? handleDisconnectBike : handleConnectBike}
+            className={`flex-1 h-12 rounded-xl font-bold text-base active:scale-95 transition-transform ${
+              bleStatus === 'connected'
+                ? 'bg-red-600/20 text-red-400 border border-red-600/30'
+                : 'bg-emerald-500 text-black'
+            }`}
+          >
+            {bleStatus === 'connected' ? 'Disconnect' : scanning ? 'Scanning...' : 'Connect Bike'}
+          </button>
+          {BLE.bleMode === 'websocket' && (
+            <button
+              onClick={() => setShowDevicePicker(true)}
+              className="h-12 px-4 rounded-xl font-bold text-sm bg-gray-700 text-gray-300 active:scale-95 transition-transform"
+            >
+              Mudar
+            </button>
+          )}
+        </div>
+        {/* Saved device info */}
+        {(() => {
+          const saved = BLE.getSavedDevice();
+          return saved ? (
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-[10px] text-gray-600">
+                Guardado: {saved.name} ({saved.address})
+              </span>
+              <button
+                onClick={() => { BLE.clearSavedDevice(); }}
+                className="text-[10px] text-red-500"
+              >
+                Esquecer
+              </button>
+            </div>
+          ) : null;
+        })()}
       </div>
 
       {/* ── Section 2: Gateway Services ─────────────────────── */}

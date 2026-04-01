@@ -14,12 +14,27 @@ import { batteryEstimationService } from '../battery/BatteryEstimationService';
 const WS_URL = 'ws://localhost:8765';
 const RECONNECT_INTERVAL = 3000;
 
+export interface ScanResultDevice {
+  name: string;
+  address: string;
+  rssi: number;
+  uuids: string;
+  tags: string[];
+}
+
+type ScanListener = (device: ScanResultDevice) => void;
+type ScanDoneListener = () => void;
+
 class WebSocketBLEClient {
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setInterval> | null = null;
   private _connected = false;
   private _bridgeAvailable = false;
   private _bikeConnected = false;
+
+  // Scan event listeners
+  private scanListeners: ScanListener[] = [];
+  private scanDoneListeners: ScanDoneListener[] = [];
 
   /** Try to connect to the BLE Bridge middleware */
   connect(): void {
@@ -113,6 +128,35 @@ class WebSocketBLEClient {
   /** Request protobuf data */
   requestProtoData(module: string): void {
     this.send({ type: 'protoGet', module });
+  }
+
+  // === Scan API (PWA-driven device picker) ===
+
+  /** Start BLE scan — results come as scanResult messages */
+  startScan(): void {
+    this.send({ type: 'scan' });
+  }
+
+  /** Stop ongoing scan */
+  stopScan(): void {
+    this.send({ type: 'stopScan' });
+  }
+
+  /** Connect to a specific device by MAC address */
+  connectToDevice(address: string): void {
+    this.send({ type: 'connectDevice', address });
+  }
+
+  /** Register scan result listener — called per device found */
+  onScanResult(listener: ScanListener): () => void {
+    this.scanListeners.push(listener);
+    return () => { this.scanListeners = this.scanListeners.filter((l) => l !== listener); };
+  }
+
+  /** Register scan done listener */
+  onScanDone(listener: ScanDoneListener): () => void {
+    this.scanDoneListeners.push(listener);
+    return () => { this.scanDoneListeners = this.scanDoneListeners.filter((l) => l !== listener); };
   }
 
   // === Tuning API ===
@@ -376,6 +420,29 @@ class WebSocketBLEClient {
 
         case 'allServices':
           console.log('[WSClient] Full service map:', msg.data);
+          break;
+
+        // === Scan results (PWA-driven device picker) ===
+        case 'scanResult': {
+          const device: ScanResultDevice = {
+            name: msg.name,
+            address: msg.address,
+            rssi: msg.rssi,
+            uuids: msg.uuids ?? '',
+            tags: msg.tags ?? [],
+          };
+          console.log(`[WSClient] Scan: ${device.name} (${device.address}) RSSI:${device.rssi} [${device.tags}]`);
+          this.scanListeners.forEach((l) => l(device));
+          break;
+        }
+
+        case 'scanDone':
+          console.log('[WSClient] Scan complete');
+          this.scanDoneListeners.forEach((l) => l());
+          break;
+
+        case 'connectFailed':
+          console.warn('[WSClient] Connect failed:', msg.reason);
           break;
       }
     } catch {

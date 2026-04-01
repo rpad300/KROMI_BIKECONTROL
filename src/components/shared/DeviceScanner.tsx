@@ -1,0 +1,197 @@
+import { useState, useEffect, useCallback } from 'react';
+import { wsClient, type ScanResultDevice } from '../../services/bluetooth/WebSocketBLEClient';
+import { connectDevice, saveDevice, startScan, stopScan } from '../../services/bluetooth/BLEBridge';
+
+interface DeviceScannerProps {
+  onConnected: () => void;
+  onCancel: () => void;
+}
+
+/**
+ * PWA-driven BLE device scanner.
+ * Shows live scan results from the bridge, user taps to connect.
+ * Saves selected device MAC for future auto-connect.
+ */
+export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
+  const [devices, setDevices] = useState<ScanResultDevice[]>([]);
+  const [scanning, setScanning] = useState(true);
+  const [connecting, setConnecting] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Start scan
+    startScan();
+
+    // Listen for results — deduplicate by address, keep strongest RSSI
+    const unsubResult = wsClient.onScanResult((device) => {
+      setDevices((prev) => {
+        const existing = prev.findIndex((d) => d.address === device.address);
+        if (existing >= 0) {
+          // Update RSSI if stronger
+          if (device.rssi > prev[existing]!.rssi) {
+            const updated = [...prev];
+            updated[existing] = device;
+            return updated;
+          }
+          return prev;
+        }
+        return [...prev, device];
+      });
+    });
+
+    const unsubDone = wsClient.onScanDone(() => {
+      setScanning(false);
+    });
+
+    return () => {
+      unsubResult();
+      unsubDone();
+      stopScan();
+    };
+  }, []);
+
+  const handleSelect = useCallback((device: ScanResultDevice) => {
+    setConnecting(device.address);
+    stopScan();
+    saveDevice({ name: device.name, address: device.address });
+    connectDevice(device.address);
+    // Wait for connected event (ConnectionStatus handles this)
+    // Give it a moment then signal parent
+    setTimeout(() => onConnected(), 500);
+  }, [onConnected]);
+
+  const handleRescan = useCallback(() => {
+    setDevices([]);
+    setScanning(true);
+    startScan();
+  }, []);
+
+  // Sort: bikes first, then by RSSI (strongest first)
+  const sorted = [...devices].sort((a, b) => {
+    const aIsBike = a.tags.includes('GIANT') || a.tags.includes('GEV') || a.tags.includes('BIKE') ? 1 : 0;
+    const bIsBike = b.tags.includes('GIANT') || b.tags.includes('GEV') || b.tags.includes('BIKE') ? 1 : 0;
+    if (aIsBike !== bIsBike) return bIsBike - aIsBike;
+    return b.rssi - a.rssi;
+  });
+
+  return (
+    <div className="fixed inset-0 bg-gray-950/98 z-50 flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-4 border-b border-gray-800">
+        <div>
+          <h2 className="text-lg font-bold text-white">Seleccionar Bike</h2>
+          <p className="text-xs text-gray-500">
+            {scanning
+              ? `A procurar... (${devices.length} encontrados)`
+              : `${devices.length} dispositivos — toca para ligar`}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          {!scanning && (
+            <button
+              onClick={handleRescan}
+              className="bg-gray-700 text-white text-sm px-3 py-2 rounded-lg active:scale-95"
+            >
+              Scan
+            </button>
+          )}
+          <button
+            onClick={onCancel}
+            className="bg-gray-800 text-gray-400 text-sm px-3 py-2 rounded-lg active:scale-95"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+
+      {/* Scanning indicator */}
+      {scanning && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-blue-900/30">
+          <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs text-blue-400">A procurar dispositivos BLE...</span>
+        </div>
+      )}
+
+      {/* Device list */}
+      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
+        {sorted.map((device) => (
+          <DeviceRow
+            key={device.address}
+            device={device}
+            connecting={connecting === device.address}
+            onSelect={() => handleSelect(device)}
+          />
+        ))}
+
+        {!scanning && devices.length === 0 && (
+          <div className="text-center text-gray-600 py-12">
+            <span className="material-symbols-outlined text-4xl">bluetooth_searching</span>
+            <p className="mt-2 text-sm">Nenhum dispositivo encontrado</p>
+            <button
+              onClick={handleRescan}
+              className="mt-4 bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold active:scale-95"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DeviceRow({ device, connecting, onSelect }: {
+  device: ScanResultDevice;
+  connecting: boolean;
+  onSelect: () => void;
+}) {
+  const isBike = device.tags.includes('GIANT') || device.tags.includes('GEV') || device.tags.includes('BIKE');
+  const isHR = device.tags.includes('HR');
+  const isSRAM = device.tags.includes('SRAM');
+
+  const rssiColor =
+    device.rssi > -60 ? 'text-emerald-400' :
+    device.rssi > -80 ? 'text-yellow-400' : 'text-red-400';
+
+  const rssiLabel =
+    device.rssi > -60 ? 'Forte' :
+    device.rssi > -80 ? 'Medio' : 'Fraco';
+
+  return (
+    <button
+      onClick={onSelect}
+      disabled={connecting}
+      className={`w-full flex items-center gap-3 p-3 rounded-xl active:scale-[0.98] transition-transform
+        ${isBike ? 'bg-emerald-900/30 border border-emerald-800' : 'bg-gray-800'}
+        ${connecting ? 'opacity-60' : ''}
+      `}
+    >
+      {/* Icon */}
+      <span className={`material-symbols-outlined text-2xl ${
+        isBike ? 'text-emerald-400' : isHR ? 'text-red-400' : isSRAM ? 'text-orange-400' : 'text-gray-500'
+      }`}>
+        {isBike ? 'pedal_bike' : isHR ? 'favorite' : 'bluetooth'}
+      </span>
+
+      {/* Info */}
+      <div className="flex-1 text-left">
+        <div className="text-white font-bold text-sm">
+          {device.name}
+          {isBike && <span className="ml-2 text-emerald-400 text-xs font-normal">BIKE</span>}
+        </div>
+        <div className="text-gray-500 text-[10px]">{device.address}</div>
+      </div>
+
+      {/* RSSI + connecting */}
+      <div className="text-right">
+        {connecting ? (
+          <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        ) : (
+          <>
+            <div className={`text-xs font-bold ${rssiColor}`}>{device.rssi} dB</div>
+            <div className="text-[10px] text-gray-600">{rssiLabel}</div>
+          </>
+        )}
+      </div>
+    </button>
+  );
+}

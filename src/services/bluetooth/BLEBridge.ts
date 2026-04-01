@@ -288,6 +288,49 @@ export function isTuningAvailable(): boolean {
   return bleMode === 'websocket' && wsClient.isBikeConnected;
 }
 
+// === Scan API (PWA-driven device picker, WebSocket only) ===
+
+/** Start BLE scan — results via wsClient.onScanResult */
+export function startScan(): void {
+  if (bleMode === 'websocket') wsClient.startScan();
+}
+
+/** Stop ongoing scan */
+export function stopScan(): void {
+  if (bleMode === 'websocket') wsClient.stopScan();
+}
+
+/** Connect to a specific device by MAC address */
+export function connectDevice(address: string): void {
+  if (bleMode === 'websocket') wsClient.connectToDevice(address);
+}
+
+// === Saved device (remember last connected bike) ===
+
+const SAVED_DEVICE_KEY = 'kromi_saved_device';
+
+export interface SavedDevice {
+  name: string;
+  address: string;
+}
+
+/** Save connected device for auto-connect */
+export function saveDevice(device: SavedDevice): void {
+  localStorage.setItem(SAVED_DEVICE_KEY, JSON.stringify(device));
+}
+
+/** Get saved device (null if none) */
+export function getSavedDevice(): SavedDevice | null {
+  const raw = localStorage.getItem(SAVED_DEVICE_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+/** Clear saved device (forget bike) */
+export function clearSavedDevice(): void {
+  localStorage.removeItem(SAVED_DEVICE_KEY);
+}
+
 /** Get current BLE mode description */
 export function getBLEModeDescription(): string {
   switch (bleMode) {

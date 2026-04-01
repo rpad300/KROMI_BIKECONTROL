@@ -188,9 +188,11 @@ class MainActivity : AppCompatActivity() {
         // Setup service logging after a short delay (service may not be ready immediately)
         handler.postDelayed({ setupServiceLogging() }, 500)
 
-        // Don't handle deep link on fresh start — let user use SCAN button
+        // Handle deep link — auto-scan if requested by PWA
         if (intent?.scheme == "kromi-bridge") {
-            appendLog("LINK", "Launched via deep link")
+            val action = intent.data?.host ?: "start"
+            appendLog("LINK", "Deep link: action=$action")
+            // No auto-scan here — PWA sends {type:"scan"} via WS after bridge is ready
         }
     }
 

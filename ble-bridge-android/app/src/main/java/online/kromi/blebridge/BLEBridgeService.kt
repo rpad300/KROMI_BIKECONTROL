@@ -70,6 +70,7 @@ class BLEBridgeService : Service() {
         super.onDestroy()
     }
 
+    @android.annotation.SuppressLint("MissingPermission")
     private fun handleCommand(json: JSONObject) {
         when (json.optString("type")) {
             "connect" -> {
@@ -95,6 +96,79 @@ class BLEBridgeService : Service() {
                     onDone = {}
                 )
             }
+
+            // === PWA-driven scan: send each found device to PWA for user selection ===
+            "scan" -> {
+                if (bleManager.isScanning) {
+                    Log.i(TAG, "WS scan: already scanning")
+                    return
+                }
+                if (bleManager.isConnected) {
+                    bleManager.disconnect()
+                    Thread.sleep(500)
+                }
+                Log.i(TAG, "WS scan: starting PWA-driven scan")
+                bleManager.startScan(
+                    onFound = { device, rssi, uuids ->
+                        val name = device.name ?: "(unnamed)"
+                        val tags = mutableListOf<String>()
+                        if (name.contains("GBHA", true) || name.contains("Giant", true)) tags.add("GIANT")
+                        if (uuids.contains("F0BA", true)) tags.add("GEV")
+                        if (uuids.contains("1816") || uuids.contains("1818")) tags.add("BIKE")
+                        if (uuids.contains("180D")) tags.add("HR")
+                        if (name.contains("SRAM", true) || uuids.contains("4D50", true)) tags.add("SRAM")
+
+                        val result = JSONObject().apply {
+                            put("type", "scanResult")
+                            put("name", name)
+                            put("address", device.address)
+                            put("rssi", rssi)
+                            put("uuids", uuids)
+                            put("tags", org.json.JSONArray(tags))
+                        }
+                        wsServer?.broadcastData(result)
+                    },
+                    onDone = {
+                        val done = JSONObject().apply { put("type", "scanDone") }
+                        wsServer?.broadcastData(done)
+                        Log.i(TAG, "WS scan: complete")
+                    }
+                )
+            }
+
+            "stopScan" -> {
+                bleManager.stopScan()
+                val done = JSONObject().apply { put("type", "scanDone") }
+                wsServer?.broadcastData(done)
+            }
+
+            // === Connect to specific device by MAC address (PWA device picker) ===
+            "connectDevice" -> {
+                val address = json.optString("address", "")
+                if (address.isEmpty()) {
+                    Log.e(TAG, "connectDevice: missing address")
+                    return
+                }
+                if (bleManager.isScanning) bleManager.stopScan()
+                if (bleManager.isConnected) {
+                    bleManager.disconnect()
+                    Thread.sleep(500)
+                }
+                Log.i(TAG, "WS connectDevice: $address")
+                val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+                val device = adapter?.getRemoteDevice(address)
+                if (device != null) {
+                    bleManager.connectToDevice(device)
+                } else {
+                    Log.e(TAG, "connectDevice: invalid address $address")
+                    val err = JSONObject().apply {
+                        put("type", "connectFailed")
+                        put("reason", "Invalid address: $address")
+                    }
+                    wsServer?.broadcastData(err)
+                }
+            }
+
             "disconnect" -> bleManager.disconnect()
             "assistMode" -> bleManager.writeAssistMode(json.optInt("value", 1))
             "assistUp" -> {
