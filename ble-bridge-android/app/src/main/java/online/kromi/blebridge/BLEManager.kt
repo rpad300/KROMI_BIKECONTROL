@@ -1218,17 +1218,61 @@ class BLEManager(private val context: Context) {
         sendEncryptedCommand(plain, 0, "NORMAL_MODE")
     }
 
-    /** SET_TUNING — write tuning levels. cmd=0x2D, sub=0x03, key 3
-     *  Uses same values from READ_TUNING (33 22 02) to avoid changes.
-     *  Tests if key 3 WRITES are accepted by SG. */
-    fun setTuning() {
-        logBondState("SET_TUNING")
+    /**
+     * SET_TUNING — write tuning levels for all 5 modes.
+     * cmd=0x2D, sub=0x03, key 3
+     *
+     * Byte layout (after cmd+sub):
+     *   byte[2] = (asmo1_lv+1) | ((asmo2_lv+1) << 4)  // POWER | SPORT
+     *   byte[3] = (asmo3_lv+1) | ((asmo4_lv+1) << 4)  // ACTIVE | TOUR
+     *   byte[4] = (asmo5_lv+1)                          // ECO
+     *
+     * Levels: 0=max power, 1=medium, 2=min power
+     * On wire: stored as lv+1 (1=max, 2=med, 3=min)
+     *
+     * @param powerLv POWER mode level (0-2)
+     * @param sportLv SPORT mode level (0-2)
+     * @param activeLv ACTIVE mode level (0-2)
+     * @param tourLv TOUR mode level (0-2)
+     * @param ecoLv ECO mode level (0-2)
+     */
+    fun setTuningLevels(powerLv: Int, sportLv: Int, activeLv: Int, tourLv: Int, ecoLv: Int, label: String = "SET_TUNING") {
+        logBondState(label)
+        val p = (powerLv + 1).coerceIn(1, 3)
+        val s = (sportLv + 1).coerceIn(1, 3)
+        val a = (activeLv + 1).coerceIn(1, 3)
+        val t = (tourLv + 1).coerceIn(1, 3)
+        val e = (ecoLv + 1).coerceIn(1, 3)
+
+        val b2 = (p or (s shl 4)).toByte()
+        val b3 = (a or (t shl 4)).toByte()
+        val b4 = e.toByte()
+
+        Log.i(TAG, "★ SET_TUNING: PWR=$powerLv SPT=$sportLv ACT=$activeLv TUR=$tourLv ECO=$ecoLv → bytes=%02X %02X %02X"
+            .format(b2.toInt() and 0xFF, b3.toInt() and 0xFF, b4.toInt() and 0xFF))
+
         val plain = ByteArray(16).also {
             it[0] = 0x2D; it[1] = 0x03
-            it[2] = 0x33; it[3] = 0x22; it[4] = 0x02  // same as READ_TUNING returned
+            it[2] = b2; it[3] = b3; it[4] = b4
         }
-        sendEncryptedCommand(plain, 3, "SET_TUNING")
+        sendEncryptedCommand(plain, 3, label)
+
+        // Follow up with READ_TUNING to verify the change was applied
+        handler.postDelayed({
+            Log.i(TAG, "★ Verifying with READ_TUNING...")
+            val readPlain = ByteArray(16).also { it[0] = 0x2C; it[1] = 0x00 }
+            sendEncryptedCommand(readPlain, 0, "READ_TUNING_VERIFY")
+        }, 500)
     }
+
+    /** Preset: MAX POWER — all modes at level 0 (max watts) */
+    fun tuningMax() = setTuningLevels(0, 0, 0, 0, 0, "TUNE_MAX")
+
+    /** Preset: MIN POWER — all modes at level 2 (min watts) */
+    fun tuningMin() = setTuningLevels(2, 2, 2, 2, 2, "TUNE_MIN")
+
+    /** Preset: RESTORE — original values from bike (33 22 02 = lv2,lv2,lv1,lv1,lv1) */
+    fun tuningRestore() = setTuningLevels(2, 2, 1, 1, 1, "TUNE_RESTORE")
 
     private fun logBondState(label: String) {
         val bond = gatt?.device?.bondState ?: -1

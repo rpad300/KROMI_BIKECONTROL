@@ -165,11 +165,23 @@
         android:paddingBottom="4dp">
 
         <Button
-            android:id="@+id/assistDownBtn"
+            android:id="@+id/tuneMaxBtn"
             android:layout_width="0dp"
             android:layout_height="48dp"
             android:layout_weight="1"
-            android:text="ASSIST ▼"
+            android:text="MAX"
+            android:textSize="14sp"
+            android:backgroundTint="#EF4444"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:layout_marginEnd="4dp"/>
+
+        <Button
+            android:id="@+id/tuneMinBtn"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="MIN"
             android:textSize="14sp"
             android:backgroundTint="#3B82F6"
             android:textColor="#FFFFFF"
@@ -177,36 +189,24 @@
             android:layout_marginEnd="4dp"/>
 
         <Button
-            android:id="@+id/assistUpBtn"
+            android:id="@+id/tuneRestoreBtn"
             android:layout_width="0dp"
             android:layout_height="48dp"
             android:layout_weight="1"
-            android:text="ASSIST ▲"
-            android:textSize="14sp"
+            android:text="RESTORE"
+            android:textSize="12sp"
             android:backgroundTint="#10B981"
             android:textColor="#FFFFFF"
             android:textStyle="bold"
             android:layout_marginEnd="4dp"/>
 
         <Button
-            android:id="@+id/lightBtn"
+            android:id="@+id/tuneReadBtn"
             android:layout_width="0dp"
             android:layout_height="48dp"
             android:layout_weight="1"
-            android:text="LIGHT"
-            android:textSize="13sp"
-            android:backgroundTint="#6366F1"
-            android:textColor="#FFFFFF"
-            android:textStyle="bold"
-            android:layout_marginEnd="4dp"/>
-
-        <Button
-            android:id="@+id/setTuningBtn"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
-            android:text="TUNING"
-            android:textSize="13sp"
+            android:text="READ"
+            android:textSize="14sp"
             android:backgroundTint="#F59E0B"
             android:textColor="#000000"
             android:textStyle="bold"/>

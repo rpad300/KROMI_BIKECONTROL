@@ -105,44 +105,33 @@ class MainActivity : AppCompatActivity() {
 
         testBtn.setOnClickListener { runBLETest() }
 
-        findViewById<Button>(R.id.assistUpBtn).setOnClickListener {
+        findViewById<Button>(R.id.tuneMaxBtn).setOnClickListener {
             val ble = BLEBridgeService.instance?.bleManager
-            if (ble == null || !ble.isConnected) {
-                appendLog("ERR", "Not connected!")
-                return@setOnClickListener
-            }
-            appendLog("CMD", ">>> ASSIST UP")
-            ble.assistUp()
+            if (ble == null || !ble.isConnected) { appendLog("ERR", "Not connected!"); return@setOnClickListener }
+            appendLog("CMD", ">>> TUNE MAX (all modes lv0 = max watts)")
+            ble.tuningMax()
         }
 
-        findViewById<Button>(R.id.assistDownBtn).setOnClickListener {
+        findViewById<Button>(R.id.tuneMinBtn).setOnClickListener {
             val ble = BLEBridgeService.instance?.bleManager
-            if (ble == null || !ble.isConnected) {
-                appendLog("ERR", "Not connected!")
-                return@setOnClickListener
-            }
-            appendLog("CMD", ">>> ASSIST DOWN")
-            ble.assistDown()
+            if (ble == null || !ble.isConnected) { appendLog("ERR", "Not connected!"); return@setOnClickListener }
+            appendLog("CMD", ">>> TUNE MIN (all modes lv2 = min watts)")
+            ble.tuningMin()
         }
 
-        findViewById<Button>(R.id.lightBtn).setOnClickListener {
+        findViewById<Button>(R.id.tuneRestoreBtn).setOnClickListener {
             val ble = BLEBridgeService.instance?.bleManager
-            if (ble == null || !ble.isConnected) {
-                appendLog("ERR", "Not connected!")
-                return@setOnClickListener
-            }
-            appendLog("CMD", ">>> LIGHT TOGGLE")
-            ble.lightToggle()
+            if (ble == null || !ble.isConnected) { appendLog("ERR", "Not connected!"); return@setOnClickListener }
+            appendLog("CMD", ">>> TUNE RESTORE (original: 33 22 02)")
+            ble.tuningRestore()
         }
 
-        findViewById<Button>(R.id.setTuningBtn).setOnClickListener {
+        findViewById<Button>(R.id.tuneReadBtn).setOnClickListener {
             val ble = BLEBridgeService.instance?.bleManager
-            if (ble == null || !ble.isConnected) {
-                appendLog("ERR", "Not connected!")
-                return@setOnClickListener
-            }
-            appendLog("CMD", ">>> SET_TUNING (key3 write test, same values)")
-            ble.setTuning()
+            if (ble == null || !ble.isConnected) { appendLog("ERR", "Not connected!"); return@setOnClickListener }
+            appendLog("CMD", ">>> READ TUNING")
+            val plain = ByteArray(16).also { it[0] = 0x2C; it[1] = 0x00 }
+            ble.sendEncryptedCommand(plain, 0, "READ_TUNING")
         }
 
         findViewById<Button>(R.id.sgOnlyBtn).setOnClickListener {
