@@ -463,12 +463,27 @@ class BLEManager(private val context: Context) {
                 SG_NOTIFY -> {
                     val hex = data.joinToString("") { "%02x".format(it) }
                     val ascii = String(data.filter { it in 0x20..0x7E }.toByteArray())
-                    Log.i(TAG, "★ SG NOTIFY: hex=$hex ascii=\"$ascii\" len=${data.size}")
+                    Log.i(TAG, "★ SG RAW: hex=$hex len=${data.size}")
                     onDataReceived?.invoke(JSONObject()
                         .put("type", "sgNotify")
                         .put("hex", hex)
                         .put("ascii", ascii)
                         .put("size", data.size))
+
+                    // Try decrypting with known keys if data is 16+ bytes
+                    if (data.size >= 16) {
+                        for (keyIdx in intArrayOf(4, 8, 13, 14, 0)) {
+                            val dec = GEVCrypto.decrypt(data.copyOf(16), keyIdx)
+                            val dHex = dec.joinToString("") { "%02x".format(it) }
+                            val hasFC = dec[0] == 0xFC.toByte()
+                            Log.i(TAG, "★ SG DEC K$keyIdx: $dHex ${if (hasFC) "← FC HEADER!" else ""}")
+                            onDataReceived?.invoke(JSONObject()
+                                .put("type", "sgDecrypt")
+                                .put("key", keyIdx)
+                                .put("hex", dHex)
+                                .put("hasGevHeader", hasFC))
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -609,8 +624,8 @@ class BLEManager(private val context: Context) {
     }
 
     /**
-     * Test SG Write — sends AES-encrypted GEV packets to 4d500002.
-     * Tests multiple keys (0, 4, 8, 13, 14) and commands (0x01, 0x02, 0x03).
+     * Test SG Write — ALL GEV commands with AES key 4 (confirmed working).
+     * Sends CONNECTION first as session init, then queries.
      */
     fun testSGWrite() {
         val g = gatt ?: return
@@ -622,44 +637,40 @@ class BLEManager(private val context: Context) {
 
         val tests = mutableListOf<Pair<String, ByteArray>>()
 
-        // GEV packet format: [FC][21][cmd][len][payload][checksum_hi][checksum_lo]
-        // Encrypted: the ENTIRE packet (padded to 16 bytes) is AES-ECB encrypted
+        // ALL commands encrypted with KEY 4 (confirmed: MODE_STATE got response)
+        // Session init first, then queries
+        tests.add("K4_CONNECT_01" to GEVCrypto.encrypt(buildGevPacket(0x01, byteArrayOf()), 4))
+        tests.add("K4_MODE_02" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
+        tests.add("K4_BATTERY_03" to GEVCrypto.encrypt(buildGevPacket(0x03, byteArrayOf()), 4))
+        tests.add("K4_SPEED_05" to GEVCrypto.encrypt(buildGevPacket(0x05, byteArrayOf()), 4))
+        tests.add("K4_ASSIST_15" to GEVCrypto.encrypt(buildGevPacket(0x15, byteArrayOf()), 4))
+        tests.add("K4_RIDING_38" to GEVCrypto.encrypt(buildGevPacket(0x38, byteArrayOf()), 4))
 
-        // Phase 1: AES-encrypted GEV CONNECTION (0x01) with different keys
-        val connectPkt = buildGevPacket(0x01, byteArrayOf())
-        for (keyIdx in intArrayOf(0, 4, 8, 13, 14)) {
-            val enc = GEVCrypto.encrypt(connectPkt, keyIdx)
-            tests.add("AES_K${keyIdx}_CONNECT" to enc)
-        }
+        // Read tuning data (0x0F from APK decompilation = READ_TUNING_DATA)
+        tests.add("K4_TUNING_0F" to GEVCrypto.encrypt(buildGevPacket(0x0F, byteArrayOf()), 4))
 
-        // Phase 2: AES-encrypted GEV MODE_STATE (0x02) — key 4 and 8
-        val modePkt = buildGevPacket(0x02, byteArrayOf())
-        tests.add("AES_K4_MODE" to GEVCrypto.encrypt(modePkt, 4))
-        tests.add("AES_K8_MODE" to GEVCrypto.encrypt(modePkt, 8))
+        // Read assist config (0xE2 with empty payload = read current config?)
+        tests.add("K4_ACONFIG_E2" to GEVCrypto.encrypt(buildGevPacket(0xE2.toByte().toInt() and 0xFF, byteArrayOf()), 4))
 
-        // Phase 3: AES-encrypted GEV BATTERY (0x03) — key 4 and 13
-        val battPkt = buildGevPacket(0x03, byteArrayOf())
-        tests.add("AES_K4_BATT" to GEVCrypto.encrypt(battPkt, 4))
-        tests.add("AES_K13_BATT" to GEVCrypto.encrypt(battPkt, 13))
+        // Second round: CONNECTION then MODE again (test if session matters)
+        tests.add("K4_CONNECT2" to GEVCrypto.encrypt(buildGevPacket(0x01, byteArrayOf()), 4))
+        tests.add("K4_MODE2_02" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
+        tests.add("K4_BATT2_03" to GEVCrypto.encrypt(buildGevPacket(0x03, byteArrayOf()), 4))
 
-        // Phase 4: Unencrypted GEV CONNECTION (control — we know this gets no response)
-        tests.add("RAW_CONNECT" to connectPkt)
-
-        // Phase 5: Protobuf GET bikeInfo (unencrypted — proto might not use AES)
-        tests.add("PROTO_BIKE" to byteArrayOf(
-            0x08, 0x06, 0x10, 0x02, 0x18, 0x06, 0x2A, 0x00
-        ))
+        // GEV general commands (button triggers) — key 4
+        // LIGHT toggle (0xA3 general cmd = trigger light)
+        tests.add("K4_LIGHT_A3" to GEVCrypto.encrypt(buildGevPacket(0xA3.toByte().toInt() and 0xFF, byteArrayOf()), 4))
 
         Log.i(TAG, "╔═══════════════════════════════════════╗")
-        Log.i(TAG, "║  SG AES WRITE TEST — ${tests.size} packets    ║")
+        Log.i(TAG, "║  SG KEY4 FULL TEST — ${tests.size} packets   ║")
         Log.i(TAG, "╚═══════════════════════════════════════╝")
-        onStatusChanged?.invoke("Testing AES writes (${tests.size} packets)...")
+        onStatusChanged?.invoke("Key4 test (${tests.size} packets)...")
 
         for ((i, test) in tests.withIndex()) {
             val (name, data) = test
             handler.postDelayed({
                 val hex = data.joinToString("") { "%02x".format(it) }
-                Log.i(TAG, ">>> SG WRITE [$name]: $hex (${data.size}b)")
+                Log.i(TAG, ">>> SG [$name]: $hex (${data.size}b)")
                 onDataReceived?.invoke(JSONObject()
                     .put("type", "sgWriteTest")
                     .put("name", name)
@@ -669,7 +680,6 @@ class BLEManager(private val context: Context) {
                 char.value = data
                 char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
                 val ok = g.writeCharacteristic(char)
-                Log.i(TAG, ">>> Write: $ok")
                 onDataReceived?.invoke(JSONObject()
                     .put("type", "sgWriteResult")
                     .put("name", name)
@@ -678,8 +688,8 @@ class BLEManager(private val context: Context) {
         }
 
         handler.postDelayed({
-            Log.i(TAG, ">>> AES TEST COMPLETE — look for SG! responses")
-            onStatusChanged?.invoke("AES test done — check for SG! responses")
+            Log.i(TAG, ">>> KEY4 TEST COMPLETE")
+            onStatusChanged?.invoke("Key4 test done — check SG! responses")
         }, (tests.size * 800 + 500).toLong())
     }
 

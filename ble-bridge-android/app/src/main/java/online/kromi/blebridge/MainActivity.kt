@@ -218,6 +218,10 @@ class MainActivity : AppCompatActivity() {
             "sgWriteTest" -> appendLog("SG>", "[${json.optString("name")}] ${json.optString("hex")} (${json.optInt("size")}b)")
             "sgWriteResult" -> appendLog("SG>", "[${json.optString("name")}] write=${json.optBoolean("ok")}")
             "sgWriteCallback" -> appendLog("SG<", "[${json.optString("short")}] ${if (json.optBoolean("ok")) "OK" else "FAIL(${json.optInt("status")})"}")
+            "sgDecrypt" -> {
+                val marker = if (json.optBoolean("hasGevHeader")) " ★FC!" else ""
+                appendLog("DEC", "K${json.optInt("key")}: ${json.optString("hex")}$marker")
+            }
             "barometer" -> updateSensor("Baro", "${json.optDouble("pressure").toInt()}hPa/${json.optDouble("altitude").toInt()}m")
             "light" -> updateSensor("Light", "${json.optDouble("lux").toInt()}lux")
             "accel" -> updateSensor("Lean", "${json.optDouble("lean").toInt()}°")
