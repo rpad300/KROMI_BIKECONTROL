@@ -1,6 +1,6 @@
-# KROMI Intelligence — HR Zone Regulated Motor Calibration
+# KROMI Intelligence — Continuous HR Zone Regulator
 
-## Version: v0.6.0-b34 reviewed (2026-04-01)
+## Version: v0.6.0 session 2 (2026-04-01)
 
 ---
 
@@ -11,8 +11,16 @@ O KROMI é um **regulador de zona cardíaca**. O motor mantém o rider na zona H
 **Arquitectura layered (não aditiva)**:
 ```
 anticipationBias = terrainBias + transitionBias + weightBias + powerBias + cadenceTrendBias + speedBias
-intensity = clamp(hrTarget + anticipationBias + stoppedPenalty + altitudeBoost, 0, 100) × batteryConstraint
+intensity = clamp(hrTarget + anticipation + contextPenalty + stoppedPenalty + learnedAdj, 0, 100) × batteryMod
 ```
+
+**Novidades v0.6.0 session 2**:
+- HR Target conservador: 20-42 em zona (era 40-60)
+- Context override: descida e velocidade crescente reduzem assist
+- EMA smoothing (alpha 0.15) + hold time 15s entre mudanças de nível
+- ASMO values interpolados do score contínuo (não 3 presets)
+- Consumo calculado por física (forças + motor share + eficiência)
+- Adaptive learning: overrides ensinam o algoritmo por contexto (gradient×HR zone)
 
 **Auxiliary modifiers** (outside anticipation):
 - Stopped (<2km/h): -20 (save battery)
@@ -106,53 +114,52 @@ Auto-calculadas do HR max observado. Rider escolhe zona alvo nas Settings.
 | Z4 Threshold | 80-90% | 130-147 bpm | Limiar anaeróbico |
 | Z5 VO2max | 90-100% | 147-163 bpm | Esforço máximo |
 
-### Fórmula HR → Target Intensity
+### Fórmula HR → Target Intensity (v2 — Conservative Regulator)
 
-A função é **contínua** — sem saltos nas fronteiras da zona:
+Filosofia: motor ajusta **gradualmente** para **manter** HR na zona. Se rider confortavel, motor dá pouco. Se HR sobe, motor sobe proporcionalmente.
 
 ```
-HR abaixo da zona (rider confortável, motor pode reduzir):
-  hrTarget = 40 - (bpm_abaixo × 5), min 0
-  Começa em 40 (= fundo da in-zone range), desce 5 por bpm
+HR abaixo da zona (rider comfortable, minimal assist):
+  hrTarget = 20 - (bpm_abaixo × 2), min 0
 
-HR dentro da zona (manter — fine-tune pela posição):
-  hrTarget = 40 + (posição_na_zona × 20)
-  Range: 40-60
-  posição = (HR - zona_min) / (zona_max - zona_min)
+HR dentro da zona (regulate: low at bottom, rising toward top):
+  hrTarget = 20 + (posição_na_zona × 22)
+  Range: 20-42
 
-HR acima da zona (rider a esforçar-se, motor deve ajudar):
-  hrTarget = 60 + (bpm_acima × 8), cap 100
-  Começa em 60 (= topo da in-zone range), sobe 8 por bpm
+HR acima da zona (gradual ramp, NOT aggressive):
+  hrTarget = 42 + (bpm_acima × 2), cap 100
 ```
 
-**Visualização da função contínua**:
+**Visualização**:
 ```
 hrTarget
 100 ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ╱ cap
  80                               ╱
- 60 ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ╱───  ← topo da zona
- 50                        ╱        ← meio da zona
- 40 ─ ─ ─ ─ ─ ─ ─ ─ ───╱          ← fundo da zona
- 20              ╱ ─ ─
-  0 ─ ─ ─ ─ ╱                      ← muito abaixo
+ 62 ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ╱     threshold MAX
+ 42 ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ╱──       ← topo da zona
+ 38 ─ ─ ─ ─ ─ ─ ─ ─ ─ ╱           threshold MID
+ 30                  ╱              ← meio da zona
+ 20 ─ ─ ─ ─ ─ ─ ╱──               ← fundo da zona → MIN
+ 10        ╱ ─ ─
+  0 ─ ╱                            ← muito abaixo
     ──────|──────|──────|──────────── HR (bpm)
-        -10    min    max    +5
+        -10    min    max    +10
               zona alvo
 ```
 
-**Assimetria deliberada**: +8/bpm acima vs -5/bpm abaixo. O motor é mais agressivo a ajudar (HR acima da zona é mais urgente que HR abaixo).
+**Diferença v1→v2**: v1 dava hrTarget 40-60 em zona (MID sempre). v2 dá 20-42 (MIN→MID transição). O motor só sobe quando realmente precisa.
 
-### Exemplos concretos (Z2 target, 98-114bpm)
+### Exemplos concretos (Z2 target, 111-130bpm, HRmax 185)
 
-| HR | Situação | hrTarget | Wire |
+| HR | Situação | hrTarget | Score zone |
 |:---:|----------|:---:|:---:|
-| 80 bpm | 18 abaixo | 40-(18×5)=0 | wire 2 (MIN) |
-| 90 bpm | 8 abaixo | 40-(8×5)=0 | wire 2 |
-| 98 bpm | Fundo Z2 | 40+(0×20)=40 | wire 1 (MID) |
-| 106 bpm | Meio Z2 | 40+(0.5×20)=50 | wire 1 |
-| 114 bpm | Topo Z2 | 40+(1.0×20)=60 | wire 1 |
-| 117 bpm | 3 acima | 60+(3×8)=84 | wire 0 (MAX) |
-| 125 bpm | 11 acima | 60+(11×8)=100 | wire 0 |
+| 90 bpm | 21 abaixo | 0 | MIN |
+| 105 bpm | 6 abaixo | 8 | MIN |
+| 111 bpm | Fundo Z2 | 20 | MIN |
+| 120 bpm | Meio Z2 | 31 | MIN |
+| 128 bpm | Topo Z2 | 40 | MID (borderline) |
+| 135 bpm | 5 acima | 52 | MID |
+| 145 bpm | 15 acima | 72 | MAX |
 | 140 bpm | 26 acima | cap 100 | wire 0 |
 
 ### Auto-calibração HRmax
