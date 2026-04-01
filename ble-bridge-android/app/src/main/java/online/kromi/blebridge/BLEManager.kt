@@ -71,6 +71,7 @@ class BLEManager(private val context: Context) {
     private var hasRediscovered = false
     var sgOnlyMode = false  // When true: skip all reads + only subscribe to SG_NOTIFY
     private var lastTelemetryLog = 0L
+    private val fc23LogTimes = mutableMapOf<String, Long>()
 
     val isConnected: Boolean get() = gatt != null
     val isScanning: Boolean get() = scanCallback != null
@@ -561,56 +562,106 @@ class BLEManager(private val context: Context) {
                     when (device) {
                         0x23 -> {
                             if (data.size < 20) return
-                            // FC23 riding notification — parse using RideControl's EXACT format
-                            // data[0]=FC, data[1]=23, data[2..19]=18 bytes of riding data
-                            // RideControl: i = value[2..19], parsed as LE shorts/ints
 
-                            // Little-endian int16 at offset from data[2]
-                            fun leShort(off: Int): Int {
-                                val base = off + 2
-                                return (data[base].toInt() and 0xFF) or ((data[base + 1].toInt() and 0xFF) shl 8)
+                            // === FC23 DIAGNOSTIC BUILD (b21) ===
+                            // Goal: identify correct byte offsets while pedaling
+                            // Packet: [FC][23][b2][b3][b4]...[b19] = 20 bytes
+                            // b2 seems to be len (0x11=17), b3 = cmd sub-type (0x40-0x43)
+
+                            val cmdType = data[3].toInt() and 0xFF
+                            val rawHex = data.joinToString(" ") { "%02X".format(it) }
+
+                            // Log raw bytes for ALL cmd types, throttled per type
+                            val now = System.currentTimeMillis()
+                            val typeKey = "fc23_$cmdType"
+                            val lastLog = fc23LogTimes.getOrDefault(typeKey, 0L)
+                            if (now - lastLog > 3000) {
+                                fc23LogTimes[typeKey] = now
+                                // Log with indexed bytes for easy field identification
+                                val indexed = data.mapIndexed { i, b -> "[%d]=%02X".format(i, b) }.joinToString(" ")
+                                Log.i(TAG, "FC23 cmd=%02X: $indexed".format(cmdType))
                             }
-                            fun leShortSigned(off: Int): Int {
-                                val v = leShort(off)
+
+                            // Send raw hex to PWA for all types
+                            onDataReceived?.invoke(JSONObject()
+                                .put("type", "fc23raw")
+                                .put("cmd", cmdType)
+                                .put("hex", rawHex)
+                                .put("size", data.size))
+
+                            // === ONLY PARSE cmd 0x41 (riding telemetry) ===
+                            if (cmdType != 0x41) return
+
+                            // Two parsing strategies to compare:
+                            // A) RideControl style: data[2..19] (includes len+cmd as first 2 bytes)
+                            // B) Shifted +2: data[4..19] (skip len+cmd, real data starts at byte 4)
+
+                            // Helper: LE int16 from absolute data index
+                            fun leShort(idx: Int): Int {
+                                return (data[idx].toInt() and 0xFF) or ((data[idx + 1].toInt() and 0xFF) shl 8)
+                            }
+                            fun leSigned(idx: Int): Int {
+                                val v = leShort(idx)
                                 return if (v > 32767) v - 65536 else v
                             }
 
-                            val speed = leShortSigned(0) / 10.0       // i[0..1]
-                            val torque = leShortSigned(2) / 10.0      // i[2..3]
-                            val cadence = leShortSigned(4) / 10.0     // i[4..5]
-                            val acurValue = (leShort(6) and 0xFFFF) / 100.0  // i[6..7] unsigned
-                            val tripDist = leShortSigned(8) / 10.0    // i[8..9]
-                            val tripTime = leShort(10) and 0xFFFF     // i[10..11] unsigned
-                            val power = leShortSigned(12) / 10.0      // i[12..13]
-                            val carr = data[16].toInt() and 0xFF      // i[14] = assist ratio
-                            val rsoc = data[17].toInt() and 0xFF      // i[15] = battery SOC
-                            val errorCode = data[18].toInt()          // i[16] = error code
+                            // Strategy A: RideControl offsets (base=2)
+                            val a_spd = leSigned(2) / 10.0
+                            val a_trq = leSigned(4) / 10.0
+                            val a_cad = leSigned(6) / 10.0
+                            val a_pwr = leSigned(14) / 10.0
+                            val a_soc = data[17].toInt() and 0xFF
 
-                            val now = System.currentTimeMillis()
+                            // Strategy B: Shifted offsets (base=4, skip len+cmd)
+                            val b_spd = leSigned(4) / 10.0
+                            val b_trq = leSigned(6) / 10.0
+                            val b_cad = leSigned(8) / 10.0
+                            val b_acur = (leShort(10) and 0xFFFF) / 100.0
+                            val b_dist = leSigned(12) / 10.0
+                            val b_time = leShort(14) and 0xFFFF
+                            val b_pwr = leSigned(16) / 10.0
+                            val b_carr = data[18].toInt() and 0xFF
+                            val b_soc = data[19].toInt() and 0xFF
+
                             if (now - lastTelemetryLog > 2000) {
                                 lastTelemetryLog = now
-                                Log.i(TAG, "RIDE: spd=%.1f trq=%.1f cad=%.1f pwr=%.1f car=%d%% soc=%d%% err=%d dist=%.1f t=%d acur=%.2f"
-                                    .format(speed, torque, cadence, power, carr, rsoc, errorCode, tripDist, tripTime, acurValue))
+                                Log.i(TAG, "CMD41 StratA: spd=%.1f trq=%.1f cad=%.1f pwr=%.1f soc=%d"
+                                    .format(a_spd, a_trq, a_cad, a_pwr, a_soc))
+                                Log.i(TAG, "CMD41 StratB: spd=%.1f trq=%.1f cad=%.1f pwr=%.1f soc=%d car=%d dist=%.1f t=%d"
+                                    .format(b_spd, b_trq, b_cad, b_pwr, b_soc, b_carr, b_dist, b_time))
                             }
 
+                            // Send BOTH strategies to PWA for comparison
+                            onDataReceived?.invoke(JSONObject()
+                                .put("type", "sgRidingDiag")
+                                .put("rawHex", rawHex)
+                                .put("a_speed", a_spd).put("a_torque", a_trq)
+                                .put("a_cadence", a_cad).put("a_power", a_pwr)
+                                .put("a_soc", a_soc)
+                                .put("b_speed", b_spd).put("b_torque", b_trq)
+                                .put("b_cadence", b_cad).put("b_power", b_pwr)
+                                .put("b_soc", b_soc).put("b_carr", b_carr)
+                                .put("b_dist", b_dist).put("b_time", b_time))
+
+                            // Use Strategy B for live data (most likely correct)
                             onDataReceived?.invoke(JSONObject()
                                 .put("type", "sgRiding")
-                                .put("speed", speed)
-                                .put("torque", torque)
-                                .put("cadence", cadence)
-                                .put("power", power)
-                                .put("assistRatio", carr)
-                                .put("batterySoc", rsoc)
-                                .put("tripDistance", tripDist)
-                                .put("tripTime", tripTime)
-                                .put("accumCurrent", acurValue)
-                                .put("errorCode", errorCode))
+                                .put("speed", b_spd)
+                                .put("torque", b_trq)
+                                .put("cadence", b_cad)
+                                .put("power", b_pwr)
+                                .put("assistRatio", b_carr)
+                                .put("batterySoc", b_soc)
+                                .put("tripDistance", b_dist)
+                                .put("tripTime", b_time)
+                                .put("accumCurrent", b_acur)
+                                .put("errorCode", 0))
 
-                            // Broadcast for PWA compatibility
-                            if (speed > 0.5) onDataReceived?.invoke(JSONObject().put("type", "speed").put("value", speed))
-                            if (power > 0) onDataReceived?.invoke(JSONObject().put("type", "power").put("value", power.toInt()))
-                            if (cadence > 0) onDataReceived?.invoke(JSONObject().put("type", "cadence").put("value", cadence.toInt()))
-                            if (rsoc in 1..100) onDataReceived?.invoke(JSONObject().put("type", "battery").put("value", rsoc))
+                            // PWA compat broadcasts (using Strategy B)
+                            if (b_spd > 0.5) onDataReceived?.invoke(JSONObject().put("type", "speed").put("value", b_spd))
+                            if (b_pwr > 0) onDataReceived?.invoke(JSONObject().put("type", "power").put("value", b_pwr.toInt()))
+                            if (b_cad > 0) onDataReceived?.invoke(JSONObject().put("type", "cadence").put("value", b_cad.toInt()))
+                            if (b_soc in 1..100) onDataReceived?.invoke(JSONObject().put("type", "battery").put("value", b_soc))
                         }
                         0x22 -> {
                             // Heartbeat confirmation
