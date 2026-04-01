@@ -12,22 +12,30 @@
  * with mode-based defaults when no data is available yet.
  */
 
-// === Battery specs ===
-const MAIN_BATTERY_WH = 800;
-const SUB_BATTERY_WH = 250;
-// const TOTAL_BATTERY_WH = MAIN_BATTERY_WH + SUB_BATTERY_WH; // 1050
+import { useSettingsStore, type BikeConfig } from '../../store/settingsStore';
 
-// === Consumption defaults (Wh/km) per mode ===
-// Derived from real-world data: terrain-dependent, rider ~80kg
-const DEFAULT_CONSUMPTION: Record<string, number> = {
-  eco: 6,       // ~130-150km range
-  tour: 15,     // ~60-70km range
-  active: 22,   // ~40-50km range
-  sport: 28,    // ~30-40km range
-  power: 35,    // ~25-30km range
-  smart: 20,    // ~45-55km range (adaptive)
-  manual: 0,    // no motor
-};
+/** Get current bike config from settings (user-editable) */
+function getBikeConfig(): BikeConfig {
+  return useSettingsStore.getState().bikeConfig;
+}
+
+/** Get consumption default for a mode from bike config */
+function getConsumption(modeName: string): number {
+  const cfg = getBikeConfig();
+  const map: Record<string, number> = {
+    eco: cfg.consumption_eco,
+    tour: cfg.consumption_tour,
+    active: cfg.consumption_active,
+    sport: cfg.consumption_sport,
+    pwr: cfg.consumption_power,
+    power: cfg.consumption_power,
+    smart: (cfg.consumption_active + cfg.consumption_sport) / 2,
+    man: 0,
+    manual: 0,
+    off: 0,
+  };
+  return map[modeName] ?? cfg.consumption_power;
+}
 
 // === Sample management ===
 const MAX_SAMPLES = 120;        // 2 minutes at 1s intervals
@@ -101,12 +109,16 @@ class BatteryEstimationService {
     bat1Life: number = 100,
     bat2Life: number = 100,
   ): RangeEstimate {
+    const cfg = getBikeConfig();
+    const mainWh = cfg.main_battery_wh;
+    const subWh = cfg.has_range_extender ? cfg.sub_battery_wh : 0;
+
     // Health factor: average of both battery health percentages
     const health_factor = ((bat1Life + bat2Life) / 2) / 100;
 
     // Effective capacity adjusted for battery health
-    const effective_main = MAIN_BATTERY_WH * (bat1Life / 100);
-    const effective_sub = SUB_BATTERY_WH * (bat2Life / 100);
+    const effective_main = mainWh * (bat1Life / 100);
+    const effective_sub = subWh * (bat2Life / 100);
     const effective_total = effective_main + effective_sub;
 
     // Remaining energy from SOC
@@ -118,7 +130,7 @@ class BatteryEstimationService {
     const hasLiveData = this.samples.length >= 10;
     const consumption = hasLiveData
       ? this.avgConsumption
-      : (DEFAULT_CONSUMPTION[modeName] ?? DEFAULT_CONSUMPTION.power!);
+      : getConsumption(modeName);
 
     // Range
     const range_km = consumption > 0 ? remaining_wh / consumption : 0;

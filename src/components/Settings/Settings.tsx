@@ -14,8 +14,10 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
   const bleStatus = useBikeStore((s) => s.ble_status);
   const services = useBikeStore((s) => s.ble_services);
   const profile = useSettingsStore((s) => s.riderProfile);
+  const bike = useSettingsStore((s) => s.bikeConfig);
   const autoAssist = useSettingsStore((s) => s.autoAssist);
   const updateProfile = useSettingsStore((s) => s.updateRiderProfile);
+  const updateBike = useSettingsStore((s) => s.updateBikeConfig);
   const updateAutoAssist = useSettingsStore((s) => s.updateAutoAssist);
 
   const [komootUrl, setKomootUrl] = useState('');
@@ -98,6 +100,59 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
             >
               Usar
             </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Bike Profile */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-gray-300">Perfil da Bicicleta</h2>
+        <div className="bg-gray-800 rounded-xl p-4 space-y-4">
+          <TextField label="Nome" value={bike.name} onChange={(v) => updateBike({ name: v })} />
+
+          <div className="border-t border-gray-700 pt-3">
+            <span className="text-xs text-gray-500 uppercase">Bateria</span>
+          </div>
+          <NumberField label="Bateria principal (Wh)" value={bike.main_battery_wh} onChange={(v) => updateBike({ main_battery_wh: v })} />
+          <div className="flex items-center justify-between">
+            <span className="text-gray-400 text-sm">Range Extender</span>
+            <button
+              onClick={() => updateBike({ has_range_extender: !bike.has_range_extender })}
+              className={`w-14 h-8 rounded-full transition-colors ${
+                bike.has_range_extender ? 'bg-blue-600' : 'bg-gray-600'
+              }`}
+            >
+              <div className={`w-6 h-6 rounded-full bg-white transition-transform mx-1 ${
+                bike.has_range_extender ? 'translate-x-6' : ''
+              }`} />
+            </button>
+          </div>
+          {bike.has_range_extender && (
+            <NumberField label="Range extender (Wh)" value={bike.sub_battery_wh} onChange={(v) => updateBike({ sub_battery_wh: v })} />
+          )}
+          <div className="text-xs text-gray-600 text-right">
+            Total: {bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0)}Wh
+          </div>
+
+          <div className="border-t border-gray-700 pt-3">
+            <span className="text-xs text-gray-500 uppercase">Motor</span>
+          </div>
+          <TextField label="Motor" value={bike.motor_name} onChange={(v) => updateBike({ motor_name: v })} />
+          <NumberField label="Torque max (Nm)" value={bike.max_torque_nm} onChange={(v) => updateBike({ max_torque_nm: v })} />
+          <NumberField label="Potencia max (W)" value={bike.max_power_w} onChange={(v) => updateBike({ max_power_w: v })} />
+          <NumberField label="Limite velocidade (km/h)" value={bike.speed_limit_kmh} onChange={(v) => updateBike({ speed_limit_kmh: v })} />
+
+          <div className="border-t border-gray-700 pt-3">
+            <span className="text-xs text-gray-500 uppercase">Consumo estimado (Wh/km)</span>
+          </div>
+          <NumberField label="ECO" value={bike.consumption_eco} onChange={(v) => updateBike({ consumption_eco: v })} />
+          <NumberField label="TOUR" value={bike.consumption_tour} onChange={(v) => updateBike({ consumption_tour: v })} />
+          <NumberField label="ACTIVE" value={bike.consumption_active} onChange={(v) => updateBike({ consumption_active: v })} />
+          <NumberField label="SPORT" value={bike.consumption_sport} onChange={(v) => updateBike({ consumption_sport: v })} />
+          <NumberField label="POWER" value={bike.consumption_power} onChange={(v) => updateBike({ consumption_power: v })} />
+          <div className="text-[10px] text-gray-600">
+            Valores usados para estimar range quando nao ha dados live.
+            Ajusta com base na tua experiencia de conduzir.
           </div>
         </div>
       </section>
@@ -213,7 +268,7 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
 
       {/* Version */}
       <div className="text-center text-xs text-gray-600 pb-4">
-        KROMI BikeControl v0.5.0
+        KROMI BikeControl v0.6.0
       </div>
     </div>
   );
@@ -264,6 +319,28 @@ function BikeInfoSection() {
         )}
       </div>
     </section>
+  );
+}
+
+function TextField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-gray-400 text-sm">{label}</span>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-gray-700 text-white rounded-lg p-2 w-40 text-right text-sm"
+      />
+    </div>
   );
 }
 
