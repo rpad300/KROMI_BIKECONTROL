@@ -360,9 +360,17 @@ class WebSocketBLEClient {
           console.log(`[WSClient] Motor battery: SOC=${msg.soc}% life=${msg.life}%`);
           break;
 
+        case 'sgBatteryHealth':
+          // Dual battery health from cmd 0x43: bat1Life, bat2Life, soc
+          if (msg.bat1Life !== undefined) store.setBatteryMain(msg.bat1Life);
+          if (msg.bat2Life !== undefined) store.setBatterySub(msg.bat2Life);
+          if (msg.soc !== undefined) store.setBatteryPercent(msg.soc);
+          break;
+
         case 'sgMotorStatus':
           // Motor status with voltage
           console.log(`[WSClient] Motor: bat1=${msg.bat1} bat2=${msg.bat2} v=${msg.voltage}`);
+          if (msg.voltage) store.setBatteryVoltage(msg.voltage);
           break;
 
         case 'sgConnected':
