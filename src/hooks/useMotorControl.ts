@@ -9,6 +9,7 @@ import { autoAssistEngine } from '../services/autoAssist/AutoAssistEngine';
 import { tuningIntelligence, type TuningInput } from '../services/motor/TuningIntelligence';
 import { setTuning, isTuningAvailable } from '../services/bluetooth/BLEBridge';
 import { AssistMode } from '../types/bike.types';
+import { encodeCalibration } from '../types/tuning.types';
 
 const TICK_INTERVAL_MS = 2000;
 
@@ -100,12 +101,34 @@ export function useMotorControl() {
       const decision = tuningIntelligence.evaluate(input);
       useIntelligenceStore.getState().setDecision(decision);
 
-      // === Execute: send calibration to motor if wire value changed ===
-      const tuning = useTuningStore.getState();
-      if (decision.wireValue !== tuning.current.power && isTuningAvailable()) {
-        const newLevels = { ...tuning.current, power: decision.wireValue };
-        setTuning(newLevels);
-        tuning.setCurrent(newLevels);
+      // === Execute: send 5-ASMO calibration to motor ===
+      if (isTuningAvailable()) {
+        const tuning = useTuningStore.getState();
+        const [b0, b1, b2] = encodeCalibration(decision.calibration);
+        const current = tuning.current;
+        // Check if any ASMO changed
+        const prevBytes = [
+          (current.power + 1) | ((current.sport + 1) << 4),
+          (current.active + 1) | ((current.tour + 1) << 4),
+          current.eco + 1,
+        ];
+        if (b0 !== prevBytes[0] || b1 !== prevBytes[1] || b2 !== prevBytes[2]) {
+          // Map 5 ASMOs to the 5-mode tuning format for the existing setTuning API
+          setTuning({
+            power: decision.calibration.support,
+            sport: decision.calibration.torque,
+            active: decision.calibration.midTorque,
+            tour: decision.calibration.lowTorque,
+            eco: decision.calibration.launch,
+          });
+          tuning.setCurrent({
+            power: decision.calibration.support,
+            sport: decision.calibration.torque,
+            active: decision.calibration.midTorque,
+            tour: decision.calibration.lowTorque,
+            eco: decision.calibration.launch,
+          });
+        }
       }
     }, TICK_INTERVAL_MS);
 

@@ -1,21 +1,23 @@
 /**
- * TuningIntelligence — continuous motor calibration engine.
+ * TuningIntelligence — continuous 5-ASMO motor calibration.
  *
- * NOT a "level picker". Continuously calculates optimal motor intensity
- * (0-100%) from all inputs, then maps to the closest wire value the
- * motor accepts via SET_TUNING.
+ * Independently controls each motor parameter based on riding conditions:
+ *   ASMO1 Support % — how much the motor multiplies rider input
+ *   ASMO2 Torque    — high-range torque response
+ *   ASMO3 Mid torque — mid-range torque
+ *   ASMO4 Low torque — low-range torque
+ *   ASMO5 Launch    — initial response aggressiveness
  *
- * Wire values: 0 (max power) → 1 → 2 (min power)
- * Value 3 untested (may be ultra-min or default).
- *
- * The motor's internal response (assist%, torque, launch) is determined
- * by the wire value. We estimate those characteristics in bikeConfig
- * for battery/range calculations.
- *
- * Inputs: terrain, battery, speed, HR, cadence, power, altitude, rider profile, bike specs
+ * Each parameter gets a 0-100 intensity score, mapped to wire 0/1/2.
+ * Different parameters respond differently to the same conditions:
+ *   - Steep climb: max support + max torque + max launch
+ *   - Technical climb: max support + LOW torque (prevent spin) + high launch
+ *   - Flat cruising: min everything (save battery)
+ *   - Near speed limit: reduce support (motor cuts at 25km/h anyway)
  */
 
 import { useSettingsStore } from '../../store/settingsStore';
+import { type AsmoCalibration, type AsmoWire, DU7_TABLES, resolveCalibration } from '../../types/tuning.types';
 
 export interface TuningInput {
   gradient: number;
@@ -29,40 +31,39 @@ export interface TuningInput {
   distanceToChange: number | null;
 }
 
-export interface TuningDecision {
-  /** Continuous intensity 0-100% (the real calculation) */
-  intensity: number;
-  /** Wire value sent to motor via SET_TUNING (0=max, 1=mid, 2=min) */
-  wireValue: 0 | 1 | 2;
-  /** Display label for UI */
-  label: 'MAX' | 'MID' | 'MIN';
-  /** Factor breakdown */
-  factors: TuningFactor[];
-  /** Pre-emptive alert */
-  preemptive: string | null;
-  /** Motor specs at current wire value */
-  motorAssistPct: number;
-  motorTorqueNm: number;
-  motorLaunch: number;
-  motorConsumptionWhKm: number;
-}
-
 export interface TuningFactor {
   name: string;
   value: number;
   detail: string;
 }
 
-// Wire value mapping: intensity% → wire value
-// 0 = max power (highest assist), 2 = min power (lowest assist)
-const WIRE_THRESHOLDS = { toMax: 65, toMid: 35 } as const;
+export interface TuningDecision {
+  /** Continuous overall intensity 0-100% */
+  intensity: number;
+  /** Per-parameter intensity (0-100) */
+  supportIntensity: number;
+  torqueIntensity: number;
+  launchIntensity: number;
+  /** Wire values sent to motor */
+  calibration: AsmoCalibration;
+  /** Resolved actual values from DU7 tables */
+  actual: { support: number; torque: number; midTorque: number; lowTorque: number; launch: number };
+  /** Factor breakdown */
+  factors: TuningFactor[];
+  /** Pre-emptive alert */
+  preemptive: string | null;
+}
 
 const SMOOTHING_WINDOW = 3;
 
+function intensityToWire(intensity: number): AsmoWire {
+  return intensity > 65 ? 0 : intensity > 35 ? 1 : 2;
+}
+
 class TuningIntelligence {
   private static instance: TuningIntelligence;
-  private wireHistory: (0 | 1 | 2)[] = [];
-  private currentWire: 0 | 1 | 2 = 1;
+  private history: AsmoCalibration[] = [];
+  private current: AsmoCalibration = { support: 1, torque: 1, midTorque: 1, lowTorque: 1, launch: 1 };
   private lastDecision: TuningDecision | null = null;
 
   static getInstance(): TuningIntelligence {
@@ -76,40 +77,18 @@ class TuningIntelligence {
     const rider = useSettingsStore.getState().riderProfile;
     const bike = useSettingsStore.getState().bikeConfig;
     const factors: TuningFactor[] = [];
-
-    // === CALCULATE CONTINUOUS INTENSITY (0-100%) ===
-
-    // 1. Terrain + weight (0-100 base)
-    const terrainScore = this.scoreTerrain(input.gradient, rider.weight_kg);
-    factors.push({ name: 'Terreno', value: terrainScore, detail: this.descGradient(input.gradient, rider.weight_kg) });
-
-    // 2. Battery (multiplier 0.4-1.0)
     const totalWh = bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0);
-    const batteryMult = this.scoreBattery(input.batterySoc, totalWh);
-    if (batteryMult < 1) factors.push({ name: 'Bateria', value: Math.round((batteryMult - 1) * 100), detail: `${input.batterySoc}% (${Math.round(input.batterySoc / 100 * totalWh)}Wh) — ×${batteryMult.toFixed(2)}` });
-
-    // 3. Speed + speed limit (-25 to +25)
-    const speedMod = this.scoreSpeed(input.speed, input.gradient, bike.speed_limit_kmh);
-    if (speedMod !== 0) factors.push({ name: 'Velocidade', value: speedMod, detail: this.descSpeed(input.speed, bike.speed_limit_kmh) });
-
-    // 4. Heart rate effort (-10 to +20)
     const hrMax = rider.hr_max > 0 ? rider.hr_max : (220 - rider.age);
+    const weightFactor = rider.weight_kg / 75;
+
+    // === BASE SCORES (shared) ===
+    const terrainBase = this.scoreTerrain(input.gradient);
+    const batteryMult = this.scoreBattery(input.batterySoc, totalWh);
     const hrMod = this.scoreHR(input.hr, hrMax);
-    if (hrMod !== 0) factors.push({ name: 'FC', value: hrMod, detail: this.descHR(input.hr, hrMax) });
-
-    // 5. Cadence (-10 to +20)
     const cadMod = this.scoreCadence(input.cadence, input.gradient);
-    if (cadMod !== 0) factors.push({ name: 'Cadência', value: cadMod, detail: this.descCadence(input.cadence) });
-
-    // 6. Rider power W/kg (-15 to +15)
     const pwrMod = this.scorePower(input.riderPower, rider.weight_kg);
-    if (pwrMod !== 0) factors.push({ name: 'Potência', value: pwrMod, detail: this.descPower(input.riderPower, rider.weight_kg) });
-
-    // 7. Altitude (0 to +10)
     const altMod = input.altitude > 1500 ? Math.min(10, Math.round((input.altitude - 1500) / 250)) : 0;
-    if (altMod > 0) factors.push({ name: 'Altitude', value: altMod, detail: `${Math.round(input.altitude)}m` });
 
-    // 8. Pre-emptive (-15 to +20)
     let preemptive: string | null = null;
     let preMod = 0;
     if (input.upcomingGradient !== null && input.distanceToChange !== null && input.distanceToChange < 100) {
@@ -121,92 +100,98 @@ class TuningIntelligence {
         preMod = -15;
         preemptive = `Descida em ${Math.round(input.distanceToChange)}m`;
       }
-      if (preMod !== 0) factors.push({ name: 'Antecipação', value: preMod, detail: preemptive ?? '' });
     }
 
-    // === CONTINUOUS INTENSITY ===
-    const rawIntensity = terrainScore * batteryMult + speedMod + hrMod + cadMod + pwrMod + altMod + preMod;
-    const intensity = Math.max(0, Math.min(100, Math.round(rawIntensity)));
+    // === SUPPORT % (ASMO1) ===
+    // Responds most to: gradient, weight, speed limit, battery
+    let supportI = terrainBase * weightFactor * batteryMult + hrMod + preMod;
+    // Near speed limit: reduce support (motor cuts off anyway)
+    if (input.speed > bike.speed_limit_kmh - 3) supportI -= 30;
+    else if (input.speed > bike.speed_limit_kmh - 6) supportI -= 15;
+    supportI = Math.max(0, Math.min(100, Math.round(supportI)));
 
-    // === MAP TO WIRE VALUE ===
-    const targetWire: 0 | 1 | 2 = intensity > WIRE_THRESHOLDS.toMax ? 0
-      : intensity > WIRE_THRESHOLDS.toMid ? 1 : 2;
+    // === TORQUE (ASMO2 high + ASMO3 mid + ASMO4 low) ===
+    // Responds to: gradient, cadence (low = more torque), power effort
+    let torqueI = terrainBase * batteryMult + cadMod + pwrMod + altMod;
+    // Technical terrain: LOW cadence + steep = need torque but controlled
+    if (input.cadence > 0 && input.cadence < 50 && input.gradient > 8) {
+      torqueI = Math.min(torqueI, 60); // cap torque to prevent wheel spin
+    }
+    torqueI = Math.max(0, Math.min(100, Math.round(torqueI)));
+
+    // === LAUNCH (ASMO5) ===
+    // Responds to: gradient (steep = aggressive launch), speed (slow = need boost)
+    let launchI = terrainBase * 0.7 + preMod;
+    if (input.speed < 5 && input.gradient > 3) launchI += 25; // stopped on climb = aggressive launch
+    if (input.speed > 20) launchI -= 20; // already moving = less launch
+    launchI = Math.max(0, Math.min(100, Math.round(launchI * batteryMult)));
+
+    // === MAP TO WIRE VALUES ===
+    const target: AsmoCalibration = {
+      support: intensityToWire(supportI),
+      torque: intensityToWire(torqueI),
+      midTorque: intensityToWire(Math.max(0, torqueI - 10)), // slightly less than main torque
+      lowTorque: intensityToWire(Math.max(0, torqueI - 20)), // even less
+      launch: intensityToWire(launchI),
+    };
 
     // Smoothing
-    this.wireHistory.push(targetWire);
-    if (this.wireHistory.length > SMOOTHING_WINDOW) this.wireHistory.shift();
-    const stable = this.getStableWire();
-    if (stable !== null) this.currentWire = stable;
+    this.history.push(target);
+    if (this.history.length > SMOOTHING_WINDOW) this.history.shift();
+    const stable = this.getStable();
+    if (stable) this.current = stable;
 
-    // Motor specs at current wire value
-    const spec = this.currentWire === 0 ? bike.tuning_max
-      : this.currentWire === 1 ? bike.tuning_mid : bike.tuning_min;
-    const label = this.currentWire === 0 ? 'MAX' : this.currentWire === 1 ? 'MID' : 'MIN';
+    const actual = resolveCalibration(this.current, DU7_TABLES);
+    const intensity = Math.round((supportI + torqueI + launchI) / 3);
 
-    factors.push({ name: 'Motor', value: 0, detail: `${spec.assist_pct}% · ${spec.torque_nm}Nm · L${spec.launch} · ${spec.consumption_wh_km}Wh/km` });
+    // Factors
+    factors.push({ name: 'Terreno', value: Math.round(terrainBase), detail: this.descGradient(input.gradient, rider.weight_kg) });
+    if (batteryMult < 1) factors.push({ name: 'Bateria', value: Math.round((batteryMult - 1) * 100), detail: `${input.batterySoc}% — ×${batteryMult.toFixed(2)}` });
+    if (hrMod !== 0) factors.push({ name: 'FC', value: hrMod, detail: `${input.hr}bpm (${hrMax > 0 ? Math.round(input.hr / hrMax * 100) : '?'}%max)` });
+    if (cadMod !== 0) factors.push({ name: 'Cadência', value: cadMod, detail: `${input.cadence}rpm` });
+    if (pwrMod !== 0) factors.push({ name: 'W/kg', value: pwrMod, detail: `${input.riderPower}W (${(input.riderPower / rider.weight_kg).toFixed(1)}W/kg)` });
+    if (preMod !== 0) factors.push({ name: 'Antecipação', value: preMod, detail: preemptive ?? '' });
+    factors.push({ name: 'Calibração', value: 0, detail: `S${actual.support}% T${actual.torque} M${actual.midTorque} L${actual.lowTorque} R${actual.launch}` });
 
     this.lastDecision = {
       intensity,
-      wireValue: this.currentWire,
-      label,
+      supportIntensity: supportI,
+      torqueIntensity: torqueI,
+      launchIntensity: launchI,
+      calibration: { ...this.current },
+      actual,
       factors,
       preemptive,
-      motorAssistPct: spec.assist_pct,
-      motorTorqueNm: spec.torque_nm,
-      motorLaunch: spec.launch,
-      motorConsumptionWhKm: spec.consumption_wh_km,
     };
     return this.lastDecision;
   }
 
   getLastDecision(): TuningDecision | null { return this.lastDecision; }
-  getCurrentWireValue(): 0 | 1 | 2 { return this.currentWire; }
-  reset(): void { this.wireHistory = []; this.currentWire = 1; this.lastDecision = null; }
+  getCurrentCalibration(): AsmoCalibration { return { ...this.current }; }
+  reset(): void { this.history = []; this.current = { support: 1, torque: 1, midTorque: 1, lowTorque: 1, launch: 1 }; this.lastDecision = null; }
 
-  // ── Scoring functions ─────────────────────────
+  // ── Scoring ───────────────────────────────────
 
-  private scoreTerrain(g: number, weight: number): number {
-    let base = g > 12 ? 100 : g > 8 ? 85 : g > 5 ? 70 : g > 3 ? 55 : g > 1 ? 40 : g > -2 ? 25 : g > -5 ? 10 : 0;
-    if (g > 2 && weight > 0) base = Math.min(100, Math.round(base * (0.8 + 0.2 * (weight / 75))));
-    return base;
+  private scoreTerrain(g: number): number {
+    return g > 12 ? 100 : g > 8 ? 85 : g > 5 ? 70 : g > 3 ? 55 : g > 1 ? 40 : g > -2 ? 25 : g > -5 ? 10 : 0;
   }
-
   private scoreBattery(soc: number, totalWh: number): number {
     const f = Math.min(totalWh / 1050, 1.2);
-    if (soc > 60) return 1.0;
-    if (soc > 30 * f) return 0.7 + (soc - 30 * f) / (60 - 30 * f) * 0.3;
-    if (soc > 15 * f) return 0.5 + (soc - 15 * f) / (15 * f) * 0.2;
-    return 0.4;
+    return soc > 60 ? 1.0 : soc > 30 * f ? 0.7 + (soc - 30 * f) / (60 - 30 * f) * 0.3 : soc > 15 * f ? 0.5 + (soc - 15 * f) / (15 * f) * 0.2 : 0.4;
   }
-
-  private scoreSpeed(speed: number, gradient: number, limit: number): number {
-    if (speed > limit - 2) return -25;
-    if (speed > limit - 5) return -15;
-    if (speed < 5 && gradient > 5) return 25;
-    if (speed < 10 && gradient > 3) return 15;
-    if (speed < 3) return -10;
-    return 0;
-  }
-
-  private scoreHR(hr: number, hrMax: number): number {
-    if (hr <= 0 || hrMax <= 0) return 0;
-    const p = hr / hrMax;
+  private scoreHR(hr: number, max: number): number {
+    if (hr <= 0 || max <= 0) return 0;
+    const p = hr / max;
     return p > 0.92 ? 20 : p > 0.85 ? 15 : p > 0.75 ? 5 : p < 0.55 ? -10 : 0;
   }
-
-  private scoreCadence(cad: number, gradient: number): number {
-    if (cad <= 0) return 0;
-    return cad > 90 ? -10 : cad < 40 && gradient > 3 ? 20 : cad < 60 ? 10 : 0;
+  private scoreCadence(c: number, g: number): number {
+    return c <= 0 ? 0 : c > 90 ? -10 : c < 40 && g > 3 ? 20 : c < 60 ? 10 : 0;
   }
-
-  private scorePower(watts: number, weight: number): number {
-    if (watts <= 0 || weight <= 0) return 0;
-    const wkg = watts / weight;
+  private scorePower(w: number, kg: number): number {
+    if (w <= 0 || kg <= 0) return 0;
+    const wkg = w / kg;
     return wkg > 3.5 ? 15 : wkg > 2.5 ? 10 : wkg < 0.5 ? -15 : wkg < 1.0 ? -5 : 0;
   }
-
-  // ── Descriptions ──────────────────────────────
-
   private descGradient(g: number, w: number): string {
     const wn = w > 85 ? ' (pesado)' : w < 65 ? ' (leve)' : '';
     return g > 12 ? `Forte ${g.toFixed(0)}%${wn}` : g > 8 ? `Dura ${g.toFixed(0)}%${wn}` :
@@ -214,29 +199,16 @@ class TuningIntelligence {
       g > -2 ? 'Plano' : `Descida ${g.toFixed(0)}%`;
   }
 
-  private descSpeed(s: number, limit: number): string {
-    return s > limit - 2 ? `${s.toFixed(0)}km/h — limite motor` : s < 5 ? `${s.toFixed(0)}km/h — lento` : `${s.toFixed(0)}km/h`;
-  }
-
-  private descHR(hr: number, max: number): string {
-    if (hr <= 0) return '';
-    const p = max > 0 ? Math.round(hr / max * 100) : 0;
-    return `${hr}bpm (${p}%max)`;
-  }
-
-  private descCadence(c: number): string {
-    return c > 90 ? `${c}rpm spin` : c < 40 ? `${c}rpm grind` : c < 60 ? `${c}rpm baixa` : `${c}rpm`;
-  }
-
-  private descPower(w: number, kg: number): string {
-    if (w <= 0) return '';
-    return `${w}W (${(w / kg).toFixed(1)}W/kg)`;
-  }
-
-  private getStableWire(): (0 | 1 | 2) | null {
-    if (this.wireHistory.length < SMOOTHING_WINDOW) return null;
-    const w = this.wireHistory.slice(-SMOOTHING_WINDOW);
-    return w.every((v) => v === w[0]) ? w[0]! : null;
+  private getStable(): AsmoCalibration | null {
+    if (this.history.length < SMOOTHING_WINDOW) return null;
+    const w = this.history.slice(-SMOOTHING_WINDOW);
+    const first = w[0]!;
+    const allSame = w.every((c) =>
+      c.support === first.support && c.torque === first.torque &&
+      c.midTorque === first.midTorque && c.lowTorque === first.lowTorque &&
+      c.launch === first.launch
+    );
+    return allSame ? first : null;
   }
 }
 

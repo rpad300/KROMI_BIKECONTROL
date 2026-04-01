@@ -1,22 +1,16 @@
 import { create } from 'zustand';
 import type { TuningDecision, TuningFactor } from '../services/motor/TuningIntelligence';
+import type { AsmoCalibration } from '../types/tuning.types';
 
 interface IntelligenceState {
-  /** Continuous intensity 0-100% */
   intensity: number;
-  /** Wire value sent to motor (0=max, 1=mid, 2=min) */
-  wireValue: 0 | 1 | 2;
-  /** Display label */
-  label: 'MAX' | 'MID' | 'MIN';
-  /** Factor breakdown */
+  supportIntensity: number;
+  torqueIntensity: number;
+  launchIntensity: number;
+  calibration: AsmoCalibration;
+  actual: { support: number; torque: number; midTorque: number; lowTorque: number; launch: number };
   factors: TuningFactor[];
-  /** Pre-emptive alert */
   preemptive: string | null;
-  /** Motor specs at current calibration */
-  motorAssistPct: number;
-  motorTorqueNm: number;
-  motorConsumptionWhKm: number;
-  /** Active state */
   active: boolean;
   lastUpdateMs: number;
 
@@ -27,33 +21,33 @@ interface IntelligenceState {
 
 export const useIntelligenceStore = create<IntelligenceState>((set) => ({
   intensity: 50,
-  wireValue: 1,
-  label: 'MID',
+  supportIntensity: 50,
+  torqueIntensity: 50,
+  launchIntensity: 50,
+  calibration: { support: 1, torque: 1, midTorque: 1, lowTorque: 1, launch: 1 },
+  actual: { support: 350, torque: 250, midTorque: 200, lowTorque: 150, launch: 75 },
   factors: [],
   preemptive: null,
-  motorAssistPct: 240,
-  motorTorqueNm: 65,
-  motorConsumptionWhKm: 28,
   active: false,
   lastUpdateMs: 0,
 
   setDecision: (d) => set({
     intensity: d.intensity,
-    wireValue: d.wireValue,
-    label: d.label,
+    supportIntensity: d.supportIntensity,
+    torqueIntensity: d.torqueIntensity,
+    launchIntensity: d.launchIntensity,
+    calibration: d.calibration,
+    actual: d.actual,
     factors: d.factors,
     preemptive: d.preemptive,
-    motorAssistPct: d.motorAssistPct,
-    motorTorqueNm: d.motorTorqueNm,
-    motorConsumptionWhKm: d.motorConsumptionWhKm,
     lastUpdateMs: Date.now(),
   }),
 
   setActive: (v) => set({ active: v }),
-
   reset: () => set({
-    intensity: 50, wireValue: 1, label: 'MID', factors: [], preemptive: null,
-    motorAssistPct: 240, motorTorqueNm: 65, motorConsumptionWhKm: 28,
-    active: false, lastUpdateMs: 0,
+    intensity: 50, supportIntensity: 50, torqueIntensity: 50, launchIntensity: 50,
+    calibration: { support: 1, torque: 1, midTorque: 1, lowTorque: 1, launch: 1 },
+    actual: { support: 350, torque: 250, midTorque: 200, lowTorque: 150, launch: 75 },
+    factors: [], preemptive: null, active: false, lastUpdateMs: 0,
   }),
 }));

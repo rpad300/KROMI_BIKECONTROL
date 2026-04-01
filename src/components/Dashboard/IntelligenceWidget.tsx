@@ -1,58 +1,39 @@
 import { useIntelligenceStore } from '../../store/intelligenceStore';
 
-const WIRE_LABELS = { 0: 'MAX', 1: 'MID', 2: 'MIN' } as const;
-const WIRE_BG = { 0: 'bg-red-600', 1: 'bg-yellow-600', 2: 'bg-green-600' } as const;
-
 /**
- * IntelligenceWidget — shows KROMI's continuous calibration.
- * Intensity 0-100% → mapped to motor wire value (0/1/2).
- * Transparent: shows every factor and the motor's current state.
+ * IntelligenceWidget — shows KROMI's 5-ASMO continuous calibration.
+ * 3 intensity bars (Support, Torque, Launch) + actual motor values + factors.
  */
 export function IntelligenceWidget() {
   const active = useIntelligenceStore((s) => s.active);
   const intensity = useIntelligenceStore((s) => s.intensity);
-  const wireValue = useIntelligenceStore((s) => s.wireValue);
+  const supportI = useIntelligenceStore((s) => s.supportIntensity);
+  const torqueI = useIntelligenceStore((s) => s.torqueIntensity);
+  const launchI = useIntelligenceStore((s) => s.launchIntensity);
+  const actual = useIntelligenceStore((s) => s.actual);
   const factors = useIntelligenceStore((s) => s.factors);
   const preemptive = useIntelligenceStore((s) => s.preemptive);
-  const assistPct = useIntelligenceStore((s) => s.motorAssistPct);
-  const torqueNm = useIntelligenceStore((s) => s.motorTorqueNm);
-  const whKm = useIntelligenceStore((s) => s.motorConsumptionWhKm);
 
   if (!active) return null;
 
-  const barColor = intensity > 65 ? 'bg-red-500' : intensity > 35 ? 'bg-yellow-500' : 'bg-green-500';
-
   return (
     <div className="bg-gray-800 rounded-xl p-3 space-y-2">
-      {/* Header: intensity + wire value + motor state */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm font-bold text-emerald-400">KROMI</span>
-          <span className="text-2xl font-bold tabular-nums text-white">{intensity}%</span>
+          <span className="text-xl font-bold tabular-nums text-white">{intensity}%</span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="text-right text-[10px] text-gray-500">
-            <div>{assistPct}% · {torqueNm}Nm</div>
-            <div>{whKm}Wh/km</div>
-          </div>
-          <div className={`px-3 py-1.5 rounded-lg font-bold text-white text-sm ${WIRE_BG[wireValue]}`}>
-            {WIRE_LABELS[wireValue]}
-          </div>
+        <div className="text-[10px] text-gray-500 text-right">
+          S{actual.support}% T{actual.torque} M{actual.midTorque} L{actual.lowTorque} R{actual.launch}
         </div>
       </div>
 
-      {/* Intensity bar (continuous) */}
-      <div className="relative h-3 bg-gray-700 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full transition-all duration-700 ${barColor}`}
-          style={{ width: `${intensity}%` }} />
-        {/* Wire value zone markers */}
-        <div className="absolute top-0 left-[35%] w-px h-full bg-gray-500 opacity-50" />
-        <div className="absolute top-0 left-[65%] w-px h-full bg-gray-500 opacity-50" />
-      </div>
-      <div className="flex text-[8px] text-gray-600 justify-between px-0.5">
-        <span>MIN (wire 2)</span>
-        <span>MID (wire 1)</span>
-        <span>MAX (wire 0)</span>
+      {/* 3 independent intensity bars */}
+      <div className="space-y-1">
+        <IntensityBar label="Support" value={supportI} actual={`${actual.support}%`} color="bg-blue-500" />
+        <IntensityBar label="Torque" value={torqueI} actual={`${actual.torque}/${actual.midTorque}/${actual.lowTorque}`} color="bg-orange-500" />
+        <IntensityBar label="Launch" value={launchI} actual={`${actual.launch}`} color="bg-purple-500" />
       </div>
 
       {/* Pre-emptive alert */}
@@ -62,22 +43,36 @@ export function IntelligenceWidget() {
         </div>
       )}
 
-      {/* Factor breakdown */}
-      <div className="space-y-1">
+      {/* Factors */}
+      <div className="space-y-0.5">
         {factors.map((f) => (
-          <div key={f.name} className="flex items-center justify-between text-xs">
+          <div key={f.name} className="flex items-center justify-between text-[11px]">
             <span className="text-gray-500 w-20">{f.name}</span>
             <span className="text-gray-400 flex-1 text-right mr-2 truncate">{f.detail}</span>
             {f.value !== 0 && (
-              <span className={`font-bold tabular-nums w-8 text-right ${
-                f.value > 0 ? 'text-red-400' : 'text-green-400'
-              }`}>
+              <span className={`font-bold tabular-nums w-8 text-right ${f.value > 0 ? 'text-red-400' : 'text-green-400'}`}>
                 {f.value > 0 ? '+' : ''}{f.value}
               </span>
             )}
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function IntensityBar({ label, value, actual, color }: {
+  label: string; value: number; actual: string; color: string;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] text-gray-500 w-14">{label}</span>
+      <div className="flex-1 h-2.5 bg-gray-700 rounded-full overflow-hidden relative">
+        <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${value}%` }} />
+        <div className="absolute top-0 left-[35%] w-px h-full bg-gray-500/30" />
+        <div className="absolute top-0 left-[65%] w-px h-full bg-gray-500/30" />
+      </div>
+      <span className="text-[10px] text-gray-500 tabular-nums w-20 text-right">{actual}</span>
     </div>
   );
 }
