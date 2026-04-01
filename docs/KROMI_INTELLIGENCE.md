@@ -242,18 +242,20 @@ A velocidade no contexto do terreno prediz esforço futuro. Substituiu o penalty
 
 | Condição | Bias | Razão |
 |----------|:---:|--------|
-| speed < 8km/h + gradient > 5% (e speed > 2) | +10 | Lento em subida = a lutar, HR vai subir |
+| speed < 8km/h + gradient > 5% (e speed > 2) | max(0, 10 - terrainBias) | Só contribui o que terrainBias não capturou |
 | speed caiu > 3km/h em 10s + gradient > 3% (era > 5km/h) | +8 | A perder força em subida = fadiga |
-| speed 20-25km/h | 0 a -25 (linear) | Curva gradual até ao corte do motor |
+| speed (limit-5) a limit km/h | 0 a -25 (linear) | Curva gradual até ao corte do motor |
 
-**Porquê gradual e não binário**: a 20km/h o motor ainda é útil. A 23km/h quase não. Uma curva linear de 0→-25 entre 20-25km/h é mais suave que um salto de 0→-25 a 23km/h.
+**Anti-overlap**: o speedBias climb usa `max(0, 10 - terrainBias)`. Se o terrainBias já deu +15 (gradient >8%), o speedBias climb = 0. Se terrainBias é +5 (gradient 3-5%), speedBias = 5. Previne dupla contagem do mesmo fenómeno.
 
-**Exemplo**: a 22km/h num plano (limite 25km/h):
+**Speed limit dinâmico**: usa `bikeConfig.speed_limit_kmh` (default 25). Penalty inicia 5km/h antes do limite. Para mercados com limites diferentes (US: 32km/h), o valor ajusta automaticamente.
+
+**Exemplo**: a 22km/h (limite 25km/h):
 ```
+speedPenaltyStart = 25 - 5 = 20
 progress = (22-20)/(25-20) = 0.4
 speedPenalty = -round(0.4 × 25) = -10
 ```
-Antes: 0 (abaixo de 23) ou -25 (acima). Agora: -10 proporcional.
 
 ### Lookahead Dinâmico (baseado em velocidade)
 ```
@@ -347,13 +349,20 @@ Se o rider parar de pedalar (cadência=0 + speed<3km/h), o dwell cancela imediat
 ## 7. Cenários Reais (recalculados com fórmulas corrigidas)
 
 ### 7.1 Subida com HR controlada
-Z2 target (98-114), HR 112bpm, gradient 6%
+Z2 target (98-114), HR 112bpm, gradient 6%, speed 14km/h, 150W, cadência 72rpm estável
 ```
 HR: 112 está dentro de Z2
 posição = (112-98)/(114-98) = 14/16 = 0.875
 hrTarget = 40 + (0.875 × 20) = 57.5 ≈ 58
 
-Anticipation: currentGradient 6% → +10, no transition → +0 = +10
+Anticipation:
+  terrainBias:       6% → +10
+  transitionBias:    0
+  weightBias:        0
+  powerBias:         150/80=1.9 W/kg → 0
+  cadenceTrendBias:  0 (estável)
+  speedBias:         14km/h (>8) → 0
+  Total: +10
 Battery: 90% → ×1.0
 
 intensity = clamp(58 + 10, 0, 100) × 1.0 = 68
@@ -370,14 +379,19 @@ Explicação UI: "A manter Z2 — HR controlada ✓"
 **Nota**: Support MAX porque HR está no topo da zona em subida — sem MAX, HR subiria. Launch em wire 1 (R75) é deliberado: a meio de uma subida o rider já tem momentum, não precisa de launch agressivo. Se fosse arranque de parado, Launch seria MAX.
 
 ### 7.2 Subida com HR alta
-Z2 target (98-114), HR 135bpm (21 acima), gradient 10%
+Z2 target (98-114), HR 135bpm (21 acima), gradient 10%, speed 7km/h, 220W, cadência 55rpm
 ```
 hrTarget = 60 + (21 × 8) = 228 → cap 100
 
-Anticipation: currentGradient 10% (>8%) → +15
+Anticipation:
+  terrainBias:       10% → +15
+  speedBias climb:   7km/h<8 + grad>5% → max(0, 10-15) = 0 (terrain já capturou)
+  powerBias:         220/80=2.75 → +8
+  cadenceTrendBias:  0 (estável)
+  Total: +23
 Battery: ×1.0
 
-intensity = clamp(100 + 15, 0, 100) × 1.0 = 100 → wire 0
+intensity = clamp(100 + 23, 0, 100) × 1.0 = 100 → wire 0 (clamped)
 
 Support:  100 → wire 0 → S360%
 Torque:   100 → wire 0 → T300
@@ -391,65 +405,83 @@ Explicação UI: "Motor MAX — HR 21bpm acima de Z2, a proteger"
 ```
 
 ### 7.3 Plano com HR baixa
-Z2 target, HR 85bpm (13 abaixo), plano
+Z2 target, HR 85bpm (13 abaixo), plano, speed 18km/h, 60W, cadência 82rpm
 ```
 hrTarget = 40 - (13 × 5) = -25 → cap 0
 
-Anticipation: 0 (plano)
-Battery: ×1.0
+Anticipation:
+  terrainBias: 0, transitionBias: 0, weightBias: 0
+  powerBias: 60/80=0.75 W/kg → -10 (coasting)
+  cadenceTrendBias: 0, speedBias: 0
+  Total: -10
 
-intensity = 0 → wire 2 → S300% T200/175/125 R50
+intensity = clamp(0 + (-10), 0, 100) = 0 → wire 2 → S300% T200/175/125 R50
 
 Smoothing: HR_BELOW = 3 amostras → 6s gradual
 Explicação UI: "Motor reduzido — HR 13bpm abaixo de Z2, podes mais"
 ```
 
 ### 7.4 PLANO com HR ALTA (o cenário que diferencia o regulador)
-Z2 target, HR 130bpm (16 acima), gradient 0%
+Z2 target, HR 130bpm (16 acima), gradient 0%, speed 16km/h, 200W, cadência 75rpm
 ```
 hrTarget = 60 + (16 × 8) = 188 → cap 100
 
-Anticipation: 0 (plano!)
-Battery: ×1.0
+Anticipation:
+  terrainBias: 0, transitionBias: 0, weightBias: 0
+  powerBias: 200/80=2.5 W/kg → +8
+  cadenceTrendBias: 0, speedBias: 0
+  Total: +8
 
-intensity = 100 → wire 0 → S360% T300 R100 → MAX NO PLANO
+intensity = clamp(100 + 8, 0, 100) = 100 → wire 0 → S360% T300 R100 → MAX NO PLANO
 
 Explicação UI: "Motor MAX — HR 16bpm acima de Z2, a proteger"
 ```
 **Este é O cenário**: ANTES o terreno mandava (plano=25→MIN). AGORA o HR manda (alto=100→MAX). O rider precisa de ajuda e recebe-a, independentemente do terreno.
 
 ### 7.5 Subida com HR confortável
-Z2 target (98-114), HR 100bpm (2 dentro da zona, fundo), gradient 12%, rider 85kg
+Z2 target (98-114), HR 100bpm (2 dentro da zona, fundo), gradient 12%, speed 10km/h, rider 85kg, 180W, cadência 65rpm
 ```
 posição = (100-98)/(114-98) = 2/16 = 0.125
 hrTarget = 40 + (0.125 × 20) = 42.5 ≈ 43
 
-Anticipation: currentGradient 12% → +15
-             + weightBias 85kg grad>8% → +3
-             = +18
+Anticipation:
+  terrainBias:       12% → +15
+  transitionBias:    0
+  weightBias:        85kg grad>8% → +3
+  powerBias:         180/85=2.1 → +8
+  cadenceTrendBias:  0 (estável)
+  speedBias climb:   10km/h (>8) → 0
+  Total: +26
 Battery: ×1.0
 
-intensity = clamp(43 + 18, 0, 100) = 61
+intensity = clamp(43 + 26, 0, 100) = 69
 
-Support:  61 → wire 1 (38-62) → S350%
-Torque:   61 → wire 1          → T250
-MidTorq:  61-10=51 → wire 1    → M200
-LowTorq:  61-20=41 → wire 1    → L150
-Launch:   61 × 0.7 = 43 → wire 1 → R75
+Support:  69 → wire 0 (>62)     → S360%
+Torque:   69 → wire 0            → T300
+MidTorq:  69-10=59 → wire 1     → M200
+LowTorq:  69-20=49 → wire 1     → L150
+Launch:   69 × 0.7 = 48 → wire 1 → R75
 
-Motor: S350% T250/200/150 R75 → MID
+Motor: S360% T300/200/150 R75
 Explicação UI: "A manter Z2 — HR controlada ✓"
 ```
-**ANTES**: subida 12% = score 100 = MAX sempre. **AGORA**: HR a 100bpm em subida de 12% significa que a condição física do rider aguenta esta subida com MID. O motor em MID é suficiente para manter Z2. Se o HR começar a subir, o motor responde em 2s (1 amostra). **Resultado**: mesma performance, menos bateria gasta.
+**ANTES**: subida 12% = score 100 = MAX sempre. **AGORA**: HR a 100bpm no fundo de Z2 em subida de 12% — o rider aguenta mas o powerBias (+8 para 2.1W/kg) e o terrainBias (+15) empurram para wire 0. O motor dá MAX support mas MID torque/launch. Se não houvesse power meter, anticipation seria +18 → intensity=61 → wire 1 (MID). O power meter acrescenta precisão.
 
 ### 7.6 Bateria baixa em subida com HR alta
-Z2 target, HR 140bpm (26 acima), gradient 8%, SOC 20%
+Z2 target, HR 140bpm (26 acima), gradient 8%, speed 6km/h, SOC 20%, 250W, rider 80kg, cadência 48rpm
 ```
 hrTarget = 100 (cap)
-Anticipation: +15
+
+Anticipation:
+  terrainBias:      8% → +15
+  speedBias climb:  6km/h<8 + grad>5% → max(0, 10-15) = 0
+  powerBias:        250/80=3.1 → +15
+  cadenceTrendBias: 0 (sem trend data neste snapshot)
+  Total: +30
+
 Battery: SOC 20% → ×0.57
 
-intensity = clamp(115, 0, 100) × 0.57 = 57
+intensity = clamp(100 + 30, 0, 100) × 0.57 = 100 × 0.57 = 57
 
 Support:  57 → wire 1     → S350% (not MAX — battery limiting)
 Torque:   57 → wire 1     → T250
@@ -464,10 +496,18 @@ Explicação UI: "Motor limitado pela bateria — HR 26bpm acima de Z2 (SOC 20%)
 **Nota**: o sistema QUER dar MAX (hrTarget=100) mas a bateria LIMITA a MID (×0.57→57). A UI comunica o que o motor ESTÁ a fazer, não o que queria fazer. LowTorque cai para wire 2 (125) porque 37 está 1 ponto abaixo do threshold 38.
 
 ### 7.7 Subida técnica com cadência baixa
-Z2 target, HR 120bpm (6 acima), gradient 10%, cadência 40rpm
+Z2 target (98-114), HR 120bpm (6 acima), gradient 10%, speed 5km/h, cadência 40rpm, 200W, rider 80kg
 ```
 hrTarget = 60 + (6 × 8) = 108 → cap 100
-intensity = 100
+
+Anticipation:
+  terrainBias:      10% → +15
+  speedBias climb:  5km/h<8 + grad>5% → max(0, 10-15) = 0
+  powerBias:        200/80=2.5 → +8
+  cadenceTrendBias: 0 (40rpm é baixa mas floor >55 não dispara)
+  Total: +23
+
+intensity = clamp(100 + 23, 0, 100) = 100
 
 Support: 100 → wire 0 → S360%
 Torque: 100 → CAP por cadência<50 + gradient>8% → max 55 → wire 1 → T250 (not 300!)

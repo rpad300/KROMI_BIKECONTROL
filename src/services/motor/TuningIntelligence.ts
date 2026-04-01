@@ -196,9 +196,14 @@ class TuningIntelligence {
     if (this.speedHistory.length > 5) this.speedHistory.shift();
 
     // 6a: slow on climb = struggling (HR will spike)
+    // Only contributes what terrainBias hasn't already captured (prevents double-counting)
+    const terrainBias = anticipation; // snapshot before speed modifies it
     if (input.speed < 8 && input.speed > 2 && input.gradient > 5) {
-      anticipation += 10;
-      factors.push({ name: 'Vel+subida', value: 10, detail: `${input.speed.toFixed(0)}km/h em ${input.gradient.toFixed(0)}% — esforço alto` });
+      const climbSpeedBias = Math.max(0, 10 - terrainBias); // only adds gap
+      if (climbSpeedBias > 0) {
+        anticipation += climbSpeedBias;
+        factors.push({ name: 'Vel+subida', value: climbSpeedBias, detail: `${input.speed.toFixed(0)}km/h em ${input.gradient.toFixed(0)}% — lento` });
+      }
     }
 
     // 6b: speed dropping on climb = fatigue
@@ -212,9 +217,10 @@ class TuningIntelligence {
     }
 
     // 6c: approaching speed limit — gradual curve (replaces binary -25)
-    if (input.speed > 20 && input.speed <= bike.speed_limit_kmh) {
-      const range = bike.speed_limit_kmh - 20;
-      const progress = (input.speed - 20) / (range > 0 ? range : 1);
+    const speedPenaltyStart = bike.speed_limit_kmh - 5; // start 5km/h before limit
+    if (input.speed > speedPenaltyStart && input.speed <= bike.speed_limit_kmh) {
+      const range = bike.speed_limit_kmh - speedPenaltyStart;
+      const progress = (input.speed - speedPenaltyStart) / (range > 0 ? range : 1);
       const speedPenalty = -Math.round(progress * 25);
       anticipation += speedPenalty;
       if (speedPenalty < -5) {
