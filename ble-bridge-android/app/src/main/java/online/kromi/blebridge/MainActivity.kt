@@ -105,6 +105,36 @@ class MainActivity : AppCompatActivity() {
 
         testBtn.setOnClickListener { runBLETest() }
 
+        findViewById<Button>(R.id.assistUpBtn).setOnClickListener {
+            val ble = BLEBridgeService.instance?.bleManager
+            if (ble == null || !ble.isConnected) {
+                appendLog("ERR", "Not connected!")
+                return@setOnClickListener
+            }
+            appendLog("CMD", ">>> ASSIST UP")
+            ble.assistUp()
+        }
+
+        findViewById<Button>(R.id.assistDownBtn).setOnClickListener {
+            val ble = BLEBridgeService.instance?.bleManager
+            if (ble == null || !ble.isConnected) {
+                appendLog("ERR", "Not connected!")
+                return@setOnClickListener
+            }
+            appendLog("CMD", ">>> ASSIST DOWN")
+            ble.assistDown()
+        }
+
+        findViewById<Button>(R.id.lightBtn).setOnClickListener {
+            val ble = BLEBridgeService.instance?.bleManager
+            if (ble == null || !ble.isConnected) {
+                appendLog("ERR", "Not connected!")
+                return@setOnClickListener
+            }
+            appendLog("CMD", ">>> LIGHT TOGGLE")
+            ble.lightToggle()
+        }
+
         findViewById<Button>(R.id.sgOnlyBtn).setOnClickListener {
             appendLog("SG", "══ SG-ONLY CONNECT ══")
             appendLog("SG", "Disconnect first, then reconnect with SG-only mode")
@@ -272,6 +302,11 @@ class MainActivity : AppCompatActivity() {
                 appendLog("POLL", "★ spd=%.1f trq=%.1f cad=%.1f pwr=%.1f car=%d%% soc=%d%%".format(spd, trq, cad, pwr, car, soc))
                 appendLog("POLL", "  raw: ${json.optString("rawHex")}")
             }
+            "sgCmd" -> {
+                val ok = if (json.optBoolean("ok")) "✅" else "❌"
+                appendLog("CMD", "${json.optString("name")} write=$ok")
+            }
+            "cmdError" -> appendLog("ERR", json.optString("msg"))
             "sgConnected" -> appendLog("GEV", if (json.optBoolean("success")) "★ SESSION ACTIVE!" else "Session failed")
             "sgBattery" -> appendLog("BAT", "★ SOC=${json.optInt("soc")}% life=${json.optInt("life")}%")
             "sgTuning" -> appendLog("TUN", "★ ${json.optString("hex")}")

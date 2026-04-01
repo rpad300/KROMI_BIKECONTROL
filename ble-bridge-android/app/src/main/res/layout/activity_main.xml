@@ -156,6 +156,50 @@
             android:textStyle="bold"/>
     </LinearLayout>
 
+    <!-- Motor control buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp"
+        android:paddingBottom="4dp">
+
+        <Button
+            android:id="@+id/assistDownBtn"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="ASSIST ▼"
+            android:textSize="14sp"
+            android:backgroundTint="#3B82F6"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:layout_marginEnd="4dp"/>
+
+        <Button
+            android:id="@+id/assistUpBtn"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="ASSIST ▲"
+            android:textSize="14sp"
+            android:backgroundTint="#10B981"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:layout_marginEnd="4dp"/>
+
+        <Button
+            android:id="@+id/lightBtn"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="LIGHT 💡"
+            android:textSize="14sp"
+            android:backgroundTint="#6366F1"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"/>
+    </LinearLayout>
+
     <!-- Action buttons row -->
     <LinearLayout
         android:layout_width="match_parent"

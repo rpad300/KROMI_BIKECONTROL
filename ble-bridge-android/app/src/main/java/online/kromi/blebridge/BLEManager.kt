@@ -1114,4 +1114,67 @@ class BLEManager(private val context: Context) {
     private fun buildGevPacket(cmdId: Int, payload: ByteArray): ByteArray {
         return buildSGPacket(0x21, cmdId, payload)
     }
+
+    /**
+     * Send an AES-encrypted GEV command (FB 21 format).
+     * Used for ASSIST UP/DOWN, LIGHT, etc.
+     * @param plaintext 16-byte plaintext (cmd + params + zeros)
+     * @param keyIdx AES key index (0-14)
+     * @param label human-readable name for logging
+     */
+    fun sendEncryptedCommand(plaintext: ByteArray, keyIdx: Int, label: String) {
+        val g = gatt ?: run {
+            Log.e(TAG, "sendCmd: no gatt connection")
+            onDataReceived?.invoke(JSONObject().put("type", "cmdError").put("msg", "Not connected"))
+            return
+        }
+        val svc = g.getService(SG_SERVICE) ?: run {
+            Log.e(TAG, "sendCmd: SG service not found")
+            return
+        }
+        val char = svc.getCharacteristic(SG_WRITE) ?: run {
+            Log.e(TAG, "sendCmd: SG write char not found")
+            return
+        }
+
+        val enc = GEVCrypto.encrypt(plaintext, keyIdx)
+        val pkt = ByteArray(20)
+        pkt[0] = 0xFB.toByte()
+        pkt[1] = 0x21
+        System.arraycopy(enc, 0, pkt, 2, 16)
+        pkt[18] = keyIdx.toByte()
+        var xor = 0; for (i in 0..18) xor = xor xor (pkt[i].toInt() and 0xFF)
+        pkt[19] = xor.toByte()
+
+        val hex = pkt.joinToString("") { "%02x".format(it) }
+        Log.i(TAG, ">>> CMD [$label]: $hex (${pkt.size}b)")
+
+        char.value = pkt
+        char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        val ok = g.writeCharacteristic(char)
+
+        onDataReceived?.invoke(JSONObject()
+            .put("type", "sgCmd")
+            .put("name", label)
+            .put("ok", ok)
+            .put("hex", hex))
+    }
+
+    /** Convenience: ASSIST UP — cmd=0x1C, sub=0x03, action=0x02, key 3 */
+    fun assistUp() {
+        val plain = ByteArray(16).also { it[0] = 0x1C; it[1] = 0x03; it[2] = 0x02 }
+        sendEncryptedCommand(plain, 3, "ASSIST_UP")
+    }
+
+    /** Convenience: ASSIST DOWN — cmd=0x1C, sub=0x03, action=0x01, key 3 */
+    fun assistDown() {
+        val plain = ByteArray(16).also { it[0] = 0x1C; it[1] = 0x03; it[2] = 0x01 }
+        sendEncryptedCommand(plain, 3, "ASSIST_DOWN")
+    }
+
+    /** Convenience: LIGHT TOGGLE — cmd=0x1C, sub=0x03, action=0x08, key 3 */
+    fun lightToggle() {
+        val plain = ByteArray(16).also { it[0] = 0x1C; it[1] = 0x03; it[2] = 0x08 }
+        sendEncryptedCommand(plain, 3, "LIGHT")
+    }
 }
