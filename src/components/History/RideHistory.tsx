@@ -195,6 +195,7 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
   ride: RideSession; snapshots: Snapshot[]; simulation: SimulationSummary | null;
   onBack: () => void; onExport: () => void; onDelete: () => void;
 }) {
+  const isFitImport = (ride.devices_connected as Record<string, unknown>)?.source === 'fit_import';
   const mapRef = useRef<HTMLDivElement>(null);
   const mapObjRef = useRef<google.maps.Map | null>(null);
 
@@ -298,40 +299,60 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
         </div>
       </div>
 
-      {/* Summary */}
-      <div className="bg-gray-800 rounded-xl p-4">
-        <div className="text-xs text-gray-500">
-          {new Date(ride.started_at).toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-        </div>
-        <div className="grid grid-cols-4 gap-3 mt-3">
-          <StatCard label="Distância" value={`${ride.total_km?.toFixed(1) ?? 0}`} unit="km" />
-          <StatCard label="Duração" value={formatDuration(ride.duration_s ?? 0)} unit="" />
-          <StatCard label="Elevação" value={`${ride.total_elevation_m ?? 0}`} unit="m D+" />
-          <StatCard label="Vel média" value={`${ride.avg_speed_kmh?.toFixed(1) ?? 0}`} unit="km/h" />
-          {ride.avg_hr > 0 && <StatCard label="FC média" value={`${ride.avg_hr}`} unit="bpm" />}
-          {ride.max_hr > 0 && <StatCard label="FC max" value={`${ride.max_hr}`} unit="bpm" />}
-          {ride.avg_power_w > 0 && <StatCard label="Potência" value={`${ride.avg_power_w}`} unit="W" />}
-          {simulation ? (
-            <>
-              <div>
-                <div className="text-lg font-bold text-emerald-400 tabular-nums">
-                  {simulation.battery_end_kromi}%
-                  <span className="text-[8px] ml-1 px-1 py-0.5 bg-emerald-900/50 text-emerald-400 rounded">KROMI</span>
-                </div>
-                <div className="text-[10px] text-gray-500">Bat. estimada</div>
-              </div>
-              <div>
-                <div className="text-lg font-bold text-orange-400 tabular-nums">
-                  {simulation.battery_end_fixed}%
-                  <span className="text-[8px] ml-1 px-1 py-0.5 bg-orange-900/50 text-orange-400 rounded">FIXA</span>
-                </div>
-                <div className="text-[10px] text-gray-500">Bat. {simulation.fixed_label}</div>
-              </div>
-            </>
-          ) : (
-            <StatCard label="Bateria" value={`${ride.battery_start ?? 100}→${ride.battery_end ?? 0}`} unit="%" />
+      {/* Summary — Dados da volta */}
+      <div className="bg-gray-800 rounded-xl p-4 space-y-3">
+        <div>
+          <div className="text-xs text-gray-500">
+            {new Date(ride.started_at).toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          </div>
+          {isFitImport && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-400 font-bold mt-1 inline-block">
+              Importado de ficheiro FIT
+            </span>
           )}
         </div>
+
+        <div className="grid grid-cols-4 gap-3">
+          <StatCard label="Distância total" value={`${ride.total_km?.toFixed(1) ?? 0}`} unit="km" />
+          <StatCard label="Tempo em movimento" value={formatDuration(ride.duration_s ?? 0)} unit="" />
+          <StatCard label="Desnível acumulado" value={`${ride.total_elevation_m ?? 0}`} unit="m" />
+          <StatCard label="Velocidade média" value={`${ride.avg_speed_kmh?.toFixed(1) ?? 0}`} unit="km/h" />
+          {ride.avg_hr > 0 && <StatCard label="Freq. cardíaca média" value={`${ride.avg_hr}`} unit="bpm" />}
+          {ride.max_hr > 0 && <StatCard label="Freq. cardíaca máxima" value={`${ride.max_hr}`} unit="bpm" />}
+          {ride.avg_power_w > 0 && <StatCard label="Potência média" value={`${ride.avg_power_w}`} unit="W" />}
+          <StatCard label="Vel. máxima" value={`${ride.max_speed_kmh?.toFixed(0) ?? 0}`} unit="km/h" />
+        </div>
+
+        {/* Battery estimation */}
+        {simulation && (
+          <div className="border-t border-gray-700 pt-3">
+            <div className="text-[10px] text-gray-500 mb-2">
+              Bateria estimada no fim da volta (partindo de 100%)
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-emerald-900/10 rounded-lg p-2 text-center">
+                <div className="text-emerald-400 font-bold text-xl tabular-nums">{simulation.battery_end_kromi}%</div>
+                <span className="text-[8px] px-1.5 py-0.5 bg-emerald-900/50 text-emerald-400 rounded font-bold">KROMI</span>
+                <div className="text-[9px] text-gray-600 mt-1">Assist inteligente — ajusta conforme terreno</div>
+              </div>
+              <div className="bg-orange-900/10 rounded-lg p-2 text-center">
+                <div className="text-orange-400 font-bold text-xl tabular-nums">{simulation.battery_end_fixed}%</div>
+                <span className="text-[8px] px-1.5 py-0.5 bg-orange-900/50 text-orange-400 rounded font-bold">CONFIG FIXA</span>
+                <div className="text-[9px] text-gray-600 mt-1">{simulation.fixed_label} — sempre igual</div>
+              </div>
+              <div className="bg-red-900/10 rounded-lg p-2 text-center">
+                <div className="text-red-400 font-bold text-xl tabular-nums">{simulation.battery_end_max}%</div>
+                <span className="text-[8px] px-1.5 py-0.5 bg-red-900/50 text-red-400 rounded font-bold">SEMPRE MAX</span>
+                <div className="text-[9px] text-gray-600 mt-1">S360% T85Nm — máximo consumo</div>
+              </div>
+            </div>
+            {simulation.battery_saved_vs_fixed > 0 && (
+              <div className="text-emerald-400 text-xs font-bold text-center mt-2">
+                KROMI poupa {simulation.battery_saved_vs_fixed}% de bateria comparado com a tua config fixa
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Map */}
@@ -345,7 +366,10 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
       {hasAlt && (
         <div className="bg-gray-800 rounded-xl p-3">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-bold text-gray-400">Altimetria {hasSim && '+ KROMI Score'}</span>
+            <div>
+              <span className="text-xs font-bold text-gray-400">Perfil de elevação</span>
+              {hasSim && <span className="text-[9px] text-yellow-500 ml-2">+ Score KROMI (0-100)</span>}
+            </div>
             {hasAlt && chartData.length > 0 && (
               <span className="text-[10px] text-gray-600">
                 {chartData.find(d => d.alt)?.alt}m → {chartData.filter(d => d.alt).pop()?.alt}m
@@ -388,7 +412,10 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
       {/* HR + Speed chart */}
       {hasHR && (
         <div className="bg-gray-800 rounded-xl p-3">
-          <span className="text-xs font-bold text-gray-400">FC + Velocidade</span>
+          <div>
+            <span className="text-xs font-bold text-gray-400">Esforço ao longo da volta</span>
+            <div className="text-[9px] text-gray-600">Frequência cardíaca e velocidade por distância</div>
+          </div>
           <div className="h-32 mt-1">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
@@ -411,7 +438,10 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
       {/* KROMI Calibration chart — Support%, Torque, Launch, Battery */}
       {hasSim && (
         <div className="bg-gray-800 rounded-xl p-3">
-          <span className="text-xs font-bold text-emerald-400">KROMI Calibração ao longo do percurso</span>
+          <div>
+            <span className="text-xs font-bold text-emerald-400">KROMI — Calibração do motor</span>
+            <div className="text-[9px] text-gray-600">Como o motor seria ajustado a cada momento da volta</div>
+          </div>
           <div className="h-44 mt-1">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
@@ -433,11 +463,11 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex items-center gap-4 mt-1 text-[10px] text-gray-500">
-            <span><span className="inline-block w-3 h-0.5 bg-blue-500 mr-1" />Support %</span>
-            <span><span className="inline-block w-3 h-0.5 bg-orange-500 mr-1" />Torque</span>
-            <span><span className="inline-block w-3 h-0.5 bg-purple-500 mr-1" />Launch</span>
-            <span><span className="inline-block w-3 h-0.5 bg-emerald-500 mr-1" />Bateria</span>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-2 text-[9px] text-gray-500">
+            <span><span className="inline-block w-3 h-0.5 bg-blue-500 mr-1" />Support % — multiplicador de assist do motor</span>
+            <span><span className="inline-block w-3 h-0.5 bg-orange-500 mr-1" />Torque (Nm) — força do motor</span>
+            <span><span className="inline-block w-3 h-0.5 bg-purple-500 mr-1" />Launch — rapidez de resposta do motor</span>
+            <span><span className="inline-block w-3 h-0.5 bg-emerald-500 mr-1" />Bateria — consumo acumulado (%)</span>
           </div>
         </div>
       )}
@@ -445,26 +475,32 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
       {/* KROMI Simulation summary */}
       {simulation && (
         <div className="bg-gray-800 rounded-xl p-4 space-y-3">
-          <h3 className="text-sm font-bold text-emerald-400">KROMI Intelligence — Resumo</h3>
+          <div>
+            <h3 className="text-sm font-bold text-emerald-400">KROMI Intelligence — Resumo da simulação</h3>
+            <div className="text-[9px] text-gray-600">Se o KROMI estivesse activo nesta volta, distribuiria o assist assim:</div>
+          </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="bg-red-900/20 rounded-lg p-2 text-center">
               <div className="text-red-400 font-bold text-lg">{simulation.time_max_pct}%</div>
-              <div className="text-[9px] text-gray-500">MAX</div>
+              <div className="text-[9px] text-gray-500">MAX — assist total</div>
+              <div className="text-[8px] text-gray-600">subidas fortes</div>
             </div>
             <div className="bg-yellow-900/20 rounded-lg p-2 text-center">
               <div className="text-yellow-400 font-bold text-lg">{simulation.time_mid_pct}%</div>
-              <div className="text-[9px] text-gray-500">MID</div>
+              <div className="text-[9px] text-gray-500">MID — equilibrado</div>
+              <div className="text-[8px] text-gray-600">terreno misto</div>
             </div>
             <div className="bg-green-900/20 rounded-lg p-2 text-center">
               <div className="text-green-400 font-bold text-lg">{simulation.time_min_pct}%</div>
-              <div className="text-[9px] text-gray-500">MIN</div>
+              <div className="text-[9px] text-gray-500">MIN — poupar bateria</div>
+              <div className="text-[8px] text-gray-600">plano e descida</div>
             </div>
           </div>
           <div className="grid grid-cols-4 gap-2 text-xs">
-            <div><span className="text-gray-500">Activo</span><div className="text-white font-bold">{simulation.time_active_pct}%</div></div>
-            <div><span className="text-gray-500">Mudanças</span><div className="text-white font-bold">{simulation.level_changes}×</div></div>
-            <div><span className="text-gray-500">Score médio</span><div className="text-white font-bold">{simulation.avg_score}</div></div>
-            <div><span className="text-gray-500">Score max</span><div className="text-white font-bold">{simulation.max_score}</div></div>
+            <div><span className="text-gray-500">Tempo activo</span><div className="text-white font-bold">{simulation.time_active_pct}%</div><div className="text-[8px] text-gray-600">a pedalar</div></div>
+            <div><span className="text-gray-500">Ajustes</span><div className="text-white font-bold">{simulation.level_changes}×</div><div className="text-[8px] text-gray-600">calibrações</div></div>
+            <div><span className="text-gray-500">Intensidade média</span><div className="text-white font-bold">{simulation.avg_score}/100</div><div className="text-[8px] text-gray-600">score KROMI</div></div>
+            <div><span className="text-gray-500">Pico</span><div className="text-white font-bold">{simulation.max_score}/100</div><div className="text-[8px] text-gray-600">momento +difícil</div></div>
           </div>
           <div className="bg-gray-900 rounded-lg p-3 space-y-2">
             <div className="text-[10px] text-gray-500">Bateria no fim da volta (início 100%)</div>
