@@ -33,6 +33,8 @@ export interface BikeConfig {
   tuning_max: TuningLevelSpec;   // Level 1 = MAX
   tuning_mid: TuningLevelSpec;   // Level 2 = MID
   tuning_min: TuningLevelSpec;   // Level 3 = MIN
+  // Fixed baseline for comparison — what rider uses without KROMI
+  fixed_baseline: TuningLevelSpec;
 }
 
 export const DEFAULT_BIKE_CONFIG: BikeConfig = {
@@ -54,6 +56,8 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   tuning_max: { assist_pct: 360, torque_nm: 85, launch: 9, consumption_wh_km: 38 },
   tuning_mid: { assist_pct: 240, torque_nm: 65, launch: 5, consumption_wh_km: 28 },
   tuning_min: { assist_pct: 140, torque_nm: 45, launch: 3, consumption_wh_km: 18 },
+  // Fixed comparison baseline — what the rider normally uses without KROMI
+  fixed_baseline: { assist_pct: 125, torque_nm: 40, launch: 3, consumption_wh_km: 15 },
 };
 
 /** Deep merge bikeConfig with defaults — handles missing nested objects from old DB/localStorage */
@@ -66,6 +70,7 @@ export function safeBikeConfig(raw: Partial<BikeConfig> | undefined): BikeConfig
     tuning_max: { ...d.tuning_max, ...(raw.tuning_max ?? {}) },
     tuning_mid: { ...d.tuning_mid, ...(raw.tuning_mid ?? {}) },
     tuning_min: { ...d.tuning_min, ...(raw.tuning_min ?? {}) },
+    fixed_baseline: { ...d.fixed_baseline, ...(raw.fixed_baseline ?? {}) },
   };
 }
 

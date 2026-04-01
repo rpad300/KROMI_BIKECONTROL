@@ -414,19 +414,25 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
             <div><span className="text-gray-500">Score médio</span><div className="text-white font-bold">{simulation.avg_score}</div></div>
             <div><span className="text-gray-500">Score max</span><div className="text-white font-bold">{simulation.max_score}</div></div>
           </div>
-          <div className="bg-gray-900 rounded-lg p-3 flex justify-between items-center">
-            <div>
-              <div className="text-emerald-400 font-bold">KROMI: {simulation.battery_end_kromi}%</div>
-              <div className="text-[10px] text-gray-500">bateria restante</div>
+          <div className="bg-gray-900 rounded-lg p-3 space-y-2">
+            <div className="text-[10px] text-gray-500">Bateria no fim da volta (início 100%)</div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <div className="text-emerald-400 font-bold text-lg">{simulation.battery_end_kromi}%</div>
+                <div className="text-[9px] text-gray-500">KROMI</div>
+              </div>
+              <div>
+                <div className="text-orange-400 font-bold text-lg">{simulation.battery_end_fixed}%</div>
+                <div className="text-[9px] text-gray-500">{simulation.fixed_label}</div>
+              </div>
+              <div>
+                <div className="text-red-400 font-bold text-lg">{simulation.battery_end_max}%</div>
+                <div className="text-[9px] text-gray-500">Sempre MAX</div>
+              </div>
             </div>
-            <div className="text-right">
-              <div className="text-red-400 font-bold">Fixo: {simulation.battery_end_fixed}%</div>
-              <div className="text-[10px] text-gray-500">sempre MAX</div>
-            </div>
-            {simulation.battery_saved_pct > 0 && (
-              <div className="bg-emerald-900/30 px-3 py-1 rounded-lg">
-                <div className="text-emerald-400 font-bold text-lg">+{simulation.battery_saved_pct}%</div>
-                <div className="text-[9px] text-gray-500">poupança</div>
+            {simulation.battery_saved_vs_fixed > 0 && (
+              <div className="text-emerald-400 text-xs font-bold text-center">
+                KROMI poupa {simulation.battery_saved_vs_fixed}% vs a tua config fixa
               </div>
             )}
           </div>

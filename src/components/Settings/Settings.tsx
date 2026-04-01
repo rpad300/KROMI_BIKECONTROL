@@ -179,6 +179,22 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
             );
           })}
 
+          <div className="border-t border-gray-700 pt-3">
+            <span className="text-xs text-gray-500 uppercase">Configuração fixa (para comparação)</span>
+          </div>
+          <div className="text-[10px] text-gray-600 mb-2">
+            A tua config normal sem KROMI. Usada para comparar poupança de bateria na simulação.
+          </div>
+          <div className="bg-gray-900 rounded-lg p-3 space-y-2">
+            <span className="text-xs font-bold text-orange-400">A tua config fixa</span>
+            <div className="grid grid-cols-2 gap-2">
+              <NumberField label="Support %" value={bike.fixed_baseline.assist_pct} onChange={(v) => updateBike({ fixed_baseline: { ...bike.fixed_baseline, assist_pct: v } })} />
+              <NumberField label="Torque (Nm)" value={bike.fixed_baseline.torque_nm} onChange={(v) => updateBike({ fixed_baseline: { ...bike.fixed_baseline, torque_nm: v } })} />
+              <NumberField label="Launch (1-10)" value={bike.fixed_baseline.launch} onChange={(v) => updateBike({ fixed_baseline: { ...bike.fixed_baseline, launch: v } })} />
+              <NumberField label="Consumo (Wh/km)" value={bike.fixed_baseline.consumption_wh_km} onChange={(v) => updateBike({ fixed_baseline: { ...bike.fixed_baseline, consumption_wh_km: v } })} />
+            </div>
+          </div>
+
           {/* Live preview of tuning impact */}
           <TuningPreview />
         </div>

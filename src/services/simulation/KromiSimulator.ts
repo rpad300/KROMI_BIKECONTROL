@@ -34,8 +34,11 @@ export interface SimulationSummary {
   time_active_pct: number;
   battery_start: number;
   battery_end_kromi: number;
-  battery_end_fixed: number;
-  battery_saved_pct: number;
+  battery_end_fixed: number;    // fixed baseline (user's normal config)
+  battery_end_max: number;      // always MAX for reference
+  battery_saved_vs_fixed: number;
+  battery_saved_vs_max: number;
+  fixed_label: string;          // what the baseline config is
   avg_score: number;
   max_score: number;
   level_changes: number;
@@ -59,7 +62,8 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
   const levelHistory: (1 | 2 | 3)[] = [];
   let levelChanges = 0;
   let batteryWh = totalWh;
-  let batteryFixedWh = totalWh;
+  let batteryFixedWh = totalWh;   // user's normal config
+  let batteryMaxWh = totalWh;      // always MAX for reference
   let scoreSum = 0;
   let maxScore = 0;
   let countMax = 0, countMid = 0, countMin = 0, countActive = 0;
@@ -167,8 +171,10 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
         : currentLevel === 2 ? bike.tuning_mid
         : bike.tuning_min;
       batteryWh = Math.max(0, batteryWh - levelSpec.consumption_wh_km * r.speed_kmh * dtH);
-      // Fixed POWER at MAX: always highest consumption
-      batteryFixedWh = Math.max(0, batteryFixedWh - bike.tuning_max.consumption_wh_km * r.speed_kmh * dtH);
+      // Fixed baseline: user's normal config (e.g., Support 125%, Torque 40Nm, Launch 3)
+      batteryFixedWh = Math.max(0, batteryFixedWh - bike.fixed_baseline.consumption_wh_km * r.speed_kmh * dtH);
+      // Always MAX: worst case reference
+      batteryMaxWh = Math.max(0, batteryMaxWh - bike.tuning_max.consumption_wh_km * r.speed_kmh * dtH);
     }
 
     scoreSum += score;
@@ -212,7 +218,10 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
     battery_start: 100,
     battery_end_kromi: batteryEndKromi,
     battery_end_fixed: batteryEndFixed,
-    battery_saved_pct: Math.max(0, batteryEndKromi - batteryEndFixed),
+    battery_end_max: Math.round((batteryMaxWh / totalWh) * 100),
+    battery_saved_vs_fixed: Math.max(0, batteryEndKromi - batteryEndFixed),
+    battery_saved_vs_max: Math.max(0, batteryEndKromi - Math.round((batteryMaxWh / totalWh) * 100)),
+    fixed_label: `S${bike.fixed_baseline.assist_pct}% T${bike.fixed_baseline.torque_nm}Nm L${bike.fixed_baseline.launch}`,
     avg_score: records.length > 0 ? Math.round(scoreSum / records.length) : 0,
     max_score: maxScore,
     level_changes: levelChanges,

@@ -145,18 +145,23 @@ export function FitImport({ onImported }: { onImported?: () => void } = {}) {
                   </div>
                   <div className="mt-2 bg-gray-900 rounded-lg p-2">
                     <div className="text-[10px] text-gray-500 mb-1">Bateria simulada (início: 100%)</div>
-                    <div className="flex items-center justify-between text-xs">
+                    <div className="grid grid-cols-3 gap-2 text-xs text-center">
                       <div>
-                        <span className="text-emerald-400 font-bold">KROMI: {sim.battery_end_kromi}%</span>
-                        <span className="text-gray-600 ml-2">restante</span>
+                        <div className="text-emerald-400 font-bold">{sim.battery_end_kromi}%</div>
+                        <div className="text-[9px] text-gray-500">KROMI</div>
                       </div>
                       <div>
-                        <span className="text-red-400 font-bold">POWER fixo: {sim.battery_end_fixed}%</span>
+                        <div className="text-orange-400 font-bold">{sim.battery_end_fixed}%</div>
+                        <div className="text-[9px] text-gray-500">{sim.fixed_label}</div>
+                      </div>
+                      <div>
+                        <div className="text-red-400 font-bold">{sim.battery_end_max}%</div>
+                        <div className="text-[9px] text-gray-500">MAX</div>
                       </div>
                     </div>
-                    {sim.battery_saved_pct > 0 && (
-                      <div className="text-emerald-400 text-[10px] mt-1 font-bold">
-                        KROMI poupa {sim.battery_saved_pct}% de bateria vs POWER fixo
+                    {sim.battery_saved_vs_fixed > 0 && (
+                      <div className="text-emerald-400 text-[10px] mt-1 font-bold text-center">
+                        KROMI poupa {sim.battery_saved_vs_fixed}% vs a tua config fixa
                       </div>
                     )}
                   </div>
