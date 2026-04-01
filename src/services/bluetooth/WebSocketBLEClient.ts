@@ -371,18 +371,35 @@ class WebSocketBLEClient {
 
         case 'sgTuning': {
           console.log(`[WSClient] Tuning data: ${msg.hex}`);
-          // Parse tuning levels from bridge response
+          // Parse tuning levels — either from pre-parsed fields or from hex
+          let levels: TuningLevels | null = null;
+
           if (msg.power !== undefined) {
-            const levels: TuningLevels = {
-              power: msg.power,
-              sport: msg.sport,
-              active: msg.active,
-              tour: msg.tour,
-              eco: msg.eco,
-            };
+            // Bridge sent parsed fields
+            levels = { power: msg.power, sport: msg.sport, active: msg.active, tour: msg.tour, eco: msg.eco };
+          } else if (msg.hex && typeof msg.hex === 'string' && msg.hex.length >= 10) {
+            // Parse from hex: 2c03XXYYZZ...
+            // byte[2] = (POWER_lv+1) | ((SPORT_lv+1) << 4)
+            // byte[3] = (ACTIVE_lv+1) | ((TOUR_lv+1) << 4)
+            // byte[4] = (ECO_lv+1)
+            const b2 = parseInt(msg.hex.substring(4, 6), 16);
+            const b3 = parseInt(msg.hex.substring(6, 8), 16);
+            const b4 = parseInt(msg.hex.substring(8, 10), 16);
+            if (!isNaN(b2) && !isNaN(b3) && !isNaN(b4)) {
+              levels = {
+                power: (b2 & 0x0F),
+                sport: (b2 >> 4) & 0x0F,
+                active: (b3 & 0x0F),
+                tour: (b3 >> 4) & 0x0F,
+                eco: (b4 & 0x0F),
+              };
+            }
+          }
+
+          if (levels) {
+            console.log('[WSClient] Parsed tuning:', levels);
             const tuning = useTuningStore.getState();
             tuning.setCurrent(levels);
-            // First read after connect → save as original for auto-restore
             if (!tuning.original) {
               tuning.setOriginal(levels);
               console.log('[WSClient] Saved original tuning for auto-restore:', levels);
