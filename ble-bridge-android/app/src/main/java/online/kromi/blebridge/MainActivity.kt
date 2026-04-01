@@ -246,6 +246,7 @@ class MainActivity : AppCompatActivity() {
             "sgTelemetry" -> appendLog("SG23", "cmd=${"%02x".format(json.optInt("cmd"))} ${json.optString("hex")}")
             "sgHeartbeat" -> appendLog("SGHB", json.optString("hex"))
             "sgEncrypted" -> appendLog("SG21", "cmd=${"%02x".format(json.optInt("cmd"))} AES ${json.optString("hex")}")
+            "mtu" -> appendLog("MTU", "${json.optInt("mtu")} ${if (json.optBoolean("ok")) "✅" else "❌"}")
             "subscribed" -> {
                 val ok = if (json.optBoolean("ok")) "✅" else "❌"
                 val sg = if (json.optBoolean("isSG")) " ★SG" else ""
