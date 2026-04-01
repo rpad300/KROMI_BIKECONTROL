@@ -5,7 +5,7 @@
  * Considers: rider weight/age/HR, bike motor/battery specs, terrain, speed.
  */
 
-import { useSettingsStore, DEFAULT_BIKE_CONFIG } from '../../store/settingsStore';
+import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import type { ImportedRecord } from '../import/FitImportService';
 
 export interface SimulationPoint {
@@ -48,9 +48,7 @@ export interface SimulationSummary {
 
 export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
   const rider = useSettingsStore.getState().riderProfile;
-  const rawBike = useSettingsStore.getState().bikeConfig;
-  // Merge with defaults to handle missing fields from old localStorage
-  const bike = { ...DEFAULT_BIKE_CONFIG, ...rawBike };
+  const bike = safeBikeConfig(useSettingsStore.getState().bikeConfig);
   const totalWh = bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0);
   const hrMax = rider.hr_max > 0 ? rider.hr_max : (220 - rider.age);
   const weightFactor = rider.weight_kg / 75; // ref 75kg

@@ -56,6 +56,19 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   tuning_min: { assist_pct: 140, torque_nm: 45, launch: 3, consumption_wh_km: 18 },
 };
 
+/** Deep merge bikeConfig with defaults — handles missing nested objects from old DB/localStorage */
+export function safeBikeConfig(raw: Partial<BikeConfig> | undefined): BikeConfig {
+  const d = DEFAULT_BIKE_CONFIG;
+  if (!raw) return d;
+  return {
+    ...d,
+    ...raw,
+    tuning_max: { ...d.tuning_max, ...(raw.tuning_max ?? {}) },
+    tuning_mid: { ...d.tuning_mid, ...(raw.tuning_mid ?? {}) },
+    tuning_min: { ...d.tuning_min, ...(raw.tuning_min ?? {}) },
+  };
+}
+
 interface AutoAssistConfig {
   enabled: boolean;
   lookahead_m: number;

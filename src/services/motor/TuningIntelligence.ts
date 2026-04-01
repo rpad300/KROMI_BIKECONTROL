@@ -16,7 +16,7 @@
  *   - Near speed limit: reduce support (motor cuts at 25km/h anyway)
  */
 
-import { useSettingsStore, DEFAULT_BIKE_CONFIG } from '../../store/settingsStore';
+import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import { type AsmoCalibration, type AsmoWire, DU7_TABLES, resolveCalibration } from '../../types/tuning.types';
 
 export interface TuningInput {
@@ -75,7 +75,7 @@ class TuningIntelligence {
 
   evaluate(input: TuningInput): TuningDecision {
     const rider = useSettingsStore.getState().riderProfile;
-    const bike = { ...DEFAULT_BIKE_CONFIG, ...useSettingsStore.getState().bikeConfig };
+    const bike = safeBikeConfig(useSettingsStore.getState().bikeConfig);
     const factors: TuningFactor[] = [];
     const totalWh = bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0);
     const hrMax = rider.hr_max > 0 ? rider.hr_max : (220 - rider.age);
