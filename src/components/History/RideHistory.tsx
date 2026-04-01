@@ -258,20 +258,25 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshots]);
 
-  const altData = snapshots.filter((s) => s.altitude_m !== null).map((s) => ({
-    dist: Math.round(s.distance_km * 100) / 100,
-    alt: Math.round(s.altitude_m!),
-  }));
-
-  const hrData = snapshots.filter((s) => s.hr_bpm > 0).map((s) => ({
-    time: Math.round(s.elapsed_s / 60),
-    hr: s.hr_bpm,
-    speed: Math.round(s.speed_kmh * 10) / 10,
-  }));
+  // Build combined chart data: altitude + KROMI simulation overlay
+  const chartData = snapshots
+    .filter((s) => s.distance_km > 0)
+    .map((s, i) => {
+      const simPt = simulation?.points[i];
+      return {
+        dist: Math.round(s.distance_km * 100) / 100,
+        alt: s.altitude_m !== null ? Math.round(s.altitude_m) : null,
+        speed: Math.round(s.speed_kmh * 10) / 10,
+        hr: s.hr_bpm > 0 ? s.hr_bpm : null,
+        kromiScore: simPt?.kromi_score ?? null,
+        kromiBattery: simPt?.battery_pct ?? null,
+      };
+    });
 
   const hasGPS = snapshots.some((s) => s.lat !== 0);
-  const hasAlt = altData.length > 5;
-  const hasHR = hrData.length > 5;
+  const hasAlt = chartData.some((d) => d.alt !== null && d.alt > 0);
+  const hasHR = chartData.some((d) => d.hr !== null);
+  const hasSim = simulation && simulation.points.length > 5;
 
   return (
     <div className="space-y-4">
@@ -314,81 +319,114 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
         </div>
       )}
 
-      {/* Elevation */}
+      {/* Elevation + KROMI Score overlay */}
       {hasAlt && (
         <div className="bg-gray-800 rounded-xl p-3">
-          <span className="text-xs font-bold text-gray-400">Altimetria</span>
-          <div className="h-32 mt-1">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-bold text-gray-400">Altimetria {hasSim && '+ KROMI Score'}</span>
+            {hasAlt && chartData.length > 0 && (
+              <span className="text-[10px] text-gray-600">
+                {chartData.find(d => d.alt)?.alt}m → {chartData.filter(d => d.alt).pop()?.alt}m
+              </span>
+            )}
+          </div>
+          <div className="h-40">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={altData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="altGradH" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
                     <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="dist" tick={{ fontSize: 10, fill: '#555' }} tickFormatter={(v) => `${v}km`} />
-                <YAxis tick={{ fontSize: 10, fill: '#555' }} domain={['dataMin - 10', 'dataMax + 10']} width={35} />
-                <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: 8, fontSize: 11 }} />
-                <Area type="monotone" dataKey="alt" stroke="#10b981" fill="url(#altGradH)" strokeWidth={2} name="Altitude (m)" />
+                <XAxis dataKey="dist" tick={{ fontSize: 10, fill: '#555' }} tickFormatter={(v: number) => `${v}km`} />
+                <YAxis yAxisId="alt" tick={{ fontSize: 10, fill: '#555' }} domain={['dataMin - 10', 'dataMax + 10']} width={35} />
+                {hasSim && <YAxis yAxisId="score" orientation="right" tick={{ fontSize: 10, fill: '#555' }} domain={[0, 100]} width={25} />}
+                <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: 8, fontSize: 11 }}
+                  formatter={(value: number, name: string) => {
+                    if (name === 'alt') return [`${value}m`, 'Altitude'];
+                    if (name === 'kromiScore') return [`${value}/100`, 'KROMI Score'];
+                    return [value, name];
+                  }} />
+                <Area yAxisId="alt" type="monotone" dataKey="alt" stroke="#10b981" fill="url(#altGradH)" strokeWidth={2} name="alt" />
+                {hasSim && <Line yAxisId="score" type="monotone" dataKey="kromiScore" stroke="#f59e0b" dot={false} strokeWidth={1.5} name="kromiScore" />}
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          {hasSim && (
+            <div className="flex items-center gap-4 mt-1 text-[10px] text-gray-500">
+              <span><span className="inline-block w-3 h-0.5 bg-emerald-500 mr-1" />Altitude</span>
+              <span><span className="inline-block w-3 h-0.5 bg-yellow-500 mr-1" />KROMI Score</span>
+              <span className="text-gray-600">{'Score > 65 = MAX | 35-65 = MID | < 35 = MIN'}</span>
+            </div>
+          )}
         </div>
       )}
 
-      {/* HR + Speed chart */}
-      {hasHR && (
+      {/* HR + Speed + Battery chart */}
+      {(hasHR || hasSim) && (
         <div className="bg-gray-800 rounded-xl p-3">
-          <span className="text-xs font-bold text-gray-400">FC + Velocidade</span>
-          <div className="h-32 mt-1">
+          <span className="text-xs font-bold text-gray-400">
+            {hasHR ? 'FC' : ''}{hasHR && hasSim ? ' + ' : ''}{hasSim ? 'Bateria KROMI' : ''}{ ' + Velocidade'}
+          </span>
+          <div className="h-36 mt-1">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={hrData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#555' }} tickFormatter={(v) => `${v}min`} />
-                <YAxis yAxisId="hr" tick={{ fontSize: 10, fill: '#555' }} domain={[60, 'dataMax + 10']} width={30} />
-                <YAxis yAxisId="spd" orientation="right" tick={{ fontSize: 10, fill: '#555' }} width={30} />
+              <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <XAxis dataKey="dist" tick={{ fontSize: 10, fill: '#555' }} tickFormatter={(v: number) => `${v}km`} />
+                <YAxis yAxisId="left" tick={{ fontSize: 10, fill: '#555' }} domain={[0, 'dataMax + 10']} width={30} />
+                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#555' }} domain={[0, 100]} width={25} />
                 <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: 8, fontSize: 11 }} />
-                <Line yAxisId="hr" type="monotone" dataKey="hr" stroke="#ef4444" dot={false} strokeWidth={1.5} name="FC (bpm)" />
-                <Line yAxisId="spd" type="monotone" dataKey="speed" stroke="#3b82f6" dot={false} strokeWidth={1} name="Speed (km/h)" />
+                {hasHR && <Line yAxisId="left" type="monotone" dataKey="hr" stroke="#ef4444" dot={false} strokeWidth={1.5} name="FC (bpm)" />}
+                <Line yAxisId="left" type="monotone" dataKey="speed" stroke="#3b82f6" dot={false} strokeWidth={1} name="Speed (km/h)" />
+                {hasSim && <Line yAxisId="right" type="monotone" dataKey="kromiBattery" stroke="#10b981" dot={false} strokeWidth={1.5} name="Bateria KROMI (%)" />}
               </LineChart>
             </ResponsiveContainer>
           </div>
+          <div className="flex items-center gap-4 mt-1 text-[10px] text-gray-500">
+            {hasHR && <span><span className="inline-block w-3 h-0.5 bg-red-500 mr-1" />FC</span>}
+            <span><span className="inline-block w-3 h-0.5 bg-blue-500 mr-1" />Speed</span>
+            {hasSim && <span><span className="inline-block w-3 h-0.5 bg-emerald-500 mr-1" />Bateria KROMI</span>}
+          </div>
         </div>
       )}
 
-      {/* KROMI Simulation */}
+      {/* KROMI Simulation summary */}
       {simulation && (
         <div className="bg-gray-800 rounded-xl p-4 space-y-3">
-          <h3 className="text-sm font-bold text-emerald-400">Simulação KROMI Intelligence</h3>
+          <h3 className="text-sm font-bold text-emerald-400">KROMI Intelligence — Resumo</h3>
           <div className="grid grid-cols-3 gap-2">
-            <div className="bg-red-900/20 rounded-lg p-3 text-center">
-              <div className="text-red-400 font-bold text-xl">{simulation.time_max_pct}%</div>
-              <div className="text-[10px] text-gray-500">MAX (S360% T300)</div>
+            <div className="bg-red-900/20 rounded-lg p-2 text-center">
+              <div className="text-red-400 font-bold text-lg">{simulation.time_max_pct}%</div>
+              <div className="text-[9px] text-gray-500">MAX</div>
             </div>
-            <div className="bg-yellow-900/20 rounded-lg p-3 text-center">
-              <div className="text-yellow-400 font-bold text-xl">{simulation.time_mid_pct}%</div>
-              <div className="text-[10px] text-gray-500">MID (S350% T250)</div>
+            <div className="bg-yellow-900/20 rounded-lg p-2 text-center">
+              <div className="text-yellow-400 font-bold text-lg">{simulation.time_mid_pct}%</div>
+              <div className="text-[9px] text-gray-500">MID</div>
             </div>
-            <div className="bg-green-900/20 rounded-lg p-3 text-center">
-              <div className="text-green-400 font-bold text-xl">{simulation.time_min_pct}%</div>
-              <div className="text-[10px] text-gray-500">MIN (S300% T200)</div>
+            <div className="bg-green-900/20 rounded-lg p-2 text-center">
+              <div className="text-green-400 font-bold text-lg">{simulation.time_min_pct}%</div>
+              <div className="text-[9px] text-gray-500">MIN</div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div><span className="text-gray-500">KROMI activo</span><div className="text-white font-bold">{simulation.time_active_pct}%</div></div>
-            <div><span className="text-gray-500">Mudanças calibração</span><div className="text-white font-bold">{simulation.level_changes}×</div></div>
-            <div><span className="text-gray-500">Score médio</span><div className="text-white font-bold">{simulation.avg_score}/100</div></div>
-            <div><span className="text-gray-500">Score máximo</span><div className="text-white font-bold">{simulation.max_score}/100</div></div>
+          <div className="grid grid-cols-4 gap-2 text-xs">
+            <div><span className="text-gray-500">Activo</span><div className="text-white font-bold">{simulation.time_active_pct}%</div></div>
+            <div><span className="text-gray-500">Mudanças</span><div className="text-white font-bold">{simulation.level_changes}×</div></div>
+            <div><span className="text-gray-500">Score médio</span><div className="text-white font-bold">{simulation.avg_score}</div></div>
+            <div><span className="text-gray-500">Score max</span><div className="text-white font-bold">{simulation.max_score}</div></div>
           </div>
-          <div className="bg-gray-900 rounded-lg p-3">
-            <div className="text-[10px] text-gray-500 mb-2">Bateria simulada (100% → fim da volta)</div>
-            <div className="flex justify-between text-sm">
-              <div><span className="text-emerald-400 font-bold">KROMI: {simulation.battery_end_kromi}%</span></div>
-              <div><span className="text-red-400 font-bold">Fixo MAX: {simulation.battery_end_fixed}%</span></div>
+          <div className="bg-gray-900 rounded-lg p-3 flex justify-between items-center">
+            <div>
+              <div className="text-emerald-400 font-bold">KROMI: {simulation.battery_end_kromi}%</div>
+              <div className="text-[10px] text-gray-500">bateria restante</div>
+            </div>
+            <div className="text-right">
+              <div className="text-red-400 font-bold">Fixo: {simulation.battery_end_fixed}%</div>
+              <div className="text-[10px] text-gray-500">sempre MAX</div>
             </div>
             {simulation.battery_saved_pct > 0 && (
-              <div className="text-emerald-400 text-xs font-bold mt-1">
-                KROMI poupa {simulation.battery_saved_pct}% de bateria
+              <div className="bg-emerald-900/30 px-3 py-1 rounded-lg">
+                <div className="text-emerald-400 font-bold text-lg">+{simulation.battery_saved_pct}%</div>
+                <div className="text-[9px] text-gray-500">poupança</div>
               </div>
             )}
           </div>
