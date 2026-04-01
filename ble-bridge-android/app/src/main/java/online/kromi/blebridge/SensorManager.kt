@@ -50,9 +50,11 @@ class SensorManager(private val context: Context) {
     // SCAN for HR sensors
     // ═══════════════════════════════════════
 
+    private var hrScanCallback: ScanCallback? = null
+
     fun scanForHR() {
         val scanner = adapter?.bluetoothLeScanner ?: return
-        Log.i(TAG, "Scanning for HR sensors...")
+        Log.i(TAG, "Scanning for HR sensors (auto-connect first found)...")
 
         val filter = ScanFilter.Builder()
             .setServiceUuid(ParcelUuid(HR_SERVICE))
@@ -65,31 +67,40 @@ class SensorManager(private val context: Context) {
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val device = result.device
-                val name = device.name ?: "(unknown)"
-                Log.i(TAG, "HR sensor found: $name (${device.address})")
+                val name = device.name ?: "HR Monitor"
+                Log.i(TAG, "HR sensor found: $name (${device.address}) — auto-connecting")
 
-                // Send scan result to PWA
-                onData?.invoke(JSONObject().apply {
-                    put("type", "scanResult")
-                    put("name", name)
-                    put("address", device.address)
-                    put("rssi", result.rssi)
-                    put("tags", org.json.JSONArray(listOf("HR")))
-                })
+                // Stop scan and auto-connect to first HR device found
+                scanner.stopScan(this)
+                hrScanCallback = null
+                connectHR(device.address)
             }
 
             override fun onScanFailed(errorCode: Int) {
                 Log.e(TAG, "HR scan failed: $errorCode")
+                onData?.invoke(JSONObject().apply {
+                    put("type", "sensorError")
+                    put("sensor", "hr")
+                    put("error", "Scan failed: $errorCode")
+                })
             }
         }
 
+        hrScanCallback = callback
         scanner.startScan(listOf(filter), settings, callback)
 
-        // Stop scan after timeout
+        // Stop scan after timeout if nothing found
         handler.postDelayed({
-            scanner.stopScan(callback)
-            onData?.invoke(JSONObject().put("type", "scanDone"))
-            Log.i(TAG, "HR scan timeout")
+            if (hrScanCallback === callback) {
+                scanner.stopScan(callback)
+                hrScanCallback = null
+                Log.i(TAG, "HR scan timeout — no devices found")
+                onData?.invoke(JSONObject().apply {
+                    put("type", "sensorError")
+                    put("sensor", "hr")
+                    put("error", "Nenhum sensor HR encontrado")
+                })
+            }
         }, SCAN_TIMEOUT_MS)
     }
 

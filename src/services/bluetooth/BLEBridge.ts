@@ -177,7 +177,11 @@ export async function connectExtPower(): Promise<void> {
 
 /** Disconnect HR */
 export function disconnectHR(): void {
-  if (bleMode === 'web') giantBLEService.disconnectHR();
+  if (bleMode === 'websocket') {
+    wsClient.send({ type: 'disconnectSensor', sensor: 'hr' });
+  } else {
+    giantBLEService.disconnectHR();
+  }
 }
 
 /** Disconnect Di2 */
