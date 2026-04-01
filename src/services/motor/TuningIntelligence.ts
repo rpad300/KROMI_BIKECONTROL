@@ -13,6 +13,7 @@
 import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import { getTargetZone } from '../../types/athlete.types';
 import { type AsmoCalibration, type AsmoWire, DU7_TABLES, resolveCalibration } from '../../types/tuning.types';
+import { useLearningStore } from '../../store/learningStore';
 
 export interface TuningInput {
   gradient: number;
@@ -274,8 +275,18 @@ class TuningIntelligence {
     const altitudeBoost = input.altitude > 1500
       ? Math.min(10, Math.round((input.altitude - 1500) / 250)) : 0;
 
+    // Adaptive learning: apply learned adjustment for this context
+    const hrZone = hasHR && input.hr > 0
+      ? (input.hr >= targetZone.max_bpm ? Math.min(5, Math.ceil(input.hr / targetZone.max_bpm * 3))
+        : input.hr >= targetZone.min_bpm ? Math.round(1 + (input.hr - targetZone.min_bpm) / (targetZone.max_bpm - targetZone.min_bpm) * 2)
+        : 1) : 0;
+    const learnedAdj = useLearningStore.getState().getAdjustment(input.gradient, hrZone);
+    if (learnedAdj !== 0) {
+      factors.push({ name: 'Aprendido', value: learnedAdj, detail: `Ajuste aprendido de overrides anteriores` });
+    }
+
     const rawIntensity = Math.max(0, Math.min(100,
-      hrTarget + anticipation + stoppedPenalty + altitudeBoost));
+      hrTarget + anticipation + stoppedPenalty + altitudeBoost + learnedAdj));
     const overallIntensity = Math.round(rawIntensity * batteryConstraint);
 
     // ═══════════════════════════════════════════════

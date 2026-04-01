@@ -24,6 +24,7 @@ import { useAutoAssistStore } from '../../store/autoAssistStore';
 import { useAuthStore } from '../../store/authStore';
 import { useTorqueStore } from '../../store/torqueStore';
 import { useAthleteStore } from '../../store/athleteStore';
+import { useLearningStore } from '../../store/learningStore';
 import { autoAssistEngine } from '../autoAssist/AutoAssistEngine';
 import { batteryEfficiencyTracker } from '../learning/BatteryEfficiencyTracker';
 import { syncQueue } from '../sync/SyncQueue';
@@ -206,6 +207,9 @@ class RideSessionManager {
       const torque = useTorqueStore.getState();
       const decision = useAutoAssistStore.getState().lastDecision;
 
+      const gradientPct = terrain?.current_gradient_pct ?? 0;
+      const hrZone = bike.hr_zone;
+
       syncQueue.push('ride_override_events', {
         session_id: this.sessionId,
         elapsed_s: Math.round((Date.now() - this.startedAt) / 1000),
@@ -213,14 +217,21 @@ class RideSessionManager {
         from_mode: fromMode,
         to_mode: toMode,
         speed_kmh: bike.speed_kmh,
-        gradient_pct: terrain?.current_gradient_pct ?? 0,
+        gradient_pct: gradientPct,
         hr_bpm: bike.hr_bpm,
-        hr_zone: bike.hr_zone,
+        hr_zone: hrZone,
         gear: bike.gear,
         torque_nm: torque.torque_nm,
         climb_type: torque.climb_type,
         auto_assist_reason: decision?.reason ?? '',
       });
+
+      // Adaptive learning: record override direction in learning store
+      const direction = (toMode !== undefined && toMode > fromMode) ? 'more' as const
+        : (toMode !== undefined && toMode < fromMode) ? 'less' as const : null;
+      if (direction) {
+        useLearningStore.getState().recordOverride(gradientPct, hrZone, direction);
+      }
     }
   }
 

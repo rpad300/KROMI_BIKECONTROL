@@ -7,6 +7,7 @@
 
 import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import { getTargetZone } from '../../types/athlete.types';
+import { useLearningStore } from '../../store/learningStore';
 import type { ImportedRecord } from '../import/FitImportService';
 
 export interface SimulationPoint {
@@ -253,7 +254,13 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
 
     // === COMBINE: layered ===
     const stoppedPenalty = r.speed_kmh < 2 ? -20 : 0;
-    const rawScore = Math.max(0, Math.min(100, hrTarget + anticipation + contextPenalty + stoppedPenalty));
+
+    // Adaptive learning: apply learned adjustment for this context
+    const hrZoneForLearning = hasHR ? (r.hr_bpm >= targetZone.max_bpm ? 4
+      : r.hr_bpm >= targetZone.min_bpm ? 2 : 1) : 0;
+    const learnedAdj = useLearningStore.getState().getAdjustment(gradient, hrZoneForLearning);
+
+    const rawScore = Math.max(0, Math.min(100, hrTarget + anticipation + contextPenalty + stoppedPenalty + learnedAdj));
     const instantScore = Math.round(rawScore * batteryMod);
 
     // === SMOOTHING: EMA prevents oscillation, gives time for HR to react ===

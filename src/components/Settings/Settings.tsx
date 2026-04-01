@@ -3,6 +3,7 @@ import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import { calculateZones } from '../../types/athlete.types';
 import { useBikeStore } from '../../store/bikeStore';
 import { useAuthStore } from '../../store/authStore';
+import { useLearningStore } from '../../store/learningStore';
 import { connectBike, disconnectBike } from '../../services/bluetooth/BLEBridge';
 import { ProfileInsightsWidget } from '../Dashboard/ProfileInsightsWidget';
 import { TuningPreview } from './TuningPreview';
@@ -21,6 +22,8 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
   const updateProfile = useSettingsStore((s) => s.updateRiderProfile);
   const updateBike = useSettingsStore((s) => s.updateBikeConfig);
   const updateAutoAssist = useSettingsStore((s) => s.updateAutoAssist);
+
+  const learning = useLearningStore();
 
   const [komootUrl, setKomootUrl] = useState('');
   const [komootLoading, setKomootLoading] = useState(false);
@@ -231,6 +234,54 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
 
           {/* Live preview of tuning impact */}
           <TuningPreview />
+        </div>
+      </section>
+
+      {/* Adaptive Learning */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-gray-300">Aprendizagem Adaptativa</h2>
+        <div className="bg-gray-800 rounded-xl p-4 space-y-3">
+          <div className="text-xs text-gray-500">
+            O KROMI aprende com os teus overrides. Quando mudas o modo manualmente, ele ajusta o algoritmo para esse contexto (terreno + zona HR).
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <div className="text-lg font-bold text-blue-400">{learning.total_rides_learned}</div>
+              <div className="text-[9px] text-gray-500">Rides</div>
+            </div>
+            <div>
+              <div className="text-lg font-bold text-amber-400">{learning.total_overrides}</div>
+              <div className="text-[9px] text-gray-500">Overrides</div>
+            </div>
+            <div>
+              <div className="text-lg font-bold text-emerald-400">{Object.keys(learning.adjustments).length}</div>
+              <div className="text-[9px] text-gray-500">Contextos</div>
+            </div>
+          </div>
+          {Object.keys(learning.adjustments).length > 0 && (
+            <div className="space-y-1">
+              <div className="text-[10px] text-gray-500 uppercase">Ajustes aprendidos</div>
+              {Object.entries(learning.adjustments)
+                .sort((a, b) => Math.abs(b[1].score_delta) - Math.abs(a[1].score_delta))
+                .slice(0, 6)
+                .map(([key, adj]) => (
+                  <div key={key} className="flex justify-between text-xs">
+                    <span className="text-gray-400">{key}</span>
+                    <span className={adj.score_delta > 0 ? 'text-emerald-400' : 'text-orange-400'}>
+                      {adj.score_delta > 0 ? '+' : ''}{adj.score_delta} ({adj.sample_count} samples)
+                    </span>
+                  </div>
+                ))}
+            </div>
+          )}
+          {learning.total_overrides > 0 && (
+            <button
+              onClick={() => { if (confirm('Apagar toda a aprendizagem?')) learning.resetLearning(); }}
+              className="w-full text-xs text-red-400 border border-red-800 rounded p-1.5"
+            >
+              Reset Aprendizagem
+            </button>
+          )}
         </div>
       </section>
 
