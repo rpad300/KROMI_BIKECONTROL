@@ -2,17 +2,22 @@ import { create } from 'zustand';
 import type { TuningDecision, TuningFactor } from '../services/motor/TuningIntelligence';
 
 interface IntelligenceState {
-  /** Current score (0-100) */
-  score: number;
-  /** Current tuning level (1=MAX, 2=MID, 3=MIN) */
-  level: 1 | 2 | 3;
-  /** Factor breakdown for UI */
+  /** Continuous intensity 0-100% */
+  intensity: number;
+  /** Wire value sent to motor (0=max, 1=mid, 2=min) */
+  wireValue: 0 | 1 | 2;
+  /** Display label */
+  label: 'MAX' | 'MID' | 'MIN';
+  /** Factor breakdown */
   factors: TuningFactor[];
-  /** Pre-emptive alert (null if none) */
+  /** Pre-emptive alert */
   preemptive: string | null;
-  /** Whether KROMI is actively controlling */
+  /** Motor specs at current calibration */
+  motorAssistPct: number;
+  motorTorqueNm: number;
+  motorConsumptionWhKm: number;
+  /** Active state */
   active: boolean;
-  /** Last update timestamp */
   lastUpdateMs: number;
 
   setDecision: (d: TuningDecision) => void;
@@ -21,29 +26,34 @@ interface IntelligenceState {
 }
 
 export const useIntelligenceStore = create<IntelligenceState>((set) => ({
-  score: 50,
-  level: 2,
+  intensity: 50,
+  wireValue: 1,
+  label: 'MID',
   factors: [],
   preemptive: null,
+  motorAssistPct: 240,
+  motorTorqueNm: 65,
+  motorConsumptionWhKm: 28,
   active: false,
   lastUpdateMs: 0,
 
   setDecision: (d) => set({
-    score: d.score,
-    level: d.level,
+    intensity: d.intensity,
+    wireValue: d.wireValue,
+    label: d.label,
     factors: d.factors,
     preemptive: d.preemptive,
+    motorAssistPct: d.motorAssistPct,
+    motorTorqueNm: d.motorTorqueNm,
+    motorConsumptionWhKm: d.motorConsumptionWhKm,
     lastUpdateMs: Date.now(),
   }),
 
   setActive: (v) => set({ active: v }),
 
   reset: () => set({
-    score: 50,
-    level: 2,
-    factors: [],
-    preemptive: null,
-    active: false,
-    lastUpdateMs: 0,
+    intensity: 50, wireValue: 1, label: 'MID', factors: [], preemptive: null,
+    motorAssistPct: 240, motorTorqueNm: 65, motorConsumptionWhKm: 28,
+    active: false, lastUpdateMs: 0,
   }),
 }));

@@ -100,10 +100,10 @@ export function useMotorControl() {
       const decision = tuningIntelligence.evaluate(input);
       useIntelligenceStore.getState().setDecision(decision);
 
-      // === Execute: change tuning if level changed ===
+      // === Execute: send calibration to motor if wire value changed ===
       const tuning = useTuningStore.getState();
-      if (decision.level !== tuning.current.power && isTuningAvailable()) {
-        const newLevels = { ...tuning.current, power: decision.level };
+      if (decision.wireValue !== tuning.current.power && isTuningAvailable()) {
+        const newLevels = { ...tuning.current, power: decision.wireValue };
         setTuning(newLevels);
         tuning.setCurrent(newLevels);
       }
