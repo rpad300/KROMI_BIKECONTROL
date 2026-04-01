@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSettingsStore } from '../../store/settingsStore';
+import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import { useBikeStore } from '../../store/bikeStore';
 import { useAuthStore } from '../../store/authStore';
 import { connectBike, disconnectBike } from '../../services/bluetooth/BLEBridge';
@@ -15,7 +15,7 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
   const bleStatus = useBikeStore((s) => s.ble_status);
   const services = useBikeStore((s) => s.ble_services);
   const profile = useSettingsStore((s) => s.riderProfile);
-  const bike = useSettingsStore((s) => s.bikeConfig);
+  const bike = safeBikeConfig(useSettingsStore((s) => s.bikeConfig));
   const autoAssist = useSettingsStore((s) => s.autoAssist);
   const updateProfile = useSettingsStore((s) => s.updateRiderProfile);
   const updateBike = useSettingsStore((s) => s.updateBikeConfig);
