@@ -112,6 +112,19 @@
         android:paddingBottom="6dp"
         android:fontFamily="monospace"/>
 
+    <!-- TEST SG WRITE — probes motor protocol -->
+    <Button
+        android:id="@+id/testSGBtn"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginHorizontal="12dp"
+        android:layout_marginBottom="4dp"
+        android:text="TEST SG WRITE"
+        android:textSize="16sp"
+        android:backgroundTint="#F59E0B"
+        android:textColor="#000000"
+        android:textStyle="bold"/>
+
     <!-- Action buttons row -->
     <LinearLayout
         android:layout_width="match_parent"
@@ -123,10 +136,10 @@
         <Button
             android:id="@+id/testBtn"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="36dp"
             android:layout_weight="1"
-            android:text="RUN TEST"
-            android:textSize="12sp"
+            android:text="BLE TEST"
+            android:textSize="11sp"
             android:backgroundTint="#1F2937"
             android:textColor="#FCD34D"
             android:layout_marginEnd="4dp"/>
@@ -134,10 +147,10 @@
         <Button
             android:id="@+id/copyLogBtn"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="36dp"
             android:layout_weight="1"
             android:text="COPY LOG"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:backgroundTint="#1F2937"
             android:textColor="#60A5FA"
             android:layout_marginEnd="4dp"/>
@@ -145,10 +158,10 @@
         <Button
             android:id="@+id/clearLogBtn"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="36dp"
             android:layout_weight="1"
             android:text="CLEAR"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:backgroundTint="#1F2937"
             android:textColor="#9CA3AF"/>
     </LinearLayout>

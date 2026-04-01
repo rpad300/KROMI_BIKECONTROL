@@ -106,6 +106,7 @@ class BLEBridgeService : Service() {
                 Log.i(TAG, "Assist down command received")
             }
             "protoGet" -> bleManager.writeProtoGet(json.optString("module", "bikeInfo"))
+            "testSG" -> bleManager.testSGWrite()
         }
     }
 

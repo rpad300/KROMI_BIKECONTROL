@@ -397,6 +397,17 @@ class BLEManager(private val context: Context) {
             handleCharacteristicData(char)
         }
 
+        override fun onCharacteristicWrite(g: BluetoothGatt, char: BluetoothGattCharacteristic, status: Int) {
+            val cShort = char.uuid.toString().substring(4, 8).uppercase()
+            val statusStr = if (status == BluetoothGatt.GATT_SUCCESS) "OK" else "FAIL($status)"
+            Log.i(TAG, ">>> WRITE CALLBACK [$cShort]: $statusStr")
+            onDataReceived?.invoke(JSONObject()
+                .put("type", "sgWriteCallback")
+                .put("short", cShort)
+                .put("status", status)
+                .put("ok", status == BluetoothGatt.GATT_SUCCESS))
+        }
+
         override fun onDescriptorWrite(g: BluetoothGatt, desc: BluetoothGattDescriptor, status: Int) {
             Log.i(TAG, "Descriptor write: ${desc.characteristic.uuid} status=$status")
             enableNextNotification(g)
@@ -595,5 +606,102 @@ class BLEManager(private val context: Context) {
         val g = gatt ?: return
         val char = protoWriteChar ?: return
         Log.i(TAG, "Proto GET request: $module")
+    }
+
+    /**
+     * Test SG Write — sends multiple probe packets to 4d500002
+     * to discover what protocol the Smart Gateway accepts.
+     */
+    fun testSGWrite() {
+        val g = gatt ?: return
+        val char = sgWriteChar ?: run {
+            Log.w(TAG, "SG Write char not available!")
+            onStatusChanged?.invoke("SG not connected")
+            return
+        }
+
+        val tests = mutableListOf<Pair<String, ByteArray>>()
+
+        // Test 1: GEV CONNECTION command (0x01) — session init
+        tests.add("GEV_CONNECT" to buildGevPacket(0x01, byteArrayOf()))
+
+        // Test 2: GEV MODE_STATE (0x02) — read current mode
+        tests.add("GEV_MODE_STATE" to buildGevPacket(0x02, byteArrayOf()))
+
+        // Test 3: GEV BATTERY query (0x03)
+        tests.add("GEV_BATTERY" to buildGevPacket(0x03, byteArrayOf()))
+
+        // Test 4: GEV ASSIST_DATA query (0x15)
+        tests.add("GEV_ASSIST_DATA" to buildGevPacket(0x15, byteArrayOf()))
+
+        // Test 5: GEV RIDING_DATA query (0x38)
+        tests.add("GEV_RIDING_DATA" to buildGevPacket(0x38, byteArrayOf()))
+
+        // Test 6: Simple protobuf GET bikeInfo
+        // proto_version=6, method=GET(2), source=APP(6), bikeInfoModule(field 5)
+        tests.add("PROTO_GET_BIKE" to byteArrayOf(
+            0x08, 0x06,       // field 1 (proto_version) = 6
+            0x10, 0x02,       // field 2 (method) = GET
+            0x18, 0x06,       // field 3 (source) = APP
+            0x2A, 0x00        // field 5 (bikeInfoModule) = empty
+        ))
+
+        // Test 7: Simple protobuf GET eParts
+        tests.add("PROTO_GET_EPARTS" to byteArrayOf(
+            0x08, 0x06,       // proto_version = 6
+            0x10, 0x02,       // method = GET
+            0x18, 0x06,       // source = APP
+            0x22, 0x00        // field 4 (ePartModule) = empty
+        ))
+
+        // Test 8: Raw 0x00 ping
+        tests.add("RAW_0x00" to byteArrayOf(0x00))
+
+        // Test 9: Raw 0x01
+        tests.add("RAW_0x01" to byteArrayOf(0x01))
+
+        // Send each test with a delay between them
+        Log.i(TAG, "╔═══════════════════════════════════╗")
+        Log.i(TAG, "║    SG WRITE TEST — ${tests.size} packets     ║")
+        Log.i(TAG, "╚═══════════════════════════════════╝")
+        onStatusChanged?.invoke("Testing SG write (${tests.size} packets)...")
+
+        for ((i, test) in tests.withIndex()) {
+            val (name, data) = test
+            handler.postDelayed({
+                val hex = data.joinToString("") { "%02x".format(it) }
+                Log.i(TAG, ">>> SG WRITE [$name]: $hex (${data.size} bytes)")
+                onDataReceived?.invoke(JSONObject()
+                    .put("type", "sgWriteTest")
+                    .put("name", name)
+                    .put("hex", hex)
+                    .put("size", data.size))
+
+                char.value = data
+                char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                val ok = g.writeCharacteristic(char)
+                Log.i(TAG, ">>> Write result: $ok")
+                onDataReceived?.invoke(JSONObject()
+                    .put("type", "sgWriteResult")
+                    .put("name", name)
+                    .put("ok", ok))
+            }, (i * 800).toLong())  // 800ms between each write
+        }
+
+        // After all writes, log summary
+        handler.postDelayed({
+            Log.i(TAG, ">>> SG WRITE TEST COMPLETE — check for SG! responses above")
+            onStatusChanged?.invoke("SG test done — check log for responses")
+        }, (tests.size * 800 + 500).toLong())
+    }
+
+    private fun buildGevPacket(cmdId: Int, payload: ByteArray): ByteArray {
+        val header = byteArrayOf(
+            0xFC.toByte(), 0x21, cmdId.toByte(), payload.size.toByte()
+        )
+        val data = header + payload
+        var sum = 0
+        for (b in data) sum += b.toInt() and 0xFF
+        return data + byteArrayOf(((sum shr 8) and 0xFF).toByte(), (sum and 0xFF).toByte())
     }
 }

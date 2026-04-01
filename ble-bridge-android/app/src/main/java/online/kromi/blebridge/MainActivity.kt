@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var clearLogBtn: Button
     private lateinit var copyLogBtn: Button
     private lateinit var testBtn: Button
+    private lateinit var testSGBtn: Button
     private lateinit var wsClientsText: TextView
 
     private val logLines = mutableListOf<String>()
@@ -70,6 +71,7 @@ class MainActivity : AppCompatActivity() {
         clearLogBtn = findViewById(R.id.clearLogBtn)
         copyLogBtn = findViewById(R.id.copyLogBtn)
         testBtn = findViewById(R.id.testBtn)
+        testSGBtn = findViewById(R.id.testSGBtn)
         wsClientsText = findViewById(R.id.wsClientsText)
 
         requestPermissions()
@@ -102,6 +104,16 @@ class MainActivity : AppCompatActivity() {
         }
 
         testBtn.setOnClickListener { runBLETest() }
+
+        testSGBtn.setOnClickListener {
+            appendLog("SG", "══ SG WRITE TEST ══")
+            val ble = BLEBridgeService.instance?.bleManager
+            if (ble == null || !ble.isConnected) {
+                appendLog("ERR", "Not connected — SCAN first, then TEST SG")
+                return@setOnClickListener
+            }
+            ble.testSGWrite()
+        }
 
         // Start foreground service
         val serviceIntent = Intent(this, BLEBridgeService::class.java)
@@ -203,6 +215,9 @@ class MainActivity : AppCompatActivity() {
             "charReadFail" -> appendLog("RD!", "[${json.optString("short")}] FAILED status=${json.optInt("status")}")
             "unknownNotify" -> appendLog("NTF", "[${json.optString("short")}] hex=${json.optString("hex")} len=${json.optInt("size")}")
             "sgNotify" -> appendLog("SG!", "hex=${json.optString("hex")} ascii=\"${json.optString("ascii")}\" len=${json.optInt("size")}")
+            "sgWriteTest" -> appendLog("SG>", "[${json.optString("name")}] ${json.optString("hex")} (${json.optInt("size")}b)")
+            "sgWriteResult" -> appendLog("SG>", "[${json.optString("name")}] write=${json.optBoolean("ok")}")
+            "sgWriteCallback" -> appendLog("SG<", "[${json.optString("short")}] ${if (json.optBoolean("ok")) "OK" else "FAIL(${json.optInt("status")})"}")
             "barometer" -> updateSensor("Baro", "${json.optDouble("pressure").toInt()}hPa/${json.optDouble("altitude").toInt()}m")
             "light" -> updateSensor("Light", "${json.optDouble("lux").toInt()}lux")
             "accel" -> updateSensor("Lean", "${json.optDouble("lean").toInt()}°")
