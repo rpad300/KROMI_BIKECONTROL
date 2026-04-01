@@ -10,18 +10,17 @@ O KROMI é um **regulador de zona cardíaca**. O motor mantém o rider na zona H
 
 **Arquitectura layered (não aditiva)**:
 ```
-anticipationBias = terrainBias + transitionBias + weightBias + powerBias + cadenceTrendBias
-intensity = clamp(hrTarget + anticipationBias + speedLimitPenalty + altitudeBoost, 0, 100) × batteryConstraint
+anticipationBias = terrainBias + transitionBias + weightBias + powerBias + cadenceTrendBias + speedBias
+intensity = clamp(hrTarget + anticipationBias + stoppedPenalty + altitudeBoost, 0, 100) × batteryConstraint
 ```
 
-**Auxiliary modifiers** (small, situational):
-- Speed near limit (>23km/h): -25 (motor cuts at 25, assist inútil)
+**Auxiliary modifiers** (outside anticipation):
 - Stopped (<2km/h): -20 (save battery)
 - Altitude >1500m: +4 to +10 (less O₂)
 
-**Nota sobre speed limit**: o penalty de -25 só altera o wire value outcome quando hrTarget < 87.
+**Speed is NOT auxiliary** — it's Sub-component 6 in anticipation (predictive, not binary).
 
-**Porquê watts e cadência no anticipation**: o HR tem 30-60s de lag. Watts e cadência são sinais imediatos do esforço que o HR vai confirmar depois. Sem eles, o sistema só reage quando o HR já subiu — tarde demais para prevenir.
+**Porquê watts, cadência e velocidade no anticipation**: o HR tem 30-60s de lag. Estes 3 são sinais imediatos do esforço que o HR vai confirmar depois. Sem eles, o sistema só reage quando o HR já subiu — tarde demais para prevenir.
 
 | Layer | Função | Range | Papel |
 |-------|--------|-------|-------|
@@ -182,9 +181,9 @@ Claramente marcado no UI: "Sem HR — estimativa por terreno".
 
 O terreno **não define magnitude** — define **timing**. Antecipa mudanças futuras de HR.
 
-### Anticipation = terrainBias + transitionBias + weightBias + powerBias + cadenceTrendBias
+### Anticipation = terrainBias + transitionBias + weightBias + powerBias + cadenceTrendBias + speedBias
 
-Cinco sub-componentes. Total capped [-20, +50].
+Seis sub-componentes. Total capped [-25, +55].
 
 O HR tem 30-60s de lag. Watts e cadência são **sinais imediatos** do esforço que o HR vai reflectir em breve. A anticipation não é só terreno — é **effort anticipation** completa.
 
@@ -236,6 +235,25 @@ Se a cadência caiu >15rpm nos últimos 10s, o rider está a perder ritmo. É um
 **Exemplo**: cadência cai de 75 para 55rpm em 10s numa subida → +10 bias → motor antecipa antes do HR confirmar.
 
 **Floor >55rpm**: abaixo de 55rpm o rider já está em grinding extremo. Uma queda de 42→26rpm não acrescenta informação — o sistema já sabe pelo HR ou pelo terrain. O floor de 55 filtra ruído de singletrack técnico onde cadência é naturalmente errática.
+
+**Sub 6: Speed context (predictive, -25 a +10)**
+
+A velocidade no contexto do terreno prediz esforço futuro. Substituiu o penalty binário de -25.
+
+| Condição | Bias | Razão |
+|----------|:---:|--------|
+| speed < 8km/h + gradient > 5% (e speed > 2) | +10 | Lento em subida = a lutar, HR vai subir |
+| speed caiu > 3km/h em 10s + gradient > 3% (era > 5km/h) | +8 | A perder força em subida = fadiga |
+| speed 20-25km/h | 0 a -25 (linear) | Curva gradual até ao corte do motor |
+
+**Porquê gradual e não binário**: a 20km/h o motor ainda é útil. A 23km/h quase não. Uma curva linear de 0→-25 entre 20-25km/h é mais suave que um salto de 0→-25 a 23km/h.
+
+**Exemplo**: a 22km/h num plano (limite 25km/h):
+```
+progress = (22-20)/(25-20) = 0.4
+speedPenalty = -round(0.4 × 25) = -10
+```
+Antes: 0 (abaixo de 23) ou -25 (acima). Agora: -10 proporcional.
 
 ### Lookahead Dinâmico (baseado em velocidade)
 ```

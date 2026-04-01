@@ -57,6 +57,7 @@ class TuningIntelligence {
   private lastHrAboveEvent = 0;  // Lacuna 2: dwell time tracking
   private lastHrValid = 0;       // Lacuna 1: HR dropout tracking
   private cadenceHistory: number[] = [];  // Track cadence trend (last 5 samples = 10s)
+  private speedHistory: number[] = [];    // Track speed trend (last 5 samples = 10s)
 
   static getInstance(): TuningIntelligence {
     if (!TuningIntelligence.instance) {
@@ -189,8 +190,40 @@ class TuningIntelligence {
       }
     }
 
+    // Sub-component 6: speed context (predictive, replaces binary penalty)
+    // Speed + gradient predicts effort; speed trend predicts fatigue
+    this.speedHistory.push(input.speed);
+    if (this.speedHistory.length > 5) this.speedHistory.shift();
+
+    // 6a: slow on climb = struggling (HR will spike)
+    if (input.speed < 8 && input.speed > 2 && input.gradient > 5) {
+      anticipation += 10;
+      factors.push({ name: 'Vel+subida', value: 10, detail: `${input.speed.toFixed(0)}km/h em ${input.gradient.toFixed(0)}% — esforço alto` });
+    }
+
+    // 6b: speed dropping on climb = fatigue
+    if (this.speedHistory.length >= 3 && input.gradient > 3) {
+      const oldestSpeed = this.speedHistory[0]!;
+      const speedDrop = oldestSpeed - input.speed;
+      if (speedDrop > 3 && oldestSpeed > 5) {
+        anticipation += 8;
+        factors.push({ name: 'Vel ↓', value: 8, detail: `${oldestSpeed.toFixed(0)}→${input.speed.toFixed(0)}km/h — a perder força` });
+      }
+    }
+
+    // 6c: approaching speed limit — gradual curve (replaces binary -25)
+    if (input.speed > 20 && input.speed <= bike.speed_limit_kmh) {
+      const range = bike.speed_limit_kmh - 20;
+      const progress = (input.speed - 20) / (range > 0 ? range : 1);
+      const speedPenalty = -Math.round(progress * 25);
+      anticipation += speedPenalty;
+      if (speedPenalty < -5) {
+        factors.push({ name: 'Vel→limite', value: speedPenalty, detail: `${input.speed.toFixed(0)}km/h → motor corta a ${bike.speed_limit_kmh}` });
+      }
+    }
+
     // Cap total anticipation
-    anticipation = Math.max(-20, Math.min(50, anticipation));
+    anticipation = Math.max(-25, Math.min(55, anticipation));
 
     if (anticipation !== 0) {
       factors.push({ name: 'Antecipação', value: anticipation, detail: preemptive ?? this.descGradient(input.gradient) });
@@ -209,17 +242,15 @@ class TuningIntelligence {
     // ═══════════════════════════════════════════════
     // COMBINE: layered
     // ═══════════════════════════════════════════════
-    // Speed limit penalty
-    let speedLimitPenalty = 0;
-    if (input.speed > bike.speed_limit_kmh - 2) speedLimitPenalty = -25;
-    else if (input.speed < 2) speedLimitPenalty = -20;
+    // Stopped: override (save battery, no pedalling)
+    const stoppedPenalty = input.speed < 2 ? -20 : 0;
 
     // Altitude boost (less O₂ at altitude)
     const altitudeBoost = input.altitude > 1500
       ? Math.min(10, Math.round((input.altitude - 1500) / 250)) : 0;
 
     const rawIntensity = Math.max(0, Math.min(100,
-      hrTarget + anticipation + speedLimitPenalty + altitudeBoost));
+      hrTarget + anticipation + stoppedPenalty + altitudeBoost));
     const overallIntensity = Math.round(rawIntensity * batteryConstraint);
 
     // ═══════════════════════════════════════════════
@@ -320,6 +351,7 @@ class TuningIntelligence {
     this.lastHrAboveEvent = 0;
     this.lastHrValid = 0;
     this.cadenceHistory = [];
+    this.speedHistory = [];
   }
 
   // ── Terrain as HR proxy ───────────────────────
