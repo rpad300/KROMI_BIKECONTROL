@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { parseFitFile, enrichWithElevation, saveImportedRide, type ImportedRide } from '../../services/import/FitImportService';
 import { updateStatsFromRide, type AthleteStats } from '../../services/import/AthleteProfileBuilder';
+import { simulateKromi, type SimulationSummary } from '../../services/simulation/KromiSimulator';
 
 /**
  * FIT file import UI.
@@ -9,7 +10,7 @@ import { updateStatsFromRide, type AthleteStats } from '../../services/import/At
  */
 export function FitImport({ onImported }: { onImported?: () => void } = {}) {
   const [importing, setImporting] = useState(false);
-  const [results, setResults] = useState<{ ride: ImportedRide; saved: boolean }[]>([]);
+  const [results, setResults] = useState<{ ride: ImportedRide; saved: boolean; sim: SimulationSummary | null }[]>([]);
   const [stats, setStats] = useState<AthleteStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -25,9 +26,12 @@ export function FitImport({ onImported }: { onImported?: () => void } = {}) {
         const buffer = await file.arrayBuffer();
         const ride = await parseFitFile(buffer);
         await enrichWithElevation(ride);
+        const sim = ride.records.some((r) => r.altitude_m !== null && r.altitude_m !== 0)
+          ? simulateKromi(ride.records)
+          : null;
         const saved = await saveImportedRide(ride);
         const updatedStats = await updateStatsFromRide(ride);
-        newResults.push({ ride, saved });
+        newResults.push({ ride, saved, sim });
         setStats(updatedStats);
       } catch (err) {
         setError(`${file.name}: ${err instanceof Error ? err.message : 'Parse error'}`);
@@ -85,7 +89,7 @@ export function FitImport({ onImported }: { onImported?: () => void } = {}) {
       {results.length > 0 && (
         <div className="space-y-2">
           <h3 className="text-sm font-bold text-gray-400">Importados ({results.length})</h3>
-          {results.map(({ ride, saved }) => (
+          {results.map(({ ride, saved, sim }) => (
             <div key={ride.id} className="bg-gray-800 rounded-xl p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <div>
@@ -115,6 +119,50 @@ export function FitImport({ onImported }: { onImported?: () => void } = {}) {
                 <ZoneBadge zone="Z4" pct={ride.hrZones.z4_pct} color="bg-yellow-600" />
                 <ZoneBadge zone="Z5" pct={ride.hrZones.z5_pct} color="bg-red-600" />
               </div>
+
+              {/* KROMI Simulation */}
+              {sim && (
+                <div className="border-t border-gray-700 pt-2 mt-2">
+                  <div className="text-xs font-bold text-emerald-400 mb-2">Simulação KROMI Intelligence</div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="bg-red-900/20 rounded-lg p-2 text-center">
+                      <div className="text-red-400 font-bold text-lg">{sim.time_max_pct}%</div>
+                      <div className="text-gray-500">MAX</div>
+                    </div>
+                    <div className="bg-yellow-900/20 rounded-lg p-2 text-center">
+                      <div className="text-yellow-400 font-bold text-lg">{sim.time_mid_pct}%</div>
+                      <div className="text-gray-500">MID</div>
+                    </div>
+                    <div className="bg-green-900/20 rounded-lg p-2 text-center">
+                      <div className="text-green-400 font-bold text-lg">{sim.time_min_pct}%</div>
+                      <div className="text-gray-500">MIN</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                    <Stat label="KROMI activo" value={`${sim.time_active_pct}% do tempo`} />
+                    <Stat label="Mudanças nível" value={`${sim.level_changes}×`} />
+                    <Stat label="Score médio" value={`${sim.avg_score}/100`} />
+                    <Stat label="Score máximo" value={`${sim.max_score}/100`} />
+                  </div>
+                  <div className="mt-2 bg-gray-900 rounded-lg p-2">
+                    <div className="text-[10px] text-gray-500 mb-1">Bateria simulada (início: 100%)</div>
+                    <div className="flex items-center justify-between text-xs">
+                      <div>
+                        <span className="text-emerald-400 font-bold">KROMI: {sim.battery_end_kromi}%</span>
+                        <span className="text-gray-600 ml-2">restante</span>
+                      </div>
+                      <div>
+                        <span className="text-red-400 font-bold">POWER fixo: {sim.battery_end_fixed}%</span>
+                      </div>
+                    </div>
+                    {sim.battery_saved_pct > 0 && (
+                      <div className="text-emerald-400 text-[10px] mt-1 font-bold">
+                        KROMI poupa {sim.battery_saved_pct}% de bateria vs POWER fixo
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
