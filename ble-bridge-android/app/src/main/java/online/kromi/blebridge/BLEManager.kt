@@ -1218,6 +1218,18 @@ class BLEManager(private val context: Context) {
         sendEncryptedCommand(plain, 0, "NORMAL_MODE")
     }
 
+    /** SET_TUNING — write tuning levels. cmd=0x2D, sub=0x03, key 3
+     *  Uses same values from READ_TUNING (33 22 02) to avoid changes.
+     *  Tests if key 3 WRITES are accepted by SG. */
+    fun setTuning() {
+        logBondState("SET_TUNING")
+        val plain = ByteArray(16).also {
+            it[0] = 0x2D; it[1] = 0x03
+            it[2] = 0x33; it[3] = 0x22; it[4] = 0x02  // same as READ_TUNING returned
+        }
+        sendEncryptedCommand(plain, 3, "SET_TUNING")
+    }
+
     private fun logBondState(label: String) {
         val bond = gatt?.device?.bondState ?: -1
         val bondStr = when (bond) {

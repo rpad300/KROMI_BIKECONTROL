@@ -135,14 +135,14 @@ class MainActivity : AppCompatActivity() {
             ble.lightToggle()
         }
 
-        findViewById<Button>(R.id.normalModeBtn).setOnClickListener {
+        findViewById<Button>(R.id.setTuningBtn).setOnClickListener {
             val ble = BLEBridgeService.instance?.bleManager
             if (ble == null || !ble.isConnected) {
                 appendLog("ERR", "Not connected!")
                 return@setOnClickListener
             }
-            appendLog("CMD", ">>> NORMAL MODE (exit AUTO)")
-            ble.normalMode()
+            appendLog("CMD", ">>> SET_TUNING (key3 write test, same values)")
+            ble.setTuning()
         }
 
         findViewById<Button>(R.id.sgOnlyBtn).setOnClickListener {
