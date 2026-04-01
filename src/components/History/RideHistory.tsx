@@ -346,11 +346,16 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
                 <div className="text-[9px] text-gray-600 mt-1">S360% T85Nm — máximo consumo</div>
               </div>
             </div>
-            {simulation.battery_saved_vs_fixed > 0 && (
-              <div className="text-emerald-400 text-xs font-bold text-center mt-2">
-                KROMI poupa {simulation.battery_saved_vs_fixed}% de bateria comparado com a tua config fixa
-              </div>
-            )}
+            <div className={`text-xs font-bold text-center mt-2 ${
+              simulation.battery_saved_vs_fixed > 0 ? 'text-emerald-400' : 'text-orange-400'
+            }`}>
+              {simulation.battery_saved_vs_fixed > 0
+                ? `KROMI poupa ${simulation.battery_saved_vs_fixed}% de bateria vs a tua config fixa — mais autonomia com mais performance nas subidas`
+                : simulation.battery_saved_vs_fixed < 0
+                  ? `KROMI gasta ${Math.abs(simulation.battery_saved_vs_fixed)}% mais que a tua config fixa — mas dá mais potência quando precisas`
+                  : 'KROMI e a tua config fixa gastam o mesmo — mas o KROMI adapta a potência ao terreno'
+              }
+            </div>
           </div>
         )}
       </div>
@@ -518,11 +523,11 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
                 <div className="text-[9px] text-gray-500">Sempre MAX</div>
               </div>
             </div>
-            {simulation.battery_saved_vs_fixed > 0 && (
-              <div className="text-emerald-400 text-xs font-bold text-center">
-                KROMI poupa {simulation.battery_saved_vs_fixed}% vs a tua config fixa
-              </div>
-            )}
+            <div className={`text-xs font-bold text-center ${simulation.battery_saved_vs_fixed >= 0 ? 'text-emerald-400' : 'text-orange-400'}`}>
+              {simulation.battery_saved_vs_fixed >= 0
+                ? `+${simulation.battery_saved_vs_fixed}% poupança vs config fixa`
+                : `${simulation.battery_saved_vs_fixed}% vs config fixa (mais potência nas subidas)`}
+            </div>
           </div>
         </div>
       )}
