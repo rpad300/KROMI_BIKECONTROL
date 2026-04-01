@@ -12,11 +12,12 @@ import { useGeolocation } from './hooks/useGeolocation';
 import { useMotorControl } from './hooks/useMotorControl';
 import { useAuthStore } from './store/authStore';
 import { usePlatform } from './hooks/usePlatform';
+import { LiveRideView } from './components/LiveRide/LiveRideView';
 import { startSettingsSync } from './services/sync/SettingsSyncService';
 import { trackLogin } from './services/sync/LoginTracker';
 
 type MobileScreen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
-type DesktopScreen = 'settings' | 'history' | 'map';
+type DesktopScreen = 'live' | 'settings' | 'history' | 'map';
 
 export function App() {
   const user = useAuthStore((s) => s.user);
@@ -91,13 +92,14 @@ function MobileApp() {
 // ═══════════════════════════════════════════════════
 
 const DESKTOP_NAV: { screen: DesktopScreen; label: string; icon: string }[] = [
+  { screen: 'live', label: 'Volta Live', icon: 'directions_bike' },
   { screen: 'settings', label: 'Configuração', icon: 'settings' },
   { screen: 'history', label: 'Histórico', icon: 'history' },
   { screen: 'map', label: 'Mapa', icon: 'map' },
 ];
 
 function DesktopApp() {
-  const [screen, setScreen] = useState<DesktopScreen>('settings');
+  const [screen, setScreen] = useState<DesktopScreen>('live');
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
 
@@ -154,6 +156,7 @@ function DesktopApp() {
       {/* Main content */}
       <main className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-3xl mx-auto py-6">
+          {screen === 'live' && <LiveRideView />}
           {screen === 'settings' && <Settings />}
           {screen === 'history' && <RideHistory />}
           {screen === 'map' && <MapView />}

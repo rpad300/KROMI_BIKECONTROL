@@ -26,27 +26,10 @@ import { useTorqueStore } from '../../store/torqueStore';
 import { useAthleteStore } from '../../store/athleteStore';
 import { autoAssistEngine } from '../autoAssist/AutoAssistEngine';
 import { batteryEfficiencyTracker } from '../learning/BatteryEfficiencyTracker';
+import { syncQueue } from '../sync/SyncQueue';
 
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-function isSupabaseConfigured(): boolean {
-  return !!SUPABASE_URL && !!SUPABASE_KEY && !SUPABASE_URL.includes('your-project');
-}
-
-async function supabaseFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  return fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-    ...options,
-    headers: {
-      'apikey': SUPABASE_KEY!,
-      'Authorization': `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=minimal',
-      ...options.headers,
-    },
-  });
-}
+// Supabase access is now via SyncQueue (offline-first)
 
 interface SnapshotRow {
   session_id: string;
@@ -116,35 +99,26 @@ class RideSessionManager {
 
     batteryEfficiencyTracker.reset();
 
-    // Persist to Supabase
-    if (isSupabaseConfigured()) {
-      try {
-        await supabaseFetch('/ride_sessions', {
-          method: 'POST',
-          body: JSON.stringify({
-            id: this.sessionId,
-            athlete_id: athleteProfile.id,
-            user_id: useAuthStore.getState().getUserId(),
-            status: 'active',
-            battery_start: bike.battery_percent,
-            start_lat: map.latitude || null,
-            start_lng: map.longitude || null,
-            devices_connected: {
-              ble: bike.ble_status === 'connected',
-              battery: bike.ble_services.battery,
-              csc: bike.ble_services.csc,
-              power: bike.ble_services.power,
-              gev: bike.ble_services.gev,
-              heartRate: bike.ble_services.heartRate,
-              di2: bike.ble_services.di2,
-              gps: map.gpsActive,
-            },
-          }),
-        });
-      } catch (err) {
-        console.warn('[Session] Failed to create session in Supabase:', err);
-      }
-    }
+    // Persist to Supabase (via SyncQueue — offline resilient)
+    await syncQueue.push('ride_sessions', {
+      id: this.sessionId,
+      athlete_id: athleteProfile.id,
+      user_id: useAuthStore.getState().getUserId(),
+      status: 'active',
+      battery_start: bike.battery_percent,
+      start_lat: map.latitude || null,
+      start_lng: map.longitude || null,
+      devices_connected: {
+        ble: bike.ble_status === 'connected',
+        battery: bike.ble_services.battery,
+        csc: bike.ble_services.csc,
+        power: bike.ble_services.power,
+        gev: bike.ble_services.gev,
+        heartRate: bike.ble_services.heartRate,
+        di2: bike.ble_services.di2,
+        gps: map.gpsActive,
+      },
+    });
 
     // Start capture every 5s
     this.intervalId = setInterval(() => this.captureSnapshot(), 5000);
@@ -170,32 +144,23 @@ class RideSessionManager {
     const map = useMapStore.getState();
     const elapsedS = Math.round((Date.now() - this.startedAt) / 1000);
 
-    // Update session with summary
-    if (isSupabaseConfigured()) {
-      try {
-        await supabaseFetch(`/ride_sessions?id=eq.${this.sessionId}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            status: 'completed',
-            ended_at: new Date().toISOString(),
-            duration_s: elapsedS,
-            total_km: bike.distance_km,
-            avg_speed_kmh: elapsedS > 0 ? Math.round(bike.distance_km / (elapsedS / 3600) * 10) / 10 : 0,
-            max_speed_kmh: bike.speed_max,
-            avg_power_w: Math.round(bike.power_avg),
-            max_power_w: bike.power_max,
-            max_hr: bike.hr_bpm, // Last known, real max tracked in snapshots
-            battery_end: bike.battery_percent,
-            override_count: this.overrideCount,
-            override_rate: this.snapshotCount > 0 ? this.overrideCount / this.snapshotCount : 0,
-            end_lat: map.latitude || null,
-            end_lng: map.longitude || null,
-          }),
-        });
-      } catch (err) {
-        console.warn('[Session] Failed to update session:', err);
-      }
-    }
+    // Update session with summary (via SyncQueue)
+    await syncQueue.push('ride_sessions', {
+      status: 'completed',
+      ended_at: new Date().toISOString(),
+      duration_s: elapsedS,
+      total_km: bike.distance_km,
+      avg_speed_kmh: elapsedS > 0 ? Math.round(bike.distance_km / (elapsedS / 3600) * 10) / 10 : 0,
+      max_speed_kmh: bike.speed_max,
+      avg_power_w: Math.round(bike.power_avg),
+      max_power_w: bike.power_max,
+      max_hr: bike.hr_bpm,
+      battery_end: bike.battery_percent,
+      override_count: this.overrideCount,
+      override_rate: this.snapshotCount > 0 ? this.overrideCount / this.snapshotCount : 0,
+      end_lat: map.latitude || null,
+      end_lng: map.longitude || null,
+    }, 'PATCH', `/ride_sessions?id=eq.${this.sessionId}`);
 
     // Process ride for adaptive learning
     const rideSummary = {
@@ -235,30 +200,27 @@ class RideSessionManager {
     if (!this.sessionId) return;
     this.overrideCount++;
 
-    if (isSupabaseConfigured()) {
+    {
       const bike = useBikeStore.getState();
       const terrain = useAutoAssistStore.getState().terrain;
       const torque = useTorqueStore.getState();
       const decision = useAutoAssistStore.getState().lastDecision;
 
-      supabaseFetch('/ride_override_events', {
-        method: 'POST',
-        body: JSON.stringify({
-          session_id: this.sessionId,
-          elapsed_s: Math.round((Date.now() - this.startedAt) / 1000),
-          source,
-          from_mode: fromMode,
-          to_mode: toMode,
-          speed_kmh: bike.speed_kmh,
-          gradient_pct: terrain?.current_gradient_pct ?? 0,
-          hr_bpm: bike.hr_bpm,
-          hr_zone: bike.hr_zone,
-          gear: bike.gear,
-          torque_nm: torque.torque_nm,
-          climb_type: torque.climb_type,
-          auto_assist_reason: decision?.reason ?? '',
-        }),
-      }).catch(() => {});
+      syncQueue.push('ride_override_events', {
+        session_id: this.sessionId,
+        elapsed_s: Math.round((Date.now() - this.startedAt) / 1000),
+        source,
+        from_mode: fromMode,
+        to_mode: toMode,
+        speed_kmh: bike.speed_kmh,
+        gradient_pct: terrain?.current_gradient_pct ?? 0,
+        hr_bpm: bike.hr_bpm,
+        hr_zone: bike.hr_zone,
+        gear: bike.gear,
+        torque_nm: torque.torque_nm,
+        climb_type: torque.climb_type,
+        auto_assist_reason: decision?.reason ?? '',
+      });
     }
   }
 
@@ -310,21 +272,14 @@ class RideSessionManager {
   }
 
   private async flushSnapshots(): Promise<void> {
-    if (this.snapshotBuffer.length === 0 || !isSupabaseConfigured()) return;
+    if (this.snapshotBuffer.length === 0) return;
 
     const batch = [...this.snapshotBuffer];
     this.snapshotBuffer = [];
 
-    try {
-      await supabaseFetch('/ride_snapshots', {
-        method: 'POST',
-        body: JSON.stringify(batch),
-      });
-    } catch (err) {
-      // Put them back on failure
-      this.snapshotBuffer.unshift(...batch);
-      console.warn('[Session] Snapshot flush failed, will retry:', err);
-    }
+    // Push to SyncQueue — saved locally (IndexedDB) immediately,
+    // synced to Supabase when online. Never lost.
+    await syncQueue.pushBatch('ride_snapshots', batch as unknown as Record<string, unknown>[]);
   }
 
   getState(): RideSessionState {
