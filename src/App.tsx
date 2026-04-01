@@ -12,6 +12,8 @@ import { useGeolocation } from './hooks/useGeolocation';
 import { useMotorControl } from './hooks/useMotorControl';
 import { useAuthStore } from './store/authStore';
 import { usePlatform } from './hooks/usePlatform';
+import { startSettingsSync } from './services/sync/SettingsSyncService';
+import { trackLogin } from './services/sync/LoginTracker';
 
 type MobileScreen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
 type DesktopScreen = 'settings' | 'history' | 'map';
@@ -38,6 +40,14 @@ export function App() {
 
 function MainApp() {
   const platform = usePlatform();
+
+  // Sync settings from/to DB + track login (once on mount)
+  useEffect(() => {
+    trackLogin();
+    const unsub = startSettingsSync();
+    return unsub;
+  }, []);
+
   return platform === 'mobile' ? <MobileApp /> : <DesktopApp />;
 }
 
