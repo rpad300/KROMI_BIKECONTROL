@@ -20,6 +20,7 @@ class BLEBridgeService : Service() {
     }
 
     lateinit var bleManager: BLEManager
+    lateinit var sensorManager: SensorManager
     var wsServer: BridgeWebSocketServer? = null
     var phoneSensorService: PhoneSensorService? = null
 
@@ -30,6 +31,11 @@ class BLEBridgeService : Service() {
 
         bleManager = BLEManager(this)
         bleManager.onDataReceived = { json ->
+            wsServer?.broadcastData(json)
+        }
+
+        sensorManager = SensorManager(this)
+        sensorManager.onData = { json ->
             wsServer?.broadcastData(json)
         }
 
@@ -64,6 +70,7 @@ class BLEBridgeService : Service() {
 
     override fun onDestroy() {
         phoneSensorService?.stop()
+        sensorManager.destroy()
         wsServer?.stop()
         bleManager.disconnect()
         instance = null
@@ -166,6 +173,35 @@ class BLEBridgeService : Service() {
                         put("reason", "Invalid address: $address")
                     }
                     wsServer?.broadcastData(err)
+                }
+            }
+
+            // === External sensor management ===
+            "scanSensor" -> {
+                when (json.optString("sensor")) {
+                    "hr" -> sensorManager.scanForHR()
+                    else -> Log.w(TAG, "Unknown sensor type: ${json.optString("sensor")}")
+                }
+            }
+
+            "connectSensor" -> {
+                val address = json.optString("address", "")
+                when (json.optString("sensor")) {
+                    "hr" -> {
+                        if (address.isNotEmpty()) {
+                            sensorManager.connectHR(address)
+                        } else {
+                            // No address — scan first
+                            sensorManager.scanForHR()
+                        }
+                    }
+                    else -> Log.w(TAG, "Unknown sensor type: ${json.optString("sensor")}")
+                }
+            }
+
+            "disconnectSensor" -> {
+                when (json.optString("sensor")) {
+                    "hr" -> sensorManager.disconnectHR()
                 }
             }
 
