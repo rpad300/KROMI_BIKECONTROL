@@ -89,25 +89,29 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
 
     const isActive = r.speed_kmh > 2;
 
-    // === LAYER 1: HR Zone Target (identical to TuningIntelligence) ===
+    // === LAYER 1: HR Zone Target — Continuous Regulator (identical to TuningIntelligence) ===
+    // In-zone comfortable → MIN assist. Top of zone → transitioning to MID.
+    // Above zone → MID→MAX gradual. Below zone → minimal assist.
     const targetZone = getTargetZone(rider);
-    let hrTarget = 50;
+    let hrTarget = 30;
     const hasHR = r.hr_bpm > 0 && hrMax > 0;
 
     if (hasHR) {
       if (r.hr_bpm > targetZone.max_bpm) {
-        hrTarget = Math.min(100, 60 + (r.hr_bpm - targetZone.max_bpm) * 8);
+        const above = r.hr_bpm - targetZone.max_bpm;
+        hrTarget = Math.min(100, 42 + above * 2);
       } else if (r.hr_bpm < targetZone.min_bpm) {
-        hrTarget = Math.max(0, 40 - (targetZone.min_bpm - r.hr_bpm) * 5);
+        const below = targetZone.min_bpm - r.hr_bpm;
+        hrTarget = Math.max(0, 20 - below * 2);
       } else {
         const zoneRange = targetZone.max_bpm - targetZone.min_bpm;
         const posInZone = zoneRange > 0 ? (r.hr_bpm - targetZone.min_bpm) / zoneRange : 0.5;
-        hrTarget = 40 + Math.round(posInZone * 20);
+        hrTarget = 20 + Math.round(posInZone * 22); // 20-42
       }
     } else {
       // Terrain proxy when no HR
-      hrTarget = gradient > 12 ? 85 : gradient > 8 ? 72 : gradient > 5 ? 60 :
-        gradient > 3 ? 48 : gradient > 1 ? 38 : gradient > -2 ? 25 : 10;
+      hrTarget = gradient > 12 ? 70 : gradient > 8 ? 55 : gradient > 5 ? 42 :
+        gradient > 3 ? 32 : gradient > 1 ? 22 : gradient > -2 ? 15 : 5;
       if (gradient > 2 && rider.weight_kg > 0) hrTarget = Math.min(100, Math.round(hrTarget * (0.8 + 0.2 * weightFactor)));
     }
 
@@ -186,24 +190,40 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
     const rawScore = Math.max(0, Math.min(100, hrTarget + anticipation + stoppedPenalty));
     const score = Math.round(rawScore * batteryMod);
 
-    const targetLevel: 1 | 2 | 3 = score > 62 ? 1 : score > 38 ? 2 : 3;
+    // Display level for summary stats (which "zone" the score falls in)
+    const displayLevel: 1 | 2 | 3 = score > 62 ? 1 : score > 38 ? 2 : 3;
 
-    levelHistory.push(targetLevel);
+    // Detect level changes for stats (with 3-frame hysteresis)
+    levelHistory.push(displayLevel);
     if (levelHistory.length > 3) levelHistory.shift();
     if (levelHistory.length >= 3 && levelHistory.every((l) => l === levelHistory[0])) {
       if (currentLevel !== levelHistory[0]!) { levelChanges++; currentLevel = levelHistory[0]!; }
     }
 
+    // === INTERPOLATE ASMO VALUES from continuous score ===
+    // score 0 → MIN specs, score 50 → MID specs, score 100 → MAX specs
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+    const asmo = score <= 50
+      ? {
+          support_pct: Math.round(lerp(bike.tuning_min.assist_pct, bike.tuning_mid.assist_pct, score / 50)),
+          torque: Math.round(lerp(bike.tuning_min.torque_nm, bike.tuning_mid.torque_nm, score / 50)),
+          launch: Math.round(lerp(bike.tuning_min.launch, bike.tuning_mid.launch, score / 50)),
+          consumption: lerp(bike.tuning_min.consumption_wh_km, bike.tuning_mid.consumption_wh_km, score / 50),
+        }
+      : {
+          support_pct: Math.round(lerp(bike.tuning_mid.assist_pct, bike.tuning_max.assist_pct, (score - 50) / 50)),
+          torque: Math.round(lerp(bike.tuning_mid.torque_nm, bike.tuning_max.torque_nm, (score - 50) / 50)),
+          launch: Math.round(lerp(bike.tuning_mid.launch, bike.tuning_max.launch, (score - 50) / 50)),
+          consumption: lerp(bike.tuning_mid.consumption_wh_km, bike.tuning_max.consumption_wh_km, (score - 50) / 50),
+        };
+
     // === BATTERY SIMULATION ===
     const dt = i > 0 ? (r.elapsed_s - records[i - 1]!.elapsed_s) : 0;
     const dtH = dt / 3600;
     if (r.speed_kmh > 2 && dtH > 0) {
-      // KROMI: consumption based on actual tuning level specs
-      const levelSpec = currentLevel === 1 ? bike.tuning_max
-        : currentLevel === 2 ? bike.tuning_mid
-        : bike.tuning_min;
-      batteryWh = Math.max(0, batteryWh - levelSpec.consumption_wh_km * r.speed_kmh * dtH);
-      // Fixed baseline: user's normal config (e.g., Support 125%, Torque 40Nm, Launch 3)
+      // KROMI: consumption interpolated from score
+      batteryWh = Math.max(0, batteryWh - asmo.consumption * r.speed_kmh * dtH);
+      // Fixed baseline: user's normal config
       batteryFixedWh = Math.max(0, batteryFixedWh - bike.fixed_baseline.consumption_wh_km * r.speed_kmh * dtH);
       // Always MAX: worst case reference
       batteryMaxWh = Math.max(0, batteryMaxWh - bike.tuning_max.consumption_wh_km * r.speed_kmh * dtH);
@@ -218,10 +238,6 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
       else countMin++;
     }
 
-    // Resolve ASMO values for this level
-    const levelSpec = currentLevel === 1 ? bike.tuning_max
-      : currentLevel === 2 ? bike.tuning_mid : bike.tuning_min;
-
     points.push({
       elapsed_s: r.elapsed_s,
       distance_km: r.distance_km,
@@ -234,11 +250,11 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
       kromi_active: isActive,
       battery_pct: Math.round((batteryWh / totalWh) * 100),
       consumption_wh: Math.round(totalWh - batteryWh),
-      support_pct: levelSpec.assist_pct,
-      torque: levelSpec.torque_nm,
-      launch: levelSpec.launch,
+      support_pct: asmo.support_pct,
+      torque: asmo.torque,
+      launch: asmo.launch,
       terrain_score: terrainBias,
-      hr_mod: Math.round(hrTarget - 50),
+      hr_mod: Math.round(hrTarget - 30),
       speed_mod: anticipation,
       weight_factor: weightFactor,
     });

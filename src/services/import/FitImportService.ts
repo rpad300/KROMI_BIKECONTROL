@@ -8,6 +8,7 @@
 
 import FitParser from 'fit-file-parser';
 import { useAuthStore } from '../../store/authStore';
+import type { SimulationSummary } from '../simulation/KromiSimulator';
 
 const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
@@ -285,7 +286,7 @@ export async function enrichWithElevation(ride: ImportedRide): Promise<void> {
 }
 
 /** Save imported ride to Supabase (with optional simulation results) */
-export async function saveImportedRide(ride: ImportedRide, sim?: { battery_end_kromi: number; battery_end_fixed: number; battery_end_max: number; avg_score: number; time_max_pct: number; time_mid_pct: number; time_min_pct: number; level_changes: number; fixed_label: string }): Promise<boolean> {
+export async function saveImportedRide(ride: ImportedRide, sim?: SimulationSummary): Promise<boolean> {
   if (!SUPABASE_URL || !SUPABASE_KEY) return false;
   const userId = useAuthStore.getState().user?.id;
   if (!userId) return false;
@@ -350,26 +351,38 @@ export async function saveImportedRide(ride: ImportedRide, sim?: { battery_end_k
     });
 
     // 2. Save snapshots in batches of 200
+    // Build elapsed_s → sim point lookup for O(1) matching
+    const simByElapsed = new Map<number, SimulationSummary['points'][number]>();
+    if (sim) {
+      for (const pt of sim.points) simByElapsed.set(pt.elapsed_s, pt);
+    }
+
     const gpsRecords = ride.records.filter((r) => r.lat !== 0 || r.speed_kmh > 0);
     for (let i = 0; i < gpsRecords.length; i += 200) {
-      const batch = gpsRecords.slice(i, i + 200).map((r) => ({
-        session_id: ride.id,
-        elapsed_s: r.elapsed_s,
-        lat: r.lat,
-        lng: r.lng,
-        altitude_m: r.altitude_m,
-        speed_kmh: r.speed_kmh,
-        cadence_rpm: r.cadence_rpm,
-        power_watts: r.power_watts,
-        battery_pct: 100,
-        assist_mode: 0,
-        distance_km: r.distance_km,
-        hr_bpm: r.hr_bpm,
-        hr_zone: getHRZone(r.hr_bpm, ride.max_hr),
-        gradient_pct: 0,
-        auto_assist_active: false,
-        was_overridden: false,
-      }));
+      const batch = gpsRecords.slice(i, i + 200).map((r) => {
+        const sp = simByElapsed.get(r.elapsed_s);
+        return {
+          session_id: ride.id,
+          elapsed_s: r.elapsed_s,
+          lat: r.lat,
+          lng: r.lng,
+          altitude_m: r.altitude_m,
+          speed_kmh: r.speed_kmh,
+          cadence_rpm: r.cadence_rpm,
+          power_watts: r.power_watts,
+          battery_pct: sp?.battery_pct ?? 100,
+          assist_mode: sp?.kromi_level ?? 0,
+          distance_km: r.distance_km,
+          hr_bpm: r.hr_bpm,
+          hr_zone: getHRZone(r.hr_bpm, ride.max_hr),
+          gradient_pct: sp?.gradient_pct ?? 0,
+          torque_nm: sp?.torque ?? 0,
+          support_pct: sp?.support_pct ?? 0,
+          launch_value: sp?.launch ?? 0,
+          auto_assist_active: sp?.kromi_active ?? false,
+          was_overridden: false,
+        };
+      });
 
       await fetch(`${SUPABASE_URL}/rest/v1/ride_snapshots`, {
         method: 'POST',

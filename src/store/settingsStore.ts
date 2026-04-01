@@ -52,12 +52,13 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   consumption_active: 22,
   consumption_sport: 28,
   consumption_power: 35,
-  // SyncDrive Pro tuning levels in POWER mode (estimated from motor specs)
-  tuning_max: { assist_pct: 360, torque_nm: 85, launch: 9, consumption_wh_km: 38 },
-  tuning_mid: { assist_pct: 240, torque_nm: 65, launch: 5, consumption_wh_km: 28 },
-  tuning_min: { assist_pct: 140, torque_nm: 45, launch: 3, consumption_wh_km: 18 },
+  // SyncDrive Pro tuning levels in POWER mode (calibrated for 1050Wh total)
+  // MIN→~115km range, MID→~65km range, MAX→~40km range
+  tuning_max: { assist_pct: 360, torque_nm: 85, launch: 9, consumption_wh_km: 26 },
+  tuning_mid: { assist_pct: 240, torque_nm: 65, launch: 5, consumption_wh_km: 16 },
+  tuning_min: { assist_pct: 140, torque_nm: 45, launch: 3, consumption_wh_km: 9 },
   // Fixed comparison baseline — what the rider normally uses without KROMI
-  fixed_baseline: { assist_pct: 125, torque_nm: 40, launch: 3, consumption_wh_km: 15 },
+  fixed_baseline: { assist_pct: 125, torque_nm: 40, launch: 3, consumption_wh_km: 12 },
 };
 
 /** Deep merge bikeConfig with defaults — handles missing nested objects from old DB/localStorage */

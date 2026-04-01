@@ -74,11 +74,14 @@ class TuningIntelligence {
     const targetZone = getTargetZone(rider);
 
     // ═══════════════════════════════════════════════
-    // LAYER 1: HR Target (0-100)
-    // Bug 1 fix: continuous function, no boundary jump
-    // Bug 2 fix: in-zone range is 40-60 (safely within wire 1)
+    // LAYER 1: HR Target (0-100) — Continuous Regulator
+    // Philosophy: motor adjusts GRADUALLY to MAINTAIN HR in zone
+    //   In-zone comfortable → MIN assist (motor barely helps)
+    //   In-zone top → transitioning to MID (HR rising, motor responds)
+    //   Above zone → MID→MAX gradual ramp (proportional to deviation)
+    //   Below zone → LOW (rider not working hard enough)
     // ═══════════════════════════════════════════════
-    let hrTarget = 50;
+    let hrTarget = 30;
     let hrDetail = 'Sem sensor HR — terreno como fallback';
     let hasHR = false;
 
@@ -94,25 +97,22 @@ class TuningIntelligence {
 
     if (hasHR) {
       if (input.hr > targetZone.max_bpm) {
-        // HR ABOVE zone — motor must help more
+        // HR ABOVE zone — motor increases proportionally to help rider
         const above = input.hr - targetZone.max_bpm;
-        // Bug 1 fix: starts at 60 (matches top of in-zone range)
-        hrTarget = Math.min(100, 60 + above * 8);
-        hrDetail = `${input.hr}bpm — ${above}bpm acima de ${targetZone.name}, +assist`;
+        hrTarget = Math.min(100, 42 + above * 2);
+        hrDetail = `${input.hr}bpm — ${above}bpm acima de ${targetZone.name}, +assist gradual`;
         this.lastHrAboveEvent = Date.now();
       } else if (input.hr < targetZone.min_bpm) {
-        // HR BELOW zone — motor can help less
+        // HR BELOW zone — rider comfortable, minimal assist
         const below = targetZone.min_bpm - input.hr;
-        // Bug 1 fix: starts at 40 (matches bottom of in-zone range)
-        hrTarget = Math.max(0, 40 - below * 5);
+        hrTarget = Math.max(0, 20 - below * 2);
         hrDetail = `${input.hr}bpm — ${below}bpm abaixo de ${targetZone.name}, -assist`;
       } else {
-        // IN TARGET ZONE — fine-tune
-        // Bug 2 fix: range 40-60 (safely within wire 1 thresholds 38-62)
+        // IN TARGET ZONE — regulate: low assist at bottom, rising toward top
         const zoneRange = targetZone.max_bpm - targetZone.min_bpm;
         const posInZone = zoneRange > 0 ? (input.hr - targetZone.min_bpm) / zoneRange : 0.5;
-        hrTarget = 40 + Math.round(posInZone * 20); // 40-60
-        hrDetail = `${input.hr}bpm — dentro de ${targetZone.name} ✓`;
+        hrTarget = 20 + Math.round(posInZone * 22); // 20-42
+        hrDetail = `${input.hr}bpm — dentro de ${targetZone.name} (${Math.round(posInZone * 100)}%)`;
       }
     }
 
