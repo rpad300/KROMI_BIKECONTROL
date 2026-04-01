@@ -126,12 +126,11 @@ class MainActivity : AppCompatActivity() {
             ble.tuningRestore()
         }
 
-        findViewById<Button>(R.id.tuneReadBtn).setOnClickListener {
+        findViewById<Button>(R.id.tuneExtBtn).setOnClickListener {
             val ble = BLEBridgeService.instance?.bleManager
             if (ble == null || !ble.isConnected) { appendLog("ERR", "Not connected!"); return@setOnClickListener }
-            appendLog("CMD", ">>> READ TUNING")
-            val plain = ByteArray(16).also { it[0] = 0x2C; it[1] = 0x00 }
-            ble.sendEncryptedCommand(plain, 0, "READ_TUNING")
+            appendLog("CMD", ">>> EXT TEST: POWER wire=5 (outside 1-3 range)")
+            ble.tuningExtendedTest(5)
         }
 
         findViewById<Button>(R.id.sgOnlyBtn).setOnClickListener {

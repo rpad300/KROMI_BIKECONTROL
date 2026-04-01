@@ -105,14 +105,14 @@ Alternative to FC23 notifications. Sends encrypted command, receives 2 FC21 resp
 |---------|-------------|----------------|-----|-----------|
 | CONNECT_GEV | 0x02 | 0x00, zeros | 0 | ✅ b18 |
 | DISCONNECT_GEV | 0x21 | 0x00, zeros | 0 | - |
-| ASSIST_UP | 0x1C | 0x03, 0x02 | 3 | ✅ b20 |
-| ASSIST_DOWN | 0x1C | 0x03, 0x01 | 3 | ✅ b24 buttons |
-| LIGHT TOGGLE | 0x1C | 0x03, 0x08 | 3 | ✅ b24 buttons |
+| ASSIST_UP | 0x1C | 0x03, 0x02 | 3 | ❌ SG blocks button simulation |
+| ASSIST_DOWN | 0x1C | 0x03, 0x01 | 3 | ❌ SG blocks button simulation |
+| LIGHT TOGGLE | 0x1C | 0x03, 0x08 | 3 | ❌ SG blocks button simulation |
 | POWER_BTN | 0x1C | 0x03, 0x00 | 3 | - |
 | READ_BATTERY | 0x13 | 0x00, zeros | 0 | ✅ b20 SOC+life |
 | READ_TUNING | 0x2C | 0x00, zeros | 0 | ✅ b20 levels |
-| SET_TUNING | 0x2D | 0x03, levels | 3 | - |
-| READ_RIDING | 0x1B | 0x00, zeros | 0 | b24 (testing) |
+| SET_TUNING | 0x2D | 0x03, levels | 3 | ✅ b27-b28 MOTOR CONTROL! |
+| READ_RIDING | 0x1B | 0x00, zeros | 0 | ❌ No response from SG |
 | READ_FACTORY | 0x03 | 0x00, zeros | 0 | - |
 | DIAG_MOTOR | 0x16 | 0x00, zeros | 0 | - |
 | DIAG_BATTERY | 0x17 | 0x00, zeros | 0 | - |
@@ -145,15 +145,69 @@ Response decrypted:
 | [3] | battery life % |
 | [4-5] | last full charge capacity (/10 Ah) |
 
-## Tuning Levels (packed nibbles)
+## SET_TUNING — Dynamic Motor Control ✅ CONFIRMED (b27-b28)
+
+**This is the primary mechanism for PWA motor control.**
+
+### Command format
+```
+plaintext = [0x2D, 0x03, lvByte1, lvByte2, lvByte3, zeros×11]
+AES encrypt with key 3
+Packet: [FB, 21, AES(16), keyIdx=3, CRC] = 20 bytes
+
+lvByte1 = (POWER_lv+1) | ((SPORT_lv+1) << 4)
+lvByte2 = (ACTIVE_lv+1) | ((TOUR_lv+1) << 4)
+lvByte3 = (ECO_lv+1)
+
+Levels: 0=max power, 1=medium, 2=min power
+On wire: stored as lv+1 (so 1=max, 2=med, 3=min)
+```
+
+### Response
+```
+FC21 decrypted: [2D, 01, 01, zeros] = SUCCESS
+Verify with READ_TUNING (0x2C): echoes new values immediately
+```
+
+### Power values per mode (DU4 SyncDrive Sport)
+| Mode | ASMO# | Level 0 (max) | Level 1 (med) | Level 2 (min) |
+|------|-------|-------------|-------------|-------------|
+| POWER | 1 | 300W | 300W | 250W |
+| SPORT | 2 | 200W | 175W | 150W |
+| ACTIVE | 3 | 150W | 125W | 100W |
+| TOUR | 4 | 100W | 100W | 75W |
+| ECO | 5 | 75W | 75W | 50W |
+
+### Test results (b28)
+```
+MAX:     write(11 11 01) → RSP 2d0101 ✅ → READ: 11 11 01 ✅
+MIN:     write(33 33 03) → RSP 2d0101 ✅ → READ: 33 33 03 ✅
+RESTORE: write(33 22 02) → RSP 2d0101 ✅ → READ: 33 22 02 ✅
+5/5 cycles: 100% success rate
+```
+
+### Key properties
+- **No session required** — works immediately after BLE connect
+- **No bonding required** — NOT_BONDED works fine
+- **Instant effect** — motor applies new tuning on next pedal stroke
+- **Persistent** — survives power cycle (write only what you need)
+
+### PWA strategy
+```
+Fix bike in POWER mode → PWA sends SET_TUNING dynamically:
+- Uphill: level 0 (max watts)
+- Flat: level 1 (medium)
+- Downhill: level 2 (min watts)
+- Low battery: reduce all levels
+```
+
+## Tuning Byte Encoding (packed nibbles)
 ```
 lvByte1 = (mode1_lv+1) | ((mode2_lv+1) << 4)
 lvByte2 = (mode3_lv+1) | ((mode4_lv+1) << 4)
 lvByte3 = (mode5_lv+1)
 ```
-Each level 0-2 (3 levels per mode, 5 modes)
-
-Confirmed reading: `2c 03 33 22 02` → mode1=lv2(min), mode2=lv2(min), mode3=lv1(med), mode4=lv1(med), mode5=lv1(med)
+Original bike values: `33 22 02` → POWER=lv2, SPORT=lv2, ACTIVE=lv1, TOUR=lv1, ECO=lv1
 
 ## Bike Details
 - **Model**: Giant Trance X E+ 2 (2023)
@@ -172,3 +226,7 @@ Confirmed reading: `2c 03 33 22 02` → mode1=lv2(min), mode2=lv2(min), mode3=lv
 - b21-b22: FC23 diagnostic builds — raw byte logging
 - **b23**: SPEED CONFIRMED — telemetry is in cmd 0x40, not 0x41
 - **b24**: Calibrated motor watts, cmd 0x42 logging, FC21 poll, ASSIST/LIGHT buttons
+- b25: Assist level tracking (byte[14] not assist), FC21 framing check
+- b26: Auto-bond attempt + NORMAL_MODE (discovered it turns off bike!)
+- **b27**: SET_TUNING CONFIRMED — key 3 writes to motor work!
+- **b28**: Dynamic presets MAX/MIN/RESTORE — full tuning write+verify cycle

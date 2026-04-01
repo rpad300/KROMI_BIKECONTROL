@@ -107,6 +107,39 @@ class BLEBridgeService : Service() {
             }
             "protoGet" -> bleManager.writeProtoGet(json.optString("module", "bikeInfo"))
             "testSG" -> bleManager.testSGWrite()
+
+            // === Motor tuning control (SET_TUNING) ===
+            "setTuning" -> {
+                // PWA sends: {type:"setTuning", power:0, sport:1, active:2, tour:1, eco:2}
+                // Levels 0-2 (0=max watts, 2=min watts)
+                val p = json.optInt("power", -1)
+                val s = json.optInt("sport", -1)
+                val a = json.optInt("active", -1)
+                val t = json.optInt("tour", -1)
+                val e = json.optInt("eco", -1)
+                if (p < 0 || s < 0 || a < 0 || t < 0 || e < 0) {
+                    Log.e(TAG, "setTuning: missing fields (need power,sport,active,tour,eco)")
+                    return
+                }
+                Log.i(TAG, "WS setTuning: P=$p S=$s A=$a T=$t E=$e")
+                bleManager.setTuningLevels(p, s, a, t, e, "WS_TUNE")
+            }
+            "setTuningPower" -> {
+                // Quick command: only change POWER mode level, keep others at current
+                // PWA sends: {type:"setTuningPower", level:0}
+                val lv = json.optInt("level", 0)
+                Log.i(TAG, "WS setTuningPower: level=$lv")
+                // Set POWER to requested, keep all others at level 1 (medium)
+                bleManager.setTuningLevels(lv, 1, 1, 1, 1, "WS_TUNE_PWR")
+            }
+            "readTuning" -> {
+                Log.i(TAG, "WS readTuning")
+                val plain = ByteArray(16).also { it[0] = 0x2C; it[1] = 0x00 }
+                bleManager.sendEncryptedCommand(plain, 0, "WS_READ_TUNE")
+            }
+            "tuneMax" -> bleManager.tuningMax()
+            "tuneMin" -> bleManager.tuningMin()
+            "tuneRestore" -> bleManager.tuningRestore()
         }
     }
 

@@ -1274,6 +1274,36 @@ class BLEManager(private val context: Context) {
     /** Preset: RESTORE — original values from bike (33 22 02 = lv2,lv2,lv1,lv1,lv1) */
     fun tuningRestore() = setTuningLevels(2, 2, 1, 1, 1, "TUNE_RESTORE")
 
+    /**
+     * Test extended tuning values BEYOND the official 0-2 range.
+     * Sends raw nibble values without clamping to see what the motor accepts.
+     * If the motor accepts value 5 for POWER, we get finer granularity.
+     */
+    fun tuningExtendedTest(rawPowerVal: Int) {
+        logBondState("TUNE_EXT")
+        // Send raw value WITHOUT the +1 offset or clamping
+        // Normal: val 1-3 on wire. Extended: try 4, 5, 6, etc.
+        val wireVal = rawPowerVal.coerceIn(0, 15)  // max nibble = 0xF = 15
+        val b2 = (wireVal or (2 shl 4)).toByte()  // POWER=rawVal, SPORT=lv1(normal)
+        val b3 = (2 or (2 shl 4)).toByte()         // ACTIVE=lv1, TOUR=lv1
+        val b4 = 2.toByte()                         // ECO=lv1
+
+        Log.i(TAG, "★ TUNE_EXT: POWER rawWire=$wireVal → bytes=%02X %02X %02X"
+            .format(b2.toInt() and 0xFF, b3.toInt() and 0xFF, b4.toInt() and 0xFF))
+
+        val plain = ByteArray(16).also {
+            it[0] = 0x2D; it[1] = 0x03
+            it[2] = b2; it[3] = b3; it[4] = b4
+        }
+        sendEncryptedCommand(plain, 3, "TUNE_EXT_$wireVal")
+
+        // Verify
+        handler.postDelayed({
+            val readPlain = ByteArray(16).also { it[0] = 0x2C; it[1] = 0x00 }
+            sendEncryptedCommand(readPlain, 0, "READ_TUNE_EXT")
+        }, 500)
+    }
+
     private fun logBondState(label: String) {
         val bond = gatt?.device?.bondState ?: -1
         val bondStr = when (bond) {
