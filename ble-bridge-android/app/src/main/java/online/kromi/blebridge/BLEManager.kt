@@ -73,6 +73,10 @@ class BLEManager(private val context: Context) {
     private var lastTelemetryLog = 0L
     private val fc23LogTimes = mutableMapOf<String, Long>()
 
+    // FC21 readRidingData accumulator (cmd 0x1B, needs 2 responses × 14 bytes = 28 bytes)
+    private val rideDataAccum = mutableListOf<Byte>()
+    private var rideDataPending = false
+
     val isConnected: Boolean get() = gatt != null
     val isScanning: Boolean get() = scanCallback != null
 
@@ -596,49 +600,60 @@ class BLEManager(private val context: Context) {
 
                             when (cmdType) {
                                 0x40 -> {
-                                    // RIDE DATA — confirmed by CSC speed correlation
+                                    // RIDE DATA — confirmed by CSC speed correlation (b23)
                                     // [4-5]: speed (LE uint16, /10 km/h) ✅
                                     // [6-7]: signed value (accel/slope?)
-                                    // [8-9]: motor power candidate (peaks with speed)
-                                    // [12-13]: ODO (slowly incrementing, /10 km)
-                                    // [16-17]: motor torque candidate (varies with movement)
+                                    // [8-9]: motor power (/10 = watts, from RideControl decompile) ✅
+                                    // [12-13]: ODO (slowly incrementing, /10 km) ✅
+                                    // [16-17]: motor internal value (RPM? varies with load)
                                     // [18]: battery SOC (0x64=100%) ✅
                                     val speed = leU16(4) / 10.0
-                                    val motorPwr = leU16(8)        // raw, unit TBD
-                                    val odo = leU16(12) / 10.0     // total km
-                                    val motorTrq = leU16(16)       // raw, unit TBD
+                                    val motorWatts = leU16(8) / 10.0   // calibrated: /10 = watts
+                                    val accel = leS16(6)               // signed, raw
+                                    val odo = leU16(12) / 10.0
+                                    val motorVal = leU16(16)           // raw (RPM or torque TBD)
                                     val soc = data[18].toInt() and 0xFF
 
                                     if (now - lastTelemetryLog > 2000) {
                                         lastTelemetryLog = now
-                                        Log.i(TAG, "RIDE40: spd=%.1f soc=%d%% mPwr=%d mTrq=%d odo=%.1f"
-                                            .format(speed, soc, motorPwr, motorTrq, odo))
+                                        Log.i(TAG, "RIDE: spd=%.1f mW=%.0f soc=%d%% acc=%d mv=%d odo=%.1f"
+                                            .format(speed, motorWatts, soc, accel, motorVal, odo))
                                     }
 
                                     onDataReceived?.invoke(JSONObject()
                                         .put("type", "sgRiding")
                                         .put("speed", speed)
                                         .put("batterySoc", soc)
-                                        .put("motorPower", motorPwr)
-                                        .put("motorTorque", motorTrq)
+                                        .put("motorWatts", motorWatts)
+                                        .put("motorVal", motorVal)
                                         .put("odo", odo)
-                                        .put("torque", 0)
-                                        .put("cadence", 0)
-                                        .put("power", 0)
-                                        .put("assistRatio", 0)
-                                        .put("tripDistance", 0)
-                                        .put("tripTime", 0)
-                                        .put("accumCurrent", 0)
-                                        .put("errorCode", 0))
+                                        .put("accel", accel))
 
                                     // PWA compat broadcasts
                                     if (speed > 0.5) onDataReceived?.invoke(JSONObject().put("type", "speed").put("value", speed))
                                     if (soc in 1..100) onDataReceived?.invoke(JSONObject().put("type", "battery").put("value", soc))
                                 }
+                                0x42 -> {
+                                    // SENSOR DATA — all zeros when stopped, may have cadence/power
+                                    // Check if ANY byte [4..18] is non-zero
+                                    val payload = data.copyOfRange(4, 19)
+                                    val hasData = payload.any { it != 0.toByte() }
+                                    if (hasData) {
+                                        val hex = payload.joinToString(" ") { "%02X".format(it) }
+                                        Log.i(TAG, "CMD42 DATA: $hex")
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "fc23cmd42")
+                                            .put("hex", hex)
+                                            .put("bytes", payload.map { it.toInt() and 0xFF }
+                                                .joinToString(","))
+                                            .put("b0b1", leU16(4))    // possible cadence?
+                                            .put("b2b3", leU16(6))    // possible torque?
+                                            .put("b4b5", leU16(8))    // possible power?
+                                            .put("b6b7", leU16(10)))  // possible ?
+                                    }
+                                }
                                 0x43 -> {
                                     // BATTERY HEALTH
-                                    // [4]: battery1 life %, [5]: battery2 life %
-                                    // [8]: SOC (oscillates around actual)
                                     val b1Life = data[4].toInt() and 0xFF
                                     val b2Life = data[5].toInt() and 0xFF
                                     val batSoc = data[8].toInt() and 0xFF
@@ -654,7 +669,7 @@ class BLEManager(private val context: Context) {
                                             .put("soc", batSoc))
                                     }
                                 }
-                                // cmd 0x41, 0x42: log only, not parsed for ride data
+                                // cmd 0x41: motor/assist state, log only
                             }
                         }
                         0x22 -> {
@@ -704,6 +719,61 @@ class BLEManager(private val context: Context) {
                                         onDataReceived?.invoke(JSONObject()
                                             .put("type", "sgTuning")
                                             .put("hex", hex))
+                                    }
+                                    0x1B -> {
+                                        // READ_RIDING_DATA response — accumulate bytes[2..15] (14 bytes)
+                                        if (rideDataPending) {
+                                            val chunk = dec.copyOfRange(2, 16)
+                                            for (b in chunk) rideDataAccum.add(b)
+                                            Log.i(TAG, "★ RIDE_DATA chunk: ${chunk.joinToString("") { "%02x".format(it) }} (total=${rideDataAccum.size}/28)")
+
+                                            if (rideDataAccum.size >= 28) {
+                                                rideDataPending = false
+                                                val rd = rideDataAccum.toByteArray()
+                                                // Parse using RideControl's exact format (all confirmed /10 divisors)
+                                                fun rdS16(off: Int): Int {
+                                                    val v = (rd[off].toInt() and 0xFF) or ((rd[off + 1].toInt() and 0xFF) shl 8)
+                                                    return if (v > 32767) v - 65536 else v
+                                                }
+                                                fun rdU16(off: Int): Int {
+                                                    return (rd[off].toInt() and 0xFF) or ((rd[off + 1].toInt() and 0xFF) shl 8)
+                                                }
+
+                                                val speed = rdS16(0) / 10.0
+                                                val torque = rdS16(2) / 10.0
+                                                val cadence = rdS16(4) / 10.0
+                                                val acurValue = rdU16(6) / 100.0
+                                                val tripDist = rdS16(8) / 10.0
+                                                val tripTime = rdU16(10)
+                                                val power = rdS16(12) / 10.0
+                                                val carr = rd[14].toInt() and 0xFF
+                                                val rsoc = rd[15].toInt() and 0xFF
+                                                val errCode = rd[16].toInt()
+
+                                                val rdHex = rd.joinToString(" ") { "%02x".format(it) }
+                                                Log.i(TAG, "★ RIDE_FULL: spd=%.1f trq=%.1f cad=%.1f pwr=%.1f car=%d soc=%d err=%d"
+                                                    .format(speed, torque, cadence, power, carr, rsoc, errCode))
+                                                Log.i(TAG, "★ RIDE_RAW: $rdHex")
+
+                                                onDataReceived?.invoke(JSONObject()
+                                                    .put("type", "sgRideDataPoll")
+                                                    .put("speed", speed)
+                                                    .put("torque", torque)
+                                                    .put("cadence", cadence)
+                                                    .put("power", power)
+                                                    .put("assistRatio", carr)
+                                                    .put("batterySoc", rsoc)
+                                                    .put("tripDistance", tripDist)
+                                                    .put("tripTime", tripTime)
+                                                    .put("accumCurrent", acurValue)
+                                                    .put("errorCode", errCode)
+                                                    .put("rawHex", rdHex))
+
+                                                // Broadcast cadence if we got it
+                                                if (cadence > 0) onDataReceived?.invoke(JSONObject()
+                                                    .put("type", "cadence").put("value", cadence.toInt()))
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -942,6 +1012,22 @@ class BLEManager(private val context: Context) {
 
         // Heartbeat again
         tests.add("HEARTBEAT3" to byteArrayOf(0xFC.toByte(), 0x22, 0x00, 0xDE.toByte()))
+
+        // === READ_RIDING_DATA (cmd 0x1B, key 0) ===
+        // Sends encrypted poll for full telemetry (speed/torque/cadence/power)
+        // Expects 2 FC21 responses, each with 14 bytes of data = 28 total
+        val rideReadPlain = ByteArray(16).also { it[0] = 0x1B; it[1] = 0x00 }
+        val rideReadEnc = GEVCrypto.encrypt(rideReadPlain, 0)
+        val rideReadPkt = ByteArray(20)
+        rideReadPkt[0] = 0xFB.toByte()
+        rideReadPkt[1] = 0x21
+        System.arraycopy(rideReadEnc, 0, rideReadPkt, 2, 16)
+        rideReadPkt[18] = 0x00
+        xor = 0; for (i in 0..18) xor = xor xor (rideReadPkt[i].toInt() and 0xFF)
+        rideReadPkt[19] = xor.toByte()
+        rideDataAccum.clear()
+        rideDataPending = true
+        tests.add("READ_RIDING" to rideReadPkt)
 
         // Wait 3 seconds then check if spontaneous data arrives
         // (heartbeat might trigger data flow)

@@ -250,14 +250,27 @@ class MainActivity : AppCompatActivity() {
             "sgRiding" -> {
                 val spd = json.optDouble("speed", 0.0)
                 val soc = json.optInt("batterySoc", 0)
-                val mPwr = json.optInt("motorPower", 0)
-                val mTrq = json.optInt("motorTorque", 0)
+                val mW = json.optDouble("motorWatts", 0.0)
+                val mv = json.optInt("motorVal", 0)
                 val odo = json.optDouble("odo", 0.0)
-                appendLog("MOT", "spd=%.1f soc=%d%% mPwr=%d mTrq=%d odo=%.1f".format(spd, soc, mPwr, mTrq, odo))
+                appendLog("MOT", "spd=%.1f mW=%.0fW soc=%d%% mv=%d odo=%.1f".format(spd, mW, soc, mv, odo))
             }
             "sgBatteryHealth" -> {
                 appendLog("BAT", "★ b1=%d%% b2=%d%% soc=%d%%".format(
                     json.optInt("bat1Life"), json.optInt("bat2Life"), json.optInt("soc")))
+            }
+            "fc23cmd42" -> {
+                appendLog("C42", "★ ${json.optString("hex")} b01=${json.optInt("b0b1")} b23=${json.optInt("b2b3")} b45=${json.optInt("b4b5")}")
+            }
+            "sgRideDataPoll" -> {
+                val spd = json.optDouble("speed", 0.0)
+                val trq = json.optDouble("torque", 0.0)
+                val cad = json.optDouble("cadence", 0.0)
+                val pwr = json.optDouble("power", 0.0)
+                val car = json.optInt("assistRatio", 0)
+                val soc = json.optInt("batterySoc", 0)
+                appendLog("POLL", "★ spd=%.1f trq=%.1f cad=%.1f pwr=%.1f car=%d%% soc=%d%%".format(spd, trq, cad, pwr, car, soc))
+                appendLog("POLL", "  raw: ${json.optString("rawHex")}")
             }
             "sgConnected" -> appendLog("GEV", if (json.optBoolean("success")) "★ SESSION ACTIVE!" else "Session failed")
             "sgBattery" -> appendLog("BAT", "★ SOC=${json.optInt("soc")}% life=${json.optInt("life")}%")
