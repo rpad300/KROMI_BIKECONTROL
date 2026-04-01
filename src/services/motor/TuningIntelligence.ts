@@ -1,23 +1,22 @@
 /**
- * TuningIntelligence — HR-zone regulated motor calibration.
+ * TuningIntelligence — HR Zone Regulator.
  *
- * PRIMARY GOAL: maintain rider in their chosen HR zone.
- *   HR above target → increase motor assist (help the rider)
- *   HR within target → maintain current assist
- *   HR below target → decrease assist (save battery, rider can do more)
+ * Architecture:
+ *   HR defines the TARGET intensity (what the motor should do)
+ *   Terrain defines ANTICIPATION bias (when to pre-adjust)
+ *   Battery is a HARD CONSTRAINT (caps the output)
  *
- * SECONDARY: terrain anticipation
- *   Climb detected ahead → pre-boost to prevent HR spike
- *   Descent detected → pre-reduce to save battery
+ * These are NOT additive to the same score. They are layered:
+ *   intensity = clamp(hrTarget + anticipationBias, 0, 100) × batteryConstraint
  *
- * TERTIARY: battery conservation
- *   Low SOC → progressively limit max assist
- *
- * The motor acts as a HR zone REGULATOR, not a terrain reactor.
+ * Smoothing is ASYMMETRIC:
+ *   Ramp up: 3 samples (cautious — avoid oscillation)
+ *   Ramp down: 1 sample (immediate — protect the rider)
  */
 
 import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import { getTargetZone } from '../../types/athlete.types';
+import { type AsmoCalibration, type AsmoWire, DU7_TABLES, resolveCalibration } from '../../types/tuning.types';
 
 export interface TuningInput {
   gradient: number;
@@ -42,15 +41,11 @@ export interface TuningDecision {
   supportIntensity: number;
   torqueIntensity: number;
   launchIntensity: number;
-  calibration: import('../../types/tuning.types').AsmoCalibration;
+  calibration: AsmoCalibration;
   actual: { support: number; torque: number; midTorque: number; lowTorque: number; launch: number };
   factors: TuningFactor[];
   preemptive: string | null;
 }
-
-import { type AsmoCalibration, type AsmoWire, DU7_TABLES, resolveCalibration } from '../../types/tuning.types';
-
-const SMOOTHING_WINDOW = 3;
 
 function intensityToWire(intensity: number): AsmoWire {
   return intensity > 65 ? 0 : intensity > 35 ? 1 : 2;
@@ -58,9 +53,12 @@ function intensityToWire(intensity: number): AsmoWire {
 
 class TuningIntelligence {
   private static instance: TuningIntelligence;
-  private history: AsmoCalibration[] = [];
   private current: AsmoCalibration = { support: 1, torque: 1, midTorque: 1, lowTorque: 1, launch: 1 };
   private lastDecision: TuningDecision | null = null;
+
+  // Asymmetric smoothing: per-ASMO counters
+  private rampUpCount = 0;
+  private rampDownCount = 0;
 
   static getInstance(): TuningIntelligence {
     if (!TuningIntelligence.instance) {
@@ -77,121 +75,114 @@ class TuningIntelligence {
     const targetZone = getTargetZone(rider);
 
     // ═══════════════════════════════════════════════
-    // PRIMARY: HR Zone Regulation (0-100 base score)
+    // LAYER 1: HR defines TARGET intensity (0-100)
+    // This is the PRIMARY driver — not terrain
     // ═══════════════════════════════════════════════
-    let hrScore = 50; // neutral when no HR data
-    let hrDetail = 'Sem sensor HR';
+    let hrTarget = 50; // neutral when no HR data
+    let hrDetail = 'Sem sensor HR — terreno como fallback';
+    let hasHR = false;
 
     if (input.hr > 0 && rider.hr_max > 0) {
-      const deviation = input.hr - targetZone.max_bpm;
-      // Above target zone → increase assist (positive score = more motor)
-      // Below target zone → decrease assist (negative score = less motor)
-      // Within target → moderate assist (around 50)
+      hasHR = true;
 
       if (input.hr > targetZone.max_bpm) {
-        // HR TOO HIGH — motor needs to help more
-        // +5 per bpm above target, capped at 100
-        hrScore = Math.min(100, 50 + deviation * 5);
-        hrDetail = `${input.hr}bpm — acima de ${targetZone.name} (${targetZone.max_bpm}), +assist`;
+        // HR TOO HIGH — rider is over-exerting
+        // Motor must help MORE to bring HR down
+        // +8 per bpm above (strong response — this is the regulator)
+        const above = input.hr - targetZone.max_bpm;
+        hrTarget = Math.min(100, 55 + above * 8);
+        hrDetail = `${input.hr}bpm — ${above}bpm acima de ${targetZone.name}, aumentar assist`;
       } else if (input.hr < targetZone.min_bpm) {
-        // HR TOO LOW — rider can do more, reduce motor
+        // HR TOO LOW — rider can do more
+        // Motor should help LESS to let HR rise
         const below = targetZone.min_bpm - input.hr;
-        hrScore = Math.max(0, 50 - below * 3);
-        hrDetail = `${input.hr}bpm — abaixo de ${targetZone.name} (${targetZone.min_bpm}), -assist`;
+        hrTarget = Math.max(0, 45 - below * 5);
+        hrDetail = `${input.hr}bpm — ${below}bpm abaixo de ${targetZone.name}, reduzir assist`;
       } else {
-        // IN TARGET — maintain current level
-        // Position within zone: lower half → slight reduce, upper half → slight increase
+        // IN TARGET ZONE — fine-tune based on position
         const zoneRange = targetZone.max_bpm - targetZone.min_bpm;
-        const posInZone = (input.hr - targetZone.min_bpm) / zoneRange;
-        hrScore = 35 + Math.round(posInZone * 30); // 35-65 within zone
+        const posInZone = zoneRange > 0 ? (input.hr - targetZone.min_bpm) / zoneRange : 0.5;
+        // Lower half of zone → slight reduce, upper half → slight increase
+        hrTarget = 35 + Math.round(posInZone * 30); // 35-65
         hrDetail = `${input.hr}bpm — dentro de ${targetZone.name} ✓`;
       }
     }
 
-    factors.push({ name: 'FC Zona', value: Math.round(hrScore - 50), detail: hrDetail });
-
-    // ═══════════════════════════════════════════════
-    // SECONDARY: Terrain Anticipation (modifier -20 to +30)
-    // ═══════════════════════════════════════════════
-    // Terrain doesn't drive the score — it ANTICIPATES HR changes
-    let terrainMod = 0;
-    let preemptive: string | null = null;
-
-    // Current gradient: mild influence (HR is primary)
-    if (input.gradient > 8) terrainMod = 15;       // steep → HR will rise, pre-boost
-    else if (input.gradient > 5) terrainMod = 10;
-    else if (input.gradient > 3) terrainMod = 5;
-    else if (input.gradient < -5) terrainMod = -10; // descent → HR will drop, pre-reduce
-
-    // Weight factor on climbs
-    if (input.gradient > 3 && rider.weight_kg > 0) {
-      terrainMod = Math.round(terrainMod * (0.8 + 0.2 * (rider.weight_kg / 75)));
+    // Fallback when no HR: use terrain as proxy (less accurate)
+    if (!hasHR) {
+      hrTarget = this.terrainAsProxy(input.gradient, rider.weight_kg);
+      hrDetail = `Sem HR — estimativa por terreno (${input.gradient > 0 ? '+' : ''}${input.gradient.toFixed(0)}%)`;
     }
 
-    // Pre-emptive: terrain change ahead
-    if (input.upcomingGradient !== null && input.distanceToChange !== null && input.distanceToChange < 100) {
-      if (input.gradient < 3 && input.upcomingGradient > 5) {
-        terrainMod += 20; // climb ahead → pre-boost before HR spikes
-        const t = input.speed > 2 ? Math.round(input.distanceToChange / (input.speed / 3.6)) : 999;
-        preemptive = `Subida ${input.upcomingGradient.toFixed(0)}% em ${Math.round(input.distanceToChange)}m (~${t}s) — pre-boost`;
-      } else if (input.gradient > 3 && input.upcomingGradient < -2) {
-        terrainMod -= 15;
-        preemptive = `Descida em ${Math.round(input.distanceToChange)}m — reduzir`;
+    factors.push({ name: 'FC Zona', value: Math.round(hrTarget - 50), detail: hrDetail });
+
+    // ═══════════════════════════════════════════════
+    // LAYER 2: Terrain defines ANTICIPATION bias (-20 to +25)
+    // Does NOT set magnitude — only adjusts timing
+    // ═══════════════════════════════════════════════
+    let anticipation = 0;
+    let preemptive: string | null = null;
+
+    // Pre-emptive: terrain change ahead (within lookahead distance)
+    if (input.upcomingGradient !== null && input.distanceToChange !== null) {
+      // Dynamic lookahead: shorter at low speed / technical terrain
+      const safeLookahead = Math.min(100, input.speed > 10 ? 100 : input.speed > 5 ? 60 : 30);
+
+      if (input.distanceToChange < safeLookahead) {
+        if (input.gradient < 3 && input.upcomingGradient > 5) {
+          // Flat → climb: pre-boost to prevent HR spike
+          anticipation = 25;
+          const t = input.speed > 2 ? Math.round(input.distanceToChange / (input.speed / 3.6)) : 999;
+          preemptive = `Subida ${input.upcomingGradient.toFixed(0)}% em ${Math.round(input.distanceToChange)}m (~${t}s)`;
+        } else if (input.gradient > 3 && input.upcomingGradient < -2) {
+          // Climb → descent: pre-reduce
+          anticipation = -15;
+          preemptive = `Descida em ${Math.round(input.distanceToChange)}m`;
+        }
       }
     }
 
-    if (terrainMod !== 0) {
-      factors.push({ name: 'Terreno', value: terrainMod, detail: this.descGradient(input.gradient) });
+    // Current gradient: small bias for weight on steep climbs
+    if (hasHR && input.gradient > 8 && rider.weight_kg > 75) {
+      const weightBias = Math.round((rider.weight_kg - 75) / 10 * 3); // +3 per 10kg above 75
+      anticipation += Math.min(10, weightBias);
+    }
+
+    if (anticipation !== 0) {
+      factors.push({ name: 'Antecipação', value: anticipation, detail: preemptive ?? this.descGradient(input.gradient) });
     }
 
     // ═══════════════════════════════════════════════
-    // TERTIARY: Battery Conservation (multiplier 0.4-1.0)
+    // LAYER 3: Battery as HARD CONSTRAINT (0.4-1.0)
+    // Caps the output, doesn't contribute to score
     // ═══════════════════════════════════════════════
-    const batteryMult = this.scoreBattery(input.batterySoc, totalWh);
-    if (batteryMult < 1) {
-      factors.push({ name: 'Bateria', value: Math.round((batteryMult - 1) * 100), detail: `${input.batterySoc}% — conservar (×${batteryMult.toFixed(2)})` });
+    const batteryConstraint = this.getBatteryConstraint(input.batterySoc, totalWh);
+    if (batteryConstraint < 1) {
+      factors.push({ name: 'Bateria', value: Math.round((batteryConstraint - 1) * 100), detail: `${input.batterySoc}% — limite ×${batteryConstraint.toFixed(2)}` });
     }
 
     // ═══════════════════════════════════════════════
-    // AUXILIARY: Speed limit, cadence, altitude
+    // COMBINE: HR target + anticipation, constrained by battery
     // ═══════════════════════════════════════════════
     let auxMod = 0;
+    if (input.speed > bike.speed_limit_kmh - 2) auxMod = -25;
+    else if (input.speed < 2) auxMod = -20;
+    if (input.altitude > 1500) auxMod += Math.min(10, Math.round((input.altitude - 1500) / 250));
 
-    // Speed limit
-    if (input.speed > bike.speed_limit_kmh - 2) { auxMod -= 25; factors.push({ name: 'Velocidade', value: -25, detail: `${input.speed.toFixed(0)}km/h — limite motor` }); }
-    else if (input.speed > bike.speed_limit_kmh - 5) { auxMod -= 10; }
-    // Stopped
-    if (input.speed < 2) { auxMod -= 20; }
+    const rawIntensity = Math.max(0, Math.min(100, hrTarget + anticipation + auxMod));
+    const overallIntensity = Math.round(rawIntensity * batteryConstraint);
 
-    // Altitude
-    if (input.altitude > 1500) {
-      const altBoost = Math.min(10, Math.round((input.altitude - 1500) / 250));
-      auxMod += altBoost;
-    }
-
-    // ═══════════════════════════════════════════════
-    // COMBINE: HR base + terrain anticipation + battery + aux
-    // ═══════════════════════════════════════════════
-    const rawIntensity = (hrScore + terrainMod) * batteryMult + auxMod;
-    const overallIntensity = Math.max(0, Math.min(100, Math.round(rawIntensity)));
-
-    // ═══════════════════════════════════════════════
-    // PER-PARAMETER INTENSITIES
-    // ═══════════════════════════════════════════════
-    // Support: follows overall (main HR regulator)
+    // Per-parameter intensities
     const supportI = overallIntensity;
-
-    // Torque: similar but capped on technical terrain (prevent wheel spin)
     let torqueI = overallIntensity;
+    // Technical terrain: cap torque to prevent wheel spin
     if (input.cadence > 0 && input.cadence < 50 && input.gradient > 8) {
-      torqueI = Math.min(torqueI, 55); // cap torque, keep support
+      torqueI = Math.min(torqueI, 55);
     }
-
-    // Launch: lower baseline, spikes on starts and steep transitions
-    let launchI = overallIntensity * 0.7;
+    let launchI = Math.round(overallIntensity * 0.7);
     if (input.speed < 5 && input.gradient > 3) launchI += 25;
     if (input.speed > 20) launchI -= 15;
-    launchI = Math.max(0, Math.min(100, Math.round(launchI * batteryMult)));
+    launchI = Math.max(0, Math.min(100, launchI));
 
     // Map to wire values
     const target: AsmoCalibration = {
@@ -202,15 +193,36 @@ class TuningIntelligence {
       launch: intensityToWire(launchI),
     };
 
-    // Smoothing
-    this.history.push(target);
-    if (this.history.length > SMOOTHING_WINDOW) this.history.shift();
-    const stable = this.getStable();
-    if (stable) this.current = stable;
+    // ═══════════════════════════════════════════════
+    // ASYMMETRIC SMOOTHING
+    // Ramp down: 1 sample (immediate — protect rider)
+    // Ramp up: 3 samples (cautious — avoid oscillation)
+    // ═══════════════════════════════════════════════
+    const isRampDown = this.isLowerIntensity(target, this.current);
+    const isRampUp = this.isHigherIntensity(target, this.current);
+
+    if (isRampDown) {
+      // Immediate: rider is over-exerting, reduce NOW
+      this.current = target;
+      this.rampUpCount = 0;
+      this.rampDownCount++;
+    } else if (isRampUp) {
+      this.rampUpCount++;
+      this.rampDownCount = 0;
+      if (this.rampUpCount >= 3) {
+        // Stable request for 3 samples: allow increase
+        this.current = target;
+        this.rampUpCount = 0;
+      }
+    } else {
+      // Same: reset counters
+      this.rampUpCount = 0;
+      this.rampDownCount = 0;
+    }
 
     const actual = resolveCalibration(this.current, DU7_TABLES);
 
-    // Target zone info
+    // Info factors
     factors.push({ name: 'Alvo', value: 0, detail: `${targetZone.name} (${targetZone.min_bpm}-${targetZone.max_bpm}bpm)` });
     factors.push({ name: 'Motor', value: 0, detail: `S${actual.support}% T${actual.torque} M${actual.midTorque} L${actual.lowTorque} R${actual.launch}` });
 
@@ -218,7 +230,7 @@ class TuningIntelligence {
       intensity: overallIntensity,
       supportIntensity: supportI,
       torqueIntensity: torqueI,
-      launchIntensity: Math.round(launchI),
+      launchIntensity: launchI,
       calibration: { ...this.current },
       actual,
       factors,
@@ -229,28 +241,46 @@ class TuningIntelligence {
 
   getLastDecision(): TuningDecision | null { return this.lastDecision; }
   getCurrentCalibration(): AsmoCalibration { return { ...this.current }; }
-  reset(): void { this.history = []; this.current = { support: 1, torque: 1, midTorque: 1, lowTorque: 1, launch: 1 }; this.lastDecision = null; }
-
-  private scoreBattery(soc: number, totalWh: number): number {
-    const f = Math.min(totalWh / 1050, 1.2);
-    return soc > 60 ? 1.0 : soc > 30 * f ? 0.7 + (soc - 30 * f) / (60 - 30 * f) * 0.3 : soc > 15 * f ? 0.5 + (soc - 15 * f) / (15 * f) * 0.2 : 0.4;
+  reset(): void {
+    this.current = { support: 1, torque: 1, midTorque: 1, lowTorque: 1, launch: 1 };
+    this.lastDecision = null;
+    this.rampUpCount = 0;
+    this.rampDownCount = 0;
   }
 
+  // ── Terrain as HR proxy (no HR sensor) ────────
+  private terrainAsProxy(gradient: number, weight: number): number {
+    // Without HR, terrain is the best guess for effort
+    let base = gradient > 12 ? 85 : gradient > 8 ? 72 : gradient > 5 ? 60 :
+      gradient > 3 ? 48 : gradient > 1 ? 38 : gradient > -2 ? 25 : 10;
+    if (gradient > 2 && weight > 0) base = Math.min(100, Math.round(base * (0.8 + 0.2 * (weight / 75))));
+    return base;
+  }
+
+  // ── Battery constraint ────────────────────────
+  private getBatteryConstraint(soc: number, totalWh: number): number {
+    const f = Math.min(totalWh / 1050, 1.2);
+    if (soc > 60) return 1.0;
+    if (soc > 30 * f) return 0.7 + (soc - 30 * f) / (60 - 30 * f) * 0.3;
+    if (soc > 15 * f) return 0.5 + (soc - 15 * f) / (15 * f) * 0.2;
+    return 0.4;
+  }
+
+  // ── Gradient description ──────────────────────
   private descGradient(g: number): string {
     return g > 12 ? `Forte ${g.toFixed(0)}%` : g > 8 ? `Dura ${g.toFixed(0)}%` :
       g > 5 ? `Moderada ${g.toFixed(0)}%` : g > 3 ? `Suave ${g.toFixed(0)}%` :
       g > -2 ? 'Plano' : `Descida ${g.toFixed(0)}%`;
   }
 
-  private getStable(): AsmoCalibration | null {
-    if (this.history.length < SMOOTHING_WINDOW) return null;
-    const w = this.history.slice(-SMOOTHING_WINDOW);
-    const first = w[0]!;
-    return w.every((c) =>
-      c.support === first.support && c.torque === first.torque &&
-      c.midTorque === first.midTorque && c.lowTorque === first.lowTorque &&
-      c.launch === first.launch
-    ) ? first : null;
+  // ── Asymmetric smoothing helpers ──────────────
+  private isLowerIntensity(a: AsmoCalibration, b: AsmoCalibration): boolean {
+    // "Lower intensity" means higher wire values (2=min > 0=max)
+    return a.support > b.support || a.torque > b.torque;
+  }
+
+  private isHigherIntensity(a: AsmoCalibration, b: AsmoCalibration): boolean {
+    return a.support < b.support || a.torque < b.torque;
   }
 }
 
