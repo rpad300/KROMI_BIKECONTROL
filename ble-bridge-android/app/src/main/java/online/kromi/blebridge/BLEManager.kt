@@ -609,8 +609,8 @@ class BLEManager(private val context: Context) {
     }
 
     /**
-     * Test SG Write — sends multiple probe packets to 4d500002
-     * to discover what protocol the Smart Gateway accepts.
+     * Test SG Write — sends AES-encrypted GEV packets to 4d500002.
+     * Tests multiple keys (0, 4, 8, 13, 14) and commands (0x01, 0x02, 0x03).
      */
     fun testSGWrite() {
         val g = gatt ?: return
@@ -622,55 +622,44 @@ class BLEManager(private val context: Context) {
 
         val tests = mutableListOf<Pair<String, ByteArray>>()
 
-        // Test 1: GEV CONNECTION command (0x01) — session init
-        tests.add("GEV_CONNECT" to buildGevPacket(0x01, byteArrayOf()))
+        // GEV packet format: [FC][21][cmd][len][payload][checksum_hi][checksum_lo]
+        // Encrypted: the ENTIRE packet (padded to 16 bytes) is AES-ECB encrypted
 
-        // Test 2: GEV MODE_STATE (0x02) — read current mode
-        tests.add("GEV_MODE_STATE" to buildGevPacket(0x02, byteArrayOf()))
+        // Phase 1: AES-encrypted GEV CONNECTION (0x01) with different keys
+        val connectPkt = buildGevPacket(0x01, byteArrayOf())
+        for (keyIdx in intArrayOf(0, 4, 8, 13, 14)) {
+            val enc = GEVCrypto.encrypt(connectPkt, keyIdx)
+            tests.add("AES_K${keyIdx}_CONNECT" to enc)
+        }
 
-        // Test 3: GEV BATTERY query (0x03)
-        tests.add("GEV_BATTERY" to buildGevPacket(0x03, byteArrayOf()))
+        // Phase 2: AES-encrypted GEV MODE_STATE (0x02) — key 4 and 8
+        val modePkt = buildGevPacket(0x02, byteArrayOf())
+        tests.add("AES_K4_MODE" to GEVCrypto.encrypt(modePkt, 4))
+        tests.add("AES_K8_MODE" to GEVCrypto.encrypt(modePkt, 8))
 
-        // Test 4: GEV ASSIST_DATA query (0x15)
-        tests.add("GEV_ASSIST_DATA" to buildGevPacket(0x15, byteArrayOf()))
+        // Phase 3: AES-encrypted GEV BATTERY (0x03) — key 4 and 13
+        val battPkt = buildGevPacket(0x03, byteArrayOf())
+        tests.add("AES_K4_BATT" to GEVCrypto.encrypt(battPkt, 4))
+        tests.add("AES_K13_BATT" to GEVCrypto.encrypt(battPkt, 13))
 
-        // Test 5: GEV RIDING_DATA query (0x38)
-        tests.add("GEV_RIDING_DATA" to buildGevPacket(0x38, byteArrayOf()))
+        // Phase 4: Unencrypted GEV CONNECTION (control — we know this gets no response)
+        tests.add("RAW_CONNECT" to connectPkt)
 
-        // Test 6: Simple protobuf GET bikeInfo
-        // proto_version=6, method=GET(2), source=APP(6), bikeInfoModule(field 5)
-        tests.add("PROTO_GET_BIKE" to byteArrayOf(
-            0x08, 0x06,       // field 1 (proto_version) = 6
-            0x10, 0x02,       // field 2 (method) = GET
-            0x18, 0x06,       // field 3 (source) = APP
-            0x2A, 0x00        // field 5 (bikeInfoModule) = empty
+        // Phase 5: Protobuf GET bikeInfo (unencrypted — proto might not use AES)
+        tests.add("PROTO_BIKE" to byteArrayOf(
+            0x08, 0x06, 0x10, 0x02, 0x18, 0x06, 0x2A, 0x00
         ))
 
-        // Test 7: Simple protobuf GET eParts
-        tests.add("PROTO_GET_EPARTS" to byteArrayOf(
-            0x08, 0x06,       // proto_version = 6
-            0x10, 0x02,       // method = GET
-            0x18, 0x06,       // source = APP
-            0x22, 0x00        // field 4 (ePartModule) = empty
-        ))
-
-        // Test 8: Raw 0x00 ping
-        tests.add("RAW_0x00" to byteArrayOf(0x00))
-
-        // Test 9: Raw 0x01
-        tests.add("RAW_0x01" to byteArrayOf(0x01))
-
-        // Send each test with a delay between them
-        Log.i(TAG, "╔═══════════════════════════════════╗")
-        Log.i(TAG, "║    SG WRITE TEST — ${tests.size} packets     ║")
-        Log.i(TAG, "╚═══════════════════════════════════╝")
-        onStatusChanged?.invoke("Testing SG write (${tests.size} packets)...")
+        Log.i(TAG, "╔═══════════════════════════════════════╗")
+        Log.i(TAG, "║  SG AES WRITE TEST — ${tests.size} packets    ║")
+        Log.i(TAG, "╚═══════════════════════════════════════╝")
+        onStatusChanged?.invoke("Testing AES writes (${tests.size} packets)...")
 
         for ((i, test) in tests.withIndex()) {
             val (name, data) = test
             handler.postDelayed({
                 val hex = data.joinToString("") { "%02x".format(it) }
-                Log.i(TAG, ">>> SG WRITE [$name]: $hex (${data.size} bytes)")
+                Log.i(TAG, ">>> SG WRITE [$name]: $hex (${data.size}b)")
                 onDataReceived?.invoke(JSONObject()
                     .put("type", "sgWriteTest")
                     .put("name", name)
@@ -680,18 +669,17 @@ class BLEManager(private val context: Context) {
                 char.value = data
                 char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
                 val ok = g.writeCharacteristic(char)
-                Log.i(TAG, ">>> Write result: $ok")
+                Log.i(TAG, ">>> Write: $ok")
                 onDataReceived?.invoke(JSONObject()
                     .put("type", "sgWriteResult")
                     .put("name", name)
                     .put("ok", ok))
-            }, (i * 800).toLong())  // 800ms between each write
+            }, (i * 800).toLong())
         }
 
-        // After all writes, log summary
         handler.postDelayed({
-            Log.i(TAG, ">>> SG WRITE TEST COMPLETE — check for SG! responses above")
-            onStatusChanged?.invoke("SG test done — check log for responses")
+            Log.i(TAG, ">>> AES TEST COMPLETE — look for SG! responses")
+            onStatusChanged?.invoke("AES test done — check for SG! responses")
         }, (tests.size * 800 + 500).toLong())
     }
 
