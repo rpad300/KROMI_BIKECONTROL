@@ -308,7 +308,26 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
           {ride.avg_hr > 0 && <StatCard label="FC média" value={`${ride.avg_hr}`} unit="bpm" />}
           {ride.max_hr > 0 && <StatCard label="FC max" value={`${ride.max_hr}`} unit="bpm" />}
           {ride.avg_power_w > 0 && <StatCard label="Potência" value={`${ride.avg_power_w}`} unit="W" />}
-          <StatCard label="Bateria" value={`${ride.battery_start ?? 100}→${ride.battery_end ?? 0}`} unit="%" />
+          {simulation ? (
+            <>
+              <div>
+                <div className="text-lg font-bold text-emerald-400 tabular-nums">
+                  {simulation.battery_end_kromi}%
+                  <span className="text-[8px] ml-1 px-1 py-0.5 bg-emerald-900/50 text-emerald-400 rounded">KROMI</span>
+                </div>
+                <div className="text-[10px] text-gray-500">Bat. estimada</div>
+              </div>
+              <div>
+                <div className="text-lg font-bold text-orange-400 tabular-nums">
+                  {simulation.battery_end_fixed}%
+                  <span className="text-[8px] ml-1 px-1 py-0.5 bg-orange-900/50 text-orange-400 rounded">FIXA</span>
+                </div>
+                <div className="text-[10px] text-gray-500">Bat. {simulation.fixed_label}</div>
+              </div>
+            </>
+          ) : (
+            <StatCard label="Bateria" value={`${ride.battery_start ?? 100}→${ride.battery_end ?? 0}`} unit="%" />
+          )}
         </div>
       </div>
 
