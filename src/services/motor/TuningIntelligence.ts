@@ -132,26 +132,36 @@ class TuningIntelligence {
     let anticipation = 0;
     let preemptive: string | null = null;
 
+    // Sub-component 1: current gradient bias (0 to +15)
+    // Even mid-climb, terrain provides anticipation of continued effort
+    if (input.gradient > 8) anticipation += 15;
+    else if (input.gradient > 5) anticipation += 10;
+    else if (input.gradient > 3) anticipation += 5;
+    else if (input.gradient < -5) anticipation -= 10;
+
+    // Sub-component 2: transition bias from lookahead (+25 / -15)
     if (input.upcomingGradient !== null && input.distanceToChange !== null) {
-      // Dynamic lookahead (speed-based)
       const safeLookahead = Math.min(100, input.speed > 10 ? 100 : input.speed > 5 ? 60 : 30);
 
       if (input.distanceToChange < safeLookahead) {
         if (input.gradient < 3 && input.upcomingGradient > 5) {
-          anticipation = 25;
+          anticipation += 25;
           const t = input.speed > 2 ? Math.round(input.distanceToChange / (input.speed / 3.6)) : 999;
           preemptive = `Subida ${input.upcomingGradient.toFixed(0)}% em ${Math.round(input.distanceToChange)}m (~${t}s)`;
         } else if (input.gradient > 3 && input.upcomingGradient < -2) {
-          anticipation = -15;
+          anticipation += -15;
           preemptive = `Descida em ${Math.round(input.distanceToChange)}m`;
         }
       }
     }
 
-    // Weight bias on steep climbs (with HR)
+    // Sub-component 3: weight bias on steep climbs (with HR only)
     if (hasHR && input.gradient > 8 && rider.weight_kg > 75) {
       anticipation += Math.min(10, Math.round((rider.weight_kg - 75) / 10 * 3));
     }
+
+    // Cap total anticipation
+    anticipation = Math.max(-20, Math.min(40, anticipation));
 
     if (anticipation !== 0) {
       factors.push({ name: 'Antecipação', value: anticipation, detail: preemptive ?? this.descGradient(input.gradient) });

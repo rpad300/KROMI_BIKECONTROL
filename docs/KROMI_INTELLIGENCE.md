@@ -18,6 +18,8 @@ intensity = clamp(hrTarget + anticipationBias + speedLimitPenalty + altitudeBoos
 - Stopped (<2km/h): -20 (save battery)
 - Altitude >1500m: +4 to +10 (less O₂)
 
+**Nota sobre speed limit**: o penalty de -25 só altera o wire value outcome quando hrTarget < 87. Se hrTarget=100 e penalty=-25, intensity=75 → ainda wire 0. O penalty é relevante principalmente quando HR está dentro ou ligeiramente acima da zona.
+
 | Layer | Função | Range | Papel |
 |-------|--------|-------|-------|
 | **HR Target** | Define intensidade base | 0-100 | PRIMARY — regula |
@@ -77,7 +79,7 @@ Cada ASMO recebe intensidade independente:
 | **Torque** | overallIntensity | **Safety cap**: cadência<50 + gradient>8% → max 55% (previne roda a patinar) |
 | **Mid Torque** | torqueI - 10 | Progressive: ligeiramente menos que main torque |
 | **Low Torque** | torqueI - 20 | Progressive: ainda menos (curva suave) |
-| **Launch** | overallIntensity × 0.7 | Baseline mais baixo, +25 se speed<5+gradient>3, -15 se speed>20 |
+| **Launch** | (overallIntensity × 0.7) then +25/-15 | Multiply first, then add boosts. Ex: 100×0.7=70, +25=95 |
 
 ### Wire Thresholds
 ```
@@ -177,13 +179,32 @@ Claramente marcado no UI: "Sem HR — estimativa por terreno".
 
 O terreno **não define magnitude** — define **timing**. Antecipa mudanças futuras de HR.
 
-### Antecipação Pré-emptiva
+### Anticipation = currentGradientBias + transitionBias + weightBias
 
-| Transição | Bias | Razão |
+Três sub-componentes, somados e capped a [-20, +40]:
+
+**Sub 1: Current gradient bias (0 a +15)**
+O gradiente actual indica esforço contínuo, mesmo sem transição à frente.
+
+| Gradiente actual | Bias | Razão |
+|:---:|:---:|--------|
+| > 8% | +15 | Subida forte — HR vai continuar alto |
+| > 5% | +10 | Subida moderada |
+| > 3% | +5 | Subida suave |
+| < -5% | -10 | Descida — HR vai baixar |
+
+**Sub 2: Transition bias (lookahead, -15 a +25)**
+
+| Transição detectada | Bias | Razão |
 |-----------|:---:|--------|
 | Plano → Subida > 5% (dentro do lookahead) | +25 | Pre-boost ANTES do HR subir |
 | Subida → Descida (dentro do lookahead) | -15 | Pre-reduce ANTES do HR baixar |
-| Peso > 75kg em subida > 8% (com HR) | +3/10kg | Riders pesados precisam mais |
+
+**Sub 3: Weight bias (com HR, 0 a +10)**
+
+| Condição | Bias | Razão |
+|----------|:---:|--------|
+| Peso > 75kg em gradient > 8% | +3 per 10kg | Riders pesados precisam mais |
 
 ### Lookahead Dinâmico (baseado em velocidade)
 ```
@@ -283,19 +304,21 @@ HR: 112 está dentro de Z2
 posição = (112-98)/(114-98) = 14/16 = 0.875
 hrTarget = 40 + (0.875 × 20) = 57.5 ≈ 58
 
-Anticipation: gradient 6% → +10
+Anticipation: currentGradient 6% → +10, no transition → +0 = +10
 Battery: 90% → ×1.0
 
 intensity = clamp(58 + 10, 0, 100) × 1.0 = 68
 
-Support: 68 → wire 0 (>62)     → S360%
-Torque:  68 → wire 0            → T300
-Launch:  68 × 0.7 = 48 → wire 1 → R75
+Support: 68 → wire 0 (>62)      → S360%
+Torque:  68 → wire 0             → T300
+MidTorq: 68-10=58 → wire 1      → M200
+LowTorq: 68-20=48 → wire 1      → L150
+Launch:  68 × 0.7 = 48 → wire 1 → R75 (deliberado: mid-climb não precisa de launch agressivo)
 
-Motor: S360% T300/250/175 R75
+Motor: S360% T300/200/150 R75
 Explicação UI: "A manter Z2 — HR controlada ✓"
 ```
-**Nota**: motor MAX em support porque o HR está no TOPO da zona e em subida. Sem MAX, o HR subiria acima de Z2. O motor está a fazer exactamente o seu trabalho.
+**Nota**: Support MAX porque HR está no topo da zona em subida — sem MAX, HR subiria. Launch em wire 1 (R75) é deliberado: a meio de uma subida o rider já tem momentum, não precisa de launch agressivo. Se fosse arranque de parado, Launch seria MAX.
 
 ### 7.2 Subida com HR alta
 Z2 target (98-114), HR 135bpm (21 acima), gradient 10%
@@ -340,18 +363,23 @@ Explicação UI: "Motor MAX — HR 16bpm acima de Z2, a proteger"
 **Este é O cenário**: ANTES o terreno mandava (plano=25→MIN). AGORA o HR manda (alto=100→MAX). O rider precisa de ajuda e recebe-a, independentemente do terreno.
 
 ### 7.5 Subida com HR confortável
-Z2 target, HR 100bpm (2 dentro da zona, no fundo), gradient 12%
+Z2 target (98-114), HR 100bpm (2 dentro da zona, fundo), gradient 12%, rider 85kg
 ```
+posição = (100-98)/(114-98) = 2/16 = 0.125
 hrTarget = 40 + (0.125 × 20) = 42.5 ≈ 43
 
-Anticipation: +15 (gradient forte) + weight 85kg → +3 = +18
+Anticipation: currentGradient 12% → +15
+             + weightBias 85kg grad>8% → +3
+             = +18
 Battery: ×1.0
 
 intensity = clamp(43 + 18, 0, 100) = 61
 
-Support: 61 → wire 1 (38-62) → S350%
-Torque: 61 → wire 1 → T250
-Launch: 61 × 0.7 = 43 → wire 1 → R75
+Support:  61 → wire 1 (38-62) → S350%
+Torque:   61 → wire 1          → T250
+MidTorq:  61-10=51 → wire 1    → M200
+LowTorq:  61-20=41 → wire 1    → L150
+Launch:   61 × 0.7 = 43 → wire 1 → R75
 
 Motor: S350% T250/200/150 R75 → MID
 Explicação UI: "A manter Z2 — HR controlada ✓"
