@@ -1,8 +1,11 @@
 import { useIntelligenceStore } from '../../store/intelligenceStore';
+import { useBikeStore } from '../../store/bikeStore';
+import { useSettingsStore } from '../../store/settingsStore';
+import { getTargetZone } from '../../types/athlete.types';
 
 /**
- * IntelligenceWidget — shows KROMI's 5-ASMO continuous calibration.
- * 3 intensity bars (Support, Torque, Launch) + actual motor values + factors.
+ * IntelligenceWidget — explains WHY the motor is doing what it's doing.
+ * Not just bars and numbers — contextual explanation of the decision.
  */
 export function IntelligenceWidget() {
   const active = useIntelligenceStore((s) => s.active);
@@ -13,19 +16,49 @@ export function IntelligenceWidget() {
   const actual = useIntelligenceStore((s) => s.actual);
   const factors = useIntelligenceStore((s) => s.factors);
   const preemptive = useIntelligenceStore((s) => s.preemptive);
+  const hr = useBikeStore((s) => s.hr_bpm);
+  const rider = useSettingsStore((s) => s.riderProfile);
 
   if (!active) return null;
 
+  const targetZone = getTargetZone(rider);
+  const hasHR = hr > 0;
+
+  // Generate contextual explanation
+  let explanation = '';
+  let explanationColor = 'text-gray-400';
+
+  if (!hasHR) {
+    explanation = 'Sem sensor HR — a estimar pelo terreno';
+    explanationColor = 'text-gray-500';
+  } else if (hr > targetZone.max_bpm) {
+    const above = hr - targetZone.max_bpm;
+    explanation = `Motor MAX — HR ${above}bpm acima de ${targetZone.name}, a proteger`;
+    explanationColor = 'text-red-400';
+  } else if (hr < targetZone.min_bpm) {
+    const below = targetZone.min_bpm - hr;
+    explanation = `Motor reduzido — HR ${below}bpm abaixo de ${targetZone.name}, podes mais`;
+    explanationColor = 'text-blue-400';
+  } else {
+    explanation = `A manter ${targetZone.name} — HR controlada ✓`;
+    explanationColor = 'text-emerald-400';
+  }
+
   return (
     <div className="bg-gray-800 rounded-xl p-3 space-y-2">
-      {/* Header */}
+      {/* Decision explanation — the most important line */}
+      <div className={`text-xs font-bold ${explanationColor}`}>
+        {explanation}
+      </div>
+
+      {/* Header: intensity + motor state */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm font-bold text-emerald-400">KROMI</span>
           <span className="text-xl font-bold tabular-nums text-white">{intensity}%</span>
         </div>
         <div className="text-[10px] text-gray-500 text-right">
-          S{actual.support}% T{actual.torque} M{actual.midTorque} L{actual.lowTorque} R{actual.launch}
+          S{actual.support}% T{actual.torque} R{actual.launch}
         </div>
       </div>
 

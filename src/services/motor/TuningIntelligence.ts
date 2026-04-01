@@ -194,28 +194,38 @@ class TuningIntelligence {
     };
 
     // ═══════════════════════════════════════════════
-    // ASYMMETRIC SMOOTHING
-    // Ramp down: 1 sample (immediate — protect rider)
-    // Ramp up: 3 samples (cautious — avoid oscillation)
+    // ASYMMETRIC SMOOTHING (named by rider experience, not motor direction)
+    //
+    // HR ABOVE zone → motor must INCREASE assist → 1 sample (urgent)
+    // HR BELOW zone → motor can DECREASE assist → 3 samples (gradual)
+    // No HR data → symmetric 2 samples
     // ═══════════════════════════════════════════════
-    const isRampDown = this.isLowerIntensity(target, this.current);
-    const isRampUp = this.isHigherIntensity(target, this.current);
+    const HR_ABOVE_ZONE_SAMPLES = 1;  // urgent — motor sobe imediatamente
+    const HR_BELOW_ZONE_SAMPLES = 3;  // gradual — motor desce devagar
+    const NO_HR_SAMPLES = 2;          // moderate without HR data
 
-    if (isRampDown) {
-      // Immediate: rider is over-exerting, reduce NOW
-      this.current = target;
-      this.rampUpCount = 0;
-      this.rampDownCount++;
-    } else if (isRampUp) {
+    const motorWantsMore = this.isHigherIntensity(target, this.current);  // motor needs to give more
+    const motorWantsLess = this.isLowerIntensity(target, this.current);   // motor can give less
+
+    if (motorWantsMore) {
+      // Motor needs to increase assist (rider struggling / HR above zone)
       this.rampUpCount++;
       this.rampDownCount = 0;
-      if (this.rampUpCount >= 3) {
-        // Stable request for 3 samples: allow increase
+      const threshold = hasHR ? HR_ABOVE_ZONE_SAMPLES : NO_HR_SAMPLES;
+      if (this.rampUpCount >= threshold) {
         this.current = target;
         this.rampUpCount = 0;
       }
+    } else if (motorWantsLess) {
+      // Motor can decrease assist (rider comfortable / HR below zone)
+      this.rampDownCount++;
+      this.rampUpCount = 0;
+      const threshold = hasHR ? HR_BELOW_ZONE_SAMPLES : NO_HR_SAMPLES;
+      if (this.rampDownCount >= threshold) {
+        this.current = target;
+        this.rampDownCount = 0;
+      }
     } else {
-      // Same: reset counters
       this.rampUpCount = 0;
       this.rampDownCount = 0;
     }

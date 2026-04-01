@@ -13,6 +13,7 @@
 
 import type { ImportedRide, HRZoneDistribution } from './FitImportService';
 import { useAuthStore } from '../../store/authStore';
+import { useSettingsStore } from '../../store/settingsStore';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -82,9 +83,16 @@ export async function loadAthleteStats(): Promise<AthleteStats> {
 export async function updateStatsFromRide(ride: ImportedRide): Promise<AthleteStats> {
   const stats = await loadAthleteStats();
 
-  // HR max — keep highest observed
+  // HR max — keep highest observed AND update rider profile if higher
   if (ride.max_hr > stats.hr_max_observed) {
     stats.hr_max_observed = ride.max_hr;
+
+    // Auto-calibrate HRmax: if observed > configured, suggest update
+    const rider = useSettingsStore.getState().riderProfile;
+    if (ride.max_hr > rider.hr_max) {
+      console.log(`[AthleteProfile] New HR max observed: ${ride.max_hr}bpm (was ${rider.hr_max}). Auto-updating.`);
+      useSettingsStore.getState().updateRiderProfile({ hr_max: ride.max_hr });
+    }
   }
 
   // HR zones — running weighted average
