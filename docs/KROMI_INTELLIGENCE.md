@@ -10,8 +10,13 @@ O KROMI é um **regulador de zona cardíaca**. O motor mantém o rider na zona H
 
 **Arquitectura layered (não aditiva)**:
 ```
-intensity = clamp(hrTarget + anticipationBias + auxMod, 0, 100) × batteryConstraint
+intensity = clamp(hrTarget + anticipationBias + speedLimitPenalty + altitudeBoost, 0, 100) × batteryConstraint
 ```
+
+**Auxiliary modifiers** (small, situational):
+- Speed near limit (>23km/h): -25 (motor cuts at 25, assist inútil)
+- Stopped (<2km/h): -20 (save battery)
+- Altitude >1500m: +4 to +10 (less O₂)
 
 | Layer | Função | Range | Papel |
 |-------|--------|-------|-------|
@@ -264,6 +269,9 @@ t=19s: HR 103bpm → 2ª amostra
 t=21s: HR 100bpm → 3ª amostra → DESCE para MID
 ```
 
+### Dwell Override
+Se o rider parar de pedalar (cadência=0 + speed<3km/h), o dwell cancela imediatamente. Motor em MAX sem rider a pedalar é desperdício de bateria.
+
 ---
 
 ## 7. Cenários Reais (recalculados com fórmulas corrigidas)
@@ -348,7 +356,7 @@ Launch: 61 × 0.7 = 43 → wire 1 → R75
 Motor: S350% T250/200/150 R75 → MID
 Explicação UI: "A manter Z2 — HR controlada ✓"
 ```
-**ANTES**: subida 12% = score 100 = MAX sempre. **AGORA**: HR confortável = MID é suficiente. **Poupa bateria**.
+**ANTES**: subida 12% = score 100 = MAX sempre. **AGORA**: HR a 100bpm em subida de 12% significa que a condição física do rider aguenta esta subida com MID. O motor em MID é suficiente para manter Z2. Se o HR começar a subir, o motor responde em 2s (1 amostra). **Resultado**: mesma performance, menos bateria gasta.
 
 ### 7.6 Bateria baixa em subida com HR alta
 Z2 target, HR 140bpm (26 acima), gradient 8%, SOC 20%
@@ -363,8 +371,11 @@ Support: 57 → wire 1 → S350% (not MAX — battery limiting)
 Torque: 57 → wire 1 → T250
 Launch: 57 × 0.7 = 40 → wire 1 → R75
 
-Motor: S350% T250/200/150 R75
-Explicação UI: "Motor MAX — HR 26bpm acima de Z2, a proteger" + "Bateria 20% — limite ×0.57"
+Motor: S350% T250/200/150 R75 (wire 1, not 0 — battery limits)
+Explicação UI: "Motor limitado pela bateria — HR 26bpm acima de Z2 (SOC 20%)"
+```
+
+**Nota**: o sistema QUER dar MAX (hrTarget=100) mas a bateria LIMITA a MID (×0.57→57). A UI deve comunicar o que o motor ESTÁ a fazer, não o que queria fazer.
 ```
 
 ### 7.7 Subida técnica com cadência baixa

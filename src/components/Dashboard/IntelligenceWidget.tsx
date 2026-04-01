@@ -28,13 +28,23 @@ export function IntelligenceWidget() {
   let explanation = '';
   let explanationColor = 'text-gray-400';
 
+  // Check if battery is limiting the output
+  const batteryLimiting = useIntelligenceStore.getState().factors.some(
+    (f) => f.name === 'Bateria' && f.value < 0
+  );
+
   if (!hasHR) {
     explanation = 'Sem sensor HR — a estimar pelo terreno';
     explanationColor = 'text-gray-500';
   } else if (hr > targetZone.max_bpm) {
     const above = hr - targetZone.max_bpm;
-    explanation = `Motor MAX — HR ${above}bpm acima de ${targetZone.name}, a proteger`;
-    explanationColor = 'text-red-400';
+    if (batteryLimiting) {
+      explanation = `Motor limitado pela bateria — HR ${above}bpm acima de ${targetZone.name}`;
+      explanationColor = 'text-orange-400';
+    } else {
+      explanation = `Motor a ajudar — HR ${above}bpm acima de ${targetZone.name}`;
+      explanationColor = 'text-red-400';
+    }
   } else if (hr < targetZone.min_bpm) {
     const below = targetZone.min_bpm - hr;
     explanation = `Motor reduzido — HR ${below}bpm abaixo de ${targetZone.name}, podes mais`;

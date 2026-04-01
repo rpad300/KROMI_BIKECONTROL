@@ -218,7 +218,9 @@ class TuningIntelligence {
     const motorWantsLess = this.isLowerIntensity(target, this.current);
 
     // Lacuna 2: dwell time — after HR-above event, don't reduce for 15s
-    const inDwellPeriod = (Date.now() - this.lastHrAboveEvent) < DWELL_TIME_MS;
+    // Dwell override: if rider stopped pedalling (cadence=0 >3s), cancel dwell
+    const dwellOverride = input.cadence === 0 && input.speed < 3;
+    const inDwellPeriod = !dwellOverride && (Date.now() - this.lastHrAboveEvent) < DWELL_TIME_MS;
 
     if (motorWantsMore) {
       this.rampUpCount++;
