@@ -62,10 +62,10 @@ function torqueCommandToTuning(
   const modeMap: Record<number, TuningMode | null> = {
     [AssistMode.POWER]: 'power',
     [AssistMode.SPORT]: 'sport',
+    [AssistMode.ACTIVE]: 'active',
     [AssistMode.TOUR]: 'tour',
     [AssistMode.ECO]: 'eco',
     [AssistMode.OFF]: null,
-    [AssistMode.AUTO]: null,
     [AssistMode.WALK]: null,
   };
 

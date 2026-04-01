@@ -226,7 +226,8 @@ class AutoAssistEngine {
 
   private gradientToMode(gradient: number): AssistMode {
     if (gradient > 12) return AssistMode.POWER;
-    if (gradient > 7) return AssistMode.SPORT;
+    if (gradient > 8) return AssistMode.SPORT;
+    if (gradient > 5) return AssistMode.ACTIVE;
     if (gradient > 3) return AssistMode.TOUR;
     if (gradient > -4) return AssistMode.ECO;
     return AssistMode.OFF;

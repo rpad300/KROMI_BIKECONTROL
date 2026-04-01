@@ -1,12 +1,13 @@
 import { useBikeStore } from '../../store/bikeStore';
 import { AssistMode, ASSIST_MODE_LABELS, ASSIST_MODE_COLORS } from '../../types/bike.types';
 
+// Physical RideControl order on Trance X E+ 2 (2023)
 const ALL_MODES = [
   AssistMode.ECO,
   AssistMode.TOUR,
+  AssistMode.ACTIVE,
   AssistMode.SPORT,
   AssistMode.POWER,
-  AssistMode.AUTO,
 ] as const;
 
 /**

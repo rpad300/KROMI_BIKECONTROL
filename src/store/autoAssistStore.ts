@@ -42,7 +42,7 @@ export const useAutoAssistStore = create<AutoAssistState>((set) => ({
       if (totalDist > 0) {
         nextModeChange = {
           position_percent: (t.next_transition.distance_m / totalDist) * 100,
-          mode: ['OFF', 'ECO', 'TOUR', 'SPORT', 'PWR'][t.next_transition.target_mode] ?? '?',
+          mode: ['OFF', 'ECO', 'TOUR', 'ACTIVE', 'SPORT', 'PWR'][t.next_transition.target_mode] ?? '?',
         };
       }
     }

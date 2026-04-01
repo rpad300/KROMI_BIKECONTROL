@@ -1,11 +1,13 @@
-// === Assist Modes (Giant SyncDrive Pro) ===
+// === Assist Modes (Giant SyncDrive Pro — Trance X E+ 2 2023) ===
+// Physical RideControl order: ECO → TOUR → ACTIVE → SPORT → POWER
+// No AUTO on this model. WALK is hold-button only.
 export enum AssistMode {
   OFF = 0,
   ECO = 1,
   TOUR = 2,
-  SPORT = 3,
-  POWER = 4,
-  AUTO = 5,
+  ACTIVE = 3,
+  SPORT = 4,
+  POWER = 5,
   WALK = 6,
 }
 
@@ -13,9 +15,9 @@ export const ASSIST_MODE_LABELS: Record<AssistMode, string> = {
   [AssistMode.OFF]: 'OFF',
   [AssistMode.ECO]: 'ECO',
   [AssistMode.TOUR]: 'TOUR',
+  [AssistMode.ACTIVE]: 'ACTIVE',
   [AssistMode.SPORT]: 'SPORT',
   [AssistMode.POWER]: 'PWR',
-  [AssistMode.AUTO]: 'AUTO',
   [AssistMode.WALK]: 'WALK',
 };
 
@@ -23,9 +25,9 @@ export const ASSIST_MODE_COLORS: Record<AssistMode, string> = {
   [AssistMode.OFF]: 'bg-gray-600',
   [AssistMode.ECO]: 'bg-green-600',
   [AssistMode.TOUR]: 'bg-blue-600',
+  [AssistMode.ACTIVE]: 'bg-orange-500',
   [AssistMode.SPORT]: 'bg-yellow-600',
   [AssistMode.POWER]: 'bg-red-600',
-  [AssistMode.AUTO]: 'bg-purple-600',
   [AssistMode.WALK]: 'bg-cyan-600',
 };
 
