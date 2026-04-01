@@ -13,7 +13,7 @@ import { bleMode } from '../../services/bluetooth/BLEBridge';
  */
 
 const BRIDGE_INTENT_URL = 'intent://start#Intent;scheme=kromi-bridge;package=online.kromi.blebridge;end';
-const APK_DOWNLOAD_URL = 'https://github.com/rpad300/KROMI_BIKECONTROL/releases/latest/download/ble-bridge.apk';
+const APK_DOWNLOAD_URL = 'https://github.com/rpad300/KROMI_BIKECONTROL/releases/latest';
 
 export function BridgeSetup() {
   const [state, setState] = useState<'checking' | 'launching' | 'install' | 'connected' | 'hidden'>('checking');
