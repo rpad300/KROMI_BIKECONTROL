@@ -338,7 +338,7 @@ Launch:   100 × 0.7 = 70 → wire 0 → R100
 
 Motor: S360% T300/250/175 R100 → ALL MAX
 Smoothing: HR_ABOVE = 1 amostra → IMEDIATO
-Explicação UI: "Motor a ajudar — HR 21bpm acima de Z2"
+Explicação UI: "Motor MAX — HR 21bpm acima de Z2, a proteger"
 ```
 
 ### 7.3 Plano com HR baixa
@@ -514,14 +514,17 @@ Cada FIT com HR peak > HRmax configurado → actualiza perfil automaticamente.
 
 ## 12. UI — IntelligenceWidget
 
-O widget explica **porquê**, não só mostra barras:
-```
-"Motor MAX — HR 16bpm acima de Z2, a proteger"          ← vermelho
-"Motor reduzido — HR 13bpm abaixo de Z2, podes mais"    ← azul
-"A manter Z2 — HR controlada ✓"                          ← verde
-"Sem sensor HR — a estimar pelo terreno"                  ← cinza
-"HR sensor dropout — a usar último estado"                ← amarelo
-```
+O widget explica **porquê**, não só mostra barras. Padrão consistente baseado em wire value + HR state:
+
+| Wire | HR state | Mensagem | Cor |
+|:---:|----------|----------|-----|
+| 0 | Acima zona | "Motor MAX — HR Xbpm acima de Z2, a proteger" | vermelho |
+| 1 | Acima zona | "Motor a ajudar — HR Xbpm acima de Z2" | amarelo |
+| 1 | Acima + bat. | "Motor limitado pela bateria — HR Xbpm acima (SOC Y%)" | laranja |
+| 0/1 | Dentro zona | "A manter Z2 — HR controlada ✓" | verde |
+| 2 | Abaixo zona | "Motor reduzido — HR Xbpm abaixo de Z2, podes mais" | azul |
+| — | Sem HR | "Sem sensor HR — a estimar pelo terreno" | cinza |
+| — | HR dropout | "HR sensor dropout — a usar último estado" | amarelo |
 
 3 barras de intensidade (Support, Torque, Launch) + factor breakdown.
 

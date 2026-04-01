@@ -28,22 +28,34 @@ export function IntelligenceWidget() {
   let explanation = '';
   let explanationColor = 'text-gray-400';
 
-  // Check if battery is limiting the output
+  // Determine wire value and battery state for consistent messaging
+  const calibration = useIntelligenceStore.getState().calibration;
   const batteryLimiting = useIntelligenceStore.getState().factors.some(
     (f) => f.name === 'Bateria' && f.value < 0
   );
+  const isWire0 = calibration.support === 0; // MAX
 
+  // Consistent UI pattern:
+  // wire 0 + HR above: "Motor MAX — HR Xbpm acima, a proteger"
+  // wire 1 + HR above: "Motor a ajudar — HR Xbpm acima"
+  // wire 1 + battery:  "Motor limitado pela bateria — HR Xbpm acima (SOC Y%)"
+  // wire 0/1 + in zone: "A manter Z — HR controlada ✓"
+  // wire 2 + below:     "Motor reduzido — HR Xbpm abaixo, podes mais"
   if (!hasHR) {
     explanation = 'Sem sensor HR — a estimar pelo terreno';
     explanationColor = 'text-gray-500';
   } else if (hr > targetZone.max_bpm) {
     const above = hr - targetZone.max_bpm;
+    const soc = useBikeStore.getState().battery_percent;
     if (batteryLimiting) {
-      explanation = `Motor limitado pela bateria — HR ${above}bpm acima de ${targetZone.name}`;
+      explanation = `Motor limitado pela bateria — HR ${above}bpm acima de ${targetZone.name} (SOC ${soc}%)`;
       explanationColor = 'text-orange-400';
+    } else if (isWire0) {
+      explanation = `Motor MAX — HR ${above}bpm acima de ${targetZone.name}, a proteger`;
+      explanationColor = 'text-red-400';
     } else {
       explanation = `Motor a ajudar — HR ${above}bpm acima de ${targetZone.name}`;
-      explanationColor = 'text-red-400';
+      explanationColor = 'text-yellow-400';
     }
   } else if (hr < targetZone.min_bpm) {
     const below = targetZone.min_bpm - hr;
