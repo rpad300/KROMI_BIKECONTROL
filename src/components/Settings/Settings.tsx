@@ -209,7 +209,6 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
                   <NumberField label="Assist %" value={spec.assist_pct} onChange={(v) => updateBike({ [key]: { ...spec, assist_pct: v } })} />
                   <NumberField label="Torque (Nm)" value={spec.torque_nm} onChange={(v) => updateBike({ [key]: { ...spec, torque_nm: v } })} />
                   <NumberField label="Launch (1-10)" value={spec.launch} onChange={(v) => updateBike({ [key]: { ...spec, launch: v } })} />
-                  <NumberField label="Consumo (Wh/km)" value={spec.consumption_wh_km} onChange={(v) => updateBike({ [key]: { ...spec, consumption_wh_km: v } })} />
                 </div>
               </div>
             );
@@ -227,7 +226,6 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
               <NumberField label="Support %" value={bike.fixed_baseline.assist_pct} onChange={(v) => updateBike({ fixed_baseline: { ...bike.fixed_baseline, assist_pct: v } })} />
               <NumberField label="Torque (Nm)" value={bike.fixed_baseline.torque_nm} onChange={(v) => updateBike({ fixed_baseline: { ...bike.fixed_baseline, torque_nm: v } })} />
               <NumberField label="Launch (1-10)" value={bike.fixed_baseline.launch} onChange={(v) => updateBike({ fixed_baseline: { ...bike.fixed_baseline, launch: v } })} />
-              <NumberField label="Consumo (Wh/km)" value={bike.fixed_baseline.consumption_wh_km} onChange={(v) => updateBike({ fixed_baseline: { ...bike.fixed_baseline, consumption_wh_km: v } })} />
             </div>
           </div>
 
