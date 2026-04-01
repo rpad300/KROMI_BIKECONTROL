@@ -20,6 +20,10 @@ export interface SimulationPoint {
   kromi_active: boolean;
   battery_pct: number;
   consumption_wh: number;
+  // Resolved ASMO values at this point
+  support_pct: number;
+  torque: number;
+  launch: number;
   terrain_score: number;
   hr_mod: number;
   speed_mod: number;
@@ -186,6 +190,10 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
       else countMin++;
     }
 
+    // Resolve ASMO values for this level
+    const levelSpec = currentLevel === 1 ? bike.tuning_max
+      : currentLevel === 2 ? bike.tuning_mid : bike.tuning_min;
+
     points.push({
       elapsed_s: r.elapsed_s,
       distance_km: r.distance_km,
@@ -198,6 +206,9 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
       kromi_active: isActive,
       battery_pct: Math.round((batteryWh / totalWh) * 100),
       consumption_wh: Math.round(totalWh - batteryWh),
+      support_pct: levelSpec.assist_pct,
+      torque: levelSpec.torque_nm,
+      launch: levelSpec.launch,
       terrain_score: terrainScore,
       hr_mod: hrMod,
       speed_mod: speedMod,

@@ -270,6 +270,9 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
         hr: s.hr_bpm > 0 ? s.hr_bpm : null,
         kromiScore: simPt?.kromi_score ?? null,
         kromiBattery: simPt?.battery_pct ?? null,
+        kromiSupport: simPt?.support_pct ?? null,
+        kromiTorque: simPt?.torque ?? null,
+        kromiLaunch: simPt?.launch ?? null,
       };
     });
 
@@ -382,29 +385,59 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
         </div>
       )}
 
-      {/* HR + Speed + Battery chart */}
-      {(hasHR || hasSim) && (
+      {/* HR + Speed chart */}
+      {hasHR && (
         <div className="bg-gray-800 rounded-xl p-3">
-          <span className="text-xs font-bold text-gray-400">
-            {hasHR ? 'FC' : ''}{hasHR && hasSim ? ' + ' : ''}{hasSim ? 'Bateria KROMI' : ''}{ ' + Velocidade'}
-          </span>
-          <div className="h-36 mt-1">
+          <span className="text-xs font-bold text-gray-400">FC + Velocidade</span>
+          <div className="h-32 mt-1">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                 <XAxis dataKey="dist" tick={{ fontSize: 10, fill: '#555' }} tickFormatter={(v: number) => `${v}km`} />
-                <YAxis yAxisId="left" tick={{ fontSize: 10, fill: '#555' }} domain={[0, 'dataMax + 10']} width={30} />
-                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#555' }} domain={[0, 100]} width={25} />
+                <YAxis yAxisId="hr" tick={{ fontSize: 10, fill: '#555' }} domain={[60, 'dataMax + 10']} width={30} />
+                <YAxis yAxisId="spd" orientation="right" tick={{ fontSize: 10, fill: '#555' }} width={30} />
                 <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: 8, fontSize: 11 }} />
-                {hasHR && <Line yAxisId="left" type="monotone" dataKey="hr" stroke="#ef4444" dot={false} strokeWidth={1.5} name="FC (bpm)" />}
-                <Line yAxisId="left" type="monotone" dataKey="speed" stroke="#3b82f6" dot={false} strokeWidth={1} name="Speed (km/h)" />
-                {hasSim && <Line yAxisId="right" type="monotone" dataKey="kromiBattery" stroke="#10b981" dot={false} strokeWidth={1.5} name="Bateria KROMI (%)" />}
+                <Line yAxisId="hr" type="monotone" dataKey="hr" stroke="#ef4444" dot={false} strokeWidth={1.5} name="FC (bpm)" />
+                <Line yAxisId="spd" type="monotone" dataKey="speed" stroke="#3b82f6" dot={false} strokeWidth={1} name="Speed (km/h)" />
               </LineChart>
             </ResponsiveContainer>
           </div>
           <div className="flex items-center gap-4 mt-1 text-[10px] text-gray-500">
-            {hasHR && <span><span className="inline-block w-3 h-0.5 bg-red-500 mr-1" />FC</span>}
-            <span><span className="inline-block w-3 h-0.5 bg-blue-500 mr-1" />Speed</span>
-            {hasSim && <span><span className="inline-block w-3 h-0.5 bg-emerald-500 mr-1" />Bateria KROMI</span>}
+            <span><span className="inline-block w-3 h-0.5 bg-red-500 mr-1" />FC</span>
+            <span><span className="inline-block w-3 h-0.5 bg-blue-500 mr-1" />Velocidade</span>
+          </div>
+        </div>
+      )}
+
+      {/* KROMI Calibration chart — Support%, Torque, Launch, Battery */}
+      {hasSim && (
+        <div className="bg-gray-800 rounded-xl p-3">
+          <span className="text-xs font-bold text-emerald-400">KROMI Calibração ao longo do percurso</span>
+          <div className="h-44 mt-1">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <XAxis dataKey="dist" tick={{ fontSize: 10, fill: '#555' }} tickFormatter={(v: number) => `${v}km`} />
+                <YAxis yAxisId="asmo" tick={{ fontSize: 10, fill: '#555' }} domain={[0, 400]} width={35} />
+                <YAxis yAxisId="bat" orientation="right" tick={{ fontSize: 10, fill: '#555' }} domain={[0, 100]} width={25} />
+                <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: 8, fontSize: 11 }}
+                  formatter={(value: number, name: string) => {
+                    if (name === 'kromiSupport') return [`${value}%`, 'Support'];
+                    if (name === 'kromiTorque') return [`${value}`, 'Torque'];
+                    if (name === 'kromiLaunch') return [`${value}`, 'Launch'];
+                    if (name === 'kromiBattery') return [`${value}%`, 'Bateria'];
+                    return [value, name];
+                  }} />
+                <Line yAxisId="asmo" type="stepAfter" dataKey="kromiSupport" stroke="#3b82f6" dot={false} strokeWidth={2} name="kromiSupport" />
+                <Line yAxisId="asmo" type="stepAfter" dataKey="kromiTorque" stroke="#f97316" dot={false} strokeWidth={2} name="kromiTorque" />
+                <Line yAxisId="asmo" type="stepAfter" dataKey="kromiLaunch" stroke="#a855f7" dot={false} strokeWidth={1.5} name="kromiLaunch" />
+                <Line yAxisId="bat" type="monotone" dataKey="kromiBattery" stroke="#10b981" dot={false} strokeWidth={1.5} name="kromiBattery" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex items-center gap-4 mt-1 text-[10px] text-gray-500">
+            <span><span className="inline-block w-3 h-0.5 bg-blue-500 mr-1" />Support %</span>
+            <span><span className="inline-block w-3 h-0.5 bg-orange-500 mr-1" />Torque</span>
+            <span><span className="inline-block w-3 h-0.5 bg-purple-500 mr-1" />Launch</span>
+            <span><span className="inline-block w-3 h-0.5 bg-emerald-500 mr-1" />Bateria</span>
           </div>
         </div>
       )}
