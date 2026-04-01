@@ -69,6 +69,7 @@ class BLEManager(private val context: Context) {
     // Serial GATT operation queues
     private val pendingReads = mutableListOf<BluetoothGattCharacteristic>()
     private var hasRediscovered = false
+    var sgOnlyMode = false  // When true: skip all reads + only subscribe to SG_NOTIFY
 
     val isConnected: Boolean get() = gatt != null
     val isScanning: Boolean get() = scanCallback != null
@@ -250,6 +251,23 @@ class BLEManager(private val context: Context) {
             val services = JSONObject()
             pendingNotifications.clear()
             pendingReads.clear()
+            notifPhase = 0
+
+            if (sgOnlyMode) {
+                // SG-ONLY MODE: skip ALL reads, ONLY subscribe to SG_NOTIFY
+                Log.i(TAG, "╔═══════════════════════════════════╗")
+                Log.i(TAG, "║  SG-ONLY MODE — minimal BLE ops   ║")
+                Log.i(TAG, "╚═══════════════════════════════════╝")
+                g.getService(SG_SERVICE)?.getCharacteristic(SG_NOTIFY)?.let { char ->
+                    pendingNotifications.add(char)
+                    sgWriteChar = g.getService(SG_SERVICE)?.getCharacteristic(SG_WRITE)
+                    services.put("sg", true)
+                } ?: services.put("sg", false)
+                onDataReceived?.invoke(JSONObject().put("type", "services").put("data", services))
+                onStatusChanged?.invoke("SG-only: subscribing...")
+                enableNextNotification(g)
+                return
+            }
 
             // Battery
             g.getService(BATTERY_SERVICE)?.getCharacteristic(BATTERY_LEVEL)?.let { char ->

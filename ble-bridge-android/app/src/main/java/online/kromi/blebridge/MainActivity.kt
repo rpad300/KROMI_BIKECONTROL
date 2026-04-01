@@ -105,6 +105,24 @@ class MainActivity : AppCompatActivity() {
 
         testBtn.setOnClickListener { runBLETest() }
 
+        findViewById<Button>(R.id.sgOnlyBtn).setOnClickListener {
+            appendLog("SG", "══ SG-ONLY CONNECT ══")
+            appendLog("SG", "Disconnect first, then reconnect with SG-only mode")
+            val ble = BLEBridgeService.instance?.bleManager
+            if (ble == null) {
+                appendLog("ERR", "Service not running!")
+                return@setOnClickListener
+            }
+            // Disconnect if connected
+            if (ble.isConnected) ble.disconnect()
+            // Enable SG-only mode and show device picker
+            ble.sgOnlyMode = true
+            appendLog("SG", "SG-only mode ON — tap SCAN to connect")
+            handler.postDelayed({
+                showDevicePicker()
+            }, 500)
+        }
+
         findViewById<Button>(R.id.listenBtn).setOnClickListener {
             appendLog("LSN", "══ PASSIVE LISTEN 30s ══")
             val ble = BLEBridgeService.instance?.bleManager
