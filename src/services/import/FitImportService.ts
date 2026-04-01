@@ -9,6 +9,8 @@
 import FitParser from 'fit-file-parser';
 import { useAuthStore } from '../../store/authStore';
 
+const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
@@ -150,6 +152,66 @@ export function parseFitFile(buffer: ArrayBuffer): Promise<ImportedRide> {
       });
     });
   });
+}
+
+/**
+ * Enrich ride records with altitude from Google Elevation API.
+ * Samples every Nth point to stay within API limits (512 per request).
+ * Interpolates altitude for points between samples.
+ */
+export async function enrichWithElevation(ride: ImportedRide): Promise<void> {
+  if (!MAPS_KEY) return;
+
+  // Check if altitude data already exists
+  const hasAlt = ride.records.some((r) => r.altitude_m !== null && r.altitude_m !== 0);
+  if (hasAlt) return;
+
+  const gpsRecords = ride.records.filter((r) => r.lat !== 0 && r.lng !== 0);
+  if (gpsRecords.length < 2) return;
+
+  // Sample: max 300 points per API call
+  const step = Math.max(1, Math.floor(gpsRecords.length / 300));
+  const sampled = gpsRecords.filter((_, i) => i % step === 0 || i === gpsRecords.length - 1);
+
+  const locations = sampled.map((r) => `${r.lat},${r.lng}`).join('|');
+
+  try {
+    const res = await fetch(
+      `https://maps.googleapis.com/maps/api/elevation/json?locations=${locations}&key=${MAPS_KEY}`
+    );
+    const data = await res.json();
+
+    if (data.status !== 'OK' || !data.results) {
+      console.warn('[Elevation] API error:', data.status);
+      return;
+    }
+
+    // Apply elevations to sampled points
+    const elevations: { idx: number; alt: number }[] = [];
+    let sampleIdx = 0;
+    for (let i = 0; i < gpsRecords.length; i++) {
+      if (i % step === 0 || i === gpsRecords.length - 1) {
+        const alt = data.results[sampleIdx]?.elevation ?? 0;
+        elevations.push({ idx: i, alt: Math.round(alt * 10) / 10 });
+        gpsRecords[i]!.altitude_m = alt;
+        sampleIdx++;
+      }
+    }
+
+    // Interpolate between sampled points
+    for (let i = 0; i < elevations.length - 1; i++) {
+      const from = elevations[i]!;
+      const to = elevations[i + 1]!;
+      for (let j = from.idx + 1; j < to.idx; j++) {
+        const t = (j - from.idx) / (to.idx - from.idx);
+        gpsRecords[j]!.altitude_m = Math.round((from.alt + (to.alt - from.alt) * t) * 10) / 10;
+      }
+    }
+
+    console.log(`[Elevation] Enriched ${gpsRecords.length} points (${sampled.length} API samples)`);
+  } catch (err) {
+    console.warn('[Elevation] Fetch failed:', err);
+  }
 }
 
 /** Save imported ride to Supabase */

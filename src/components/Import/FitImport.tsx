@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { parseFitFile, saveImportedRide, type ImportedRide } from '../../services/import/FitImportService';
+import { parseFitFile, enrichWithElevation, saveImportedRide, type ImportedRide } from '../../services/import/FitImportService';
 import { updateStatsFromRide, type AthleteStats } from '../../services/import/AthleteProfileBuilder';
 
 /**
@@ -24,6 +24,7 @@ export function FitImport({ onImported }: { onImported?: () => void } = {}) {
       try {
         const buffer = await file.arrayBuffer();
         const ride = await parseFitFile(buffer);
+        await enrichWithElevation(ride);
         const saved = await saveImportedRide(ride);
         const updatedStats = await updateStatsFromRide(ride);
         newResults.push({ ride, saved });
