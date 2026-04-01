@@ -162,13 +162,13 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
     const dt = i > 0 ? (r.elapsed_s - records[i - 1]!.elapsed_s) : 0;
     const dtH = dt / 3600;
     if (r.speed_kmh > 2 && dtH > 0) {
-      // KROMI: varies by level
-      const kromiRate = currentLevel === 1 ? bike.consumption_power
-        : currentLevel === 2 ? (bike.consumption_power + bike.consumption_sport) / 2
-        : bike.consumption_sport;
-      batteryWh = Math.max(0, batteryWh - kromiRate * r.speed_kmh * dtH);
-      // Fixed POWER: always max consumption
-      batteryFixedWh = Math.max(0, batteryFixedWh - bike.consumption_power * r.speed_kmh * dtH);
+      // KROMI: consumption based on actual tuning level specs
+      const levelSpec = currentLevel === 1 ? bike.tuning_max
+        : currentLevel === 2 ? bike.tuning_mid
+        : bike.tuning_min;
+      batteryWh = Math.max(0, batteryWh - levelSpec.consumption_wh_km * r.speed_kmh * dtH);
+      // Fixed POWER at MAX: always highest consumption
+      batteryFixedWh = Math.max(0, batteryFixedWh - bike.tuning_max.consumption_wh_km * r.speed_kmh * dtH);
     }
 
     scoreSum += score;

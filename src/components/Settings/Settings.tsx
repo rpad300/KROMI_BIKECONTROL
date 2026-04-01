@@ -154,6 +154,29 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
             Valores usados para estimar range quando nao ha dados live.
             Ajusta com base na tua experiencia de conduzir.
           </div>
+
+          <div className="border-t border-gray-700 pt-3">
+            <span className="text-xs text-gray-500 uppercase">Tuning Levels (POWER mode — KROMI controla)</span>
+          </div>
+          <div className="text-[10px] text-gray-600 mb-2">
+            Características de cada nível que o SET_TUNING configura no motor.
+          </div>
+          {(['tuning_max', 'tuning_mid', 'tuning_min'] as const).map((key) => {
+            const label = key === 'tuning_max' ? 'MAX (nível 1)' : key === 'tuning_mid' ? 'MID (nível 2)' : 'MIN (nível 3)';
+            const color = key === 'tuning_max' ? 'text-red-400' : key === 'tuning_mid' ? 'text-yellow-400' : 'text-green-400';
+            const spec = bike[key];
+            return (
+              <div key={key} className="bg-gray-900 rounded-lg p-3 space-y-2">
+                <span className={`text-xs font-bold ${color}`}>{label}</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <NumberField label="Assist %" value={spec.assist_pct} onChange={(v) => updateBike({ [key]: { ...spec, assist_pct: v } })} />
+                  <NumberField label="Torque (Nm)" value={spec.torque_nm} onChange={(v) => updateBike({ [key]: { ...spec, torque_nm: v } })} />
+                  <NumberField label="Launch (1-10)" value={spec.launch} onChange={(v) => updateBike({ [key]: { ...spec, launch: v } })} />
+                  <NumberField label="Consumo (Wh/km)" value={spec.consumption_wh_km} onChange={(v) => updateBike({ [key]: { ...spec, consumption_wh_km: v } })} />
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 

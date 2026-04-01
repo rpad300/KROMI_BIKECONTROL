@@ -106,6 +106,14 @@ class TuningIntelligence {
 
     const targetLevel: 1 | 2 | 3 = score > LEVEL_THRESHOLDS.max ? 1 : score > LEVEL_THRESHOLDS.mid ? 2 : 3;
 
+    // Motor impact info (what this level means for the motor)
+    const levelSpec = targetLevel === 1 ? bike.tuning_max : targetLevel === 2 ? bike.tuning_mid : bike.tuning_min;
+    factors.push({
+      name: 'Motor',
+      value: 0,
+      detail: `${levelSpec.assist_pct}% assist, ${levelSpec.torque_nm}Nm, ${levelSpec.consumption_wh_km}Wh/km`,
+    });
+
     this.levelHistory.push(targetLevel);
     if (this.levelHistory.length > SMOOTHING_WINDOW) this.levelHistory.shift();
 

@@ -2,6 +2,14 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { DEFAULT_RIDER_PROFILE, type RiderProfile } from '../types/athlete.types';
 
+/** Motor tuning level characteristics — what each SET_TUNING level does */
+export interface TuningLevelSpec {
+  assist_pct: number;     // Motor support % (e.g., 400% = 4x rider input)
+  torque_nm: number;      // Max torque at this level
+  launch: number;         // Response aggressiveness (1-10)
+  consumption_wh_km: number; // Typical Wh/km at this level
+}
+
 export interface BikeConfig {
   name: string;
   // Battery
@@ -15,12 +23,16 @@ export interface BikeConfig {
   speed_limit_kmh: number;
   // Wheels
   wheel_circumference_mm: number;
-  // Consumption defaults (Wh/km)
+  // Consumption defaults (Wh/km) per assist mode
   consumption_eco: number;
   consumption_tour: number;
   consumption_active: number;
   consumption_sport: number;
   consumption_power: number;
+  // Tuning level specs (what SET_TUNING levels do in POWER mode)
+  tuning_max: TuningLevelSpec;   // Level 1 = MAX
+  tuning_mid: TuningLevelSpec;   // Level 2 = MID
+  tuning_min: TuningLevelSpec;   // Level 3 = MIN
 }
 
 export const DEFAULT_BIKE_CONFIG: BikeConfig = {
@@ -38,6 +50,10 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   consumption_active: 22,
   consumption_sport: 28,
   consumption_power: 35,
+  // SyncDrive Pro tuning levels in POWER mode (estimated from motor specs)
+  tuning_max: { assist_pct: 360, torque_nm: 85, launch: 9, consumption_wh_km: 38 },
+  tuning_mid: { assist_pct: 240, torque_nm: 65, launch: 5, consumption_wh_km: 28 },
+  tuning_min: { assist_pct: 140, torque_nm: 45, launch: 3, consumption_wh_km: 18 },
 };
 
 interface AutoAssistConfig {
