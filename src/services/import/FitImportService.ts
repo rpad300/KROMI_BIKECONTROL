@@ -155,82 +155,163 @@ export function parseFitFile(buffer: ArrayBuffer): Promise<ImportedRide> {
 }
 
 /**
- * Enrich ride records with altitude from Google Maps ElevationService.
- * Uses the JavaScript API (not REST — REST has CORS issues from browser).
- * Samples every Nth point, max 256 per batch (API limit), interpolates between.
+ * Enrich ride records with altitude.
+ * 1. Check Supabase elevation_cache (free, instant)
+ * 2. Missing points → Google ElevationService (costs API calls)
+ * 3. Save new elevations to cache (never ask Google twice for same spot)
+ *
+ * Resolution: 4 decimal places (~10m grid).
  */
 export async function enrichWithElevation(ride: ImportedRide): Promise<void> {
-  // Check if altitude data already exists
   const hasAlt = ride.records.some((r) => r.altitude_m !== null && r.altitude_m !== 0);
   if (hasAlt) return;
 
   const gpsRecords = ride.records.filter((r) => r.lat !== 0 && r.lng !== 0);
   if (gpsRecords.length < 2) return;
 
-  // Ensure Google Maps JS API is loaded
-  if (!window.google?.maps) {
-    if (!MAPS_KEY) return;
-    await new Promise<void>((resolve) => {
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}`;
-      script.onload = () => resolve();
-      script.onerror = () => resolve();
-      document.head.appendChild(script);
-    });
-    if (!window.google?.maps) return;
-  }
-
-  const elevator = new google.maps.ElevationService();
-
-  // Sample: max 250 per request (API limit ~512 but safer)
+  // Sample points
   const step = Math.max(1, Math.floor(gpsRecords.length / 250));
   const sampled = gpsRecords.filter((_, i) => i % step === 0 || i === gpsRecords.length - 1);
   const sampledIndices = gpsRecords.map((_, i) => i).filter((i) => i % step === 0 || i === gpsRecords.length - 1);
 
-  console.log(`[Elevation] Fetching ${sampled.length} samples from ${gpsRecords.length} GPS points...`);
+  console.log(`[Elevation] ${sampled.length} samples from ${gpsRecords.length} points`);
 
-  try {
-    // Process in batches of 250
-    const elevations: { idx: number; alt: number }[] = [];
+  // === 1. Check Supabase cache ===
+  const cached = new Map<string, number>();
+  const uncached: { point: ImportedRecord; idx: number; sampleIdx: number }[] = [];
 
-    for (let batch = 0; batch < sampled.length; batch += 250) {
-      const batchPoints = sampled.slice(batch, batch + 250);
-      const batchIndices = sampledIndices.slice(batch, batch + 250);
+  if (SUPABASE_URL && SUPABASE_KEY) {
+    // Build unique coordinate keys (4 decimal places = ~10m)
+    const keys = sampled.map((r) => ({ lat: round4(r.lat), lng: round4(r.lng) }));
+    const uniqueKeys = [...new Set(keys.map((k) => `${k.lat},${k.lng}`))];
 
-      const locations = batchPoints.map((r) => ({ lat: r.lat, lng: r.lng }));
+    // Batch lookup (max 200 per query via filter)
+    for (let i = 0; i < uniqueKeys.length; i += 100) {
+      const batch = uniqueKeys.slice(i, i + 100);
+      const filter = batch.map((k) => {
+        const [lat, lng] = k.split(',');
+        return `and(lat_key.eq.${lat},lng_key.eq.${lng})`;
+      }).join(',');
 
-      const result = await new Promise<google.maps.ElevationResult[]>((resolve, reject) => {
-        elevator.getElevationForLocations({ locations }, (results, status) => {
-          if (status === google.maps.ElevationStatus.OK && results) {
-            resolve(results);
-          } else {
-            reject(new Error(`Elevation API: ${status}`));
-          }
-        });
-      });
-
-      for (let i = 0; i < result.length; i++) {
-        const idx = batchIndices[i]!;
-        const alt = Math.round(result[i]!.elevation * 10) / 10;
-        elevations.push({ idx, alt });
-        gpsRecords[idx]!.altitude_m = alt;
-      }
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/elevation_cache?or=(${filter})&select=lat_key,lng_key,altitude_m`,
+          { headers: { 'apikey': SUPABASE_KEY!, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+        );
+        const rows = await res.json();
+        if (Array.isArray(rows)) {
+          rows.forEach((r: { lat_key: number; lng_key: number; altitude_m: number }) => {
+            cached.set(`${r.lat_key},${r.lng_key}`, r.altitude_m);
+          });
+        }
+      } catch { /* continue without cache */ }
     }
 
-    // Interpolate between sampled points
-    for (let i = 0; i < elevations.length - 1; i++) {
-      const from = elevations[i]!;
-      const to = elevations[i + 1]!;
-      for (let j = from.idx + 1; j < to.idx; j++) {
-        const t = (j - from.idx) / (to.idx - from.idx);
-        gpsRecords[j]!.altitude_m = Math.round((from.alt + (to.alt - from.alt) * t) * 10) / 10;
-      }
-    }
-
-    console.log(`[Elevation] Enriched ${gpsRecords.length} points (${elevations.length} API samples)`);
-  } catch (err) {
-    console.warn('[Elevation] Failed:', err);
+    console.log(`[Elevation] Cache: ${cached.size} hits from ${uniqueKeys.length} unique coords`);
   }
+
+  // Apply cached + identify uncached
+  const elevations: { idx: number; alt: number }[] = [];
+
+  for (let si = 0; si < sampled.length; si++) {
+    const r = sampled[si]!;
+    const key = `${round4(r.lat)},${round4(r.lng)}`;
+    const cachedAlt = cached.get(key);
+
+    if (cachedAlt !== undefined) {
+      const idx = sampledIndices[si]!;
+      elevations.push({ idx, alt: cachedAlt });
+      gpsRecords[idx]!.altitude_m = cachedAlt;
+    } else {
+      uncached.push({ point: r, idx: sampledIndices[si]!, sampleIdx: si });
+    }
+  }
+
+  // === 2. Fetch uncached from Google ===
+  if (uncached.length > 0) {
+    console.log(`[Elevation] Fetching ${uncached.length} from Google...`);
+
+    // Load Google Maps if needed
+    if (!window.google?.maps && MAPS_KEY) {
+      await new Promise<void>((resolve) => {
+        const s = document.createElement('script');
+        s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}`;
+        s.onload = () => resolve();
+        s.onerror = () => resolve();
+        document.head.appendChild(s);
+      });
+    }
+
+    if (window.google?.maps) {
+      const elevator = new google.maps.ElevationService();
+      const newCacheEntries: { lat_key: number; lng_key: number; altitude_m: number }[] = [];
+
+      for (let batch = 0; batch < uncached.length; batch += 250) {
+        const batchItems = uncached.slice(batch, batch + 250);
+        const locations = batchItems.map((u) => ({ lat: u.point.lat, lng: u.point.lng }));
+
+        try {
+          const result = await new Promise<google.maps.ElevationResult[]>((resolve, reject) => {
+            elevator.getElevationForLocations({ locations }, (results, status) => {
+              if (status === google.maps.ElevationStatus.OK && results) resolve(results);
+              else reject(new Error(`Elevation: ${status}`));
+            });
+          });
+
+          for (let i = 0; i < result.length; i++) {
+            const item = batchItems[i]!;
+            const alt = Math.round(result[i]!.elevation * 10) / 10;
+            elevations.push({ idx: item.idx, alt });
+            gpsRecords[item.idx]!.altitude_m = alt;
+
+            newCacheEntries.push({
+              lat_key: round4(item.point.lat),
+              lng_key: round4(item.point.lng),
+              altitude_m: alt,
+            });
+          }
+        } catch (err) {
+          console.warn('[Elevation] Google batch failed:', err);
+        }
+      }
+
+      // === 3. Save to Supabase cache ===
+      if (newCacheEntries.length > 0 && SUPABASE_URL && SUPABASE_KEY) {
+        try {
+          await fetch(`${SUPABASE_URL}/rest/v1/elevation_cache?on_conflict=lat_key,lng_key`, {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_KEY!,
+              'Authorization': `Bearer ${SUPABASE_KEY}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'resolution=ignore-duplicates,return=minimal',
+            },
+            body: JSON.stringify(newCacheEntries),
+          });
+          console.log(`[Elevation] Cached ${newCacheEntries.length} new points in Supabase`);
+        } catch { /* cache save is best-effort */ }
+      }
+    }
+  }
+
+  // === 4. Interpolate between sampled points ===
+  elevations.sort((a, b) => a.idx - b.idx);
+  for (let i = 0; i < elevations.length - 1; i++) {
+    const from = elevations[i]!;
+    const to = elevations[i + 1]!;
+    for (let j = from.idx + 1; j < to.idx; j++) {
+      const t = (j - from.idx) / (to.idx - from.idx);
+      gpsRecords[j]!.altitude_m = Math.round((from.alt + (to.alt - from.alt) * t) * 10) / 10;
+    }
+  }
+
+  const googleHits = uncached.length;
+  const cacheHits = sampled.length - uncached.length;
+  console.log(`[Elevation] Done: ${cacheHits} cache + ${googleHits} Google → ${gpsRecords.length} points enriched`);
+}
+
+function round4(n: number): number {
+  return Math.round(n * 10000) / 10000;
 }
 
 /** Save imported ride to Supabase */
