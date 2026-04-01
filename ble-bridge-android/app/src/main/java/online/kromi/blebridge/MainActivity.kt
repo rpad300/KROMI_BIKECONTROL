@@ -135,6 +135,16 @@ class MainActivity : AppCompatActivity() {
             ble.lightToggle()
         }
 
+        findViewById<Button>(R.id.normalModeBtn).setOnClickListener {
+            val ble = BLEBridgeService.instance?.bleManager
+            if (ble == null || !ble.isConnected) {
+                appendLog("ERR", "Not connected!")
+                return@setOnClickListener
+            }
+            appendLog("CMD", ">>> NORMAL MODE (exit AUTO)")
+            ble.normalMode()
+        }
+
         findViewById<Button>(R.id.sgOnlyBtn).setOnClickListener {
             appendLog("SG", "══ SG-ONLY CONNECT ══")
             appendLog("SG", "Disconnect first, then reconnect with SG-only mode")
@@ -312,6 +322,7 @@ class MainActivity : AppCompatActivity() {
                 val ok = if (json.optBoolean("ok")) "✅" else "❌"
                 appendLog("CMD", "${json.optString("name")} write=$ok")
             }
+            "bondState" -> appendLog("BOND", "${json.optString("cmd")}: ${json.optString("bond")}")
             "cmdError" -> appendLog("ERR", json.optString("msg"))
             "sgConnected" -> appendLog("GEV", if (json.optBoolean("success")) "★ SESSION ACTIVE!" else "Session failed")
             "sgBattery" -> appendLog("BAT", "★ SOC=${json.optInt("soc")}% life=${json.optInt("life")}%")

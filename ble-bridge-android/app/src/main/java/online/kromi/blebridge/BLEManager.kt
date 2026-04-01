@@ -179,8 +179,17 @@ class BLEManager(private val context: Context) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     Log.i(TAG, "GATT connected to ${g.device.name} (bond: ${g.device.bondState})")
-                    onStatusChanged?.invoke("Connected, requesting MTU...")
 
+                    // Auto-bond if not bonded — required for motor control commands
+                    if (g.device.bondState != BluetoothDevice.BOND_BONDED) {
+                        Log.i(TAG, "★ Initiating BOND (required for motor control)...")
+                        onStatusChanged?.invoke("Bonding...")
+                        g.device.createBond()
+                        // Bond callback will continue the flow, but also proceed with MTU
+                        // in case bonding happens in parallel
+                    }
+
+                    onStatusChanged?.invoke("Connected, requesting MTU...")
                     // Request high priority + large MTU, then discover services in onMtuChanged
                     g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
                     g.requestMtu(247)
@@ -1183,19 +1192,44 @@ class BLEManager(private val context: Context) {
 
     /** Convenience: ASSIST UP — cmd=0x1C, sub=0x03, action=0x02, key 3 */
     fun assistUp() {
+        logBondState("ASSIST_UP")
         val plain = ByteArray(16).also { it[0] = 0x1C; it[1] = 0x03; it[2] = 0x02 }
         sendEncryptedCommand(plain, 3, "ASSIST_UP")
     }
 
     /** Convenience: ASSIST DOWN — cmd=0x1C, sub=0x03, action=0x01, key 3 */
     fun assistDown() {
+        logBondState("ASSIST_DOWN")
         val plain = ByteArray(16).also { it[0] = 0x1C; it[1] = 0x03; it[2] = 0x01 }
         sendEncryptedCommand(plain, 3, "ASSIST_DOWN")
     }
 
     /** Convenience: LIGHT TOGGLE — cmd=0x1C, sub=0x03, action=0x08, key 3 */
     fun lightToggle() {
+        logBondState("LIGHT")
         val plain = ByteArray(16).also { it[0] = 0x1C; it[1] = 0x03; it[2] = 0x08 }
         sendEncryptedCommand(plain, 3, "LIGHT")
+    }
+
+    /** NORMAL MODE — exit AUTO, enter manual assist. cmd=0xA0, key 0 */
+    fun normalMode() {
+        logBondState("NORMAL_MODE")
+        val plain = ByteArray(16).also { it[0] = 0xA0.toByte() }
+        sendEncryptedCommand(plain, 0, "NORMAL_MODE")
+    }
+
+    private fun logBondState(label: String) {
+        val bond = gatt?.device?.bondState ?: -1
+        val bondStr = when (bond) {
+            BluetoothDevice.BOND_BONDED -> "BONDED"
+            BluetoothDevice.BOND_BONDING -> "BONDING..."
+            BluetoothDevice.BOND_NONE -> "NOT_BONDED"
+            else -> "UNKNOWN($bond)"
+        }
+        Log.i(TAG, "★ $label bond=$bondStr")
+        onDataReceived?.invoke(JSONObject()
+            .put("type", "bondState")
+            .put("cmd", label)
+            .put("bond", bondStr))
     }
 }
