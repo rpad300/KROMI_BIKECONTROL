@@ -229,9 +229,42 @@ class WebSocketBLEClient {
           console.log(`[WSClient] ${msg.type}:`, msg.hex);
           break;
 
+        case 'sgRiding':
+          // Parsed motor telemetry — speed, torque, power, cadence, assist%, distance, time
+          if (msg.speed > 0.5) store.setSpeed(msg.speed);
+          if (msg.power) store.setPower(Math.round(msg.power));
+          if (msg.cadence) store.setCadence(Math.round(msg.cadence));
+          if (msg.torque) store.setTorque?.(msg.torque);
+          if (msg.tripDistance) store.setDistance(msg.tripDistance);
+          batteryEstimationService.addSample(msg.speed || 0, msg.power || 0, store.battery_percent);
+          store.setRange(batteryEstimationService.getEstimatedRange(store.battery_percent));
+          break;
+
+        case 'sgBattery':
+          // Motor battery data (SOC + life %)
+          store.setBatteryPercent(msg.soc);
+          console.log(`[WSClient] Motor battery: SOC=${msg.soc}% life=${msg.life}%`);
+          break;
+
+        case 'sgMotorStatus':
+          // Motor status with voltage
+          console.log(`[WSClient] Motor: bat1=${msg.bat1} bat2=${msg.bat2} v=${msg.voltage}`);
+          break;
+
+        case 'sgConnected':
+          console.log(`[WSClient] GEV session: ${msg.success ? 'ACTIVE' : 'FAILED'}`);
+          break;
+
+        case 'sgTuning':
+          console.log(`[WSClient] Tuning data: ${msg.hex}`);
+          break;
+
+        case 'sgResponse':
+          console.log(`[WSClient] Response cmd=${msg.cmd} key=${msg.key}: ${msg.decrypted}`);
+          break;
+
         case 'sgNotify':
-          // Smart Gateway motor data — log for now, parse when protocol is known
-          console.log('[WSClient] SG:', msg.hex, 'len:', msg.size);
+          console.log('[WSClient] SG raw:', msg.hex);
           break;
 
         case 'charRead':

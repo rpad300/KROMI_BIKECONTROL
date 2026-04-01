@@ -242,10 +242,23 @@ class MainActivity : AppCompatActivity() {
             "charRead" -> appendLog("RD", "[${json.optString("short")}] hex=${json.optString("hex")} ascii=\"${json.optString("ascii")}\" len=${json.optInt("size")}")
             "charReadFail" -> appendLog("RD!", "[${json.optString("short")}] FAILED status=${json.optInt("status")}")
             "unknownNotify" -> appendLog("NTF", "[${json.optString("short")}] hex=${json.optString("hex")} len=${json.optInt("size")}")
-            "sgNotify" -> appendLog("SG!", "hex=${json.optString("hex")} len=${json.optInt("size")}")
-            "sgTelemetry" -> appendLog("SG23", "cmd=${"%02x".format(json.optInt("cmd"))} ${json.optString("hex")}")
-            "sgHeartbeat" -> appendLog("SGHB", json.optString("hex"))
-            "sgEncrypted" -> appendLog("SG21", "cmd=${"%02x".format(json.optInt("cmd"))} AES ${json.optString("hex")}")
+            "sgRiding" -> {
+                val spd = json.optDouble("speed", 0.0)
+                val trq = json.optDouble("torque", 0.0)
+                val pwr = json.optDouble("power", 0.0)
+                val cad = json.optDouble("cadence", 0.0)
+                val ast = json.optInt("assistRatio", 0)
+                val dst = json.optDouble("tripDistance", 0.0)
+                val tm = json.optInt("tripTime", 0)
+                appendLog("MOT", "spd=%.1f trq=%.1f pwr=%.0f cad=%.0f ast=%d%% dst=%.1f t=%ds".format(spd, trq, pwr, cad, ast, dst, tm))
+            }
+            "sgMotorStatus" -> appendLog("BAT2", "b1=${json.optInt("bat1")} b2=${json.optInt("bat2")} v=${json.optInt("voltage")}")
+            "sgConnected" -> appendLog("GEV", if (json.optBoolean("success")) "★ SESSION ACTIVE!" else "Session failed")
+            "sgBattery" -> appendLog("BAT", "★ SOC=${json.optInt("soc")}% life=${json.optInt("life")}%")
+            "sgTuning" -> appendLog("TUN", "★ ${json.optString("hex")}")
+            "sgResponse" -> appendLog("RSP", "cmd=${"%02x".format(json.optInt("cmd"))} K${json.optInt("key")} ${json.optString("decrypted")}")
+            "sgHeartbeat" -> {} // silent
+            "sgNotify" -> appendLog("SG!", "hex=${json.optString("hex")}")
             "mtu" -> appendLog("MTU", "${json.optInt("mtu")} ${if (json.optBoolean("ok")) "✅" else "❌"}")
             "subscribed" -> {
                 val ok = if (json.optBoolean("ok")) "✅" else "❌"

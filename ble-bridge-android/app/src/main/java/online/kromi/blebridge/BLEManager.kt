@@ -70,6 +70,7 @@ class BLEManager(private val context: Context) {
     private val pendingReads = mutableListOf<BluetoothGattCharacteristic>()
     private var hasRediscovered = false
     var sgOnlyMode = false  // When true: skip all reads + only subscribe to SG_NOTIFY
+    private var lastTelemetryLog = 0L
 
     val isConnected: Boolean get() = gatt != null
     val isScanning: Boolean get() = scanCallback != null
@@ -554,65 +555,112 @@ class BLEManager(private val context: Context) {
                     onDataReceived?.invoke(JSONObject().put("type", "protoRaw").put("hex", hex))
                 }
                 SG_NOTIFY -> {
-                    val hex = data.joinToString("") { "%02x".format(it) }
+                    if (data.size < 3 || data[0] != 0xFC.toByte()) return
+                    val device = data[1].toInt() and 0xFF
 
-                    // Parse FC-header packets
-                    if (data.size >= 3 && data[0] == 0xFC.toByte()) {
-                        val device = data[1].toInt() and 0xFF
-                        val byte2 = data[2].toInt() and 0xFF
+                    when (device) {
+                        0x23 -> {
+                            if (data.size < 5) return
+                            val cmd = data[3].toInt() and 0xFF
+                            if (cmd == 0x41 && data.size >= 19) {
+                                // cmd 41: live telemetry — parse fields
+                                // Data at bytes[4..18]: speed(2) torque(2) cadence(2) acur(2) dist(2) time(2) power(2) assist(1) soc(1)
+                                val d = data
+                                val speed = ((d[4].toInt() and 0xFF) shl 8 or (d[5].toInt() and 0xFF)) / 10.0
+                                val torque = ((d[6].toInt() and 0xFF) shl 8 or (d[7].toInt() and 0xFF)) / 10.0
+                                val cadence = ((d[8].toInt() and 0xFF) shl 8 or (d[9].toInt() and 0xFF)) / 10.0
+                                val acur = ((d[10].toInt() and 0xFF) shl 8 or (d[11].toInt() and 0xFF)) / 100.0
+                                val dist = ((d[12].toInt() and 0xFF) shl 8 or (d[13].toInt() and 0xFF)) / 10.0
+                                val time = ((d[14].toInt() and 0xFF) shl 8 or (d[15].toInt() and 0xFF))
+                                val power = ((d[16].toInt() and 0xFF) shl 8 or (d[17].toInt() and 0xFF)) / 10.0
+                                val assistRatio = d[18].toInt() and 0xFF
 
-                        when (device) {
-                            0x23 -> {
-                                // Plaintext telemetry: FC 23 [len] [cmd] [payload] [xor]
-                                val cmd = if (data.size > 3) data[3].toInt() and 0xFF else -1
-                                Log.i(TAG, "★ SG D23 cmd=${"%02x".format(cmd)}: $hex")
+                                // Only log every ~2 seconds (not every 500ms)
+                                val now = System.currentTimeMillis()
+                                if (now - lastTelemetryLog > 2000) {
+                                    lastTelemetryLog = now
+                                    Log.i(TAG, "TELEM: spd=${speed}km/h trq=${torque}Nm cad=${cadence}rpm pwr=${power}W ast=${assistRatio}% dist=${dist}km time=${time}s")
+                                }
+
+                                // Send parsed data to WebSocket/UI
                                 onDataReceived?.invoke(JSONObject()
-                                    .put("type", "sgTelemetry")
-                                    .put("cmd", cmd)
-                                    .put("hex", hex)
-                                    .put("size", data.size))
+                                    .put("type", "sgRiding")
+                                    .put("speed", speed)
+                                    .put("torque", torque)
+                                    .put("cadence", cadence)
+                                    .put("power", power)
+                                    .put("assistRatio", assistRatio)
+                                    .put("tripDistance", dist)
+                                    .put("tripTime", time)
+                                    .put("accumCurrent", acur))
+
+                                // Also broadcast speed/power for PWA compat
+                                if (speed > 0.5) onDataReceived?.invoke(JSONObject().put("type", "speed").put("value", speed))
+                                onDataReceived?.invoke(JSONObject().put("type", "cadence").put("value", cadence.toInt()))
+                            } else if (cmd == 0x43 && data.size >= 18) {
+                                // cmd 43: motor/battery status
+                                val bat1 = data[4].toInt() and 0xFF
+                                val bat2 = data[5].toInt() and 0xFF
+                                val voltage = ((data[8].toInt() and 0xFF) shl 8 or (data[9].toInt() and 0xFF))
+                                onDataReceived?.invoke(JSONObject()
+                                    .put("type", "sgMotorStatus")
+                                    .put("bat1", bat1)
+                                    .put("bat2", bat2)
+                                    .put("voltage", voltage))
                             }
-                            0x22 -> {
-                                Log.i(TAG, "★ SG D22 heartbeat: $hex")
-                                onDataReceived?.invoke(JSONObject()
-                                    .put("type", "sgHeartbeat")
-                                    .put("hex", hex))
-                            }
-                            0x21 -> {
-                                // AES encrypted: FC 21 [cmd] [16 AES bytes] [checksum]
-                                val cmd = byte2
-                                Log.i(TAG, "★ SG D21 cmd=${"%02x".format(cmd)} (AES): $hex")
-                                onDataReceived?.invoke(JSONObject()
-                                    .put("type", "sgEncrypted")
-                                    .put("cmd", cmd)
-                                    .put("hex", hex)
-                                    .put("size", data.size))
+                            // cmd 40 and 42 are static/zeros when stationary — skip logging
+                        }
+                        0x22 -> {
+                            // Heartbeat confirmation
+                            onDataReceived?.invoke(JSONObject().put("type", "sgHeartbeat"))
+                        }
+                        0x21 -> {
+                            // AES encrypted response
+                            if (data.size >= 20) {
+                                val keyIdx = data[18].toInt() and 0xFF
+                                val aesBlock = data.copyOfRange(2, 18)
+                                val dec = GEVCrypto.decrypt(aesBlock, keyIdx)
+                                val dHex = dec.joinToString("") { "%02x".format(it) }
+                                Log.i(TAG, "★ SG21 decrypted K$keyIdx: $dHex")
 
-                                // Try decrypt the 16 AES bytes (bytes 3..18)
-                                if (data.size >= 19) {
-                                    val aesBlock = data.copyOfRange(3, 19)
-                                    for (keyIdx in intArrayOf(4, 13, 14, 8)) {
-                                        val dec = GEVCrypto.decrypt(aesBlock, keyIdx)
-                                        val dHex = dec.joinToString("") { "%02x".format(it) }
-                                        Log.i(TAG, "  DEC K$keyIdx: $dHex")
+                                val cmdId = dec[0].toInt() and 0xFF
+                                onDataReceived?.invoke(JSONObject()
+                                    .put("type", "sgResponse")
+                                    .put("cmd", cmdId)
+                                    .put("key", keyIdx)
+                                    .put("decrypted", dHex))
+
+                                // Parse specific responses
+                                when (cmdId) {
+                                    0x02 -> {
+                                        // CONNECT_GEV response
+                                        val success = dec[2] == 0x01.toByte()
+                                        Log.i(TAG, "★ CONNECT response: ${if (success) "SUCCESS" else "FAIL"}")
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "sgConnected")
+                                            .put("success", success))
+                                    }
+                                    0x13 -> {
+                                        // Battery data: [0]=cmd, [1]=?, [2]=soc%, [3]=life%, [4-5]=capacity
+                                        val soc = dec[2].toInt() and 0xFF
+                                        val life = dec[3].toInt() and 0xFF
+                                        Log.i(TAG, "★ BATTERY: SOC=$soc% life=$life%")
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "sgBattery")
+                                            .put("soc", soc)
+                                            .put("life", life))
+                                    }
+                                    0x2C -> {
+                                        // Tuning data response
+                                        val hex = dec.joinToString("") { "%02x".format(it) }
+                                        Log.i(TAG, "★ TUNING: $hex")
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "sgTuning")
+                                            .put("hex", hex))
                                     }
                                 }
                             }
-                            else -> {
-                                Log.i(TAG, "★ SG D${"%02x".format(device)}: $hex")
-                                onDataReceived?.invoke(JSONObject()
-                                    .put("type", "sgNotify")
-                                    .put("hex", hex)
-                                    .put("size", data.size))
-                            }
                         }
-                    } else {
-                        // Non-FC packet (like ba0000e224)
-                        Log.i(TAG, "★ SG RAW: $hex len=${data.size}")
-                        onDataReceived?.invoke(JSONObject()
-                            .put("type", "sgNotify")
-                            .put("hex", hex)
-                            .put("size", data.size))
                     }
                 }
             }
