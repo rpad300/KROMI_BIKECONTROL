@@ -56,6 +56,7 @@ class TuningIntelligence {
   private rampDownCount = 0;
   private lastHrAboveEvent = 0;  // Lacuna 2: dwell time tracking
   private lastHrValid = 0;       // Lacuna 1: HR dropout tracking
+  private cadenceHistory: number[] = [];  // Track cadence trend (last 5 samples = 10s)
 
   static getInstance(): TuningIntelligence {
     if (!TuningIntelligence.instance) {
@@ -160,8 +161,36 @@ class TuningIntelligence {
       anticipation += Math.min(10, Math.round((rider.weight_kg - 75) / 10 * 3));
     }
 
+    // Sub-component 4: power anticipation (watts = immediate effort signal)
+    // Rider producing high watts NOW → HR will rise in 30-60s
+    // Covers: headwind, sprint, technical passages on flat
+    if (input.riderPower > 0 && rider.weight_kg > 0) {
+      const wkg = input.riderPower / rider.weight_kg;
+      let powerBias = 0;
+      if (wkg > 3.0) powerBias = 15;       // hard effort → HR will spike
+      else if (wkg > 2.0) powerBias = 8;   // moderate effort → HR rising
+      else if (wkg < 0.8 && wkg > 0) powerBias = -10; // coasting → HR will drop
+      if (powerBias !== 0) {
+        anticipation += powerBias;
+        factors.push({ name: 'Esforço', value: powerBias, detail: `${input.riderPower}W (${wkg.toFixed(1)}W/kg)` });
+      }
+    }
+
+    // Sub-component 5: cadence trend (falling cadence = fatigue signal)
+    // If cadence dropped >15rpm in last 10s → rider is grinding → HR will rise
+    this.cadenceHistory.push(input.cadence);
+    if (this.cadenceHistory.length > 5) this.cadenceHistory.shift(); // keep last 5 samples (10s)
+    if (this.cadenceHistory.length >= 3 && input.cadence > 0) {
+      const oldest = this.cadenceHistory[0]!;
+      const cadenceDrop = oldest - input.cadence;
+      if (cadenceDrop > 15 && oldest > 40) {
+        anticipation += 10; // cadence falling fast → HR will spike
+        factors.push({ name: 'Cadência ↓', value: 10, detail: `${oldest}→${input.cadence}rpm em ${this.cadenceHistory.length * 2}s` });
+      }
+    }
+
     // Cap total anticipation
-    anticipation = Math.max(-20, Math.min(40, anticipation));
+    anticipation = Math.max(-20, Math.min(50, anticipation));
 
     if (anticipation !== 0) {
       factors.push({ name: 'Antecipação', value: anticipation, detail: preemptive ?? this.descGradient(input.gradient) });
@@ -290,6 +319,7 @@ class TuningIntelligence {
     this.rampDownCount = 0;
     this.lastHrAboveEvent = 0;
     this.lastHrValid = 0;
+    this.cadenceHistory = [];
   }
 
   // ── Terrain as HR proxy ───────────────────────

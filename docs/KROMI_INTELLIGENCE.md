@@ -10,6 +10,7 @@ O KROMI é um **regulador de zona cardíaca**. O motor mantém o rider na zona H
 
 **Arquitectura layered (não aditiva)**:
 ```
+anticipationBias = terrainBias + transitionBias + weightBias + powerBias + cadenceTrendBias
 intensity = clamp(hrTarget + anticipationBias + speedLimitPenalty + altitudeBoost, 0, 100) × batteryConstraint
 ```
 
@@ -18,7 +19,9 @@ intensity = clamp(hrTarget + anticipationBias + speedLimitPenalty + altitudeBoos
 - Stopped (<2km/h): -20 (save battery)
 - Altitude >1500m: +4 to +10 (less O₂)
 
-**Nota sobre speed limit**: o penalty de -25 só altera o wire value outcome quando hrTarget < 87. Se hrTarget=100 e penalty=-25, intensity=75 → ainda wire 0. O penalty é relevante principalmente quando HR está dentro ou ligeiramente acima da zona.
+**Nota sobre speed limit**: o penalty de -25 só altera o wire value outcome quando hrTarget < 87.
+
+**Porquê watts e cadência no anticipation**: o HR tem 30-60s de lag. Watts e cadência são sinais imediatos do esforço que o HR vai confirmar depois. Sem eles, o sistema só reage quando o HR já subiu — tarde demais para prevenir.
 
 | Layer | Função | Range | Papel |
 |-------|--------|-------|-------|
@@ -179,12 +182,13 @@ Claramente marcado no UI: "Sem HR — estimativa por terreno".
 
 O terreno **não define magnitude** — define **timing**. Antecipa mudanças futuras de HR.
 
-### Anticipation = currentGradientBias + transitionBias + weightBias
+### Anticipation = terrainBias + transitionBias + weightBias + powerBias + cadenceTrendBias
 
-Três sub-componentes, somados e capped a [-20, +40]:
+Cinco sub-componentes. Total capped [-20, +50].
+
+O HR tem 30-60s de lag. Watts e cadência são **sinais imediatos** do esforço que o HR vai reflectir em breve. A anticipation não é só terreno — é **effort anticipation** completa.
 
 **Sub 1: Current gradient bias (0 a +15)**
-O gradiente actual indica esforço contínuo, mesmo sem transição à frente.
 
 | Gradiente actual | Bias | Razão |
 |:---:|:---:|--------|
@@ -205,6 +209,31 @@ O gradiente actual indica esforço contínuo, mesmo sem transição à frente.
 | Condição | Bias | Razão |
 |----------|:---:|--------|
 | Peso > 75kg em gradient > 8% | +3 per 10kg | Riders pesados precisam mais |
+
+**Sub 4: Power anticipation (watts = effort imediato, -10 a +15)**
+
+Watts é o sinal mais directo de esforço. Cobre situações que o terreno não detecta: headwind, sprint, passagens técnicas no plano.
+
+| W/kg | Bias | Razão |
+|:---:|:---:|--------|
+| > 3.0 | +15 | Esforço alto — HR vai subir em 30-60s |
+| > 2.0 | +8 | Esforço moderado — HR a subir |
+| < 0.8 | -10 | Quase sem esforço — HR vai baixar |
+
+**Exemplo**: rider num plano com headwind a 260W (3.25 W/kg):
+- Terrain anticipation: 0 (plano)
+- Power anticipation: +15 (esforço alto)
+- Sistema antecipa HR spike antes de acontecer
+
+**Sub 5: Cadence trend bias (queda de cadência = fadiga, 0 a +10)**
+
+Se a cadência caiu >15rpm nos últimos 10s, o rider está a perder ritmo. É um sinal de fadiga — o HR vai subir.
+
+| Condição | Bias | Razão |
+|----------|:---:|--------|
+| Cadência caiu >15rpm em 10s (e era >40rpm) | +10 | Grinding/fadiga — HR vai subir |
+
+**Exemplo**: cadência cai de 75 para 55rpm em 10s numa subida → +10 bias → motor antecipa antes do HR confirmar.
 
 ### Lookahead Dinâmico (baseado em velocidade)
 ```
