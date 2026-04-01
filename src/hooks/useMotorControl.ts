@@ -8,21 +8,26 @@ import { useTorqueStore } from '../store/torqueStore';
 import { autoAssistEngine } from '../services/autoAssist/AutoAssistEngine';
 import { torqueEngine } from '../services/torque/TorqueEngine';
 import { motorController } from '../services/motor/MotorController';
-import { sendAssistMode, setTuning, isTuningAvailable } from '../services/bluetooth/BLEBridge';
+import { setTuning, isTuningAvailable } from '../services/bluetooth/BLEBridge';
+import { AssistMode } from '../types/bike.types';
 
 const TICK_INTERVAL_MS = 2000;
 
 /**
- * Central motor control loop.
+ * Central motor control loop — KROMI intelligent assist.
  *
- * Every 2s:
- * 1. AutoAssistEngine → terrain-based mode decision
- * 2. TorqueEngine → intensity based on climb type + battery
- * 3. MotorController → merges both → mode + tuning output
- * 4. Sends via BLEBridge (mode) + WebSocket (tuning)
+ * ONLY active when the bike is in POWER mode (set via physical RideControl).
+ * In any other mode, KROMI is passive — shows telemetry but doesn't touch the motor.
  *
- * Replaces useAutoAssist as the single motor output path.
- * Modular: HR, Di2, Learning can be plugged into MotorController later.
+ * When in POWER mode, every 2s:
+ * 1. AutoAssistEngine → terrain analysis (elevation lookahead)
+ * 2. TorqueEngine → optimal intensity for climb type + battery
+ * 3. MotorController → translates to tuning level (1-3) for POWER mode
+ * 4. Sends SET_TUNING via WebSocket bridge
+ *
+ * The user's choice is clear:
+ * - Want KROMI intelligence? → Switch to POWER on RideControl
+ * - Want simple/factory assist? → Use ECO/TOUR/ACTIVE/SPORT
  */
 export function useMotorControl() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -39,13 +44,25 @@ export function useMotorControl() {
       const settings = useSettingsStore.getState();
       if (!settings.autoAssist.enabled) return;
 
+      const bike = useBikeStore.getState();
+
+      // === KROMI only active in POWER mode ===
+      if (bike.assist_mode !== AssistMode.POWER) {
+        // Passive: update UI state but don't send commands
+        useAutoAssistStore.getState().setLastDecision({
+          action: 'none',
+          reason: 'KROMI activo apenas em PWR',
+          terrain: null,
+        });
+        return;
+      }
+
       const map = useMapStore.getState();
       if (!map.gpsActive || map.latitude === 0) return;
 
-      const bike = useBikeStore.getState();
       const tuning = useTuningStore.getState();
 
-      // === 1. Terrain → Mode decision (AutoAssist) ===
+      // === 1. Terrain → analysis (AutoAssist) ===
       const modeDecision = await autoAssistEngine.tick(
         map.latitude,
         map.longitude,
@@ -63,39 +80,32 @@ export function useMotorControl() {
         autoAssistEngine.getOverrideRemaining(),
       );
 
-      // === 2. Terrain + Battery → Torque/Intensity (TorqueEngine) ===
-      // Only runs if we have terrain data
+      // === 2. Terrain + Battery → Torque/Intensity ===
       let torqueCmd = null;
       if (modeDecision.terrain) {
         torqueCmd = torqueEngine.calculateOptimalTorque(
           modeDecision.terrain,
-          /* hrZone */ 0,      // No HR provider yet
+          /* hrZone */ 0,
           /* hrTrend */ 'stable',
-          /* gear */ 0,        // No Di2 provider yet
+          /* gear */ 0,
           bike.battery_percent,
         );
 
-        // Update torque store for UI
         if (torqueCmd) {
           useTorqueStore.getState().setLastCommand(torqueCmd);
         }
       }
 
-      // === 3. MotorController → merge and decide ===
+      // === 3. MotorController → decide tuning level ===
+      // In POWER-only mode, we don't change modes — only tuning intensity
       const decision = motorController.decide(
         bike.assist_mode,
         tuning.current,
-        modeDecision,
+        null,       // No mode changes — user controls mode via RideControl
         torqueCmd,
       );
 
-      // === 4. Execute ===
-      // Mode change → via BLEBridge (works on all BLE modes)
-      if (decision.modeChange !== null) {
-        await sendAssistMode(decision.modeChange);
-      }
-
-      // Tuning change → via WebSocket bridge only
+      // === 4. Execute tuning change ===
       if (decision.tuningChange && isTuningAvailable()) {
         setTuning(decision.tuningChange);
         tuning.setCurrent(decision.tuningChange);

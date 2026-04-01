@@ -14,13 +14,13 @@ const ALL_MODES = [
  * AssistModeWidget — read-only indicator of the bike's current assist mode.
  *
  * The mode is set physically via the RideControl buttons on the handlebar.
- * We read it from cmd 0x41 telemetry (fc23cmd41.assistLevel).
- * Mode changes via BLE (0x1C) are blocked by the Smart Gateway.
- * Motor intensity is controlled via SET_TUNING in the TuningWidget.
+ * KROMI intelligent assist is only active when bike is in POWER mode.
+ * In other modes, the app is passive (telemetry only).
  */
 export function AssistModeWidget() {
   const assistMode = useBikeStore((s) => s.assist_mode);
   const bleConnected = useBikeStore((s) => s.ble_status === 'connected');
+  const kromiActive = assistMode === AssistMode.POWER;
 
   return (
     <div className="space-y-1.5">
@@ -43,13 +43,13 @@ export function AssistModeWidget() {
         })}
       </div>
 
-      {/* Status line */}
-      <div className="text-center text-[10px] text-gray-600 px-2">
+      {/* KROMI status */}
+      <div className={`text-center text-[10px] px-2 ${kromiActive ? 'text-emerald-400' : 'text-gray-600'}`}>
         {!bleConnected
-          ? 'Modo assist — liga a bike para ver'
-          : assistMode === AssistMode.WALK
-            ? 'WALK mode activo'
-            : 'Modo controlado pelo RideControl'}
+          ? 'Liga a bike para ver o modo'
+          : kromiActive
+            ? 'KROMI activo — assist inteligente'
+            : 'Muda para PWR no RideControl para activar KROMI'}
       </div>
     </div>
   );
