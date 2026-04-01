@@ -120,7 +120,7 @@ export const useSettingsStore = create<SettingsState>()(
 
       updateBikeConfig: (partial) =>
         set((state) => ({
-          bikeConfig: { ...state.bikeConfig, ...partial },
+          bikeConfig: safeBikeConfig({ ...state.bikeConfig, ...partial }),
         })),
 
       updateAutoAssist: (partial) =>
@@ -132,6 +132,17 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'bikecontrol-settings',
+      // Deep merge on hydration — ensures new fields (tuning_max etc) get defaults
+      merge: (persisted, current) => {
+        const p = persisted as Partial<SettingsState> ?? {};
+        return {
+          ...current,
+          ...p,
+          bikeConfig: safeBikeConfig(p.bikeConfig),
+          riderProfile: { ...(current as SettingsState).riderProfile, ...(p.riderProfile ?? {}) },
+          autoAssist: { ...(current as SettingsState).autoAssist, ...(p.autoAssist ?? {}) },
+        };
+      },
     }
   )
 );
