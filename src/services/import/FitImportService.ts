@@ -155,13 +155,11 @@ export function parseFitFile(buffer: ArrayBuffer): Promise<ImportedRide> {
 }
 
 /**
- * Enrich ride records with altitude from Google Elevation API.
- * Samples every Nth point to stay within API limits (512 per request).
- * Interpolates altitude for points between samples.
+ * Enrich ride records with altitude from Google Maps ElevationService.
+ * Uses the JavaScript API (not REST — REST has CORS issues from browser).
+ * Samples every Nth point, max 256 per batch (API limit), interpolates between.
  */
 export async function enrichWithElevation(ride: ImportedRide): Promise<void> {
-  if (!MAPS_KEY) return;
-
   // Check if altitude data already exists
   const hasAlt = ride.records.some((r) => r.altitude_m !== null && r.altitude_m !== 0);
   if (hasAlt) return;
@@ -169,32 +167,53 @@ export async function enrichWithElevation(ride: ImportedRide): Promise<void> {
   const gpsRecords = ride.records.filter((r) => r.lat !== 0 && r.lng !== 0);
   if (gpsRecords.length < 2) return;
 
-  // Sample: max 300 points per API call
-  const step = Math.max(1, Math.floor(gpsRecords.length / 300));
-  const sampled = gpsRecords.filter((_, i) => i % step === 0 || i === gpsRecords.length - 1);
+  // Ensure Google Maps JS API is loaded
+  if (!window.google?.maps) {
+    if (!MAPS_KEY) return;
+    await new Promise<void>((resolve) => {
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}`;
+      script.onload = () => resolve();
+      script.onerror = () => resolve();
+      document.head.appendChild(script);
+    });
+    if (!window.google?.maps) return;
+  }
 
-  const locations = sampled.map((r) => `${r.lat},${r.lng}`).join('|');
+  const elevator = new google.maps.ElevationService();
+
+  // Sample: max 250 per request (API limit ~512 but safer)
+  const step = Math.max(1, Math.floor(gpsRecords.length / 250));
+  const sampled = gpsRecords.filter((_, i) => i % step === 0 || i === gpsRecords.length - 1);
+  const sampledIndices = gpsRecords.map((_, i) => i).filter((i) => i % step === 0 || i === gpsRecords.length - 1);
+
+  console.log(`[Elevation] Fetching ${sampled.length} samples from ${gpsRecords.length} GPS points...`);
 
   try {
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/elevation/json?locations=${locations}&key=${MAPS_KEY}`
-    );
-    const data = await res.json();
-
-    if (data.status !== 'OK' || !data.results) {
-      console.warn('[Elevation] API error:', data.status);
-      return;
-    }
-
-    // Apply elevations to sampled points
+    // Process in batches of 250
     const elevations: { idx: number; alt: number }[] = [];
-    let sampleIdx = 0;
-    for (let i = 0; i < gpsRecords.length; i++) {
-      if (i % step === 0 || i === gpsRecords.length - 1) {
-        const alt = data.results[sampleIdx]?.elevation ?? 0;
-        elevations.push({ idx: i, alt: Math.round(alt * 10) / 10 });
-        gpsRecords[i]!.altitude_m = alt;
-        sampleIdx++;
+
+    for (let batch = 0; batch < sampled.length; batch += 250) {
+      const batchPoints = sampled.slice(batch, batch + 250);
+      const batchIndices = sampledIndices.slice(batch, batch + 250);
+
+      const locations = batchPoints.map((r) => ({ lat: r.lat, lng: r.lng }));
+
+      const result = await new Promise<google.maps.ElevationResult[]>((resolve, reject) => {
+        elevator.getElevationForLocations({ locations }, (results, status) => {
+          if (status === google.maps.ElevationStatus.OK && results) {
+            resolve(results);
+          } else {
+            reject(new Error(`Elevation API: ${status}`));
+          }
+        });
+      });
+
+      for (let i = 0; i < result.length; i++) {
+        const idx = batchIndices[i]!;
+        const alt = Math.round(result[i]!.elevation * 10) / 10;
+        elevations.push({ idx, alt });
+        gpsRecords[idx]!.altitude_m = alt;
       }
     }
 
@@ -208,9 +227,9 @@ export async function enrichWithElevation(ride: ImportedRide): Promise<void> {
       }
     }
 
-    console.log(`[Elevation] Enriched ${gpsRecords.length} points (${sampled.length} API samples)`);
+    console.log(`[Elevation] Enriched ${gpsRecords.length} points (${elevations.length} API samples)`);
   } catch (err) {
-    console.warn('[Elevation] Fetch failed:', err);
+    console.warn('[Elevation] Failed:', err);
   }
 }
 
