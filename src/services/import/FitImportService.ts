@@ -161,9 +161,18 @@ export function parseFitFile(buffer: ArrayBuffer): Promise<ImportedRide> {
 export async function enrichWithElevation(ride: ImportedRide): Promise<void> {
   console.log('[Elevation] Starting enrichment...');
 
-  // Already has altitude?
-  const hasAlt = ride.records.some((r) => r.altitude_m !== null && r.altitude_m !== 0);
-  if (hasAlt) { console.log('[Elevation] Records already have altitude, skipping'); return; }
+  // Check if FIT has meaningful altitude (range > 5m means real data)
+  const alts = ride.records.map((r) => r.altitude_m).filter((a): a is number => a !== null && a !== 0);
+  if (alts.length > 10) {
+    const altRange = Math.max(...alts) - Math.min(...alts);
+    if (altRange > 5) {
+      console.log(`[Elevation] FIT has real altitude (range ${altRange.toFixed(0)}m), skipping enrichment`);
+      return;
+    }
+    console.log(`[Elevation] FIT altitude range too small (${altRange.toFixed(2)}m) — fetching from Google`);
+    // Clear bad altitude data
+    ride.records.forEach((r) => { r.altitude_m = null; });
+  }
 
   const gpsRecords = ride.records.filter((r) => r.lat !== 0 && r.lng !== 0);
   console.log(`[Elevation] ${gpsRecords.length} GPS records (${ride.records.length} total)`);
