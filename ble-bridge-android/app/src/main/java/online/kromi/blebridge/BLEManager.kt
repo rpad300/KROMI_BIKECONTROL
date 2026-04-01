@@ -624,8 +624,9 @@ class BLEManager(private val context: Context) {
     }
 
     /**
-     * Test SG Write — ALL GEV commands with AES key 4 (confirmed working).
-     * Sends CONNECTION first as session init, then queries.
+     * Test SG Write — probe MODE_STATE variations + partial encryption.
+     * b8-b9 confirmed: only K4+MODE_STATE(0x02) gets response ba0000e224.
+     * This build tests if the response changes based on payload/format.
      */
     fun testSGWrite() {
         val g = gatt ?: return
@@ -637,34 +638,50 @@ class BLEManager(private val context: Context) {
 
         val tests = mutableListOf<Pair<String, ByteArray>>()
 
-        // ALL commands encrypted with KEY 4 (confirmed: MODE_STATE got response)
-        // Session init first, then queries
-        tests.add("K4_CONNECT_01" to GEVCrypto.encrypt(buildGevPacket(0x01, byteArrayOf()), 4))
-        tests.add("K4_MODE_02" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
-        tests.add("K4_BATTERY_03" to GEVCrypto.encrypt(buildGevPacket(0x03, byteArrayOf()), 4))
-        tests.add("K4_SPEED_05" to GEVCrypto.encrypt(buildGevPacket(0x05, byteArrayOf()), 4))
-        tests.add("K4_ASSIST_15" to GEVCrypto.encrypt(buildGevPacket(0x15, byteArrayOf()), 4))
-        tests.add("K4_RIDING_38" to GEVCrypto.encrypt(buildGevPacket(0x38, byteArrayOf()), 4))
+        // === GROUP A: MODE_STATE with different payloads (all AES K4) ===
+        // Does the response change if we include mode values?
+        tests.add("MODE_empty" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
+        tests.add("MODE_p00" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf(0x00)), 4))
+        tests.add("MODE_p01" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf(0x01)), 4))
+        tests.add("MODE_p02" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf(0x02)), 4))
+        tests.add("MODE_p05" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf(0x05)), 4))
 
-        // Read tuning data (0x0F from APK decompilation = READ_TUNING_DATA)
-        tests.add("K4_TUNING_0F" to GEVCrypto.encrypt(buildGevPacket(0x0F, byteArrayOf()), 4))
+        // === GROUP B: Partial encryption — header clear, payload encrypted ===
+        // Maybe SG expects: [FC][21][cmd][len][AES(payload)][checksum]
+        val battPayload = byteArrayOf(0x00)  // dummy payload
+        val encPayload = GEVCrypto.encrypt(battPayload + ByteArray(15), 4)  // encrypt 16 bytes
+        val partialPkt = byteArrayOf(0xFC.toByte(), 0x21, 0x03, 0x10) + encPayload.copyOf(16)
+        // Recalc checksum
+        var sum = 0; for (b in partialPkt) sum += b.toInt() and 0xFF
+        tests.add("PARTIAL_BATT" to (partialPkt + byteArrayOf(((sum shr 8) and 0xFF).toByte(), (sum and 0xFF).toByte())))
 
-        // Read assist config (0xE2 with empty payload = read current config?)
-        tests.add("K4_ACONFIG_E2" to GEVCrypto.encrypt(buildGevPacket(0xE2.toByte().toInt() and 0xFF, byteArrayOf()), 4))
+        // Same for MODE_STATE
+        val modeEncP = GEVCrypto.encrypt(ByteArray(16), 4)
+        val partialMode = byteArrayOf(0xFC.toByte(), 0x21, 0x02, 0x10) + modeEncP.copyOf(16)
+        var sum2 = 0; for (b in partialMode) sum2 += b.toInt() and 0xFF
+        tests.add("PARTIAL_MODE" to (partialMode + byteArrayOf(((sum2 shr 8) and 0xFF).toByte(), (sum2 and 0xFF).toByte())))
 
-        // Second round: CONNECTION then MODE again (test if session matters)
-        tests.add("K4_CONNECT2" to GEVCrypto.encrypt(buildGevPacket(0x01, byteArrayOf()), 4))
-        tests.add("K4_MODE2_02" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
-        tests.add("K4_BATT2_03" to GEVCrypto.encrypt(buildGevPacket(0x03, byteArrayOf()), 4))
+        // === GROUP C: Different device IDs (maybe not 0x21 for SG 2.0) ===
+        // Try 0x20, 0x22, 0x01, 0x00 as device ID
+        for (devId in intArrayOf(0x20, 0x22, 0x01, 0x00)) {
+            val pkt = byteArrayOf(0xFC.toByte(), devId.toByte(), 0x02, 0x00)
+            var s = 0; for (b in pkt) s += b.toInt() and 0xFF
+            val full = pkt + byteArrayOf(((s shr 8) and 0xFF).toByte(), (s and 0xFF).toByte())
+            tests.add("DEV${"%02x".format(devId)}_MODE" to GEVCrypto.encrypt(full, 4))
+        }
 
-        // GEV general commands (button triggers) — key 4
-        // LIGHT toggle (0xA3 general cmd = trigger light)
-        tests.add("K4_LIGHT_A3" to GEVCrypto.encrypt(buildGevPacket(0xA3.toByte().toInt() and 0xFF, byteArrayOf()), 4))
+        // === GROUP D: Session keys (0-3) for CONNECT, then K4 for MODE ===
+        // Maybe session needs key 0, then commands use key 4
+        for (sessKey in 0..3) {
+            tests.add("SK${sessKey}_CONN" to GEVCrypto.encrypt(buildGevPacket(0x01, byteArrayOf()), sessKey))
+        }
+        tests.add("THEN_K4_MODE" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
+        tests.add("THEN_K4_BATT" to GEVCrypto.encrypt(buildGevPacket(0x03, byteArrayOf()), 4))
 
         Log.i(TAG, "╔═══════════════════════════════════════╗")
-        Log.i(TAG, "║  SG KEY4 FULL TEST — ${tests.size} packets   ║")
+        Log.i(TAG, "║  SG PROBE TEST — ${tests.size} packets       ║")
         Log.i(TAG, "╚═══════════════════════════════════════╝")
-        onStatusChanged?.invoke("Key4 test (${tests.size} packets)...")
+        onStatusChanged?.invoke("Probe test (${tests.size} packets)...")
 
         for ((i, test) in tests.withIndex()) {
             val (name, data) = test
@@ -684,13 +701,13 @@ class BLEManager(private val context: Context) {
                     .put("type", "sgWriteResult")
                     .put("name", name)
                     .put("ok", ok))
-            }, (i * 800).toLong())
+            }, (i * 600).toLong())  // Faster: 600ms between writes
         }
 
         handler.postDelayed({
-            Log.i(TAG, ">>> KEY4 TEST COMPLETE")
-            onStatusChanged?.invoke("Key4 test done — check SG! responses")
-        }, (tests.size * 800 + 500).toLong())
+            Log.i(TAG, ">>> PROBE TEST COMPLETE")
+            onStatusChanged?.invoke("Probe done — check SG! responses")
+        }, (tests.size * 600 + 500).toLong())
     }
 
     private fun buildGevPacket(cmdId: Int, payload: ByteArray): ByteArray {
