@@ -183,7 +183,43 @@ O terreno **não define magnitude** — define **timing**. Antecipa mudanças fu
 
 ### Anticipation = terrainBias + transitionBias + weightBias + powerBias + cadenceTrendBias + speedBias
 
-Seis sub-componentes. Total capped [-25, +55].
+Seis sub-componentes. **Scaled by rider comfort** then hard capped [-20, +35].
+
+### Anticipation Scaling (previne anticipation dominar HR)
+
+O anticipation raw pode somar +85 no pior caso (todos os sub-components ao máximo). Isso inverteria a hierarquia: o secundário dominaria o primário.
+
+**Solução**: escalar o anticipation pela posição do rider na zona HR.
+
+```typescript
+const zonePosition = (hr - zoneMin) / (zoneMax - zoneMin)  // 0 a 1
+const anticipationScale = 0.3 + (zonePosition × 0.7)       // 0.3 a 1.0
+
+anticipation = rawAnticipation × anticipationScale  // then cap [-20, +35]
+```
+
+| Posição HR | Scale | Efeito | Razão |
+|:---:|:---:|--------|--------|
+| Abaixo da zona | ×0.3 | Anticipation quase mudo | Rider confortável, HR manda |
+| Fundo da zona | ×0.3 | Quase mudo | Confortável |
+| Meio da zona | ×0.65 | Parcial | A aproximar-se do limite |
+| Topo da zona | ×1.0 | Total | Perto do spike, anticipation ajuda |
+| Acima da zona | ×1.0 | Total | Urgente, tudo conta |
+
+**O pior caso recalculado**:
+```
+hrTarget = 40 (fundo da zona, confortável)
+rawAnticipation = +85 (tudo ao máximo)
+anticipationScale = 0.3 (fundo da zona)
+scaledAnticipation = 85 × 0.3 = 25.5 → cap 35 → final 26
+
+intensity = clamp(40 + 26) = 66 → wire 0 (borderline MAX)
+
+SEM scaling: intensity = 100 → wire 0 (MAX total)
+COM scaling: intensity = 66 → wire 0 (borderline, noise pode flip)
+```
+
+Muito melhor: o rider confortável na zona recebe assist moderado-alto em vez de MAX total. O HR continua a regular.
 
 O HR tem 30-60s de lag. Watts e cadência são **sinais imediatos** do esforço que o HR vai reflectir em breve. A anticipation não é só terreno — é **effort anticipation** completa.
 

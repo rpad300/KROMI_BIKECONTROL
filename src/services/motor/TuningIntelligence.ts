@@ -228,8 +228,27 @@ class TuningIntelligence {
       }
     }
 
-    // Cap total anticipation
-    anticipation = Math.max(-25, Math.min(55, anticipation));
+    // Scale anticipation by rider comfort (Option B)
+    // When HR is low in zone → rider is comfortable → anticipation has little effect (30%)
+    // When HR is high in zone → approaching limit → anticipation has full effect (100%)
+    // When HR is above zone → already urgent → anticipation at 100%
+    // When HR is below zone → very comfortable → anticipation at 30%
+    if (hasHR && input.hr > 0) {
+      let anticipationScale = 0.3; // default: comfortable
+      if (input.hr > targetZone.max_bpm) {
+        anticipationScale = 1.0; // above zone: full anticipation
+      } else if (input.hr >= targetZone.min_bpm) {
+        // In zone: scale 0.3 → 1.0 based on position
+        const zoneRange = targetZone.max_bpm - targetZone.min_bpm;
+        const zonePos = zoneRange > 0 ? (input.hr - targetZone.min_bpm) / zoneRange : 0.5;
+        anticipationScale = 0.3 + zonePos * 0.7;
+      }
+      // Below zone: stays at 0.3
+      anticipation = Math.round(anticipation * anticipationScale);
+    }
+
+    // Hard cap: even with full scale, anticipation can't dominate hrTarget
+    anticipation = Math.max(-20, Math.min(35, anticipation));
 
     if (anticipation !== 0) {
       factors.push({ name: 'Antecipação', value: anticipation, detail: preemptive ?? this.descGradient(input.gradient) });
