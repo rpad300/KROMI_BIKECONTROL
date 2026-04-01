@@ -290,7 +290,12 @@ class MainActivity : AppCompatActivity() {
                     json.optInt("bat1Life"), json.optInt("bat2Life"), json.optInt("soc")))
             }
             "fc23cmd41" -> {
-                appendLog("C41", "assist?=${json.optInt("assistLevel")} b5=%02X b7=%02X".format(json.optInt("b5"), json.optInt("b7")))
+                val mode = json.optInt("wireMode", -1)
+                val modeName = when (mode) {
+                    0 -> "OFF"; 1 -> "TOUR"; 2 -> "ACTIVE"; 3 -> "ECO"
+                    4 -> "SPORT"; 5 -> "POWER"; 6 -> "PWR?"; else -> "?$mode"
+                }
+                appendLog("C41", "mode=$mode($modeName) b5=%02X b14=%d".format(json.optInt("b5"), json.optInt("b14")))
             }
             "fc23cmd42" -> {
                 appendLog("C42", "★ ${json.optString("hex")} b01=${json.optInt("b0b1")} b23=${json.optInt("b2b3")} b45=${json.optInt("b4b5")}")
