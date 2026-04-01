@@ -3,6 +3,8 @@ import { AreaChart, Area, LineChart, Line, ResponsiveContainer, XAxis, YAxis, To
 import { useAuthStore } from '../../store/authStore';
 import { exportRideAsGPX, type TrackPoint } from '../../services/export/GPXExportService';
 import { FitImport } from '../Import/FitImport';
+import { simulateKromi, type SimulationSummary } from '../../services/simulation/KromiSimulator';
+import type { ImportedRecord } from '../../services/import/FitImportService';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -64,13 +66,38 @@ export function RideHistory() {
 
   useEffect(() => { loadRides(); }, [loadRides]);
 
+  const [simulation, setSimulation] = useState<SimulationSummary | null>(null);
+
   const handleSelect = async (ride: RideSession) => {
     setSelected(ride);
     setSnapshots([]);
+    setSimulation(null);
     const snaps = await fetchJSON(
       `/ride_snapshots?session_id=eq.${ride.id}&select=elapsed_s,lat,lng,altitude_m,speed_kmh,power_watts,hr_bpm,cadence_rpm,distance_km,gradient_pct&order=elapsed_s.asc&limit=3000`
     );
-    if (Array.isArray(snaps)) setSnapshots(snaps);
+    if (Array.isArray(snaps)) {
+      setSnapshots(snaps);
+      // Run KROMI simulation on this ride
+      const records: ImportedRecord[] = snaps.map((s: Snapshot) => ({
+        elapsed_s: s.elapsed_s, lat: s.lat, lng: s.lng, altitude_m: s.altitude_m,
+        speed_kmh: s.speed_kmh, hr_bpm: s.hr_bpm, cadence_rpm: s.cadence_rpm,
+        power_watts: s.power_watts, temperature: 0, distance_km: s.distance_km,
+      }));
+      setSimulation(simulateKromi(records));
+    }
+  };
+
+  const handleDelete = async (ride: RideSession) => {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return;
+    if (!confirm(`Apagar ride ${ride.total_km?.toFixed(1)}km de ${new Date(ride.started_at).toLocaleDateString()}?`)) return;
+    await fetch(`${SUPABASE_URL}/rest/v1/ride_snapshots?session_id=eq.${ride.id}`, {
+      method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
+    });
+    await fetch(`${SUPABASE_URL}/rest/v1/ride_sessions?id=eq.${ride.id}`, {
+      method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
+    });
+    setSelected(null);
+    loadRides();
   };
 
   const handleExportGPX = () => {
@@ -101,8 +128,10 @@ export function RideHistory() {
       <RideDetail
         ride={selected}
         snapshots={snapshots}
-        onBack={() => { setSelected(null); setSnapshots([]); }}
+        simulation={simulation}
+        onBack={() => { setSelected(null); setSnapshots([]); setSimulation(null); }}
         onExport={handleExportGPX}
+        onDelete={() => handleDelete(selected)}
       />
     );
   }
@@ -162,8 +191,9 @@ export function RideHistory() {
   );
 }
 
-function RideDetail({ ride, snapshots, onBack, onExport }: {
-  ride: RideSession; snapshots: Snapshot[]; onBack: () => void; onExport: () => void;
+function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }: {
+  ride: RideSession; snapshots: Snapshot[]; simulation: SimulationSummary | null;
+  onBack: () => void; onExport: () => void; onDelete: () => void;
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapObjRef = useRef<google.maps.Map | null>(null);
@@ -245,14 +275,19 @@ function RideDetail({ ride, snapshots, onBack, onExport }: {
 
   return (
     <div className="space-y-4">
-      {/* Back + Export */}
+      {/* Back + Export + Delete */}
       <div className="flex items-center justify-between">
         <button onClick={onBack} className="flex items-center gap-1 text-gray-400 hover:text-white text-sm">
           <span className="material-symbols-outlined text-lg">arrow_back</span> Voltar
         </button>
-        <button onClick={onExport} className="text-xs text-emerald-400 hover:text-emerald-300">
-          Exportar GPX
-        </button>
+        <div className="flex gap-3">
+          <button onClick={onExport} className="text-xs text-emerald-400 hover:text-emerald-300">
+            GPX
+          </button>
+          <button onClick={onDelete} className="text-xs text-red-400 hover:text-red-300">
+            Apagar
+          </button>
+        </div>
       </div>
 
       {/* Summary */}
@@ -317,6 +352,45 @@ function RideDetail({ ride, snapshots, onBack, onExport }: {
                 <Line yAxisId="spd" type="monotone" dataKey="speed" stroke="#3b82f6" dot={false} strokeWidth={1} name="Speed (km/h)" />
               </LineChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* KROMI Simulation */}
+      {simulation && (
+        <div className="bg-gray-800 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-bold text-emerald-400">Simulação KROMI Intelligence</h3>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-red-900/20 rounded-lg p-3 text-center">
+              <div className="text-red-400 font-bold text-xl">{simulation.time_max_pct}%</div>
+              <div className="text-[10px] text-gray-500">MAX (S360% T300)</div>
+            </div>
+            <div className="bg-yellow-900/20 rounded-lg p-3 text-center">
+              <div className="text-yellow-400 font-bold text-xl">{simulation.time_mid_pct}%</div>
+              <div className="text-[10px] text-gray-500">MID (S350% T250)</div>
+            </div>
+            <div className="bg-green-900/20 rounded-lg p-3 text-center">
+              <div className="text-green-400 font-bold text-xl">{simulation.time_min_pct}%</div>
+              <div className="text-[10px] text-gray-500">MIN (S300% T200)</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div><span className="text-gray-500">KROMI activo</span><div className="text-white font-bold">{simulation.time_active_pct}%</div></div>
+            <div><span className="text-gray-500">Mudanças calibração</span><div className="text-white font-bold">{simulation.level_changes}×</div></div>
+            <div><span className="text-gray-500">Score médio</span><div className="text-white font-bold">{simulation.avg_score}/100</div></div>
+            <div><span className="text-gray-500">Score máximo</span><div className="text-white font-bold">{simulation.max_score}/100</div></div>
+          </div>
+          <div className="bg-gray-900 rounded-lg p-3">
+            <div className="text-[10px] text-gray-500 mb-2">Bateria simulada (100% → fim da volta)</div>
+            <div className="flex justify-between text-sm">
+              <div><span className="text-emerald-400 font-bold">KROMI: {simulation.battery_end_kromi}%</span></div>
+              <div><span className="text-red-400 font-bold">Fixo MAX: {simulation.battery_end_fixed}%</span></div>
+            </div>
+            {simulation.battery_saved_pct > 0 && (
+              <div className="text-emerald-400 text-xs font-bold mt-1">
+                KROMI poupa {simulation.battery_saved_pct}% de bateria
+              </div>
+            )}
           </div>
         </div>
       )}
