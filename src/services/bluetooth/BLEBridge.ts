@@ -44,6 +44,8 @@ export async function initBLE(): Promise<void> {
   if (wsClient.isConnected) {
     bleMode = 'websocket';
     console.log('[BLE Bridge] Mode: WebSocket Bridge — full BLE via middleware');
+    // Auto-connect saved HR sensor when bridge is available
+    setTimeout(() => autoConnectHR(), 2000);
   } else {
     bleMode = 'web';
     console.log('[BLE Bridge] Mode: Web Bluetooth — standard services only');
@@ -305,9 +307,10 @@ export function connectDevice(address: string): void {
   if (bleMode === 'websocket') wsClient.connectToDevice(address);
 }
 
-// === Saved device (remember last connected bike) ===
+// === Saved devices (remember last connected bike + sensors) ===
 
 const SAVED_DEVICE_KEY = 'kromi_saved_device';
+const SAVED_HR_KEY = 'kromi_saved_hr';
 
 export interface SavedDevice {
   name: string;
@@ -329,6 +332,34 @@ export function getSavedDevice(): SavedDevice | null {
 /** Clear saved device (forget bike) */
 export function clearSavedDevice(): void {
   localStorage.removeItem(SAVED_DEVICE_KEY);
+}
+
+// === Saved HR sensor ===
+
+/** Save HR device for auto-connect */
+export function saveHRDevice(device: SavedDevice): void {
+  localStorage.setItem(SAVED_HR_KEY, JSON.stringify(device));
+}
+
+/** Get saved HR device */
+export function getSavedHRDevice(): SavedDevice | null {
+  const raw = localStorage.getItem(SAVED_HR_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+/** Clear saved HR device */
+export function clearHRDevice(): void {
+  localStorage.removeItem(SAVED_HR_KEY);
+}
+
+/** Auto-connect saved HR sensor via bridge */
+export function autoConnectHR(): void {
+  if (bleMode !== 'websocket') return;
+  const saved = getSavedHRDevice();
+  if (!saved) return;
+  console.log(`[BLE Bridge] Auto-connecting HR: ${saved.name} (${saved.address})`);
+  wsClient.send({ type: 'connectSensor', sensor: 'hr', address: saved.address });
 }
 
 /** Get current BLE mode description */

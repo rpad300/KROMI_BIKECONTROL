@@ -295,24 +295,37 @@ export function Connections() {
                       ? sensor.getDeviceName() ?? 'Connected'
                       : isScanning
                         ? 'Scanning...'
-                        : 'Not connected'}
+                        : sensor.key === 'hr' && BLE.getSavedHRDevice()
+                          ? `Auto: ${BLE.getSavedHRDevice()!.name}`
+                          : 'Not connected'}
                   </div>
                 </div>
-                <button
-                  onClick={() =>
-                    connected ? sensor.onDisconnect() : handleSensorConnect(sensor)
-                  }
-                  disabled={isScanning}
-                  className={`h-10 px-4 rounded-lg text-xs font-bold active:scale-95 transition-transform ${
-                    connected
-                      ? 'bg-red-600/20 text-red-400'
-                      : isScanning
-                        ? 'bg-gray-700 text-gray-500'
-                        : 'bg-emerald-500/20 text-emerald-400'
-                  }`}
-                >
-                  {connected ? 'Off' : isScanning ? '...' : 'Scan'}
-                </button>
+                <div className="flex gap-1">
+                  {sensor.key === 'hr' && !connected && BLE.getSavedHRDevice() && (
+                    <button
+                      onClick={() => { BLE.clearHRDevice(); }}
+                      className="h-10 px-2 rounded-lg text-[10px] font-bold bg-gray-700 text-gray-500 active:scale-95"
+                      title="Esquecer HR"
+                    >
+                      X
+                    </button>
+                  )}
+                  <button
+                    onClick={() =>
+                      connected ? sensor.onDisconnect() : handleSensorConnect(sensor)
+                    }
+                    disabled={isScanning}
+                    className={`h-10 px-4 rounded-lg text-xs font-bold active:scale-95 transition-transform ${
+                      connected
+                        ? 'bg-red-600/20 text-red-400'
+                        : isScanning
+                          ? 'bg-gray-700 text-gray-500'
+                          : 'bg-emerald-500/20 text-emerald-400'
+                    }`}
+                  >
+                    {connected ? 'Off' : isScanning ? '...' : 'Scan'}
+                  </button>
+                </div>
               </div>
             );
           })}

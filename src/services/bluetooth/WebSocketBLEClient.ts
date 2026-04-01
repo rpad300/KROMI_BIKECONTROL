@@ -9,6 +9,7 @@
 
 import { useBikeStore } from '../../store/bikeStore';
 import { useTuningStore, type TuningLevels } from '../../store/tuningStore';
+import { useSettingsStore } from '../../store/settingsStore';
 import { batteryEstimationService } from '../battery/BatteryEstimationService';
 
 const WS_URL = 'ws://localhost:8765';
@@ -270,8 +271,33 @@ class WebSocketBLEClient {
           store.setAssistMode(msg.value);
           break;
 
-        case 'hr':
-          store.setHR(msg.bpm, msg.zone);
+        case 'hr': {
+          // Calculate zone from athlete profile HRmax (not hardcoded)
+          const bpm = msg.bpm as number;
+          const hrMax = useSettingsStore.getState().riderProfile.hr_max;
+          const pct = hrMax > 0 ? bpm / hrMax : 0;
+          const zone = pct < 0.5 ? 0 : pct < 0.6 ? 1 : pct < 0.7 ? 2 : pct < 0.8 ? 3 : pct < 0.9 ? 4 : 5;
+          store.setHR(bpm, zone);
+          break;
+        }
+
+        case 'sensorConnected':
+          // HR sensor connected — save for auto-reconnect
+          if (msg.sensor === 'hr' && msg.address) {
+            store.setServiceConnected('heartRate', true);
+            // Dynamic import to avoid circular dependency
+            import('./BLEBridge').then(({ saveHRDevice }) => {
+              saveHRDevice({ name: msg.name || 'HR Monitor', address: msg.address });
+              console.log(`[WSClient] HR sensor saved: ${msg.name} (${msg.address})`);
+            });
+          }
+          break;
+
+        case 'sensorDisconnected':
+          if (msg.sensor === 'hr') {
+            store.setServiceConnected('heartRate', false);
+            store.setHR(0, 0);
+          }
           break;
 
         case 'gear':

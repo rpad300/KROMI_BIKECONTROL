@@ -4,6 +4,7 @@ import { parsePower } from './PowerParser';
 import { parseGEVPacket, buildAssistUp, buildAssistDown, buildAssistModeCommand } from './GEVProtocol';
 import { giantProtobufService } from './GiantProtobufService';
 import { useBikeStore } from '../../store/bikeStore';
+import { useSettingsStore } from '../../store/settingsStore';
 import { batteryEstimationService } from '../battery/BatteryEstimationService';
 import type { CSCState } from '../../types/bike.types';
 
@@ -93,7 +94,9 @@ class GiantBLEService {
         const flags = value.getUint8(0);
         const is16bit = flags & 0x01;
         const bpm = is16bit ? value.getUint16(1, true) : value.getUint8(1);
-        const zone = bpm < 100 ? 1 : bpm < 130 ? 2 : bpm < 155 ? 3 : bpm < 175 ? 4 : 5;
+        const hrMax = useSettingsStore.getState().riderProfile.hr_max;
+        const pct = hrMax > 0 ? bpm / hrMax : 0;
+        const zone = pct < 0.5 ? 0 : pct < 0.6 ? 1 : pct < 0.7 ? 2 : pct < 0.8 ? 3 : pct < 0.9 ? 4 : 5;
         useBikeStore.getState().setHR(bpm, zone);
       });
 
