@@ -9,7 +9,7 @@ import { LoginPage } from './components/Auth/LoginPage';
 import { ConnectionStatus } from './components/shared/ConnectionStatus';
 import { BridgeSetup } from './components/shared/BridgeSetup';
 import { useGeolocation } from './hooks/useGeolocation';
-import { useAutoAssist } from './hooks/useAutoAssist';
+import { useMotorControl } from './hooks/useMotorControl';
 import { useAuthStore } from './store/authStore';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
@@ -45,9 +45,9 @@ export function App() {
 function MainApp() {
   const [screen, setScreen] = useState<Screen>('dashboard');
 
-  // Global hooks — GPS + auto-assist run regardless of active screen
+  // Global hooks — GPS + motor control run regardless of active screen
   useGeolocation();
-  useAutoAssist();
+  useMotorControl();
 
   return (
     <div className="h-full flex flex-col bg-gray-950 text-white">

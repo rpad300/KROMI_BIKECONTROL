@@ -53,7 +53,6 @@ class TorqueEngine {
   private currentSupport = 200;
   private currentLaunch = 5;
   private lastUpdateMs = 0;
-  private readonly UPDATE_INTERVAL_MS = 2000;
   private globalMultiplier = 1.0;
 
   static getInstance(): TorqueEngine {
@@ -65,15 +64,23 @@ class TorqueEngine {
 
   setGlobalMultiplier(m: number): void { this.globalMultiplier = m; }
 
+  /**
+   * Calculate optimal torque for current conditions.
+   * Called by MotorController every 2s — no internal throttle.
+   *
+   * Optional params default to neutral values when providers not connected.
+   * This allows the engine to work with just terrain + battery (motor only).
+   */
   calculateOptimalTorque(
     terrain: TerrainAnalysis,
-    hrZone: number,
-    hrTrend: 'rising' | 'falling' | 'stable',
-    currentGear: number,
-    batteryPct: number,
+    hrZone: number = 0,
+    hrTrend: 'rising' | 'falling' | 'stable' = 'stable',
+    currentGear: number = 0,
+    batteryPct: number = 100,
   ): TorqueCommand | null {
     const now = Date.now();
-    if (now - this.lastUpdateMs < this.UPDATE_INTERVAL_MS) return null;
+    // Throttle: skip if called too fast (safety net, hook controls main timing)
+    if (now - this.lastUpdateMs < 500) return null;
 
     // 1. Classify climb type
     const climbType = this.classifyClimb(terrain.current_gradient_pct, 300);

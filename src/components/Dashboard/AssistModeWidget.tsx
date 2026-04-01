@@ -1,6 +1,8 @@
 import { useBikeStore } from '../../store/bikeStore';
 import { sendAssistMode, isMotorControlAvailable, bleMode } from '../../services/bluetooth/BLEBridge';
 import { AssistMode, ASSIST_MODE_LABELS, ASSIST_MODE_COLORS } from '../../types/bike.types';
+import { autoAssistEngine } from '../../services/autoAssist/AutoAssistEngine';
+import { motorController } from '../../services/motor/MotorController';
 
 const MAIN_MODES = [AssistMode.ECO, AssistMode.TOUR, AssistMode.SPORT, AssistMode.POWER] as const;
 
@@ -12,6 +14,9 @@ export function AssistModeWidget() {
   const handleModeChange = async (mode: AssistMode) => {
     useBikeStore.getState().setAssistMode(mode);
     await sendAssistMode(mode);
+    // Notify both engines: manual override pauses auto-assist 60s
+    autoAssistEngine.notifyManualOverride('app_button');
+    motorController.notifyManualOverride();
     if ('vibrate' in navigator) navigator.vibrate(50);
   };
 
