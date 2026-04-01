@@ -325,13 +325,20 @@ Z2 target (98-114), HR 135bpm (21 acima), gradient 10%
 ```
 hrTarget = 60 + (21 × 8) = 228 → cap 100
 
-Anticipation: +10 (gradient)
+Anticipation: currentGradient 10% (>8%) → +15
 Battery: ×1.0
 
-intensity = 100 → wire 0 para tudo → S360% T300 R100
+intensity = clamp(100 + 15, 0, 100) × 1.0 = 100 → wire 0
 
+Support:  100 → wire 0 → S360%
+Torque:   100 → wire 0 → T300
+MidTorq:  90  → wire 0 → M250
+LowTorq:  80  → wire 0 → L175
+Launch:   100 × 0.7 = 70 → wire 0 → R100
+
+Motor: S360% T300/250/175 R100 → ALL MAX
 Smoothing: HR_ABOVE = 1 amostra → IMEDIATO
-Explicação UI: "Motor MAX — HR 21bpm acima de Z2, a proteger"
+Explicação UI: "Motor a ajudar — HR 21bpm acima de Z2"
 ```
 
 ### 7.3 Plano com HR baixa
@@ -395,16 +402,17 @@ Battery: SOC 20% → ×0.57
 
 intensity = clamp(115, 0, 100) × 0.57 = 57
 
-Support: 57 → wire 1 → S350% (not MAX — battery limiting)
-Torque: 57 → wire 1 → T250
-Launch: 57 × 0.7 = 40 → wire 1 → R75
+Support:  57 → wire 1     → S350% (not MAX — battery limiting)
+Torque:   57 → wire 1     → T250
+MidTorq:  57-10=47 → wire 1 → M200
+LowTorq:  57-20=37 → wire 2 → L125 (below 38 threshold)
+Launch:   57 × 0.7 = 40 → wire 1 → R75
 
-Motor: S350% T250/200/150 R75 (wire 1, not 0 — battery limits)
+Motor: S350% T250/200/125 R75 (LowTorque wire 2 because 37 < 38)
 Explicação UI: "Motor limitado pela bateria — HR 26bpm acima de Z2 (SOC 20%)"
 ```
 
-**Nota**: o sistema QUER dar MAX (hrTarget=100) mas a bateria LIMITA a MID (×0.57→57). A UI deve comunicar o que o motor ESTÁ a fazer, não o que queria fazer.
-```
+**Nota**: o sistema QUER dar MAX (hrTarget=100) mas a bateria LIMITA a MID (×0.57→57). A UI comunica o que o motor ESTÁ a fazer, não o que queria fazer. LowTorque cai para wire 2 (125) porque 37 está 1 ponto abaixo do threshold 38.
 
 ### 7.7 Subida técnica com cadência baixa
 Z2 target, HR 120bpm (6 acima), gradient 10%, cadência 40rpm
