@@ -19,8 +19,12 @@ async function requestWakeLock(): Promise<void> {
   }
 }
 
-requestWakeLock();
-initBLE();
+// Only init BLE + WakeLock on mobile (not desktop)
+const isMobile = /android|iphone|ipad|mobile/i.test(navigator.userAgent) || window.innerWidth < 768;
+if (isMobile) {
+  requestWakeLock();
+  initBLE();
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

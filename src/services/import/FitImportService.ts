@@ -65,7 +65,7 @@ export function parseFitFile(buffer: ArrayBuffer): Promise<ImportedRide> {
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    parser.parse(Buffer.from(buffer), (err: any, data: any) => {
+    parser.parse(new Uint8Array(buffer) as any, (err: any, data: any) => {
       if (err) { reject(new Error(String(err))); return; }
 
       const sessions = data.sessions as Record<string, unknown>[] | undefined;
