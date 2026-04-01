@@ -4,7 +4,6 @@ import { useBikeStore } from '../../store/bikeStore';
 import { useAuthStore } from '../../store/authStore';
 import { connectBike, disconnectBike } from '../../services/bluetooth/BLEBridge';
 import { ProfileInsightsWidget } from '../Dashboard/ProfileInsightsWidget';
-import { FitImport } from '../Import/FitImport';
 import { importKomootRoute } from '../../services/maps/KomootService';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
@@ -200,9 +199,6 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
         <h2 className="text-lg font-semibold text-gray-300">Perfil Atleta</h2>
         <ProfileInsightsWidget />
       </section>
-
-      {/* FIT Import */}
-      <FitImport />
 
       {/* Komoot Import */}
       <section className="space-y-3">

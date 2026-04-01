@@ -7,7 +7,7 @@ import { updateStatsFromRide, type AthleteStats } from '../../services/import/At
  * Drag & drop or file picker. Shows parsed summary before saving.
  * Multiple files supported — each builds the athlete profile.
  */
-export function FitImport() {
+export function FitImport({ onImported }: { onImported?: () => void } = {}) {
   const [importing, setImporting] = useState(false);
   const [results, setResults] = useState<{ ride: ImportedRide; saved: boolean }[]>([]);
   const [stats, setStats] = useState<AthleteStats | null>(null);
@@ -35,6 +35,7 @@ export function FitImport() {
 
     setResults((prev) => [...prev, ...newResults]);
     setImporting(false);
+    if (newResults.some((r) => r.saved)) onImported?.();
   };
 
   const handleDrop = (e: React.DragEvent) => {

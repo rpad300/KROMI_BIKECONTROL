@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { AreaChart, Area, LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts';
 import { useAuthStore } from '../../store/authStore';
 import { exportRideAsGPX, type TrackPoint } from '../../services/export/GPXExportService';
+import { FitImport } from '../Import/FitImport';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -53,12 +54,15 @@ export function RideHistory() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadRides = useCallback(() => {
     if (!userId || !SUPABASE_URL || !SUPABASE_KEY) { setLoading(false); return; }
+    setLoading(true);
     fetchJSON(`/ride_sessions?user_id=eq.${userId}&status=eq.completed&select=*&order=started_at.desc&limit=50`)
       .then((data) => { if (Array.isArray(data)) setRides(data); })
       .finally(() => setLoading(false));
   }, [userId]);
+
+  useEffect(() => { loadRides(); }, [loadRides]);
 
   const handleSelect = async (ride: RideSession) => {
     setSelected(ride);
@@ -107,37 +111,53 @@ export function RideHistory() {
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-bold text-gray-300">Histórico ({rides.length} rides)</h2>
+
+      {/* FIT Import */}
+      <FitImport onImported={loadRides} />
+
       {rides.length === 0 && (
         <div className="bg-gray-800 rounded-xl p-8 text-center text-gray-600">
           <span className="material-symbols-outlined text-3xl">history</span>
-          <p className="mt-2 text-sm">Sem rides. Importa ficheiros .FIT ou faz uma volta com o KROMI.</p>
+          <p className="mt-2 text-sm">Sem rides. Importa ficheiros .FIT acima ou faz uma volta com o KROMI.</p>
         </div>
       )}
-      {rides.map((ride) => (
-        <button
-          key={ride.id}
-          onClick={() => handleSelect(ride)}
-          className="w-full bg-gray-800 rounded-xl p-4 text-left hover:bg-gray-750 active:scale-[0.99] transition-transform"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-white font-bold">
-                {ride.total_km?.toFixed(1) ?? 0}km · {formatDuration(ride.duration_s ?? 0)}
-                {ride.total_elevation_m ? ` · ${ride.total_elevation_m}m D+` : ''}
+      {rides.map((ride) => {
+        const isFitImport = (ride.devices_connected as Record<string, unknown>)?.source === 'fit_import';
+        return (
+          <button
+            key={ride.id}
+            onClick={() => handleSelect(ride)}
+            className="w-full bg-gray-800 rounded-xl p-4 text-left hover:bg-gray-750 active:scale-[0.99] transition-transform"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-white font-bold">
+                    {ride.total_km?.toFixed(1) ?? 0}km · {formatDuration(ride.duration_s ?? 0)}
+                    {ride.total_elevation_m ? ` · ${ride.total_elevation_m}m D+` : ''}
+                  </span>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                    isFitImport
+                      ? 'bg-purple-900/50 text-purple-400'
+                      : 'bg-emerald-900/50 text-emerald-400'
+                  }`}>
+                    {isFitImport ? 'FIT' : 'LIVE'}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  {new Date(ride.started_at).toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' })}
+                  {' · '}
+                  {new Date(ride.started_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
+                </div>
               </div>
-              <div className="text-xs text-gray-500 mt-0.5">
-                {new Date(ride.started_at).toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' })}
-                {' · '}
-                {new Date(ride.started_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
+              <div className="text-right text-xs text-gray-500">
+                {ride.avg_speed_kmh?.toFixed(1)} km/h
+                {ride.avg_hr > 0 && <div>{ride.avg_hr} bpm</div>}
               </div>
             </div>
-            <div className="text-right text-xs text-gray-500">
-              {ride.avg_speed_kmh?.toFixed(1)} km/h
-              {ride.avg_hr > 0 && <div>{ride.avg_hr} bpm</div>}
-            </div>
-          </div>
-        </button>
-      ))}
+          </button>
+        );
+      })}
     </div>
   );
 }
