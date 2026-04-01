@@ -410,17 +410,36 @@ class BLEManager(private val context: Context) {
         override fun onDescriptorWrite(g: BluetoothGatt, desc: BluetoothGattDescriptor, status: Int) {
             val cShort = desc.characteristic.uuid.toString().substring(4, 8).uppercase()
             val isSG = desc.characteristic.uuid == SG_NOTIFY
+            val phase = if (notifPhase == 1) "DISABLE" else "ENABLE"
             val statusStr = if (status == BluetoothGatt.GATT_SUCCESS) "OK" else "FAIL($status)"
-            Log.i(TAG, "Subscribed [$cShort]: $statusStr${if (isSG) " ← SG NOTIFY!" else ""}")
+            Log.i(TAG, "DescWrite [$cShort] $phase: $statusStr${if (isSG) " ★SG" else ""}")
             onDataReceived?.invoke(JSONObject()
                 .put("type", "subscribed")
                 .put("char", cShort)
+                .put("phase", phase)
                 .put("ok", status == BluetoothGatt.GATT_SUCCESS)
                 .put("isSG", isSG))
-            // Small delay between subscriptions for stability
+            handler.postDelayed({ enableNextNotification(g) }, 100)
+        }
+
+        override fun onDescriptorRead(g: BluetoothGatt, desc: BluetoothGattDescriptor, status: Int) {
+            val cShort = desc.characteristic.uuid.toString().substring(4, 8).uppercase()
+            val isSG = desc.characteristic.uuid == SG_NOTIFY
+            val hex = desc.value?.joinToString("") { "%02x".format(it) } ?: "null"
+            Log.i(TAG, "DescRead [$cShort] CCCD=$hex${if (isSG) " ★SG" else ""}")
+            onDataReceived?.invoke(JSONObject()
+                .put("type", "subscribed")
+                .put("char", cShort)
+                .put("phase", "CONFIRM")
+                .put("cccd", hex)
+                .put("ok", hex == "0100")
+                .put("isSG", isSG))
             handler.postDelayed({ enableNextNotification(g) }, 100)
         }
     }
+
+    // Notification subscription state machine: disable → enable → read-back
+    private var notifPhase = 0  // 0=disable, 1=enable, 2=read, then next
 
     private fun enableNextNotification(g: BluetoothGatt) {
         if (pendingNotifications.isEmpty()) {
@@ -428,16 +447,45 @@ class BLEManager(private val context: Context) {
             onStatusChanged?.invoke("All subscribed — listening...")
             return
         }
-        val char = pendingNotifications.removeAt(0)
+        val char = pendingNotifications.first()
         val cShort = char.uuid.toString().substring(4, 8).uppercase()
         val isSG = char.uuid == SG_NOTIFY
-        g.setCharacteristicNotification(char, true)
+
         char.getDescriptor(CCC_DESCRIPTOR)?.let { desc ->
-            desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-            Log.i(TAG, "Subscribing [$cShort]${if (isSG) " ← SG NOTIFY!" else ""}...")
-            g.writeDescriptor(desc)
+            when (notifPhase) {
+                0 -> {
+                    // Phase 0: DISABLE first (like nRF Connect does)
+                    g.setCharacteristicNotification(char, false)
+                    desc.value = BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
+                    Log.i(TAG, "Sub [$cShort] phase 0: DISABLE${if (isSG) " ★SG" else ""}")
+                    notifPhase = 1
+                    g.writeDescriptor(desc)
+                }
+                1 -> {
+                    // Phase 1: ENABLE
+                    g.setCharacteristicNotification(char, true)
+                    desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    Log.i(TAG, "Sub [$cShort] phase 1: ENABLE${if (isSG) " ★SG" else ""}")
+                    notifPhase = 2
+                    g.writeDescriptor(desc)
+                }
+                2 -> {
+                    // Phase 2: READ back CCCD to confirm
+                    Log.i(TAG, "Sub [$cShort] phase 2: READ CCCD${if (isSG) " ★SG" else ""}")
+                    notifPhase = 0
+                    pendingNotifications.removeAt(0)
+                    g.readDescriptor(desc)
+                }
+                else -> {
+                    notifPhase = 0
+                    pendingNotifications.removeAt(0)
+                    enableNextNotification(g)
+                }
+            }
         } ?: run {
             Log.w(TAG, "No CCC descriptor for [$cShort] — skipping")
+            pendingNotifications.removeAt(0)
+            notifPhase = 0
             enableNextNotification(g)
         }
     }

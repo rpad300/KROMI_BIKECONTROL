@@ -230,8 +230,11 @@ class MainActivity : AppCompatActivity() {
             "sgEncrypted" -> appendLog("SG21", "cmd=${"%02x".format(json.optInt("cmd"))} AES ${json.optString("hex")}")
             "subscribed" -> {
                 val ok = if (json.optBoolean("ok")) "✅" else "❌"
-                val sg = if (json.optBoolean("isSG")) " ★SG!" else ""
-                appendLog("SUB", "${json.optString("char")}: $ok$sg")
+                val sg = if (json.optBoolean("isSG")) " ★SG" else ""
+                val phase = json.optString("phase", "?")
+                val cccd = json.optString("cccd", "")
+                val extra = if (cccd.isNotEmpty()) " cccd=$cccd" else ""
+                appendLog("SUB", "${json.optString("char")} $phase: $ok$sg$extra")
             }
             "sgWriteTest" -> appendLog("SG>", "[${json.optString("name")}] ${json.optString("hex")} (${json.optInt("size")}b)")
             "sgWriteResult" -> appendLog("SG>", "[${json.optString("name")}] write=${json.optBoolean("ok")}")
