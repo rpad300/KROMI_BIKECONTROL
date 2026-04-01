@@ -170,12 +170,17 @@ class TuningIntelligence {
     // ═══════════════════════════════════════════════
     // COMBINE: layered
     // ═══════════════════════════════════════════════
-    let auxMod = 0;
-    if (input.speed > bike.speed_limit_kmh - 2) auxMod = -25;
-    else if (input.speed < 2) auxMod = -20;
-    if (input.altitude > 1500) auxMod += Math.min(10, Math.round((input.altitude - 1500) / 250));
+    // Speed limit penalty
+    let speedLimitPenalty = 0;
+    if (input.speed > bike.speed_limit_kmh - 2) speedLimitPenalty = -25;
+    else if (input.speed < 2) speedLimitPenalty = -20;
 
-    const rawIntensity = Math.max(0, Math.min(100, hrTarget + anticipation + auxMod));
+    // Altitude boost (less O₂ at altitude)
+    const altitudeBoost = input.altitude > 1500
+      ? Math.min(10, Math.round((input.altitude - 1500) / 250)) : 0;
+
+    const rawIntensity = Math.max(0, Math.min(100,
+      hrTarget + anticipation + speedLimitPenalty + altitudeBoost));
     const overallIntensity = Math.round(rawIntensity * batteryConstraint);
 
     // ═══════════════════════════════════════════════
