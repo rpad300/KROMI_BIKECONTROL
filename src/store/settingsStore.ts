@@ -58,7 +58,8 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   tuning_mid: { assist_pct: 240, torque_nm: 65, launch: 5, consumption_wh_km: 16 },
   tuning_min: { assist_pct: 140, torque_nm: 45, launch: 3, consumption_wh_km: 9 },
   // Fixed comparison baseline — what the rider normally uses without KROMI
-  fixed_baseline: { assist_pct: 125, torque_nm: 40, launch: 3, consumption_wh_km: 12 },
+  // 125% assist < MIN 140%, so consumption must be < MIN 9 Wh/km
+  fixed_baseline: { assist_pct: 125, torque_nm: 40, launch: 3, consumption_wh_km: 7 },
 };
 
 /** Deep merge bikeConfig with defaults — handles missing nested objects from old DB/localStorage */

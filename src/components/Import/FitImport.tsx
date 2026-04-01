@@ -158,11 +158,11 @@ export function FitImport({ onImported }: { onImported?: () => void } = {}) {
                         <div className="text-[9px] text-gray-500">MAX</div>
                       </div>
                     </div>
-                    {sim.battery_saved_vs_fixed > 0 && (
-                      <div className="text-emerald-400 text-[10px] mt-1 font-bold text-center">
-                        KROMI poupa {sim.battery_saved_vs_fixed}% vs a tua config fixa
-                      </div>
-                    )}
+                    <div className={`text-[10px] mt-1 font-bold text-center ${sim.battery_saved_vs_fixed >= 0 ? 'text-emerald-400' : 'text-orange-400'}`}>
+                      {sim.battery_saved_vs_fixed >= 0
+                        ? `+${sim.battery_saved_vs_fixed}% poupança vs config fixa`
+                        : `${sim.battery_saved_vs_fixed}% vs config fixa (mais potência nas subidas)`}
+                    </div>
                   </div>
                 </div>
               )}
