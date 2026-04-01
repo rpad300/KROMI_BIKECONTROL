@@ -173,17 +173,11 @@ class BLEManager(private val context: Context) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     Log.i(TAG, "GATT connected to ${g.device.name} (bond: ${g.device.bondState})")
-                    onStatusChanged?.invoke("Connected, requesting MTU + priority...")
+                    onStatusChanged?.invoke("Connected, requesting MTU...")
 
-                    // Request high priority + large MTU (like nRF Connect does)
+                    // Request high priority + large MTU, then discover services in onMtuChanged
                     g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
                     g.requestMtu(247)
-                    Log.i(TAG, "Requested CONNECTION_PRIORITY_HIGH + MTU 247")
-
-                    // Delay before service discovery
-                    handler.postDelayed({
-                        g.discoverServices()
-                    }, 500)
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Log.i(TAG, "GATT disconnected")
@@ -424,6 +418,9 @@ class BLEManager(private val context: Context) {
                 .put("type", "mtu")
                 .put("mtu", mtu)
                 .put("ok", status == BluetoothGatt.GATT_SUCCESS))
+            // NOW discover services (after MTU negotiation completes)
+            onStatusChanged?.invoke("MTU $mtu — discovering services...")
+            handler.postDelayed({ g.discoverServices() }, 300)
         }
 
         override fun onCharacteristicWrite(g: BluetoothGatt, char: BluetoothGattCharacteristic, status: Int) {
