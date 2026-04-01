@@ -248,11 +248,11 @@ class MainActivity : AppCompatActivity() {
                 val pwr = json.optDouble("power", 0.0)
                 val cad = json.optDouble("cadence", 0.0)
                 val ast = json.optInt("assistRatio", 0)
+                val soc = json.optInt("batterySoc", 0)
                 val dst = json.optDouble("tripDistance", 0.0)
                 val tm = json.optInt("tripTime", 0)
-                appendLog("MOT", "spd=%.1f trq=%.1f pwr=%.0f cad=%.0f ast=%d%% dst=%.1f t=%ds".format(spd, trq, pwr, cad, ast, dst, tm))
+                appendLog("MOT", "spd=%.1f trq=%.1f pwr=%.1f cad=%.1f a=%d%% soc=%d%% d=%.1f t=%d".format(spd, trq, pwr, cad, ast, soc, dst, tm))
             }
-            "sgMotorStatus" -> appendLog("BAT2", "b1=${json.optInt("bat1")} b2=${json.optInt("bat2")} v=${json.optInt("voltage")}")
             "sgConnected" -> appendLog("GEV", if (json.optBoolean("success")) "★ SESSION ACTIVE!" else "Session failed")
             "sgBattery" -> appendLog("BAT", "★ SOC=${json.optInt("soc")}% life=${json.optInt("life")}%")
             "sgTuning" -> appendLog("TUN", "★ ${json.optString("hex")}")

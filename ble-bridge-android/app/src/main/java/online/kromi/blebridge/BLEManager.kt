@@ -560,55 +560,57 @@ class BLEManager(private val context: Context) {
 
                     when (device) {
                         0x23 -> {
-                            if (data.size < 5) return
-                            val cmd = data[3].toInt() and 0xFF
-                            if (cmd == 0x41 && data.size >= 19) {
-                                // cmd 41: live telemetry — parse fields
-                                // Data at bytes[4..18]: speed(2) torque(2) cadence(2) acur(2) dist(2) time(2) power(2) assist(1) soc(1)
-                                val d = data
-                                val speed = ((d[4].toInt() and 0xFF) shl 8 or (d[5].toInt() and 0xFF)) / 10.0
-                                val torque = ((d[6].toInt() and 0xFF) shl 8 or (d[7].toInt() and 0xFF)) / 10.0
-                                val cadence = ((d[8].toInt() and 0xFF) shl 8 or (d[9].toInt() and 0xFF)) / 10.0
-                                val acur = ((d[10].toInt() and 0xFF) shl 8 or (d[11].toInt() and 0xFF)) / 100.0
-                                val dist = ((d[12].toInt() and 0xFF) shl 8 or (d[13].toInt() and 0xFF)) / 10.0
-                                val time = ((d[14].toInt() and 0xFF) shl 8 or (d[15].toInt() and 0xFF))
-                                val power = ((d[16].toInt() and 0xFF) shl 8 or (d[17].toInt() and 0xFF)) / 10.0
-                                val assistRatio = d[18].toInt() and 0xFF
+                            if (data.size < 20) return
+                            // FC23 riding notification — parse using RideControl's EXACT format
+                            // data[0]=FC, data[1]=23, data[2..19]=18 bytes of riding data
+                            // RideControl: i = value[2..19], parsed as LE shorts/ints
 
-                                // Only log every ~2 seconds (not every 500ms)
-                                val now = System.currentTimeMillis()
-                                if (now - lastTelemetryLog > 2000) {
-                                    lastTelemetryLog = now
-                                    Log.i(TAG, "TELEM: spd=${speed}km/h trq=${torque}Nm cad=${cadence}rpm pwr=${power}W ast=${assistRatio}% dist=${dist}km time=${time}s")
-                                }
-
-                                // Send parsed data to WebSocket/UI
-                                onDataReceived?.invoke(JSONObject()
-                                    .put("type", "sgRiding")
-                                    .put("speed", speed)
-                                    .put("torque", torque)
-                                    .put("cadence", cadence)
-                                    .put("power", power)
-                                    .put("assistRatio", assistRatio)
-                                    .put("tripDistance", dist)
-                                    .put("tripTime", time)
-                                    .put("accumCurrent", acur))
-
-                                // Also broadcast speed/power for PWA compat
-                                if (speed > 0.5) onDataReceived?.invoke(JSONObject().put("type", "speed").put("value", speed))
-                                onDataReceived?.invoke(JSONObject().put("type", "cadence").put("value", cadence.toInt()))
-                            } else if (cmd == 0x43 && data.size >= 18) {
-                                // cmd 43: motor/battery status
-                                val bat1 = data[4].toInt() and 0xFF
-                                val bat2 = data[5].toInt() and 0xFF
-                                val voltage = ((data[8].toInt() and 0xFF) shl 8 or (data[9].toInt() and 0xFF))
-                                onDataReceived?.invoke(JSONObject()
-                                    .put("type", "sgMotorStatus")
-                                    .put("bat1", bat1)
-                                    .put("bat2", bat2)
-                                    .put("voltage", voltage))
+                            // Little-endian int16 at offset from data[2]
+                            fun leShort(off: Int): Int {
+                                val base = off + 2
+                                return (data[base].toInt() and 0xFF) or ((data[base + 1].toInt() and 0xFF) shl 8)
                             }
-                            // cmd 40 and 42 are static/zeros when stationary — skip logging
+                            fun leShortSigned(off: Int): Int {
+                                val v = leShort(off)
+                                return if (v > 32767) v - 65536 else v
+                            }
+
+                            val speed = leShortSigned(0) / 10.0       // i[0..1]
+                            val torque = leShortSigned(2) / 10.0      // i[2..3]
+                            val cadence = leShortSigned(4) / 10.0     // i[4..5]
+                            val acurValue = (leShort(6) and 0xFFFF) / 100.0  // i[6..7] unsigned
+                            val tripDist = leShortSigned(8) / 10.0    // i[8..9]
+                            val tripTime = leShort(10) and 0xFFFF     // i[10..11] unsigned
+                            val power = leShortSigned(12) / 10.0      // i[12..13]
+                            val carr = data[16].toInt() and 0xFF      // i[14] = assist ratio
+                            val rsoc = data[17].toInt() and 0xFF      // i[15] = battery SOC
+                            val errorCode = data[18].toInt()          // i[16] = error code
+
+                            val now = System.currentTimeMillis()
+                            if (now - lastTelemetryLog > 2000) {
+                                lastTelemetryLog = now
+                                Log.i(TAG, "RIDE: spd=%.1f trq=%.1f cad=%.1f pwr=%.1f car=%d%% soc=%d%% err=%d dist=%.1f t=%d acur=%.2f"
+                                    .format(speed, torque, cadence, power, carr, rsoc, errorCode, tripDist, tripTime, acurValue))
+                            }
+
+                            onDataReceived?.invoke(JSONObject()
+                                .put("type", "sgRiding")
+                                .put("speed", speed)
+                                .put("torque", torque)
+                                .put("cadence", cadence)
+                                .put("power", power)
+                                .put("assistRatio", carr)
+                                .put("batterySoc", rsoc)
+                                .put("tripDistance", tripDist)
+                                .put("tripTime", tripTime)
+                                .put("accumCurrent", acurValue)
+                                .put("errorCode", errorCode))
+
+                            // Broadcast for PWA compatibility
+                            if (speed > 0.5) onDataReceived?.invoke(JSONObject().put("type", "speed").put("value", speed))
+                            if (power > 0) onDataReceived?.invoke(JSONObject().put("type", "power").put("value", power.toInt()))
+                            if (cadence > 0) onDataReceived?.invoke(JSONObject().put("type", "cadence").put("value", cadence.toInt()))
+                            if (rsoc in 1..100) onDataReceived?.invoke(JSONObject().put("type", "battery").put("value", rsoc))
                         }
                         0x22 -> {
                             // Heartbeat confirmation
