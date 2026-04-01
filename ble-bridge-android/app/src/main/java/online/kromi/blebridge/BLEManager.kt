@@ -461,27 +461,64 @@ class BLEManager(private val context: Context) {
                 }
                 SG_NOTIFY -> {
                     val hex = data.joinToString("") { "%02x".format(it) }
-                    val ascii = String(data.filter { it in 0x20..0x7E }.toByteArray())
-                    Log.i(TAG, "★ SG RAW: hex=$hex len=${data.size}")
-                    onDataReceived?.invoke(JSONObject()
-                        .put("type", "sgNotify")
-                        .put("hex", hex)
-                        .put("ascii", ascii)
-                        .put("size", data.size))
 
-                    // Try decrypting with known keys if data is 16+ bytes
-                    if (data.size >= 16) {
-                        for (keyIdx in intArrayOf(4, 8, 13, 14, 0)) {
-                            val dec = GEVCrypto.decrypt(data.copyOf(16), keyIdx)
-                            val dHex = dec.joinToString("") { "%02x".format(it) }
-                            val hasFC = dec[0] == 0xFC.toByte()
-                            Log.i(TAG, "★ SG DEC K$keyIdx: $dHex ${if (hasFC) "← FC HEADER!" else ""}")
-                            onDataReceived?.invoke(JSONObject()
-                                .put("type", "sgDecrypt")
-                                .put("key", keyIdx)
-                                .put("hex", dHex)
-                                .put("hasGevHeader", hasFC))
+                    // Parse FC-header packets
+                    if (data.size >= 3 && data[0] == 0xFC.toByte()) {
+                        val device = data[1].toInt() and 0xFF
+                        val byte2 = data[2].toInt() and 0xFF
+
+                        when (device) {
+                            0x23 -> {
+                                // Plaintext telemetry: FC 23 [len] [cmd] [payload] [xor]
+                                val cmd = if (data.size > 3) data[3].toInt() and 0xFF else -1
+                                Log.i(TAG, "★ SG D23 cmd=${"%02x".format(cmd)}: $hex")
+                                onDataReceived?.invoke(JSONObject()
+                                    .put("type", "sgTelemetry")
+                                    .put("cmd", cmd)
+                                    .put("hex", hex)
+                                    .put("size", data.size))
+                            }
+                            0x22 -> {
+                                Log.i(TAG, "★ SG D22 heartbeat: $hex")
+                                onDataReceived?.invoke(JSONObject()
+                                    .put("type", "sgHeartbeat")
+                                    .put("hex", hex))
+                            }
+                            0x21 -> {
+                                // AES encrypted: FC 21 [cmd] [16 AES bytes] [checksum]
+                                val cmd = byte2
+                                Log.i(TAG, "★ SG D21 cmd=${"%02x".format(cmd)} (AES): $hex")
+                                onDataReceived?.invoke(JSONObject()
+                                    .put("type", "sgEncrypted")
+                                    .put("cmd", cmd)
+                                    .put("hex", hex)
+                                    .put("size", data.size))
+
+                                // Try decrypt the 16 AES bytes (bytes 3..18)
+                                if (data.size >= 19) {
+                                    val aesBlock = data.copyOfRange(3, 19)
+                                    for (keyIdx in intArrayOf(4, 13, 14, 8)) {
+                                        val dec = GEVCrypto.decrypt(aesBlock, keyIdx)
+                                        val dHex = dec.joinToString("") { "%02x".format(it) }
+                                        Log.i(TAG, "  DEC K$keyIdx: $dHex")
+                                    }
+                                }
+                            }
+                            else -> {
+                                Log.i(TAG, "★ SG D${"%02x".format(device)}: $hex")
+                                onDataReceived?.invoke(JSONObject()
+                                    .put("type", "sgNotify")
+                                    .put("hex", hex)
+                                    .put("size", data.size))
+                            }
                         }
+                    } else {
+                        // Non-FC packet (like ba0000e224)
+                        Log.i(TAG, "★ SG RAW: $hex len=${data.size}")
+                        onDataReceived?.invoke(JSONObject()
+                            .put("type", "sgNotify")
+                            .put("hex", hex)
+                            .put("size", data.size))
                     }
                 }
             }
@@ -634,6 +671,18 @@ class BLEManager(private val context: Context) {
      * Phase 2: If session works — commands with key 4 and 14
      * Phase 3: Mode change attempts
      */
+    /**
+     * b13: Based on nRF Connect capture analysis.
+     *
+     * DISCOVERIES:
+     * - Checksum is XOR (not sum!)
+     * - Device 0x23 = plaintext telemetry, 0x22 = heartbeat, 0x21 = AES encrypted
+     * - Format: [FC][device][len][cmd][payload][XOR_checksum]
+     * - SG sends data spontaneously (FC23 packets) — we weren't receiving them
+     * - FC 22 00 DE = heartbeat/keepalive
+     *
+     * This test: send heartbeat + correct-format queries + start a heartbeat timer
+     */
     fun testSGWrite() {
         val g = gatt ?: return
         val char = sgWriteChar ?: run {
@@ -644,45 +693,41 @@ class BLEManager(private val context: Context) {
 
         val tests = mutableListOf<Pair<String, ByteArray>>()
 
-        // === PHASE 1: Session handshake with CONNECT_GEV ===
-        // The APK uses "connectGEV" which is general command index 0 = CONNECT_GEV
-        // GEV general commands use a different format: FC 21 [general_cmd_byte] checksum
-        // But CONNECT_GEV might be cmd 0x01 (CONNECTION) in GEV packet format
+        // Heartbeat — FC 22 00 DE (from nRF capture, sent periodically by RideControl)
+        tests.add("HEARTBEAT" to byteArrayOf(0xFC.toByte(), 0x22, 0x00, 0xDE.toByte()))
 
-        // Try CONNECT (0x01) with ALL session keys
-        for (k in intArrayOf(0, 1, 2, 3, 8)) {
-            tests.add("SESS_K${k}_01" to GEVCrypto.encrypt(buildGevPacket(0x01, byteArrayOf()), k))
-        }
+        // Query with device 0x23 (plaintext) + XOR checksum
+        tests.add("D23_CMD40" to buildSGPacket(0x23, 0x40, byteArrayOf()))
+        tests.add("D23_CMD41" to buildSGPacket(0x23, 0x41, byteArrayOf()))
+        tests.add("D23_CMD42" to buildSGPacket(0x23, 0x42, byteArrayOf()))
+        tests.add("D23_CMD43" to buildSGPacket(0x23, 0x43, byteArrayOf()))
 
-        // Check if session established (MODE query with key 4)
-        tests.add("CHK_SESS" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
+        // Another heartbeat
+        tests.add("HEARTBEAT2" to byteArrayOf(0xFC.toByte(), 0x22, 0x00, 0xDE.toByte()))
 
-        // === PHASE 2: Try CONNECT with key 4 and 14 (sendData keys) ===
-        tests.add("K14_CONN" to GEVCrypto.encrypt(buildGevPacket(0x01, byteArrayOf()), 14))
-        tests.add("CHK_K14" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 14))
+        // Query with device 0x22 (app commands) + XOR checksum
+        tests.add("D22_CMD00" to buildSGPacket(0x22, 0x00, byteArrayOf()))
+        tests.add("D22_CMD01" to buildSGPacket(0x22, 0x01, byteArrayOf()))
+        tests.add("D22_CMD02" to buildSGPacket(0x22, 0x02, byteArrayOf()))
 
-        // === PHASE 3: enableRidingNotification (from APK) then read data ===
-        // enableRidingNotification might be a specific GEV command that starts data flow
-        // Try common "enable" cmd IDs: 0x10, 0x11, 0x20
-        tests.add("K4_EN_10" to GEVCrypto.encrypt(buildGevPacket(0x10, byteArrayOf()), 4))
-        tests.add("K4_EN_11" to GEVCrypto.encrypt(buildGevPacket(0x11, byteArrayOf()), 4))
-        tests.add("K4_EN_20" to GEVCrypto.encrypt(buildGevPacket(0x20, byteArrayOf()), 4))
+        // Old format with corrected XOR checksum (device 0x21)
+        tests.add("D21_XOR_MODE" to buildSGPacket(0x21, 0x02, byteArrayOf()))
 
-        // === PHASE 4: readAllBikeData sequence (from APK) ===
-        // connectGEV → readBattery → readRidingData → readTuningData
-        // Try battery (0x03) and riding (0x38) with key 14 (aesDa key)
-        tests.add("K14_BATT" to GEVCrypto.encrypt(buildGevPacket(0x03, byteArrayOf()), 14))
-        tests.add("K14_RIDE" to GEVCrypto.encrypt(buildGevPacket(0x38, byteArrayOf()), 14))
+        // AES K4 with CORRECTED XOR checksum format
+        val modePkt = buildSGPacket(0x21, 0x02, byteArrayOf())
+        tests.add("AES_K4_XOR" to GEVCrypto.encrypt(modePkt, 4))
 
-        // === PHASE 5: Mode change with key 14 (data+cmd key from APK) ===
-        tests.add("K14_ECO" to GEVCrypto.encrypt(buildGevPacket(0xE2, byteArrayOf(0x01)), 14))
-        tests.add("CHK_FINAL" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
+        // Heartbeat again
+        tests.add("HEARTBEAT3" to byteArrayOf(0xFC.toByte(), 0x22, 0x00, 0xDE.toByte()))
+
+        // Wait 3 seconds then check if spontaneous data arrives
+        // (heartbeat might trigger data flow)
 
         Log.i(TAG, "╔═══════════════════════════════════════╗")
-        Log.i(TAG, "║  SESSION + CMD TEST — ${tests.size} packets  ║")
-        Log.i(TAG, "║  TRANSPORT_LE enabled in this build   ║")
+        Log.i(TAG, "║  nRF-BASED TEST — ${tests.size} packets      ║")
+        Log.i(TAG, "║  Heartbeat + XOR checksum + dev 0x23  ║")
         Log.i(TAG, "╚═══════════════════════════════════════╝")
-        onStatusChanged?.invoke("Session test (${tests.size} packets)...")
+        onStatusChanged?.invoke("nRF test (${tests.size} packets)...")
 
         for ((i, test) in tests.withIndex()) {
             val (name, data) = test
@@ -702,22 +747,44 @@ class BLEManager(private val context: Context) {
                     .put("type", "sgWriteResult")
                     .put("name", name)
                     .put("ok", ok))
-            }, (i * 800).toLong())
+            }, (i * 600).toLong())
         }
 
-        handler.postDelayed({
-            Log.i(TAG, ">>> SESSION TEST COMPLETE")
-            onStatusChanged?.invoke("Session test done — check SG! responses")
-        }, (tests.size * 800 + 500).toLong())
+        // After all writes, start sending heartbeat every 1s for 10 seconds
+        // to see if data flow starts
+        val heartbeat = byteArrayOf(0xFC.toByte(), 0x22, 0x00, 0xDE.toByte())
+        val startDelay = (tests.size * 600 + 500).toLong()
+        for (i in 0..9) {
+            handler.postDelayed({
+                char.value = heartbeat
+                char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                g.writeCharacteristic(char)
+                if (i == 0) Log.i(TAG, ">>> Sending heartbeat every 1s for 10s...")
+                if (i == 9) {
+                    Log.i(TAG, ">>> HEARTBEAT TEST COMPLETE")
+                    onStatusChanged?.invoke("Heartbeat done — check SG! data")
+                }
+            }, startDelay + (i * 1000).toLong())
+        }
     }
 
+    /**
+     * Build SG packet with CORRECT XOR checksum (from nRF capture analysis).
+     * Format: [FC][device][len][cmd][payload][XOR_checksum]
+     * len = remaining bytes from cmd to end (inclusive of checksum)
+     */
+    private fun buildSGPacket(device: Int, cmdId: Int, payload: ByteArray): ByteArray {
+        val len = payload.size + 2  // cmd + payload + checksum
+        val pkt = byteArrayOf(
+            0xFC.toByte(), device.toByte(), len.toByte(), cmdId.toByte()
+        ) + payload
+        var xor = 0
+        for (b in pkt) xor = xor xor (b.toInt() and 0xFF)
+        return pkt + byteArrayOf(xor.toByte())
+    }
+
+    // Keep old format for backwards compat
     private fun buildGevPacket(cmdId: Int, payload: ByteArray): ByteArray {
-        val header = byteArrayOf(
-            0xFC.toByte(), 0x21, cmdId.toByte(), payload.size.toByte()
-        )
-        val data = header + payload
-        var sum = 0
-        for (b in data) sum += b.toInt() and 0xFF
-        return data + byteArrayOf(((sum shr 8) and 0xFF).toByte(), (sum and 0xFF).toByte())
+        return buildSGPacket(0x21, cmdId, payload)
     }
 }
