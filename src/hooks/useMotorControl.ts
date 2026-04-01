@@ -56,19 +56,21 @@ export function useMotorControl() {
         useIntelligenceStore.getState().setActive(true);
       }
 
-      // === Gather inputs ===
+      // === Gather inputs (personalized via settingsStore) ===
+      const map = useMapStore.getState();
       const input: TuningInput = {
         gradient: 0,
         speed: bike.speed_kmh,
         cadence: bike.cadence_rpm,
         riderPower: bike.power_watts,
         batterySoc: bike.battery_percent,
+        hr: bike.hr_bpm,
+        altitude: map.altitude ?? bike.barometric_altitude_m,
         upcomingGradient: null,
         distanceToChange: null,
       };
 
       // Terrain data (optional — needs GPS + auto-assist enabled)
-      const map = useMapStore.getState();
       if (settings.autoAssist.enabled && map.gpsActive && map.latitude !== 0) {
         const modeDecision = await autoAssistEngine.tick(
           map.latitude, map.longitude, map.heading,

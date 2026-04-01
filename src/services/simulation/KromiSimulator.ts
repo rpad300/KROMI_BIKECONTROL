@@ -1,11 +1,8 @@
 /**
- * KromiSimulator — simulate KROMI Intelligence over a past ride.
+ * KromiSimulator — personalized simulation over past rides.
  *
- * Takes imported ride records (with altitude) and replays the
- * TuningIntelligence scoring for each point. Shows what KROMI
- * would have done: when it activates, tuning levels, battery impact.
- *
- * This lets users see the value of KROMI before riding with it.
+ * Uses the same logic as TuningIntelligence but replays over imported records.
+ * Considers: rider weight/age/HR, bike motor/battery specs, terrain, speed.
  */
 
 import { useSettingsStore } from '../../store/settingsStore';
@@ -18,46 +15,48 @@ export interface SimulationPoint {
   gradient_pct: number;
   speed_kmh: number;
   hr_bpm: number;
-  // KROMI simulation
   kromi_score: number;
   kromi_level: 1 | 2 | 3;
   kromi_active: boolean;
-  // Battery simulation
   battery_pct: number;
   consumption_wh: number;
-  // Factors
   terrain_score: number;
-  battery_modifier: number;
+  hr_mod: number;
   speed_mod: number;
+  weight_factor: number;
 }
 
 export interface SimulationSummary {
   points: SimulationPoint[];
-  // Tuning stats
-  time_max_pct: number;      // % of time at MAX
-  time_mid_pct: number;      // % of time at MID
-  time_min_pct: number;      // % of time at MIN
-  time_active_pct: number;   // % of time KROMI would be active
-  // Battery
+  time_max_pct: number;
+  time_mid_pct: number;
+  time_min_pct: number;
+  time_active_pct: number;
   battery_start: number;
-  battery_end_kromi: number;  // estimated with KROMI
-  battery_end_fixed: number;  // estimated with fixed POWER mode
-  battery_saved_pct: number;  // how much KROMI saves vs fixed
-  // Score stats
+  battery_end_kromi: number;
+  battery_end_fixed: number;
+  battery_saved_pct: number;
   avg_score: number;
   max_score: number;
   level_changes: number;
+  // Personalization context
+  rider_weight: number;
+  rider_hr_max: number;
+  bike_battery_wh: number;
+  bike_motor: string;
 }
 
-/** Run KROMI simulation over imported ride records */
 export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
-  const cfg = useSettingsStore.getState().bikeConfig;
-  const totalWh = cfg.main_battery_wh + (cfg.has_range_extender ? cfg.sub_battery_wh : 0);
+  const rider = useSettingsStore.getState().riderProfile;
+  const bike = useSettingsStore.getState().bikeConfig;
+  const totalWh = bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0);
+  const hrMax = rider.hr_max > 0 ? rider.hr_max : (220 - rider.age);
+  const weightFactor = rider.weight_kg / 75; // ref 75kg
 
   const points: SimulationPoint[] = [];
   let prevAlt: number | null = null;
   let currentLevel: 1 | 2 | 3 = 2;
-  let levelHistory: (1 | 2 | 3)[] = [];
+  const levelHistory: (1 | 2 | 3)[] = [];
   let levelChanges = 0;
   let batteryWh = totalWh;
   let batteryFixedWh = totalWh;
@@ -69,22 +68,17 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
     const r = records[i]!;
     const alt = r.altitude_m ?? 0;
 
-    // Calculate gradient from altitude difference
+    // Gradient
     let gradient = 0;
     if (prevAlt !== null && i > 0) {
-      const prev = records[i - 1]!;
-      const distDelta = (r.distance_km - prev.distance_km) * 1000; // meters
-      if (distDelta > 1) {
-        gradient = ((alt - prevAlt) / distDelta) * 100;
-        gradient = Math.max(-30, Math.min(30, gradient)); // clamp extremes
-      }
+      const distDelta = (r.distance_km - records[i - 1]!.distance_km) * 1000;
+      if (distDelta > 1) gradient = Math.max(-30, Math.min(30, ((alt - prevAlt) / distDelta) * 100));
     }
     prevAlt = alt;
 
-    // Would KROMI be active? (only makes sense at speed > 2km/h)
     const isActive = r.speed_kmh > 2;
 
-    // Score terrain (same logic as TuningIntelligence)
+    // === TERRAIN + WEIGHT ===
     let terrainScore = 0;
     if (gradient > 12) terrainScore = 100;
     else if (gradient > 8) terrainScore = 85;
@@ -94,52 +88,87 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
     else if (gradient > -2) terrainScore = 25;
     else if (gradient > -5) terrainScore = 10;
 
-    // Battery modifier
-    const soc = (batteryWh / totalWh) * 100;
-    let batteryMod = 1.0;
-    if (soc <= 60 && soc > 30) batteryMod = 0.7 + (soc - 30) / 100;
-    else if (soc <= 30 && soc > 15) batteryMod = 0.5 + (soc - 15) / 75;
-    else if (soc <= 15) batteryMod = 0.4;
+    // Weight: heavier = more help on climbs
+    if (gradient > 2) {
+      terrainScore = Math.min(100, Math.round(terrainScore * (0.8 + 0.2 * weightFactor)));
+    }
 
-    // Speed modifier
+    // === BATTERY MODIFIER ===
+    const soc = (batteryWh / totalWh) * 100;
+    const batteryFactor = Math.min(totalWh / 1050, 1.2);
+    const conserveAt = 30 * batteryFactor;
+    const emergencyAt = 15 * batteryFactor;
+    let batteryMod = 1.0;
+    if (soc <= 60 && soc > conserveAt) batteryMod = 0.7 + (soc - conserveAt) / (60 - conserveAt) * 0.3;
+    else if (soc <= conserveAt && soc > emergencyAt) batteryMod = 0.5 + (soc - emergencyAt) / (conserveAt - emergencyAt) * 0.2;
+    else if (soc <= emergencyAt) batteryMod = 0.4;
+
+    // === SPEED + SPEED LIMIT ===
     let speedMod = 0;
-    if (r.speed_kmh > 25) speedMod = -20;
+    if (r.speed_kmh > bike.speed_limit_kmh - 2) speedMod = -25;
+    else if (r.speed_kmh > bike.speed_limit_kmh - 5) speedMod = -15;
+    else if (r.speed_kmh > 25) speedMod = -20;
     else if (r.speed_kmh < 5 && gradient > 5) speedMod = 25;
     else if (r.speed_kmh < 10 && gradient > 3) speedMod = 15;
     else if (r.speed_kmh < 3 && isActive) speedMod = -10;
 
-    const rawScore = terrainScore * batteryMod + speedMod;
+    // === HEART RATE ===
+    let hrMod = 0;
+    if (r.hr_bpm > 0 && hrMax > 0) {
+      const pct = r.hr_bpm / hrMax;
+      if (pct > 0.92) hrMod = 20;
+      else if (pct > 0.85) hrMod = 15;
+      else if (pct > 0.75) hrMod = 5;
+      else if (pct < 0.55) hrMod = -10;
+    }
+
+    // === CADENCE ===
+    let cadMod = 0;
+    if (r.cadence_rpm > 0) {
+      if (r.cadence_rpm > 90) cadMod = -10;
+      else if (r.cadence_rpm < 40 && gradient > 3) cadMod = 20;
+      else if (r.cadence_rpm < 60) cadMod = 10;
+    }
+
+    // === RIDER POWER (W/kg) ===
+    let powerMod = 0;
+    if (r.power_watts > 0 && rider.weight_kg > 0) {
+      const wkg = r.power_watts / rider.weight_kg;
+      if (wkg > 3.5) powerMod = 15;
+      else if (wkg > 2.5) powerMod = 10;
+      else if (wkg < 0.5) powerMod = -15;
+      else if (wkg < 1.0) powerMod = -5;
+    }
+
+    // === ALTITUDE ===
+    let altMod = 0;
+    if (alt > 2500) altMod = 10;
+    else if (alt > 2000) altMod = 7;
+    else if (alt > 1500) altMod = 4;
+
+    // === COMBINE ===
+    const rawScore = terrainScore * batteryMod + speedMod + hrMod + cadMod + powerMod + altMod;
     const score = Math.max(0, Math.min(100, Math.round(rawScore)));
 
-    // Score → level
     const targetLevel: 1 | 2 | 3 = score > 65 ? 1 : score > 35 ? 2 : 3;
 
-    // Smoothing (3 samples)
     levelHistory.push(targetLevel);
     if (levelHistory.length > 3) levelHistory.shift();
     if (levelHistory.length >= 3 && levelHistory.every((l) => l === levelHistory[0])) {
-      if (currentLevel !== levelHistory[0]!) {
-        levelChanges++;
-        currentLevel = levelHistory[0]!;
-      }
+      if (currentLevel !== levelHistory[0]!) { levelChanges++; currentLevel = levelHistory[0]!; }
     }
 
-    // Battery simulation (Wh consumed per interval)
-    // Interval between records (typically ~5s)
+    // === BATTERY SIMULATION ===
     const dt = i > 0 ? (r.elapsed_s - records[i - 1]!.elapsed_s) : 0;
     const dtH = dt / 3600;
-
     if (r.speed_kmh > 2 && dtH > 0) {
-      // KROMI consumption: varies by level
-      const kromiConsumptionRate = currentLevel === 1 ? cfg.consumption_power
-        : currentLevel === 2 ? (cfg.consumption_power + cfg.consumption_sport) / 2
-        : cfg.consumption_sport;
-      const kromiWh = kromiConsumptionRate * r.speed_kmh * dtH;
-      batteryWh = Math.max(0, batteryWh - kromiWh);
-
-      // Fixed POWER consumption (always max)
-      const fixedWh = cfg.consumption_power * r.speed_kmh * dtH;
-      batteryFixedWh = Math.max(0, batteryFixedWh - fixedWh);
+      // KROMI: varies by level
+      const kromiRate = currentLevel === 1 ? bike.consumption_power
+        : currentLevel === 2 ? (bike.consumption_power + bike.consumption_sport) / 2
+        : bike.consumption_sport;
+      batteryWh = Math.max(0, batteryWh - kromiRate * r.speed_kmh * dtH);
+      // Fixed POWER: always max consumption
+      batteryFixedWh = Math.max(0, batteryFixedWh - bike.consumption_power * r.speed_kmh * dtH);
     }
 
     scoreSum += score;
@@ -164,8 +193,9 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
       battery_pct: Math.round((batteryWh / totalWh) * 100),
       consumption_wh: Math.round(totalWh - batteryWh),
       terrain_score: terrainScore,
-      battery_modifier: Math.round(batteryMod * 100) / 100,
+      hr_mod: hrMod,
       speed_mod: speedMod,
+      weight_factor: weightFactor,
     });
   }
 
@@ -182,9 +212,13 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
     battery_start: 100,
     battery_end_kromi: batteryEndKromi,
     battery_end_fixed: batteryEndFixed,
-    battery_saved_pct: batteryEndKromi - batteryEndFixed,
+    battery_saved_pct: Math.max(0, batteryEndKromi - batteryEndFixed),
     avg_score: records.length > 0 ? Math.round(scoreSum / records.length) : 0,
     max_score: maxScore,
     level_changes: levelChanges,
+    rider_weight: rider.weight_kg,
+    rider_hr_max: hrMax,
+    bike_battery_wh: totalWh,
+    bike_motor: bike.motor_name,
   };
 }
