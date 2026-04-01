@@ -571,23 +571,23 @@ class BLEManager(private val context: Context) {
                             val cmdType = data[3].toInt() and 0xFF
                             val rawHex = data.joinToString(" ") { "%02X".format(it) }
 
-                            // Log raw bytes for ALL cmd types, throttled per type
+                            // Log raw bytes for ALL cmd types, throttled per type (2s)
                             val now = System.currentTimeMillis()
                             val typeKey = "fc23_$cmdType"
                             val lastLog = fc23LogTimes.getOrDefault(typeKey, 0L)
-                            if (now - lastLog > 3000) {
+                            if (now - lastLog > 2000) {
                                 fc23LogTimes[typeKey] = now
                                 // Log with indexed bytes for easy field identification
                                 val indexed = data.mapIndexed { i, b -> "[%d]=%02X".format(i, b) }.joinToString(" ")
                                 Log.i(TAG, "FC23 cmd=%02X: $indexed".format(cmdType))
-                            }
 
-                            // Send raw hex to PWA for all types
-                            onDataReceived?.invoke(JSONObject()
-                                .put("type", "fc23raw")
-                                .put("cmd", cmdType)
-                                .put("hex", rawHex)
-                                .put("size", data.size))
+                                // Send raw hex to UI (throttled)
+                                onDataReceived?.invoke(JSONObject()
+                                    .put("type", "fc23raw")
+                                    .put("cmd", cmdType)
+                                    .put("hex", rawHex)
+                                    .put("size", data.size))
+                            }
 
                             // === ONLY PARSE cmd 0x41 (riding telemetry) ===
                             if (cmdType != 0x41) return

@@ -242,6 +242,24 @@ class MainActivity : AppCompatActivity() {
             "charRead" -> appendLog("RD", "[${json.optString("short")}] hex=${json.optString("hex")} ascii=\"${json.optString("ascii")}\" len=${json.optInt("size")}")
             "charReadFail" -> appendLog("RD!", "[${json.optString("short")}] FAILED status=${json.optInt("status")}")
             "unknownNotify" -> appendLog("NTF", "[${json.optString("short")}] hex=${json.optString("hex")} len=${json.optInt("size")}")
+            "fc23raw" -> {
+                val cmd = json.optInt("cmd")
+                val hex = json.optString("hex")
+                appendLog("RAW", "cmd=%02X %s".format(cmd, hex))
+            }
+            "sgRidingDiag" -> {
+                val hex = json.optString("rawHex")
+                appendLog("HEX", "41: $hex")
+                appendLog("ST_A", "spd=%.1f trq=%.1f cad=%.1f pwr=%.1f soc=%d".format(
+                    json.optDouble("a_speed"), json.optDouble("a_torque"),
+                    json.optDouble("a_cadence"), json.optDouble("a_power"),
+                    json.optInt("a_soc")))
+                appendLog("ST_B", "spd=%.1f trq=%.1f cad=%.1f pwr=%.1f soc=%d car=%d d=%.1f t=%d".format(
+                    json.optDouble("b_speed"), json.optDouble("b_torque"),
+                    json.optDouble("b_cadence"), json.optDouble("b_power"),
+                    json.optInt("b_soc"), json.optInt("b_carr"),
+                    json.optDouble("b_dist"), json.optInt("b_time")))
+            }
             "sgRiding" -> {
                 val spd = json.optDouble("speed", 0.0)
                 val trq = json.optDouble("torque", 0.0)
