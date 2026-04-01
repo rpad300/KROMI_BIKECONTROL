@@ -1,78 +1,55 @@
 import { useBikeStore } from '../../store/bikeStore';
-import { sendAssistMode, isMotorControlAvailable, bleMode } from '../../services/bluetooth/BLEBridge';
 import { AssistMode, ASSIST_MODE_LABELS, ASSIST_MODE_COLORS } from '../../types/bike.types';
-import { autoAssistEngine } from '../../services/autoAssist/AutoAssistEngine';
-import { motorController } from '../../services/motor/MotorController';
 
-const MAIN_MODES = [AssistMode.ECO, AssistMode.TOUR, AssistMode.SPORT, AssistMode.POWER] as const;
+const ALL_MODES = [
+  AssistMode.ECO,
+  AssistMode.TOUR,
+  AssistMode.SPORT,
+  AssistMode.POWER,
+  AssistMode.AUTO,
+] as const;
 
+/**
+ * AssistModeWidget — read-only indicator of the bike's current assist mode.
+ *
+ * The mode is set physically via the RideControl buttons on the handlebar.
+ * We read it from cmd 0x41 telemetry (fc23cmd41.assistLevel).
+ * Mode changes via BLE (0x1C) are blocked by the Smart Gateway.
+ * Motor intensity is controlled via SET_TUNING in the TuningWidget.
+ */
 export function AssistModeWidget() {
   const assistMode = useBikeStore((s) => s.assist_mode);
-  const gevConnected = useBikeStore((s) => s.ble_services.gev);
-  const motorAvailable = gevConnected || isMotorControlAvailable();
-
-  const handleModeChange = async (mode: AssistMode) => {
-    useBikeStore.getState().setAssistMode(mode);
-    await sendAssistMode(mode);
-    // Notify both engines: manual override pauses auto-assist 60s
-    autoAssistEngine.notifyManualOverride('app_button');
-    motorController.notifyManualOverride();
-    if ('vibrate' in navigator) navigator.vibrate(50);
-  };
+  const bleConnected = useBikeStore((s) => s.ble_status === 'connected');
 
   return (
-    <div className="space-y-2">
-      {/* Main mode buttons */}
-      <div className="grid grid-cols-4 gap-2">
-        {MAIN_MODES.map((mode) => (
-          <button
-            key={mode}
-            onClick={() => handleModeChange(mode)}
-            className={`
-              h-16 rounded-xl font-bold text-white text-lg
-              ${assistMode === mode ? ASSIST_MODE_COLORS[mode] : 'bg-gray-700'}
-              ${assistMode === mode ? 'ring-2 ring-white' : ''}
-              active:scale-95 transition-transform
-            `}
-          >
-            {ASSIST_MODE_LABELS[mode]}
-          </button>
-        ))}
+    <div className="space-y-1.5">
+      {/* Mode indicator pills */}
+      <div className="flex gap-1.5">
+        {ALL_MODES.map((mode) => {
+          const active = assistMode === mode;
+          return (
+            <div
+              key={mode}
+              className={`
+                flex-1 h-11 rounded-xl font-bold text-sm flex items-center justify-center
+                ${active ? `${ASSIST_MODE_COLORS[mode]} text-white ring-2 ring-white` : 'bg-gray-800 text-gray-600'}
+                transition-colors
+              `}
+            >
+              {ASSIST_MODE_LABELS[mode]}
+            </div>
+          );
+        })}
       </div>
 
-      {/* AUTO + WALK row */}
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          onClick={() => handleModeChange(AssistMode.AUTO)}
-          className={`h-14 rounded-xl font-bold text-white text-lg
-            ${assistMode === AssistMode.AUTO ? 'bg-purple-600 ring-2 ring-white' : 'bg-gray-700'}
-            active:scale-95 transition-transform
-          `}
-        >
-          AUTO
-        </button>
-        <button
-          onPointerDown={() => handleModeChange(AssistMode.WALK)}
-          onPointerUp={() => handleModeChange(AssistMode.ECO)}
-          className="h-14 rounded-xl font-bold text-white text-lg bg-gray-700 active:bg-cyan-600 transition-colors"
-        >
-          WALK
-        </button>
+      {/* Status line */}
+      <div className="text-center text-[10px] text-gray-600 px-2">
+        {!bleConnected
+          ? 'Modo assist — liga a bike para ver'
+          : assistMode === AssistMode.WALK
+            ? 'WALK mode activo'
+            : 'Modo controlado pelo RideControl'}
       </div>
-
-      {/* Motor control status */}
-      {!motorAvailable && (
-        <div className="text-center text-xs text-gray-600 px-2">
-          {bleMode === 'native'
-            ? 'A ligar ao motor...'
-            : 'Modo local — instala a app Android para controlo do motor'}
-        </div>
-      )}
-      {motorAvailable && (
-        <div className="text-center text-xs text-emerald-600 px-2">
-          Motor control activo
-        </div>
-      )}
     </div>
   );
 }

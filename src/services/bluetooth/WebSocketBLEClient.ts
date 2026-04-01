@@ -419,6 +419,14 @@ class WebSocketBLEClient {
           }
           break;
 
+        case 'fc23cmd41':
+          // Motor/assist state from FC23 telemetry — byte[14] = assist level
+          // Maps: 0=OFF, 1=ECO, 2=TOUR, 3=SPORT, 4=POWER, 5=AUTO
+          if (msg.assistLevel !== undefined) {
+            store.setAssistMode(msg.assistLevel);
+          }
+          break;
+
         case 'sgResponse':
           console.log(`[WSClient] Response cmd=${msg.cmd} key=${msg.key}: ${msg.decrypted}`);
           break;
