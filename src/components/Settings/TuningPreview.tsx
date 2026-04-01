@@ -1,4 +1,4 @@
-import { useSettingsStore } from '../../store/settingsStore';
+import { useSettingsStore, DEFAULT_BIKE_CONFIG } from '../../store/settingsStore';
 
 /**
  * TuningPreview — visual impact preview of current tuning configuration.
@@ -11,7 +11,8 @@ import { useSettingsStore } from '../../store/settingsStore';
  * Uses factory/configured specs — no live data needed.
  */
 export function TuningPreview() {
-  const bike = useSettingsStore((s) => s.bikeConfig);
+  const rawBike = useSettingsStore((s) => s.bikeConfig);
+  const bike = { ...DEFAULT_BIKE_CONFIG, ...rawBike };
   const rider = useSettingsStore((s) => s.riderProfile);
   const totalWh = bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0);
 
