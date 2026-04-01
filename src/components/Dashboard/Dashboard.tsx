@@ -10,6 +10,7 @@ import { TorqueWidget } from './TorqueWidget';
 import { RideSessionWidget } from './RideSessionWidget';
 import { TripStatsWidget } from './TripStatsWidget';
 import { TuningWidget } from './TuningWidget';
+import { IntelligenceWidget } from './IntelligenceWidget';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
@@ -37,7 +38,10 @@ export function Dashboard() {
       {/* Assist mode buttons */}
       <AssistModeWidget />
 
-      {/* Motor tuning — intensity control within each assist mode */}
+      {/* KROMI intelligence — shows scoring and decisions */}
+      <IntelligenceWidget />
+
+      {/* Motor tuning — manual override for intensity */}
       <TuningWidget />
 
       {/* Trip stats */}

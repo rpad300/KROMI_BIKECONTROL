@@ -4,10 +4,9 @@ import { useMapStore } from '../store/mapStore';
 import { useAutoAssistStore } from '../store/autoAssistStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTuningStore } from '../store/tuningStore';
-import { useTorqueStore } from '../store/torqueStore';
+import { useIntelligenceStore } from '../store/intelligenceStore';
 import { autoAssistEngine } from '../services/autoAssist/AutoAssistEngine';
-import { torqueEngine } from '../services/torque/TorqueEngine';
-import { motorController } from '../services/motor/MotorController';
+import { tuningIntelligence, type TuningInput } from '../services/motor/TuningIntelligence';
 import { setTuning, isTuningAvailable } from '../services/bluetooth/BLEBridge';
 import { AssistMode } from '../types/bike.types';
 
@@ -16,18 +15,13 @@ const TICK_INTERVAL_MS = 2000;
 /**
  * Central motor control loop — KROMI intelligent assist.
  *
- * ONLY active when the bike is in POWER mode (set via physical RideControl).
- * In any other mode, KROMI is passive — shows telemetry but doesn't touch the motor.
+ * Only active in POWER mode. Every 2s:
+ * 1. Gather all inputs (terrain, speed, cadence, power, battery)
+ * 2. TuningIntelligence scores and decides level (1-3)
+ * 3. Send SET_TUNING if level changed
  *
- * When in POWER mode, every 2s:
- * 1. AutoAssistEngine → terrain analysis (elevation lookahead)
- * 2. TorqueEngine → optimal intensity for climb type + battery
- * 3. MotorController → translates to tuning level (1-3) for POWER mode
- * 4. Sends SET_TUNING via WebSocket bridge
- *
- * The user's choice is clear:
- * - Want KROMI intelligence? → Switch to POWER on RideControl
- * - Want simple/factory assist? → Use ECO/TOUR/ACTIVE/SPORT
+ * Terrain data is optional — works with just speed/cadence/power/battery.
+ * GPS + Elevation API adds terrain awareness and pre-emptive detection.
  */
 export function useMotorControl() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -42,73 +36,74 @@ export function useMotorControl() {
 
     intervalRef.current = setInterval(async () => {
       const settings = useSettingsStore.getState();
-      if (!settings.autoAssist.enabled) return;
-
       const bike = useBikeStore.getState();
+      const intelligence = useIntelligenceStore.getState();
 
-      // === KROMI only active in POWER mode ===
+      // === Gate: KROMI only in POWER mode ===
       if (bike.assist_mode !== AssistMode.POWER) {
-        // Passive: update UI state but don't send commands
-        useAutoAssistStore.getState().setLastDecision({
-          action: 'none',
-          reason: 'KROMI activo apenas em PWR',
-          terrain: null,
-        });
+        if (intelligence.active) {
+          useIntelligenceStore.getState().setActive(false);
+          useAutoAssistStore.getState().setLastDecision({
+            action: 'none',
+            reason: 'KROMI activo apenas em PWR',
+            terrain: null,
+          });
+        }
         return;
       }
 
-      const map = useMapStore.getState();
-      if (!map.gpsActive || map.latitude === 0) return;
-
-      const tuning = useTuningStore.getState();
-
-      // === 1. Terrain → analysis (AutoAssist) ===
-      const modeDecision = await autoAssistEngine.tick(
-        map.latitude,
-        map.longitude,
-        map.heading,
-        bike.speed_kmh,
-        bike.assist_mode,
-      );
-
-      // Update auto-assist store (for UI: terrain viz, override countdown)
-      const aaStore = useAutoAssistStore.getState();
-      aaStore.setLastDecision(modeDecision);
-      if (modeDecision.terrain) aaStore.setTerrain(modeDecision.terrain);
-      aaStore.setOverride(
-        autoAssistEngine.isOverrideActive(),
-        autoAssistEngine.getOverrideRemaining(),
-      );
-
-      // === 2. Terrain + Battery → Torque/Intensity ===
-      let torqueCmd = null;
-      if (modeDecision.terrain) {
-        torqueCmd = torqueEngine.calculateOptimalTorque(
-          modeDecision.terrain,
-          /* hrZone */ 0,
-          /* hrTrend */ 'stable',
-          /* gear */ 0,
-          bike.battery_percent,
-        );
-
-        if (torqueCmd) {
-          useTorqueStore.getState().setLastCommand(torqueCmd);
-        }
+      if (!intelligence.active) {
+        useIntelligenceStore.getState().setActive(true);
       }
 
-      // === 3. MotorController → decide tuning level ===
-      // In POWER-only mode, we don't change modes — only tuning intensity
-      const decision = motorController.decide(
-        bike.assist_mode,
-        tuning.current,
-        null,       // No mode changes — user controls mode via RideControl
-        torqueCmd,
-      );
+      // === Gather inputs ===
+      const input: TuningInput = {
+        gradient: 0,
+        speed: bike.speed_kmh,
+        cadence: bike.cadence_rpm,
+        riderPower: bike.power_watts,
+        batterySoc: bike.battery_percent,
+        upcomingGradient: null,
+        distanceToChange: null,
+      };
 
-      // === 4. Execute tuning change ===
-      if (decision.tuningChange && isTuningAvailable()) {
-        setTuning(decision.tuningChange);
-        tuning.setCurrent(decision.tuningChange);
+      // Terrain data (optional — needs GPS + auto-assist enabled)
+      const map = useMapStore.getState();
+      if (settings.autoAssist.enabled && map.gpsActive && map.latitude !== 0) {
+        const modeDecision = await autoAssistEngine.tick(
+          map.latitude, map.longitude, map.heading,
+          bike.speed_kmh, bike.assist_mode,
+        );
+
+        // Update terrain UI
+        const aaStore = useAutoAssistStore.getState();
+        aaStore.setLastDecision(modeDecision);
+        if (modeDecision.terrain) {
+          aaStore.setTerrain(modeDecision.terrain);
+          input.gradient = modeDecision.terrain.current_gradient_pct;
+
+          // Pre-emptive data
+          if (modeDecision.terrain.next_transition) {
+            input.upcomingGradient = modeDecision.terrain.next_transition.gradient_after_pct;
+            input.distanceToChange = modeDecision.terrain.next_transition.distance_m;
+          }
+        }
+        aaStore.setOverride(
+          autoAssistEngine.isOverrideActive(),
+          autoAssistEngine.getOverrideRemaining(),
+        );
+      }
+
+      // === Evaluate ===
+      const decision = tuningIntelligence.evaluate(input);
+      useIntelligenceStore.getState().setDecision(decision);
+
+      // === Execute: change tuning if level changed ===
+      const tuning = useTuningStore.getState();
+      if (decision.level !== tuning.current.power && isTuningAvailable()) {
+        const newLevels = { ...tuning.current, power: decision.level };
+        setTuning(newLevels);
+        tuning.setCurrent(newLevels);
       }
     }, TICK_INTERVAL_MS);
 
