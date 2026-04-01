@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
+import { calculateZones } from '../../types/athlete.types';
 import { useBikeStore } from '../../store/bikeStore';
 import { useAuthStore } from '../../store/authStore';
 import { connectBike, disconnectBike } from '../../services/bluetooth/BLEBridge';
@@ -101,6 +102,41 @@ export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void
             >
               Usar
             </button>
+          </div>
+          <NumberField label="Altura (cm)" value={profile.height_cm ?? 175} onChange={(v) => updateProfile({ height_cm: v })} />
+          <NumberField label="FC Repouso (bpm)" value={profile.hr_rest} onChange={(v) => updateProfile({ hr_rest: v })} />
+
+          {/* HR Zones + Target Selection */}
+          <div className="border-t border-gray-700 pt-3">
+            <span className="text-xs text-gray-500 uppercase">Zonas cardíacas (baseadas na FC Max {profile.hr_max}bpm)</span>
+          </div>
+          <div className="space-y-1.5">
+            {calculateZones(profile.hr_max).map((zone, i) => {
+              const isTarget = (profile.target_zone ?? 2) === i + 1;
+              return (
+                <button
+                  key={zone.name}
+                  onClick={() => updateProfile({ target_zone: i + 1 })}
+                  className={`w-full flex items-center justify-between p-2 rounded-lg transition-colors ${
+                    isTarget ? 'bg-emerald-900/30 ring-1 ring-emerald-500' : 'bg-gray-900 hover:bg-gray-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: zone.color }} />
+                    <span className="text-xs text-white font-bold">{zone.name}</span>
+                    <span className="text-xs text-gray-500">{zone.min_bpm}-{zone.max_bpm}bpm</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-600">{zone.description}</span>
+                    {isTarget && <span className="text-[9px] px-1.5 py-0.5 bg-emerald-600 text-white rounded font-bold">ALVO</span>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="text-[10px] text-gray-600">
+            O KROMI ajusta o motor para te manter na zona alvo.
+            Escolhe Z2 para treino de base, Z3 para ritmo, Z4 para limiar.
           </div>
         </div>
       </section>

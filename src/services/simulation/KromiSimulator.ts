@@ -6,6 +6,7 @@
  */
 
 import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
+import { getTargetZone } from '../../types/athlete.types';
 import type { ImportedRecord } from '../import/FitImportService';
 
 export interface SimulationPoint {
@@ -86,76 +87,46 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
 
     const isActive = r.speed_kmh > 2;
 
-    // === TERRAIN + WEIGHT ===
-    let terrainScore = 0;
-    if (gradient > 12) terrainScore = 100;
-    else if (gradient > 8) terrainScore = 85;
-    else if (gradient > 5) terrainScore = 70;
-    else if (gradient > 3) terrainScore = 55;
-    else if (gradient > 1) terrainScore = 40;
-    else if (gradient > -2) terrainScore = 25;
-    else if (gradient > -5) terrainScore = 10;
-
-    // Weight: heavier = more help on climbs
-    if (gradient > 2) {
-      terrainScore = Math.min(100, Math.round(terrainScore * (0.8 + 0.2 * weightFactor)));
+    // === PRIMARY: HR Zone Regulation ===
+    const targetZone = getTargetZone(rider);
+    let hrScore = 50; // neutral when no HR
+    if (r.hr_bpm > 0 && hrMax > 0) {
+      if (r.hr_bpm > targetZone.max_bpm) {
+        hrScore = Math.min(100, 50 + (r.hr_bpm - targetZone.max_bpm) * 5);
+      } else if (r.hr_bpm < targetZone.min_bpm) {
+        hrScore = Math.max(0, 50 - (targetZone.min_bpm - r.hr_bpm) * 3);
+      } else {
+        const zoneRange = targetZone.max_bpm - targetZone.min_bpm;
+        const posInZone = (r.hr_bpm - targetZone.min_bpm) / (zoneRange || 1);
+        hrScore = 35 + Math.round(posInZone * 30);
+      }
     }
 
-    // === BATTERY MODIFIER ===
-    const soc = (batteryWh / totalWh) * 100;
-    const batteryFactor = Math.min(totalWh / 1050, 1.2);
-    const conserveAt = 30 * batteryFactor;
-    const emergencyAt = 15 * batteryFactor;
-    let batteryMod = 1.0;
-    if (soc <= 60 && soc > conserveAt) batteryMod = 0.7 + (soc - conserveAt) / (60 - conserveAt) * 0.3;
-    else if (soc <= conserveAt && soc > emergencyAt) batteryMod = 0.5 + (soc - emergencyAt) / (conserveAt - emergencyAt) * 0.2;
-    else if (soc <= emergencyAt) batteryMod = 0.4;
+    // === SECONDARY: Terrain Anticipation ===
+    let terrainMod = 0;
+    if (gradient > 8) terrainMod = 15;
+    else if (gradient > 5) terrainMod = 10;
+    else if (gradient > 3) terrainMod = 5;
+    else if (gradient < -5) terrainMod = -10;
+    if (gradient > 3 && rider.weight_kg > 0) {
+      terrainMod = Math.round(terrainMod * (0.8 + 0.2 * weightFactor));
+    }
 
-    // === SPEED + SPEED LIMIT ===
+    // === TERTIARY: Battery ===
+    const soc = (batteryWh / totalWh) * 100;
+    const bf = Math.min(totalWh / 1050, 1.2);
+    let batteryMod = 1.0;
+    if (soc <= 60 && soc > 30 * bf) batteryMod = 0.7 + (soc - 30 * bf) / (60 - 30 * bf) * 0.3;
+    else if (soc <= 30 * bf && soc > 15 * bf) batteryMod = 0.5 + (soc - 15 * bf) / (15 * bf) * 0.2;
+    else if (soc <= 15 * bf) batteryMod = 0.4;
+
+    // === AUXILIARY ===
     let speedMod = 0;
     if (r.speed_kmh > bike.speed_limit_kmh - 2) speedMod = -25;
-    else if (r.speed_kmh > bike.speed_limit_kmh - 5) speedMod = -15;
-    else if (r.speed_kmh > 25) speedMod = -20;
-    else if (r.speed_kmh < 5 && gradient > 5) speedMod = 25;
-    else if (r.speed_kmh < 10 && gradient > 3) speedMod = 15;
-    else if (r.speed_kmh < 3 && isActive) speedMod = -10;
+    else if (r.speed_kmh < 2) speedMod = -20;
 
-    // === HEART RATE ===
-    let hrMod = 0;
-    if (r.hr_bpm > 0 && hrMax > 0) {
-      const pct = r.hr_bpm / hrMax;
-      if (pct > 0.92) hrMod = 20;
-      else if (pct > 0.85) hrMod = 15;
-      else if (pct > 0.75) hrMod = 5;
-      else if (pct < 0.55) hrMod = -10;
-    }
-
-    // === CADENCE ===
-    let cadMod = 0;
-    if (r.cadence_rpm > 0) {
-      if (r.cadence_rpm > 90) cadMod = -10;
-      else if (r.cadence_rpm < 40 && gradient > 3) cadMod = 20;
-      else if (r.cadence_rpm < 60) cadMod = 10;
-    }
-
-    // === RIDER POWER (W/kg) ===
-    let powerMod = 0;
-    if (r.power_watts > 0 && rider.weight_kg > 0) {
-      const wkg = r.power_watts / rider.weight_kg;
-      if (wkg > 3.5) powerMod = 15;
-      else if (wkg > 2.5) powerMod = 10;
-      else if (wkg < 0.5) powerMod = -15;
-      else if (wkg < 1.0) powerMod = -5;
-    }
-
-    // === ALTITUDE ===
-    let altMod = 0;
-    if (alt > 2500) altMod = 10;
-    else if (alt > 2000) altMod = 7;
-    else if (alt > 1500) altMod = 4;
-
-    // === COMBINE ===
-    const rawScore = terrainScore * batteryMod + speedMod + hrMod + cadMod + powerMod + altMod;
+    // === COMBINE: HR base + terrain anticipation + battery ===
+    const rawScore = (hrScore + terrainMod) * batteryMod + speedMod;
     const score = Math.max(0, Math.min(100, Math.round(rawScore)));
 
     const targetLevel: 1 | 2 | 3 = score > 65 ? 1 : score > 35 ? 2 : 3;
@@ -209,8 +180,8 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
       support_pct: levelSpec.assist_pct,
       torque: levelSpec.torque_nm,
       launch: levelSpec.launch,
-      terrain_score: terrainScore,
-      hr_mod: hrMod,
+      terrain_score: terrainMod,
+      hr_mod: Math.round(hrScore - 50),
       speed_mod: speedMod,
       weight_factor: weightFactor,
     });
