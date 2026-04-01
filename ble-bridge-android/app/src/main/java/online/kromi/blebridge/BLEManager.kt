@@ -408,19 +408,38 @@ class BLEManager(private val context: Context) {
         }
 
         override fun onDescriptorWrite(g: BluetoothGatt, desc: BluetoothGattDescriptor, status: Int) {
-            Log.i(TAG, "Descriptor write: ${desc.characteristic.uuid} status=$status")
-            enableNextNotification(g)
+            val cShort = desc.characteristic.uuid.toString().substring(4, 8).uppercase()
+            val isSG = desc.characteristic.uuid == SG_NOTIFY
+            val statusStr = if (status == BluetoothGatt.GATT_SUCCESS) "OK" else "FAIL($status)"
+            Log.i(TAG, "Subscribed [$cShort]: $statusStr${if (isSG) " ← SG NOTIFY!" else ""}")
+            onDataReceived?.invoke(JSONObject()
+                .put("type", "subscribed")
+                .put("char", cShort)
+                .put("ok", status == BluetoothGatt.GATT_SUCCESS)
+                .put("isSG", isSG))
+            // Small delay between subscriptions for stability
+            handler.postDelayed({ enableNextNotification(g) }, 100)
         }
     }
 
     private fun enableNextNotification(g: BluetoothGatt) {
-        if (pendingNotifications.isEmpty()) return
+        if (pendingNotifications.isEmpty()) {
+            Log.i(TAG, "★ All notifications enabled! Listening for data...")
+            onStatusChanged?.invoke("All subscribed — listening...")
+            return
+        }
         val char = pendingNotifications.removeAt(0)
+        val cShort = char.uuid.toString().substring(4, 8).uppercase()
+        val isSG = char.uuid == SG_NOTIFY
         g.setCharacteristicNotification(char, true)
         char.getDescriptor(CCC_DESCRIPTOR)?.let { desc ->
             desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            Log.i(TAG, "Subscribing [$cShort]${if (isSG) " ← SG NOTIFY!" else ""}...")
             g.writeDescriptor(desc)
-        } ?: enableNextNotification(g)
+        } ?: run {
+            Log.w(TAG, "No CCC descriptor for [$cShort] — skipping")
+            enableNextNotification(g)
+        }
     }
 
     private fun handleCharacteristicData(char: BluetoothGattCharacteristic) {
@@ -750,22 +769,39 @@ class BLEManager(private val context: Context) {
             }, (i * 600).toLong())
         }
 
-        // After all writes, start sending heartbeat every 1s for 10 seconds
-        // to see if data flow starts
+        // After writes, continue heartbeat
         val heartbeat = byteArrayOf(0xFC.toByte(), 0x22, 0x00, 0xDE.toByte())
         val startDelay = (tests.size * 600 + 500).toLong()
-        for (i in 0..9) {
+        for (i in 0..14) {
             handler.postDelayed({
                 char.value = heartbeat
                 char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
                 g.writeCharacteristic(char)
-                if (i == 0) Log.i(TAG, ">>> Sending heartbeat every 1s for 10s...")
-                if (i == 9) {
-                    Log.i(TAG, ">>> HEARTBEAT TEST COMPLETE")
-                    onStatusChanged?.invoke("Heartbeat done — check SG! data")
+                if (i == 0) Log.i(TAG, ">>> Heartbeat 15s...")
+                if (i == 14) {
+                    Log.i(TAG, ">>> TEST COMPLETE")
+                    onStatusChanged?.invoke("Test done — check log for SG data")
                 }
             }, startDelay + (i * 1000).toLong())
         }
+    }
+
+    /**
+     * Passive listen — NO writes, just wait for spontaneous SG data.
+     * If nRF Connect receives data without writing, we should too.
+     */
+    fun passiveListen() {
+        Log.i(TAG, "╔═══════════════════════════════════════╗")
+        Log.i(TAG, "║  PASSIVE LISTEN — no writes, just     ║")
+        Log.i(TAG, "║  waiting for SG spontaneous data      ║")
+        Log.i(TAG, "╚═══════════════════════════════════════╝")
+        onStatusChanged?.invoke("Passive listen — 30s, no writes...")
+
+        // Just wait and log — if SG sends FC23 data spontaneously we'll see it
+        handler.postDelayed({
+            Log.i(TAG, ">>> 30s passive listen complete")
+            onStatusChanged?.invoke("Listen done — any SG data?")
+        }, 30000)
     }
 
     /**

@@ -105,6 +105,16 @@ class MainActivity : AppCompatActivity() {
 
         testBtn.setOnClickListener { runBLETest() }
 
+        findViewById<Button>(R.id.listenBtn).setOnClickListener {
+            appendLog("LSN", "══ PASSIVE LISTEN 30s ══")
+            val ble = BLEBridgeService.instance?.bleManager
+            if (ble == null || !ble.isConnected) {
+                appendLog("ERR", "Not connected — SCAN first")
+                return@setOnClickListener
+            }
+            ble.passiveListen()
+        }
+
         testSGBtn.setOnClickListener {
             appendLog("SG", "══ SG WRITE TEST ══")
             val ble = BLEBridgeService.instance?.bleManager
@@ -218,6 +228,11 @@ class MainActivity : AppCompatActivity() {
             "sgTelemetry" -> appendLog("SG23", "cmd=${"%02x".format(json.optInt("cmd"))} ${json.optString("hex")}")
             "sgHeartbeat" -> appendLog("SGHB", json.optString("hex"))
             "sgEncrypted" -> appendLog("SG21", "cmd=${"%02x".format(json.optInt("cmd"))} AES ${json.optString("hex")}")
+            "subscribed" -> {
+                val ok = if (json.optBoolean("ok")) "✅" else "❌"
+                val sg = if (json.optBoolean("isSG")) " ★SG!" else ""
+                appendLog("SUB", "${json.optString("char")}: $ok$sg")
+            }
             "sgWriteTest" -> appendLog("SG>", "[${json.optString("name")}] ${json.optString("hex")} (${json.optInt("size")}b)")
             "sgWriteResult" -> appendLog("SG>", "[${json.optString("name")}] write=${json.optBoolean("ok")}")
             "sgWriteCallback" -> appendLog("SG<", "[${json.optString("short")}] ${if (json.optBoolean("ok")) "OK" else "FAIL(${json.optInt("status")})"}")

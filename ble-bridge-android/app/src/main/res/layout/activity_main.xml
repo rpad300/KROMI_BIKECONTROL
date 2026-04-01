@@ -112,18 +112,37 @@
         android:paddingBottom="6dp"
         android:fontFamily="monospace"/>
 
-    <!-- TEST SG WRITE — probes motor protocol -->
-    <Button
-        android:id="@+id/testSGBtn"
+    <!-- SG test buttons -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:layout_marginHorizontal="12dp"
-        android:layout_marginBottom="4dp"
-        android:text="TEST SG WRITE"
-        android:textSize="16sp"
-        android:backgroundTint="#F59E0B"
-        android:textColor="#000000"
-        android:textStyle="bold"/>
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp"
+        android:paddingBottom="4dp">
+
+        <Button
+            android:id="@+id/testSGBtn"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:text="TEST SG"
+            android:textSize="14sp"
+            android:backgroundTint="#F59E0B"
+            android:textColor="#000000"
+            android:textStyle="bold"
+            android:layout_marginEnd="4dp"/>
+
+        <Button
+            android:id="@+id/listenBtn"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:text="LISTEN 30s"
+            android:textSize="14sp"
+            android:backgroundTint="#8B5CF6"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"/>
+    </LinearLayout>
 
     <!-- Action buttons row -->
     <LinearLayout
