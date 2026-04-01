@@ -152,9 +152,8 @@ class BLEManager(private val context: Context) {
     }
 
     private fun connectGatt(device: BluetoothDevice) {
-        // RideControl uses connectGatt WITHOUT TRANSPORT_LE
-        // This is critical — auto transport lets Android choose the right mode
-        gatt = device.connectGatt(context, false, gattCallback)
+        // RideControl uses TRANSPORT_LE explicitly
+        gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
     fun disconnect() {
@@ -624,13 +623,16 @@ class BLEManager(private val context: Context) {
     }
 
     /**
-     * Test SG Write — direct assist mode change attempts.
-     * b8-b10: K4+MODE_STATE(0x02) responds ba0000e224.
-     * Now try: ASSIST_CONFIG (0xE2) with mode values to change assist.
-     * ALSO: query MODE_STATE between changes to see if response changes.
+     * Test SG Write — session handshake then commands.
      *
-     * *** BIKE MUST BE POWERED ON (press power button) ***
-     * Watch the LED on the power button for color change.
+     * From APK analysis:
+     * - connectGEV uses session keys (0-3, 8) with sendCommandThenWaitNotifications
+     * - After session: commands use key 4 (sendData) or 14 (data+cmd)
+     * - "aesSe" = session encrypt, "sendD" = send data, "aesDa" = data encrypt
+     *
+     * Phase 1: Session handshake — CONNECT_GEV (0x00) with session keys 0-3, 8
+     * Phase 2: If session works — commands with key 4 and 14
+     * Phase 3: Mode change attempts
      */
     fun testSGWrite() {
         val g = gatt ?: return
@@ -642,52 +644,45 @@ class BLEManager(private val context: Context) {
 
         val tests = mutableListOf<Pair<String, ByteArray>>()
 
-        // Step 1: Query current mode (baseline)
-        tests.add("READ_MODE" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
+        // === PHASE 1: Session handshake with CONNECT_GEV ===
+        // The APK uses "connectGEV" which is general command index 0 = CONNECT_GEV
+        // GEV general commands use a different format: FC 21 [general_cmd_byte] checksum
+        // But CONNECT_GEV might be cmd 0x01 (CONNECTION) in GEV packet format
 
-        // Step 2: Try setting ECO (mode 1) via ASSIST_CONFIG 0xE2
-        tests.add("SET_ECO_E2" to GEVCrypto.encrypt(buildGevPacket(0xE2, byteArrayOf(0x01)), 4))
+        // Try CONNECT (0x01) with ALL session keys
+        for (k in intArrayOf(0, 1, 2, 3, 8)) {
+            tests.add("SESS_K${k}_01" to GEVCrypto.encrypt(buildGevPacket(0x01, byteArrayOf()), k))
+        }
 
-        // Step 3: Query mode — did it change?
-        tests.add("CHECK1" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
+        // Check if session established (MODE query with key 4)
+        tests.add("CHK_SESS" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
 
-        // Step 4: Try SPORT (mode 3)
-        tests.add("SET_SPORT_E2" to GEVCrypto.encrypt(buildGevPacket(0xE2, byteArrayOf(0x03)), 4))
+        // === PHASE 2: Try CONNECT with key 4 and 14 (sendData keys) ===
+        tests.add("K14_CONN" to GEVCrypto.encrypt(buildGevPacket(0x01, byteArrayOf()), 14))
+        tests.add("CHK_K14" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 14))
 
-        // Step 5: Query mode
-        tests.add("CHECK2" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
+        // === PHASE 3: enableRidingNotification (from APK) then read data ===
+        // enableRidingNotification might be a specific GEV command that starts data flow
+        // Try common "enable" cmd IDs: 0x10, 0x11, 0x20
+        tests.add("K4_EN_10" to GEVCrypto.encrypt(buildGevPacket(0x10, byteArrayOf()), 4))
+        tests.add("K4_EN_11" to GEVCrypto.encrypt(buildGevPacket(0x11, byteArrayOf()), 4))
+        tests.add("K4_EN_20" to GEVCrypto.encrypt(buildGevPacket(0x20, byteArrayOf()), 4))
 
-        // Step 6: Try POWER (mode 4)
-        tests.add("SET_POWER_E2" to GEVCrypto.encrypt(buildGevPacket(0xE2, byteArrayOf(0x04)), 4))
+        // === PHASE 4: readAllBikeData sequence (from APK) ===
+        // connectGEV → readBattery → readRidingData → readTuningData
+        // Try battery (0x03) and riding (0x38) with key 14 (aesDa key)
+        tests.add("K14_BATT" to GEVCrypto.encrypt(buildGevPacket(0x03, byteArrayOf()), 14))
+        tests.add("K14_RIDE" to GEVCrypto.encrypt(buildGevPacket(0x38, byteArrayOf()), 14))
 
-        // Step 7: Query mode
-        tests.add("CHECK3" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
-
-        // Step 8: Try button simulation — ASSIST_UP (0xA1)
-        tests.add("ASSIST_UP_A1" to GEVCrypto.encrypt(buildGevPacket(0xA1, byteArrayOf()), 4))
-
-        // Step 9: Query mode
-        tests.add("CHECK4" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
-
-        // Step 10: ASSIST_DOWN (0xA2)
-        tests.add("ASSIST_DN_A2" to GEVCrypto.encrypt(buildGevPacket(0xA2, byteArrayOf()), 4))
-
-        // Step 11: Query mode
-        tests.add("CHECK5" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
-
-        // Step 12: Try INTO_NORMAL_MODE (mode index 5) via cmd 0x02 with payload
-        // GEVManager.intoMode uses cmd_id based on mode index
-        // The "mode command" format might be different from ASSIST_CONFIG
-        tests.add("NORMAL_MODE" to GEVCrypto.encrypt(buildGevPacket(0x05, byteArrayOf(0x05)), 4))
-
-        // Step 13: Final check
-        tests.add("CHECK6" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
+        // === PHASE 5: Mode change with key 14 (data+cmd key from APK) ===
+        tests.add("K14_ECO" to GEVCrypto.encrypt(buildGevPacket(0xE2, byteArrayOf(0x01)), 14))
+        tests.add("CHK_FINAL" to GEVCrypto.encrypt(buildGevPacket(0x02, byteArrayOf()), 4))
 
         Log.i(TAG, "╔═══════════════════════════════════════╗")
-        Log.i(TAG, "║  ASSIST MODE TEST — ${tests.size} packets    ║")
-        Log.i(TAG, "║  WATCH BIKE LED FOR COLOR CHANGE!     ║")
+        Log.i(TAG, "║  SESSION + CMD TEST — ${tests.size} packets  ║")
+        Log.i(TAG, "║  TRANSPORT_LE enabled in this build   ║")
         Log.i(TAG, "╚═══════════════════════════════════════╝")
-        onStatusChanged?.invoke("Mode test — WATCH BIKE LED!")
+        onStatusChanged?.invoke("Session test (${tests.size} packets)...")
 
         for ((i, test) in tests.withIndex()) {
             val (name, data) = test
@@ -707,13 +702,13 @@ class BLEManager(private val context: Context) {
                     .put("type", "sgWriteResult")
                     .put("name", name)
                     .put("ok", ok))
-            }, (i * 1000).toLong())  // 1s between — give time to observe LED
+            }, (i * 800).toLong())
         }
 
         handler.postDelayed({
-            Log.i(TAG, ">>> MODE TEST COMPLETE")
-            onStatusChanged?.invoke("Mode test done — did LED change?")
-        }, (tests.size * 1000 + 500).toLong())
+            Log.i(TAG, ">>> SESSION TEST COMPLETE")
+            onStatusChanged?.invoke("Session test done — check SG! responses")
+        }, (tests.size * 800 + 500).toLong())
     }
 
     private fun buildGevPacket(cmdId: Int, payload: ByteArray): ByteArray {
