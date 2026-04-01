@@ -6,479 +6,288 @@
 
 ## 1. Visão Geral
 
-O KROMI Intelligence é um **regulador de zona cardíaca** — o motor ajuda a manter o rider na zona HR escolhida. Não é um reactor de terreno.
+O KROMI Intelligence é um **regulador de zona cardíaca**. O motor mantém o rider na zona HR escolhida. Não reage ao terreno — antecipa-o.
 
-**Princípio fundamental**: O motor não reage ao terreno dando MAX em subidas. Em vez disso, monitoriza a frequência cardíaca e ajusta o assist para manter o rider na zona alvo. O terreno é usado para **antecipação** (pre-boost antes de uma subida para evitar picos de HR).
+**Arquitectura layered (não aditiva)**:
+```
+intensity = clamp(hrTarget + anticipationBias, 0, 100) × batteryConstraint
+```
 
-**Hierarquia de decisão**:
-1. **PRIMARY** — HR zone regulation (manter na zona alvo)
-2. **SECONDARY** — Terrain anticipation (pre-boost/reduce)
-3. **TERTIARY** — Battery conservation (redução progressiva)
+| Layer | Função | Range | Papel |
+|-------|--------|-------|-------|
+| **HR Target** | Define intensidade base | 0-100 | PRIMARY — regula |
+| **Terrain Anticipation** | Ajusta timing | -20 a +25 | SECONDARY — antecipa |
+| **Battery Constraint** | Limita output | ×0.4-1.0 | TERTIARY — constrange |
+
+O HR não é um modificador do terreno. O terreno não é o driver. São layers independentes.
 
 ### Quando está activo
-- **Apenas em POWER mode** — o utilizador controla o modo via RideControl físico
-- Nos outros modos (ECO, TOUR, ACTIVE, SPORT, SMART) o KROMI é passivo
-- Mostra telemetria em todos os modos, mas só envia comandos em POWER
-
-### Arquitectura
-```
-┌─────────────────────────────────────────────────────────┐
-│                    SENSORES (input)                      │
-│  GPS + Elevation API → gradiente, altitude, antecipação  │
-│  Motor telemetry     → speed, SOC, assist mode           │
-│  CSC sensor          → cadence RPM                       │
-│  Power meter         → rider watts                       │
-│  HR sensor           → heart rate BPM                    │
-│  Barometer           → altitude (backup)                 │
-│  Bike config         → battery Wh, motor specs, weight   │
-│  Athlete profile     → HR max, age, weight               │
-└────────────────────┬────────────────────────────────────┘
-                     │ a cada 2 segundos
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│              TUNING INTELLIGENCE                         │
-│  8 factores → 3 intensidades (support, torque, launch)   │
-│  Intensidade 0-100% → wire value 0/1/2 por ASMO          │
-│  Smoothing: 3 amostras estáveis para mudar               │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│                SET_TUNING (cmd 0x2D)                     │
-│  byte[2] = (ASMO1+1) | ((ASMO2+1) << 4)                 │
-│  byte[3] = (ASMO3+1) | ((ASMO4+1) << 4)                 │
-│  byte[4] = (ASMO5+1)                                    │
-│  → AES encrypt key 3 → BLE write → SyncDrive Pro        │
-└─────────────────────────────────────────────────────────┘
-```
+- **Apenas em POWER mode** — o rider controla o modo via RideControl físico
+- Nos outros modos o KROMI é passivo (telemetria only)
 
 ---
 
 ## 2. Os 5 Parâmetros do Motor (ASMO)
 
 Baseado no decompilado do RideControl APK v1.33 (TuningData.java).
-O motor DU7 (SyncDrive Pro) aceita 5 parâmetros, cada um com 3 valores.
+Motor DU7 (SyncDrive Pro), 3^5 = 243 combinações.
 
-| ASMO | Parâmetro | Wire 0 (max) | Wire 1 (mid) | Wire 2 (min) | Função |
-|------|-----------|:---:|:---:|:---:|--------|
-| ASMO1 | **Support %** | 360% | 350% | 300% | Multiplicador do input do rider |
-| ASMO2 | **Torque** | 300 | 250 | 200 | Torque high-range (Nm equivalente) |
-| ASMO3 | **Mid Torque** | 250 | 200 | 175 | Torque mid-range |
-| ASMO4 | **Low Torque** | 175 | 150 | 125 | Torque low-range |
-| ASMO5 | **Launch** | 100 | 75 | 50 | Resposta/agressividade inicial |
+| ASMO | Parâmetro | Wire 0 (max) | Wire 1 (mid) | Wire 2 (min) |
+|------|-----------|:---:|:---:|:---:|
+| ASMO1 | **Support %** | 360% | 350% | 300% |
+| ASMO2 | **Torque** | 300 | 250 | 200 |
+| ASMO3 | **Mid Torque** | 250 | 200 | 175 |
+| ASMO4 | **Low Torque** | 175 | 150 | 125 |
+| ASMO5 | **Launch** | 100 | 75 | 50 |
 
-### Combinações
-- 3^5 = **243 combinações** possíveis
-- SET_TUNING empacota os 5 em 3 bytes
-- Cada parâmetro é controlado independentemente
-
-### Encoding
+### SET_TUNING Encoding (cmd 0x2D, key 3)
 ```
-Exemplo: Support=MAX, Torque=MID, MidTorque=MID, LowTorque=MIN, Launch=MAX
-
-Wire values: [0, 1, 1, 2, 0]
-byte[2] = (0+1) | ((1+1) << 4) = 0x21  (Support + Torque)
-byte[3] = (1+1) | ((2+1) << 4) = 0x32  (MidTorque + LowTorque)
-byte[4] = (0+1) = 0x01                  (Launch)
-
-Plaintext: [0x2D, 0x03, 0x21, 0x32, 0x01, 0x00, ..., 0x00]
-→ AES encrypt com key 3 → [0xFB, 0x21, encrypted(16), keyIdx=3, CRC]
+byte[2] = (ASMO1+1) | ((ASMO2+1) << 4)
+byte[3] = (ASMO3+1) | ((ASMO4+1) << 4)
+byte[4] = (ASMO5+1)
 ```
 
 ---
 
-## 3. Os 8 Factores de Decisão
+## 3. LAYER 1 — HR Zone Target (PRIMARY)
 
-### 3.1 Terreno + Peso (base score 0-100)
+O rider escolhe a zona alvo nas Settings. O motor regula para manter o HR nessa zona.
 
-O factor principal. Gradiente actual do terreno, ajustado pelo peso do rider.
+### Zonas HR (auto-calculadas do HR max observado)
+| Zona | % HRmax | Para HRmax 163 | Descrição |
+|------|---------|:---:|-----------|
+| Z1 Recovery | 50-60% | 82-98 bpm | Recuperação activa |
+| Z2 Endurance | 60-70% | 98-114 bpm | **Base aeróbica (default)** |
+| Z3 Tempo | 70-80% | 114-130 bpm | Ritmo moderado |
+| Z4 Threshold | 80-90% | 130-147 bpm | Limiar anaeróbico |
+| Z5 VO2max | 90-100% | 147-163 bpm | Esforço máximo |
 
-| Gradiente | Score base | Com 90kg (+20%) | Com 65kg (-13%) |
-|-----------|:---:|:---:|:---:|
-| > 12% (forte) | 100 | 100 | 87 |
-| > 8% (dura) | 85 | 100 | 74 |
-| > 5% (moderada) | 70 | 84 | 61 |
-| > 3% (suave) | 55 | 66 | 48 |
-| > 1% (inclinação) | 40 | 40 | 40 |
-| > -2% (plano) | 25 | 25 | 25 |
-| > -5% (descida suave) | 10 | 10 | 10 |
-| < -5% (descida) | 0 | 0 | 0 |
+### HR → Target Intensity
+```
+HR acima da zona alvo:
+  hrTarget = 55 + (bpm_above × 8)  →  capped at 100
+  Ex: 10bpm acima = 55 + 80 = 100 → wire 0 (MAX assist)
+  Ex: 3bpm acima = 55 + 24 = 79 → wire 0
 
-**Fonte do gradiente**: Google Elevation API via GPS heading (300m lookahead, 15 pontos).
-**Peso de referência**: 75kg. Acima = boost, abaixo = redução.
-**Cálculo**: `base * (0.8 + 0.2 * peso/75)` para gradientes > 2%.
+HR dentro da zona alvo:
+  hrTarget = 35 + (posição × 30)  →  35-65 range
+  Ex: meio da zona = 50 → wire 1 (MID)
+  Ex: topo da zona = 65 → wire 1 (quase MAX)
 
-### 3.2 Bateria (multiplicador 0.4-1.0)
+HR abaixo da zona alvo:
+  hrTarget = 45 - (bpm_below × 5)  →  min 0
+  Ex: 5bpm abaixo = 45 - 25 = 20 → wire 2 (MIN)
+  Ex: 15bpm abaixo = 45 - 75 = 0 → wire 2 (motor quase off)
+```
 
-Reduz progressivamente o score quando a bateria baixa.
+**Peso dos modificadores HR**: +8/bpm acima, -5/bpm abaixo.
+Deliberadamente assimétrico — mais agressivo a ajudar do que a reduzir.
+
+### Sem HR Sensor
+Quando não há sensor HR, o terreno serve como **proxy degradado**:
+```
+gradient > 12% → hrTarget 85 (assume esforço alto)
+gradient > 8%  → 72
+gradient > 5%  → 60
+gradient > 3%  → 48
+plano          → 25
+descida        → 10
+```
+Claramente marcado no UI como "Sem HR — estimativa por terreno".
+
+---
+
+## 4. LAYER 2 — Terrain Anticipation (SECONDARY)
+
+O terreno **não define magnitude** — define **timing**. Antecipa mudanças de HR.
+
+### Antecipação Pré-emptiva (-20 a +25)
+| Transição | Bias | Razão |
+|-----------|:---:|--------|
+| Plano → Subida > 5% (dentro do lookahead) | +25 | Pre-boost antes do HR subir |
+| Subida → Descida (dentro do lookahead) | -15 | Pre-reduce antes do HR baixar |
+| Peso > 75kg em subida > 8% | +3 per 10kg | Riders pesados precisam mais |
+
+### Lookahead Dinâmico (baseado em velocidade)
+```
+> 10 km/h: 100m lookahead (estrada/trail rápido)
+5-10 km/h:  60m lookahead (trail técnico)
+< 5 km/h:   30m lookahead (subida lenta/singletrack)
+```
+**Porquê**: a 5km/h em singletrack, o GPS heading é impreciso. 300m de lookahead numa curva pode apontar para uma descida quando o trail sobe. Lookahead curto previne erros cascata.
+
+### Risco de Cascata (resolvido)
+Sem lookahead dinâmico:
+```
+GPS heading errado → antecipa descida (+20) → HR cai → sistema interpreta como
+"rider em recovery" → reduz assist → rider perde assistência na subida
+```
+Com lookahead dinâmico a 30m em singletrack lento, o risco é minimizado.
+
+---
+
+## 5. LAYER 3 — Battery Constraint (TERTIARY)
+
+A bateria não contribui para o score — é um **hard constraint** que limita o output.
 
 | SOC | Multiplicador | Efeito |
 |-----|:---:|--------|
-| > 60% | ×1.0 | Normal — sem restrição |
+| > 60% | ×1.0 | Sem restrição |
 | 30-60% | ×0.7-1.0 | Conservação gradual |
 | 15-30% | ×0.5-0.7 | Economia activa |
-| < 15% | ×0.4 | Emergência — redução severa |
+| < 15% | ×0.4 | Emergência |
 
-**Ajuste por capacidade**: Baterias maiores (1050Wh) conservam mais tarde que baterias menores (500Wh).
-**Cálculo**: `threshold * min(totalWh/1050, 1.2)`
-
-### 3.3 Velocidade + Limite Motor (-25 a +25)
-
-| Condição | Modificador | Razão |
-|----------|:---:|--------|
-| > limite-2 km/h (ex: >23) | -25 | Motor corta a 25km/h, assist inútil |
-| > limite-5 km/h (ex: >20) | -15 | A aproximar do corte |
-| > 25 km/h | -20 | Rápido, não precisa de assist |
-| < 5 km/h + gradient > 5% | +25 | Lento em subida — precisa muito |
-| < 10 km/h + gradient > 3% | +15 | Esforço em subida |
-| < 3 km/h | -10 | Quase parado, poupar bateria |
-
-### 3.4 Heart Rate (-10 a +20)
-
-Baseado no HR max do atleta (observado ou calculado: 220-idade).
-
-| % HR Max | Modificador | Zona |
-|----------|:---:|--------|
-| > 92% | +20 | Perto do máximo — ajuda urgente |
-| > 85% | +15 | Limiar — boost |
-| > 75% | +5 | Tempo — ligeiro boost |
-| 55-75% | 0 | Endurance — normal |
-| < 55% | -10 | Recovery — poupar bateria |
-
-### 3.5 Cadência (-10 a +20)
-
-| RPM | Modificador | Situação |
-|-----|:---:|--------|
-| > 90 | -10 | Spinning livre — reduzir |
-| < 40 + gradient > 3% | +20 | Grinding em subida — boost |
-| < 60 | +10 | Abaixo do óptimo |
-| 60-90 | 0 | Zona óptima |
-| 0 | 0 | Sem pedalar — ignorar |
-
-### 3.6 Potência do Rider (W/kg) (-15 a +15)
-
-| W/kg | Modificador | Esforço |
-|------|:---:|--------|
-| > 3.5 | +15 | Esforço máximo — ajuda máxima |
-| > 2.5 | +10 | Esforço forte |
-| 1.0-2.5 | 0 | Normal |
-| < 1.0 | -5 | Passeio |
-| < 0.5 | -15 | Quase sem pedalar — poupar |
-
-### 3.7 Altitude (0 a +10)
-
-| Metros | Modificador | Razão |
-|--------|:---:|--------|
-| > 2500m | +10 | Muito menos O₂ |
-| > 2000m | +7 | Menos O₂ |
-| > 1500m | +4 | Ligeiramente menos O₂ |
-| < 1500m | 0 | Nível do mar — normal |
-
-### 3.8 Antecipação (-15 a +20)
-
-Detecta mudanças de terreno nos próximos 100m.
-
-| Transição | Modificador | Acção |
-|-----------|:---:|--------|
-| Plano → Subida > 5% | +20 | Pré-activar motor ANTES da subida |
-| Subida → Descida | -15 | Reduzir antecipadamente |
-| Gradient sobe > 5pp | +15 | Preparar para gradient mais duro |
-
-**Fonte**: Google Elevation API lookahead (300m à frente, heading GPS).
-**Timing**: A 15km/h, 100m = ~24s de antecipação. Motor tem ~2s de lag. Resultado: transição suave.
+Ajustado pela capacidade total: baterias maiores (1050Wh) conservam mais tarde.
 
 ---
 
-## 4. De Factores a Calibração
+## 6. Smoothing Assimétrico
 
-### 4.1 Cálculo das Intensidades
+Um regulador que demora 6s a reagir quando o rider está em esforço excessivo **não está a regular**. O smoothing é assimétrico:
 
-Cada parâmetro ASMO recebe uma intensidade diferente dos mesmos factores:
-
-```
-SUPPORT intensity:
-  = terrain_base × weight_factor × battery_mult + hr_mod + preemptive_mod
-  - speed_limit_penalty (perto de 25km/h)
-
-TORQUE intensity:
-  = terrain_base × battery_mult + cadence_mod + power_mod + altitude_mod
-  CAP: se cadência < 50 + gradient > 8% → max 60% (prevenir roda a patinar)
-
-LAUNCH intensity:
-  = terrain_base × 0.7 + preemptive_mod
-  + slow_on_climb_boost (< 5km/h + gradient > 3% → +25)
-  - already_moving_reduction (> 20km/h → -20)
-  × battery_mult
-```
-
-**A lógica chave**: cada parâmetro responde de forma diferente às condições:
-- **Support** é o mais sensível a velocidade e limite motor
-- **Torque** é o mais sensível a cadência e W/kg
-- **Launch** é o mais sensível a velocidade e terrain transitions
-
-### 4.2 Intensidade → Wire Value
+| Direcção | Amostras | Tempo | Razão |
+|----------|:---:|:---:|--------|
+| **Ramp DOWN** (reduzir assist) | 1 | 2s | Proteger rider — acção imediata |
+| **Ramp UP** (aumentar assist) | 3 | 6s | Cauteloso — evitar oscilação |
 
 ```
-Intensidade > 65% → wire 0 (máximo)
-Intensidade 35-65% → wire 1 (médio)
-Intensidade < 35% → wire 2 (mínimo)
-```
+HR dispara para 155bpm (acima de Z2):
+  Amostra 1: target = wire 0 (MAX) → APLICA IMEDIATAMENTE
+  Motor aumenta assist → HR começa a baixar
 
-### 4.3 Smoothing
-
-Para evitar oscilação, é necessário que o wire value seja estável durante **3 amostras consecutivas** (6 segundos) antes de mudar. Isto previne:
-- Flutuação em terrain boundaries
-- Reacção a picos momentâneos de HR/power
-- Ruído do sensor de cadência
-
-### 4.4 Mid/Low Torque
-
-ASMO3 (mid torque) e ASMO4 (low torque) seguem o ASMO2 (torque) com offset:
-```
-midTorque = intensityToWire(torque_intensity - 10)
-lowTorque = intensityToWire(torque_intensity - 20)
-```
-Isto cria uma curva de torque progressiva em vez de abrupta.
-
----
-
-## 5. Cenários Reais
-
-### 5.1 Subida íngreme (12%, 7km/h, FC 155bpm, 65rpm, 220W)
-
-```
-Terreno:     12% × 80kg → score 100 × (0.8 + 0.2×80/75) = 100 × 1.013 = 100
-Bateria:     75% → ×1.0
-Velocidade:  7km/h + gradient 12% → +25 (lento em subida)
-FC:          155/163 = 95% max → +20
-Cadência:    65rpm → 0 (OK)
-W/kg:        220/80 = 2.75 → +10
-
-SUPPORT:  100 × 1.0 + 20 + 0 = 120 → clamped 100 → wire 0 → 360%
-TORQUE:   100 × 1.0 + 0 + 10 = 110 → clamped 100 → wire 0 → 300/250/175
-LAUNCH:   100 × 0.7 + 0 + 25 = 95 → wire 0 → 100
-
-Motor: S360% T300/250/175 R100 — FULL POWER
-```
-
-### 5.2 Subida técnica (10%, 4km/h, 35rpm, 180W)
-
-```
-Terreno:     10% → score 85 × weight_factor
-Cadência:    35rpm + gradient 10% → +20 (grinding)
-TORQUE cap:  cadence < 50 + gradient > 8% → max 60%
-
-SUPPORT:  ~95 → wire 0 → 360%
-TORQUE:   capped at 60 → wire 1 → 250/200/150 (prevent spin!)
-LAUNCH:   ~80 → wire 0 → 100 (need aggressive start)
-
-Motor: S360% T250/200/150 R100 — max support, controlled torque
-```
-
-### 5.3 Plano (0%, 22km/h, FC 110bpm, 85rpm, 100W)
-
-```
-Terreno:     0% → score 25
-Bateria:     85% → ×1.0
-Velocidade:  22km/h (perto do limite 25) → -15
-FC:          110/163 = 67% → 0 (endurance zone)
-W/kg:        100/80 = 1.25 → 0
-
-SUPPORT:  25 - 15 = 10 → wire 2 → 300%
-TORQUE:   25 = 25 → wire 2 → 200/175/125
-LAUNCH:   25 × 0.7 - 20 = -2 → wire 2 → 50
-
-Motor: S300% T200/175/125 R50 — MINIMAL (save battery)
-```
-
-### 5.4 Bateria baixa em subida (8%, 10km/h, SOC 20%)
-
-```
-Terreno:     8% → score 85
-Bateria:     20% → ×0.57
-Velocidade:  10km/h + gradient 8% → +15
-
-SUPPORT:  85 × 0.57 + 0 = 48 → wire 1 → 350%
-TORQUE:   85 × 0.57 + 0 = 48 → wire 1 → 250/200/150
-LAUNCH:   85 × 0.7 × 0.57 = 34 → wire 2 → 50
-
-Motor: S350% T250/200/150 R50 — moderate help, save remaining battery
-```
-
-### 5.5 Pré-activação (plano, subida de 8% a 80m)
-
-```
-Terreno:     plano 0% → score 25
-Antecipação: subida 8% em 80m → +20
-Speed:       15km/h → 80m em ~19s
-
-SUPPORT:  25 + 20 = 45 → wire 1 → 350% (já a preparar!)
-TORQUE:   25 = 25 → wire 2 → 200 (mantém baixo por agora)
-LAUNCH:   25 × 0.7 + 20 = 37 → wire 1 → 75 (prepara resposta)
-
-Motor: S350% T200/175/125 R75 — pre-activated before climb arrives
-19 segundos depois: gradient real sobe → FULL POWER transition suave
+HR cai para 90bpm (abaixo de Z2):
+  Amostra 1: target = wire 2 (MIN) → pendente
+  Amostra 2: target = wire 2 (MIN) → pendente
+  Amostra 3: target = wire 2 (MIN) → APLICA (estável 6s)
+  Gradual para evitar perda súbita de assist
 ```
 
 ---
 
-## 6. Fluxo Real-Time (cada 2 segundos)
+## 7. Cenários com HR Zone Regulation
 
+### 7.1 Subida com HR controlada (Z2 target, HR 112bpm = dentro da zona)
 ```
-┌─ useMotorControl hook (App.tsx) ──────────────────────────┐
-│                                                            │
-│  1. Gate: bike.assist_mode === POWER ?                     │
-│     NÃO → setActive(false), return                         │
-│     SIM → continua                                         │
-│                                                            │
-│  2. Gather inputs:                                         │
-│     speed ← bikeStore.speed_kmh                            │
-│     cadence ← bikeStore.cadence_rpm                        │
-│     power ← bikeStore.power_watts                          │
-│     hr ← bikeStore.hr_bpm                                  │
-│     battery ← bikeStore.battery_percent                    │
-│     altitude ← mapStore.altitude                           │
-│                                                            │
-│  3. Terrain (se GPS activo + autoAssist enabled):          │
-│     AutoAssistEngine.tick(lat, lng, heading, speed)        │
-│     → gradient ← terrain.current_gradient_pct              │
-│     → upcoming ← terrain.next_transition                   │
-│                                                            │
-│  4. TuningIntelligence.evaluate(input)                     │
-│     → supportIntensity, torqueIntensity, launchIntensity   │
-│     → calibration: { support, torque, midTorque,           │
-│                       lowTorque, launch } (wire values)    │
-│     → factors: breakdown para UI                           │
-│                                                            │
-│  5. Compare com calibração actual                          │
-│     Se mudou → encodeCalibration(cal) → 3 bytes            │
-│     → setTuning via WebSocket → APK → BLE → Motor         │
-│                                                            │
-│  6. Update stores (para UI):                               │
-│     intelligenceStore ← decision                           │
-│     tuningStore ← current calibration                      │
-│     autoAssistStore ← terrain viz                          │
-│                                                            │
-│  Loop: repete em 2 segundos                                │
-└────────────────────────────────────────────────────────────┘
+hrTarget = 35 + (0.7 × 30) = 56 (posição 70% na zona)
+anticipation = +10 (gradient 6%)
+battery = ×1.0
+
+intensity = clamp(56 + 10, 0, 100) × 1.0 = 66 → wire 0 (MAX)
+Motor: S360% T300 → HR mantém-se em Z2
 ```
 
----
-
-## 7. Comunicação BLE
-
-### 7.1 SET_TUNING (PWA → APK → Motor)
-
+### 7.2 Subida com HR alta (Z2 target, HR 135bpm = 21bpm acima)
 ```
-PWA envia WebSocket:
-  {type: "setTuning", power: 0, sport: 1, active: 1, tour: 2, eco: 0}
-  (power=ASMO1, sport=ASMO2, active=ASMO3, tour=ASMO4, eco=ASMO5)
+hrTarget = 55 + (21 × 8) = 100 (capped)
+anticipation = +5 (já em subida)
+battery = ×1.0
 
-APK (BLEBridgeService) recebe → BLEManager.setTuningLevels(0, 1, 1, 2, 0):
-  plaintext[0] = 0x2D (cmd SET_TUNING)
-  plaintext[1] = 0x03 (key 3)
-  plaintext[2] = (0+1) | ((1+1) << 4) = 0x21
-  plaintext[3] = (1+1) | ((2+1) << 4) = 0x32
-  plaintext[4] = (0+1) = 0x01
-  → AES encrypt com key 3
-  → packet: [0xFB, 0x21, encrypted(16), 0x03, CRC]
-  → BLE write to SG characteristic 0x0002
-
-Motor responde: [0xFC, 0x21, encrypted → decrypt → 0x2D, 0x01, 0x01, ...] = SUCCESS
+intensity = clamp(100 + 5, 0, 100) × 1.0 = 100 → wire 0
+Motor: S360% T300 R100 → MAX para trazer HR de volta a Z2
+Ramp down: 1 amostra → imediato
 ```
 
-### 7.2 READ_TUNING (verificação)
-
+### 7.3 Plano com HR baixa (Z2 target, HR 85bpm = 13bpm abaixo)
 ```
-PWA envia: {type: "readTuning"}
-APK: plaintext = [0x2C, 0x00, zeros] → AES key 0
+hrTarget = 45 - (13 × 5) = 0
+anticipation = 0 (plano)
+battery = ×1.0
 
-Motor responde: 0x2C, 0x03, byte[2], byte[3], byte[4]
-PWA parseia hex: byte[2] → ASMO1 + ASMO2, byte[3] → ASMO3 + ASMO4, byte[4] → ASMO5
+intensity = clamp(0 + 0, 0, 100) × 1.0 = 0 → wire 2
+Motor: S300% T200 R50 → MIN, rider pode mais
+Ramp up para MIN: 3 amostras → gradual
 ```
 
-### 7.3 Auto-restore (segurança)
-
+### 7.4 Plano com HR alta (Z2 target, HR 130bpm = 16bpm acima)
 ```
-Connect → READ_TUNING → store as originalCalibration
-Disconnect / page close / crash → SET_TUNING(originalCalibration)
+hrTarget = 55 + (16 × 8) = 100
+anticipation = 0 (plano)
+battery = ×1.0
 
-3 camadas de protecção:
-1. WebSocket onDisconnect → autoRestore()
-2. window.beforeunload → autoRestore()
-3. APK bridge fallback
+intensity = 100 → wire 0
+Motor: S360% T300 → MAX MESMO NO PLANO porque HR está alta!
+ANTES: plano = score 25 = MIN. AGORA: HR regula, não terreno.
+```
+
+### 7.5 Bateria baixa em subida com HR alta
+```
+hrTarget = 100 (HR acima da zona)
+anticipation = +10
+battery = ×0.5 (SOC 20%)
+
+intensity = clamp(110, 0, 100) × 0.5 = 50 → wire 1
+Motor: S350% T250 — bateria limita, mas ainda ajuda
 ```
 
 ---
 
-## 8. Detecção de Modo
+## 8. Comparação: Antes vs Depois
 
-O modo actual do RideControl é lido do FC23 cmd 0x41 byte[7]:
+| Cenário | ANTES (terreno) | DEPOIS (HR zone) |
+|---------|:---:|:---:|
+| Subida 12%, HR 100bpm (Z2) | 100 → MAX | 50 → MID (HR ok) |
+| Plano, HR 135bpm (acima Z2) | 25 → MIN | 100 → MAX (HR alta!) |
+| Subida 5%, HR 80bpm (abaixo Z2) | 70 → MAX | 20 → MIN (HR baixa) |
+| Pré-subida, HR 110bpm (Z2) | 25+20=45 → MID | 50+25=75 → MAX (antecipa) |
 
-| Wire | Modo | KROMI |
-|:---:|--------|--------|
-| 0 | MANUAL | Passivo |
-| 1 | ECO | Passivo |
-| 2 | TOUR | Passivo |
-| 3 | ACTIVE | Passivo |
-| 4 | SPORT | Passivo |
-| 5 | **POWER** | **ACTIVO** |
-| 6 | SMART (startup) | Passivo |
-
-O FC23 telemetry requer sessão GEV activa (CONNECT_GEV + enableRiding), enviada automaticamente após BLE subscribe.
+**A diferença fundamental**: O KROMI agora dá MAX a um rider que está a sofrer no plano (HR alta) e dá MIN a um rider confortável em subida (HR baixa). É o oposto do terrain-reactive.
 
 ---
 
-## 9. Simulação (FIT Import)
+## 9. SET_TUNING Encoding
 
-O KromiSimulator replica a lógica do TuningIntelligence sobre rides passadas:
+```
+PWA → WebSocket: {type:"setTuning", power:0, sport:1, active:1, tour:2, eco:0}
+(power=ASMO1, sport=ASMO2, active=ASMO3, tour=ASMO4, eco=ASMO5)
 
-1. Importa .FIT → parse records (GPS, HR, speed, cadence, power)
-2. enrichWithElevation → Google ElevationService (cache no Supabase)
-3. simulateKromi(records) → replica 8 factores ponto a ponto
-4. Output: distribuição MAX/MID/MIN, score médio, bateria KROMI vs fixo
-
-**Personalização**: usa rider weight, age, HR max, bike battery/motor specs das Settings.
-
----
-
-## 10. Dados Persistidos
-
-| Dados | Onde | Quando |
-|-------|------|--------|
-| Calibração actual | intelligenceStore (RAM) | Cada 2s |
-| Original tuning | tuningStore (RAM) | No connect |
-| Ride snapshots | Supabase ride_snapshots | Cada 30s (via SyncQueue) |
-| Elevation cache | Supabase elevation_cache | No FIT import |
-| Settings/bike config | Supabase user_settings | On change (2s debounce) |
-| Athlete profile | Supabase athlete_profiles | Post-ride |
-| Login history | Supabase login_history | Each session |
+APK → BLE: plaintext[0]=0x2D, [1]=0x03, [2-4]=encoded bytes
+→ AES key 3 → [0xFB, 0x21, encrypted(16), 0x03, CRC]
+→ SyncDrive Pro applies immediately
+```
 
 ---
 
-## 11. Limitações Conhecidas
+## 10. Auto-Restore Safety (3 layers)
 
-1. **3 valores por ASMO** — motor aceita wire 0/1/2, não contínuo
-2. **2s intervalo** — não reage a mudanças sub-segundo
-3. **Smoothing 6s** — leva 3 amostras para mudar (evita oscilação mas atrasa)
-4. **GPS dependency** — sem GPS, terreno score = 0 (funciona só com speed/cadence/HR/battery)
-5. **Elevation API** — throttled a 3s, cache 30s, max 15 pontos por lookahead
-6. **FC21 não funciona** — não podemos ler riding data do motor directamente
-7. **ASSIST UP/DOWN bloqueado** — não podemos mudar o modo, só o tuning dentro do modo
+```
+Connect → READ_TUNING → store originalCalibration
+Disconnect / page close / crash → SET_TUNING(original)
+
+Layer 1: WebSocket onDisconnect → autoRestore()
+Layer 2: window.beforeunload → autoRestore()
+Layer 3: APK bridge fallback
+```
+
+---
+
+## 11. Simulation (FIT Import)
+
+O KromiSimulator replica a lógica HR-zone sobre rides passadas:
+- Usa HR real do FIT + zona alvo do perfil
+- Calcula hrTarget por ponto (mesma fórmula)
+- 3-way battery comparison: KROMI vs config fixa vs sempre MAX
+- Resultados persistidos em ride_sessions.devices_connected.kromi_simulation
 
 ---
 
 ## 12. Ficheiros Chave
 
 ```
-src/services/motor/TuningIntelligence.ts  — O cérebro (8 factores → 5 ASMOs)
-src/types/tuning.types.ts                 — Modelo ASMO, DU7 tables, encode/decode
-src/hooks/useMotorControl.ts              — Loop 2s, gate POWER mode, executa
-src/store/intelligenceStore.ts            — Estado para UI
-src/store/tuningStore.ts                  — Calibração actual + original
-src/services/simulation/KromiSimulator.ts — Replica intelligence sobre FIT imports
-src/components/Dashboard/IntelligenceWidget.tsx — 3 barras + factores
-src/components/Dashboard/TuningWidget.tsx — Override manual (MAX/MIN/RESTORE)
-src/services/bluetooth/WebSocketBLEClient.ts — Comunicação WS + parse responses
-src/services/bluetooth/BLEBridge.ts       — Facade setTuning/readTuning
+src/services/motor/TuningIntelligence.ts  — HR zone regulator (layered)
+src/types/tuning.types.ts                 — ASMO model, DU7 tables, encode/decode
+src/types/athlete.types.ts                — HR zones, target zone, calculateZones()
+src/hooks/useMotorControl.ts              — 2s loop, POWER gate, executes calibration
+src/store/intelligenceStore.ts            — State for UI
+src/services/simulation/KromiSimulator.ts — Replays HR-zone logic over FIT imports
+src/components/Dashboard/IntelligenceWidget.tsx — 3 intensity bars + factors
 ```
+
+---
+
+## 13. Limitações
+
+1. **3 wire values por ASMO** — motor aceita 0/1/2, não contínuo
+2. **Sem HR**: terreno como proxy (menos preciso)
+3. **GPS heading em singletrack**: mitigado por lookahead dinâmico
+4. **ASMO consumo estimado**: precisa calibração com rides reais
+5. **2s intervalo**: não reage sub-segundo (mas ramp-down é 1 amostra = 2s)
