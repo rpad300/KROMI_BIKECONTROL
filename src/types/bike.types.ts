@@ -12,7 +12,7 @@ export enum AssistMode {
 }
 
 export const ASSIST_MODE_LABELS: Record<AssistMode, string> = {
-  [AssistMode.OFF]: 'OFF',
+  [AssistMode.OFF]: 'MAN',
   [AssistMode.ECO]: 'ECO',
   [AssistMode.TOUR]: 'TOUR',
   [AssistMode.ACTIVE]: 'ACTIVE',

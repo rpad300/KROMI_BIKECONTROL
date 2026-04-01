@@ -22,7 +22,7 @@ const ALL_MODES = [
 export function AssistModeWidget() {
   const assistMode = useBikeStore((s) => s.assist_mode);
   const bleConnected = useBikeStore((s) => s.ble_status === 'connected');
-  const kromiActive = assistMode === AssistMode.POWER || assistMode === AssistMode.SMART;
+  const kromiActive = assistMode === AssistMode.POWER;
 
   return (
     <div className="space-y-1.5">
