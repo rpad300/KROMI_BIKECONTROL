@@ -81,7 +81,11 @@ HR abaixo da zona alvo:
 ```
 
 **Peso dos modificadores HR**: +8/bpm acima, -5/bpm abaixo.
-Deliberadamente assimétrico — mais agressivo a ajudar do que a reduzir.
+Deliberadamente assimétrico — mais agressivo a ajudar (HR acima) do que a reduzir (HR abaixo).
+
+### Auto-calibração HRmax
+Cada FIT import com HR peak > HRmax configurado → actualiza automaticamente.
+Previne zonas erradas da fórmula 220-idade (pode ter 10-15bpm de erro).
 
 ### Sem HR Sensor
 Quando não há sensor HR, o terreno serve como **proxy degradado**:
@@ -147,20 +151,25 @@ Um regulador que demora 6s a reagir quando o rider está em esforço excessivo *
 
 | Direcção | Amostras | Tempo | Razão |
 |----------|:---:|:---:|--------|
-| **Ramp DOWN** (reduzir assist) | 1 | 2s | Proteger rider — acção imediata |
-| **Ramp UP** (aumentar assist) | 3 | 6s | Cauteloso — evitar oscilação |
+| **HR above zone** (motor SOBE assist) | 1 | 2s | Urgente — proteger rider |
+| **HR below zone** (motor DESCE assist) | 3 | 6s | Gradual — evitar perda súbita |
 
 ```
 HR dispara para 155bpm (acima de Z2):
-  Amostra 1: target = wire 0 (MAX) → APLICA IMEDIATAMENTE
+  Motor precisa de SUBIR assist para ajudar
+  Amostra 1: HR_ABOVE_ZONE_SAMPLES = 1 → APLICA IMEDIATAMENTE
   Motor aumenta assist → HR começa a baixar
 
 HR cai para 90bpm (abaixo de Z2):
-  Amostra 1: target = wire 2 (MIN) → pendente
-  Amostra 2: target = wire 2 (MIN) → pendente
-  Amostra 3: target = wire 2 (MIN) → APLICA (estável 6s)
+  Motor pode DESCER assist (rider confortável)
+  Amostra 1: pendente (HR_BELOW_ZONE_SAMPLES = 3)
+  Amostra 2: pendente
+  Amostra 3: APLICA (estável 6s)
   Gradual para evitar perda súbita de assist
 ```
+
+**Nomenclatura**: nomeado pela experiência do rider, não pela direcção do motor.
+HR_ABOVE_ZONE = urgente (motor sobe). HR_BELOW_ZONE = gradual (motor desce).
 
 ---
 
@@ -287,7 +296,9 @@ src/components/Dashboard/IntelligenceWidget.tsx — 3 intensity bars + factors
 ## 13. Limitações
 
 1. **3 wire values por ASMO** — motor aceita 0/1/2, não contínuo
-2. **Sem HR**: terreno como proxy (menos preciso)
-3. **GPS heading em singletrack**: mitigado por lookahead dinâmico
+2. **Sem HR**: terreno como proxy (menos preciso, claramente marcado no UI)
+3. **GPS heading em singletrack**: mitigado por lookahead dinâmico (30m a <5km/h)
 4. **ASMO consumo estimado**: precisa calibração com rides reais
-5. **2s intervalo**: não reage sub-segundo (mas ramp-down é 1 amostra = 2s)
+5. **2s intervalo**: não reage sub-segundo (mas HR above zone → 1 amostra = 2s)
+6. **HRmax 220-idade**: pode ter 10-15bpm erro. Auto-calibração via FIT imports resolve progressivamente
+7. **Z2 em trail técnico**: HR cronicamente acima de Z2 → motor cronicamente MAX. UI explica porquê
