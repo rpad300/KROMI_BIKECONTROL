@@ -42,7 +42,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var wsClientsText: TextView
 
     private val logLines = mutableListOf<String>()
-    private val maxLogLines = 300
+    private val maxLogLines = 500  // display limit only — full log kept for Copy
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
     private val handler = Handler(Looper.getMainLooper())
 
@@ -99,8 +99,8 @@ class MainActivity : AppCompatActivity() {
             val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
             val clip = android.content.ClipData.newPlainText("BLE Bridge Log", logLines.joinToString("\n"))
             clipboard.setPrimaryClip(clip)
-            Toast.makeText(this, "Log copied to clipboard!", Toast.LENGTH_SHORT).show()
-            appendLog("LOG", "Copied ${logLines.size} lines to clipboard")
+            Toast.makeText(this, "Copied ${logLines.size} lines!", Toast.LENGTH_SHORT).show()
+            appendLog("LOG", "Copied ${logLines.size} lines to clipboard (full history)")
         }
 
         testBtn.setOnClickListener { runBLETest() }
@@ -527,8 +527,11 @@ class MainActivity : AppCompatActivity() {
         val time = timeFormat.format(Date())
         val line = "[$time] $tag: $message"
         logLines.add(line)
-        if (logLines.size > maxLogLines) logLines.removeAt(0)
-        logText.text = logLines.joinToString("\n")
+        // Display only last N lines (UI performance) but keep ALL for Copy Log
+        val displayLines = if (logLines.size > maxLogLines)
+            logLines.subList(logLines.size - maxLogLines, logLines.size)
+        else logLines
+        logText.text = displayLines.joinToString("\n")
         logScrollView.post { logScrollView.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
