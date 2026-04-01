@@ -681,18 +681,19 @@ class BLEManager(private val context: Context) {
                                     }
                                 }
                                 0x41 -> {
-                                    // MOTOR/ASSIST STATE — track byte[14] as potential assist level
-                                    val assistLvl = data[14].toInt() and 0xFF
+                                    // MOTOR/ASSIST STATE — byte[7] = assist mode (Giant wire values)
+                                    // Giant wire: ECO=3, TOUR=1, ACTIVE=2, SPORT=4, POWER=6
+                                    val wireMode = data[7].toInt() and 0xFF
                                     val b5 = data[5].toInt() and 0xFF
-                                    val b7 = data[7].toInt() and 0xFF
+                                    val b14 = data[14].toInt() and 0xFF
                                     if (now - fc23LogTimes.getOrDefault("cmd41", 0L) > 2000) {
                                         fc23LogTimes["cmd41"] = now
-                                        Log.i(TAG, "CMD41: assist?=%d b5=%02X b7=%02X".format(assistLvl, b5, b7))
+                                        Log.i(TAG, "CMD41: mode=%d b5=%02X b14=%d".format(wireMode, b5, b14))
                                         onDataReceived?.invoke(JSONObject()
                                             .put("type", "fc23cmd41")
-                                            .put("assistLevel", assistLvl)
+                                            .put("wireMode", wireMode)
                                             .put("b5", b5)
-                                            .put("b7", b7))
+                                            .put("b14", b14))
                                     }
                                 }
                             }

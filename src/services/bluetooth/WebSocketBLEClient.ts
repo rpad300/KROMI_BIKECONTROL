@@ -419,13 +419,26 @@ class WebSocketBLEClient {
           }
           break;
 
-        case 'fc23cmd41':
-          // Motor/assist state from FC23 telemetry — byte[14] = assist level
-          // Maps: 0=OFF, 1=ECO, 2=TOUR, 3=SPORT, 4=POWER, 5=AUTO
-          if (msg.assistLevel !== undefined) {
-            store.setAssistMode(msg.assistLevel);
+        case 'fc23cmd41': {
+          // Motor/assist state from FC23 telemetry — byte[7] = Giant wire mode
+          // Giant wire values: ECO=3, TOUR=1, ACTIVE=2, SPORT=4, POWER=6
+          // Our AssistMode enum: ECO=1, TOUR=2, ACTIVE=3, SPORT=4, POWER=5
+          const GIANT_MODE_MAP: Record<number, number> = {
+            3: 1,  // Giant ECO(3)    → AssistMode.ECO(1)
+            1: 2,  // Giant TOUR(1)   → AssistMode.TOUR(2)
+            2: 3,  // Giant ACTIVE(2) → AssistMode.ACTIVE(3)
+            4: 4,  // Giant SPORT(4)  → AssistMode.SPORT(4)
+            6: 5,  // Giant POWER(6)  → AssistMode.POWER(5)
+          };
+          const wireMode = msg.wireMode ?? msg.assistLevel;
+          if (wireMode !== undefined) {
+            const mapped = GIANT_MODE_MAP[wireMode];
+            if (mapped !== undefined) {
+              store.setAssistMode(mapped);
+            }
           }
           break;
+        }
 
         case 'sgResponse':
           console.log(`[WSClient] Response cmd=${msg.cmd} key=${msg.key}: ${msg.decrypted}`);
