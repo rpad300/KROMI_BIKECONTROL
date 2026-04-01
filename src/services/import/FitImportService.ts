@@ -284,8 +284,8 @@ export async function enrichWithElevation(ride: ImportedRide): Promise<void> {
   }
 }
 
-/** Save imported ride to Supabase */
-export async function saveImportedRide(ride: ImportedRide): Promise<boolean> {
+/** Save imported ride to Supabase (with optional simulation results) */
+export async function saveImportedRide(ride: ImportedRide, sim?: { battery_end_kromi: number; battery_end_fixed: number; battery_end_max: number; avg_score: number; time_max_pct: number; time_mid_pct: number; time_min_pct: number; level_changes: number; fixed_label: string }): Promise<boolean> {
   if (!SUPABASE_URL || !SUPABASE_KEY) return false;
   const userId = useAuthStore.getState().user?.id;
   if (!userId) return false;
@@ -308,7 +308,14 @@ export async function saveImportedRide(ride: ImportedRide): Promise<boolean> {
         ended_at: new Date(new Date(ride.startedAt).getTime() + ride.duration_s * 1000).toISOString(),
         duration_s: ride.duration_s,
         total_km: ride.distance_km,
-        total_elevation_m: Math.round(ride.ascent_m),
+        // Calculate real elevation from enriched altitudes (FIT session data may be wrong)
+        total_elevation_m: (() => {
+          const alts = ride.records.filter(r => r.altitude_m !== null && r.altitude_m > 1).map(r => r.altitude_m!);
+          if (alts.length < 2) return Math.round(ride.ascent_m);
+          let gain = 0;
+          for (let i = 1; i < alts.length; i++) { if (alts[i]! > alts[i-1]!) gain += alts[i]! - alts[i-1]!; }
+          return Math.round(gain);
+        })(),
         avg_speed_kmh: ride.avg_speed,
         max_speed_kmh: ride.max_speed,
         avg_power_w: ride.avg_power,
@@ -317,12 +324,28 @@ export async function saveImportedRide(ride: ImportedRide): Promise<boolean> {
         max_hr: ride.max_hr,
         avg_hr: ride.avg_hr,
         battery_start: 100,
-        battery_end: 100,
+        battery_end: sim ? sim.battery_end_kromi : 100,
         start_lat: ride.records[0]?.lat || null,
         start_lng: ride.records[0]?.lng || null,
         end_lat: ride.records[ride.records.length - 1]?.lat || null,
         end_lng: ride.records[ride.records.length - 1]?.lng || null,
-        devices_connected: { source: 'fit_import', sport: ride.sport },
+        devices_connected: {
+          source: 'fit_import',
+          sport: ride.sport,
+          ...(sim ? {
+            kromi_simulation: {
+              battery_end_kromi: sim.battery_end_kromi,
+              battery_end_fixed: sim.battery_end_fixed,
+              battery_end_max: sim.battery_end_max,
+              fixed_label: sim.fixed_label,
+              avg_score: sim.avg_score,
+              time_max_pct: sim.time_max_pct,
+              time_mid_pct: sim.time_mid_pct,
+              time_min_pct: sim.time_min_pct,
+              level_changes: sim.level_changes,
+            }
+          } : {}),
+        },
       }),
     });
 

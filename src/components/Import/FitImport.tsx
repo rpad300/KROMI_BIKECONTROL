@@ -26,9 +26,8 @@ export function FitImport({ onImported }: { onImported?: () => void } = {}) {
         const buffer = await file.arrayBuffer();
         const ride = await parseFitFile(buffer);
         await enrichWithElevation(ride);
-        // Always run simulation — works with or without altitude
         const sim = simulateKromi(ride.records);
-        const saved = await saveImportedRide(ride);
+        const saved = await saveImportedRide(ride, sim);
         const updatedStats = await updateStatsFromRide(ride);
         newResults.push({ ride, saved, sim });
         setStats(updatedStats);

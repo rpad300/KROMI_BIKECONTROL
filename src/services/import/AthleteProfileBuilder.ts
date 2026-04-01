@@ -109,7 +109,15 @@ export async function updateStatsFromRide(ride: ImportedRide): Promise<AthleteSt
   // Totals
   stats.total_rides = n + 1;
   stats.total_km = Math.round((stats.total_km + ride.distance_km) * 10) / 10;
-  stats.total_ascent_m = Math.round(stats.total_ascent_m + ride.ascent_m);
+  // Use real elevation from enriched records if available
+  const realAscent = (() => {
+    const alts = ride.records.filter(r => r.altitude_m !== null && r.altitude_m > 1).map(r => r.altitude_m!);
+    if (alts.length < 2) return ride.ascent_m;
+    let gain = 0;
+    for (let i = 1; i < alts.length; i++) { if (alts[i]! > alts[i-1]!) gain += alts[i]! - alts[i-1]!; }
+    return gain > 5 ? gain : ride.ascent_m;
+  })();
+  stats.total_ascent_m = Math.round(stats.total_ascent_m + realAscent);
   stats.total_time_h = Math.round((stats.total_time_h + ride.duration_s / 3600) * 10) / 10;
 
   // Averages
@@ -120,7 +128,7 @@ export async function updateStatsFromRide(ride: ImportedRide): Promise<AthleteSt
 
   // Maxes
   if (ride.distance_km > stats.max_distance_km) stats.max_distance_km = ride.distance_km;
-  if (ride.ascent_m > stats.max_ascent_m) stats.max_ascent_m = Math.round(ride.ascent_m);
+  if (realAscent > stats.max_ascent_m) stats.max_ascent_m = Math.round(realAscent);
 
   // Recent form (crude — check if ride is within 30 days)
   const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -148,9 +156,8 @@ async function saveAthleteStats(stats: AthleteStats): Promise<void> {
   if (!userId) return;
 
   try {
-    // Upsert into athlete_profiles
-    const deviceId = localStorage.getItem('bikecontrol_device_id') ?? crypto.randomUUID();
-    await fetch(`${SUPABASE_URL}/rest/v1/athlete_profiles?on_conflict=device_id`, {
+    // Upsert by user_id (not device_id — avoids duplicates across browsers)
+    await fetch(`${SUPABASE_URL}/rest/v1/athlete_profiles?on_conflict=user_id`, {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_KEY,
@@ -159,7 +166,7 @@ async function saveAthleteStats(stats: AthleteStats): Promise<void> {
         'Prefer': 'resolution=merge-duplicates,return=minimal',
       },
       body: JSON.stringify({
-        device_id: deviceId,
+        device_id: userId,
         user_id: userId,
         profile_data: { athlete_stats: stats },
         updated_at: new Date().toISOString(),
