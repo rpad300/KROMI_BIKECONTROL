@@ -1,240 +1,322 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { AreaChart, Area, LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts';
 import { useAuthStore } from '../../store/authStore';
 import { exportRideAsGPX, type TrackPoint } from '../../services/export/GPXExportService';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
-interface RideSummary {
+const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+
+interface RideSession {
   id: string;
-  created_at: string;
+  started_at: string;
   status: string;
-  distance_km: number;
   duration_s: number;
-  elevation_gain_m: number;
+  total_km: number;
+  total_elevation_m: number;
+  avg_speed_kmh: number;
+  max_speed_kmh: number;
   avg_power_w: number;
   max_power_w: number;
-  avg_speed_kmh: number;
+  avg_hr: number;
+  max_hr: number;
   battery_start: number;
   battery_end: number;
-  tss: number;
+  devices_connected: Record<string, unknown>;
+}
+
+interface Snapshot {
+  elapsed_s: number;
+  lat: number;
+  lng: number;
+  altitude_m: number | null;
+  speed_kmh: number;
+  power_watts: number;
+  hr_bpm: number;
+  cadence_rpm: number;
+  distance_km: number;
+  gradient_pct: number;
+}
+
+async function fetchJSON(path: string) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
+    headers: { 'apikey': SUPABASE_KEY!, 'Authorization': `Bearer ${SUPABASE_KEY}` },
+  });
+  return res.json();
+}
+
+export function RideHistory() {
+  const userId = useAuthStore((s) => s.user?.id);
+  const [rides, setRides] = useState<RideSession[]>([]);
+  const [selected, setSelected] = useState<RideSession | null>(null);
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!userId || !SUPABASE_URL || !SUPABASE_KEY) { setLoading(false); return; }
+    fetchJSON(`/ride_sessions?user_id=eq.${userId}&status=eq.completed&select=*&order=started_at.desc&limit=50`)
+      .then((data) => { if (Array.isArray(data)) setRides(data); })
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  const handleSelect = async (ride: RideSession) => {
+    setSelected(ride);
+    setSnapshots([]);
+    const snaps = await fetchJSON(
+      `/ride_snapshots?session_id=eq.${ride.id}&select=elapsed_s,lat,lng,altitude_m,speed_kmh,power_watts,hr_bpm,cadence_rpm,distance_km,gradient_pct&order=elapsed_s.asc&limit=3000`
+    );
+    if (Array.isArray(snaps)) setSnapshots(snaps);
+  };
+
+  const handleExportGPX = () => {
+    if (!selected || snapshots.length === 0) return;
+    const points: TrackPoint[] = snapshots
+      .filter((s) => s.lat !== 0)
+      .map((s) => ({
+        lat: s.lat,
+        lng: s.lng,
+        elevation: s.altitude_m ?? 0,
+        timestamp: new Date(selected.started_at).getTime() + s.elapsed_s * 1000,
+        speed: s.speed_kmh || undefined,
+        hr: s.hr_bpm || undefined,
+        cadence: s.cadence_rpm || undefined,
+        power: s.power_watts || undefined,
+      }));
+    const filename = `KROMI_${new Date(selected.started_at).toISOString().split('T')[0]}`;
+    exportRideAsGPX(filename, points);
+  };
+
+  if (loading) {
+    return <div className="flex justify-center py-20"><div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>;
+  }
+
+  // Detail view
+  if (selected) {
+    return (
+      <RideDetail
+        ride={selected}
+        snapshots={snapshots}
+        onBack={() => { setSelected(null); setSnapshots([]); }}
+        onExport={handleExportGPX}
+      />
+    );
+  }
+
+  // List view
+  return (
+    <div className="space-y-3">
+      <h2 className="text-lg font-bold text-gray-300">Histórico ({rides.length} rides)</h2>
+      {rides.length === 0 && (
+        <div className="bg-gray-800 rounded-xl p-8 text-center text-gray-600">
+          <span className="material-symbols-outlined text-3xl">history</span>
+          <p className="mt-2 text-sm">Sem rides. Importa ficheiros .FIT ou faz uma volta com o KROMI.</p>
+        </div>
+      )}
+      {rides.map((ride) => (
+        <button
+          key={ride.id}
+          onClick={() => handleSelect(ride)}
+          className="w-full bg-gray-800 rounded-xl p-4 text-left hover:bg-gray-750 active:scale-[0.99] transition-transform"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-white font-bold">
+                {ride.total_km?.toFixed(1) ?? 0}km · {formatDuration(ride.duration_s ?? 0)}
+                {ride.total_elevation_m ? ` · ${ride.total_elevation_m}m D+` : ''}
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5">
+                {new Date(ride.started_at).toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' })}
+                {' · '}
+                {new Date(ride.started_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </div>
+            <div className="text-right text-xs text-gray-500">
+              {ride.avg_speed_kmh?.toFixed(1)} km/h
+              {ride.avg_hr > 0 && <div>{ride.avg_hr} bpm</div>}
+            </div>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RideDetail({ ride, snapshots, onBack, onExport }: {
+  ride: RideSession; snapshots: Snapshot[]; onBack: () => void; onExport: () => void;
+}) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapObjRef = useRef<google.maps.Map | null>(null);
+
+  // Init map
+  useEffect(() => {
+    if (!mapRef.current || !MAPS_KEY || mapObjRef.current) return;
+    const gps = snapshots.filter((s) => s.lat !== 0 && s.lng !== 0);
+    if (gps.length === 0) return;
+
+    const initMap = () => {
+      if (!mapRef.current || mapObjRef.current) return;
+      const bounds = new google.maps.LatLngBounds();
+      gps.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
+
+      const map = new google.maps.Map(mapRef.current, {
+        center: bounds.getCenter(),
+        zoom: 13,
+        mapTypeId: 'terrain',
+        disableDefaultUI: true,
+        zoomControl: true,
+        styles: [
+          { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
+          { elementType: 'labels.text.fill', stylers: [{ color: '#8a8a8a' }] },
+          { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2a2a3e' }] },
+          { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a0a1e' }] },
+        ],
+      });
+      map.fitBounds(bounds);
+      mapObjRef.current = map;
+
+      new google.maps.Polyline({
+        path: gps.map((p) => ({ lat: p.lat, lng: p.lng })),
+        geodesic: true,
+        strokeColor: '#10b981',
+        strokeWeight: 3,
+        map,
+      });
+
+      // Start/end markers
+      new google.maps.Marker({
+        position: { lat: gps[0]!.lat, lng: gps[0]!.lng },
+        map,
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#22c55e', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
+      });
+      new google.maps.Marker({
+        position: { lat: gps[gps.length - 1]!.lat, lng: gps[gps.length - 1]!.lng },
+        map,
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#ef4444', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
+      });
+    };
+
+    if (window.google?.maps) initMap();
+    else {
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}`;
+      script.onload = initMap;
+      document.head.appendChild(script);
+    }
+
+    return () => { mapObjRef.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshots]);
+
+  const altData = snapshots.filter((s) => s.altitude_m !== null).map((s) => ({
+    dist: Math.round(s.distance_km * 100) / 100,
+    alt: Math.round(s.altitude_m!),
+  }));
+
+  const hrData = snapshots.filter((s) => s.hr_bpm > 0).map((s) => ({
+    time: Math.round(s.elapsed_s / 60),
+    hr: s.hr_bpm,
+    speed: Math.round(s.speed_kmh * 10) / 10,
+  }));
+
+  const hasGPS = snapshots.some((s) => s.lat !== 0);
+  const hasAlt = altData.length > 5;
+  const hasHR = hrData.length > 5;
+
+  return (
+    <div className="space-y-4">
+      {/* Back + Export */}
+      <div className="flex items-center justify-between">
+        <button onClick={onBack} className="flex items-center gap-1 text-gray-400 hover:text-white text-sm">
+          <span className="material-symbols-outlined text-lg">arrow_back</span> Voltar
+        </button>
+        <button onClick={onExport} className="text-xs text-emerald-400 hover:text-emerald-300">
+          Exportar GPX
+        </button>
+      </div>
+
+      {/* Summary */}
+      <div className="bg-gray-800 rounded-xl p-4">
+        <div className="text-xs text-gray-500">
+          {new Date(ride.started_at).toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+        </div>
+        <div className="grid grid-cols-4 gap-3 mt-3">
+          <StatCard label="Distância" value={`${ride.total_km?.toFixed(1) ?? 0}`} unit="km" />
+          <StatCard label="Duração" value={formatDuration(ride.duration_s ?? 0)} unit="" />
+          <StatCard label="Elevação" value={`${ride.total_elevation_m ?? 0}`} unit="m D+" />
+          <StatCard label="Vel média" value={`${ride.avg_speed_kmh?.toFixed(1) ?? 0}`} unit="km/h" />
+          {ride.avg_hr > 0 && <StatCard label="FC média" value={`${ride.avg_hr}`} unit="bpm" />}
+          {ride.max_hr > 0 && <StatCard label="FC max" value={`${ride.max_hr}`} unit="bpm" />}
+          {ride.avg_power_w > 0 && <StatCard label="Potência" value={`${ride.avg_power_w}`} unit="W" />}
+          <StatCard label="Bateria" value={`${ride.battery_start ?? 100}→${ride.battery_end ?? 0}`} unit="%" />
+        </div>
+      </div>
+
+      {/* Map */}
+      {hasGPS && (
+        <div className="bg-gray-800 rounded-xl overflow-hidden">
+          <div ref={mapRef} className="w-full h-64" />
+        </div>
+      )}
+
+      {/* Elevation */}
+      {hasAlt && (
+        <div className="bg-gray-800 rounded-xl p-3">
+          <span className="text-xs font-bold text-gray-400">Altimetria</span>
+          <div className="h-32 mt-1">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={altData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="altGradH" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="dist" tick={{ fontSize: 10, fill: '#555' }} tickFormatter={(v) => `${v}km`} />
+                <YAxis tick={{ fontSize: 10, fill: '#555' }} domain={['dataMin - 10', 'dataMax + 10']} width={35} />
+                <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: 8, fontSize: 11 }} />
+                <Area type="monotone" dataKey="alt" stroke="#10b981" fill="url(#altGradH)" strokeWidth={2} name="Altitude (m)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* HR + Speed chart */}
+      {hasHR && (
+        <div className="bg-gray-800 rounded-xl p-3">
+          <span className="text-xs font-bold text-gray-400">FC + Velocidade</span>
+          <div className="h-32 mt-1">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={hrData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#555' }} tickFormatter={(v) => `${v}min`} />
+                <YAxis yAxisId="hr" tick={{ fontSize: 10, fill: '#555' }} domain={[60, 'dataMax + 10']} width={30} />
+                <YAxis yAxisId="spd" orientation="right" tick={{ fontSize: 10, fill: '#555' }} width={30} />
+                <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: 8, fontSize: 11 }} />
+                <Line yAxisId="hr" type="monotone" dataKey="hr" stroke="#ef4444" dot={false} strokeWidth={1.5} name="FC (bpm)" />
+                <Line yAxisId="spd" type="monotone" dataKey="speed" stroke="#3b82f6" dot={false} strokeWidth={1} name="Speed (km/h)" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      <div className="text-xs text-gray-600 text-center">{snapshots.length} data points</div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, unit }: { label: string; value: string; unit: string }) {
+  return (
+    <div>
+      <div className="text-lg font-bold text-white tabular-nums">{value}<span className="text-xs text-gray-500 ml-0.5">{unit}</span></div>
+      <div className="text-[10px] text-gray-500">{label}</div>
+    </div>
+  );
 }
 
 function formatDuration(s: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   return h > 0 ? `${h}:${m.toString().padStart(2, '0')}h` : `${m}min`;
-}
-
-function formatDate(iso: string): { day: string; weekday: string } {
-  const d = new Date(iso);
-  const day = d.toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' });
-  const weekday = d.toLocaleDateString('pt-PT', { weekday: 'short' });
-  return { day, weekday };
-}
-
-function intensityColor(tss: number): string {
-  if (tss > 200) return 'bg-red-400';
-  if (tss > 100) return 'bg-yellow-400';
-  return 'bg-emerald-400';
-}
-
-export function RideHistory() {
-  const [rides, setRides] = useState<RideSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const userId = useAuthStore((s) => s.getUserId?.() ?? null);
-
-  useEffect(() => {
-    loadRides();
-  }, []);
-
-  async function loadRides() {
-    if (!SUPABASE_URL || !SUPABASE_KEY) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/ride_sessions?status=eq.completed&order=created_at.desc&limit=20${
-          userId ? `&user_id=eq.${userId}` : ''
-        }`,
-        {
-          headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-          },
-        }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setRides(data);
-      }
-    } catch {
-      // Silently fail — show empty state
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Monthly aggregates
-  const now = new Date();
-  const thisMonth = rides.filter((r) => {
-    const d = new Date(r.created_at);
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  });
-  const totalDist = thisMonth.reduce((s, r) => s + (r.distance_km || 0), 0);
-  const totalElev = thisMonth.reduce((s, r) => s + (r.elevation_gain_m || 0), 0);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col h-full p-3 gap-3">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold text-emerald-400">Ride History</h1>
-        <button
-          onClick={loadRides}
-          className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center active:bg-gray-700"
-        >
-          <span className="material-symbols-outlined text-gray-400">filter_list</span>
-        </button>
-      </div>
-
-      {/* Monthly summary */}
-      <div className="flex gap-2">
-        <SummaryPill icon="directions_bike" value={`${thisMonth.length}`} label="Rides" />
-        <SummaryPill icon="straighten" value={`${Math.round(totalDist)}`} label="km" />
-        <SummaryPill icon="terrain" value={`${Math.round(totalElev)}`} label="m ↑" />
-      </div>
-
-      {/* Ride list */}
-      <div className="flex-1 space-y-2 overflow-y-auto min-h-0">
-        {rides.length === 0 ? (
-          <EmptyState />
-        ) : (
-          rides.slice(0, 10).map((ride, i) => (
-            <RideCard key={ride.id} ride={ride} highlight={i === 0} />
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-function RideCard({ ride, highlight }: { ride: RideSummary; highlight: boolean }) {
-  const { day, weekday } = formatDate(ride.created_at);
-  const [exporting, setExporting] = useState(false);
-
-  const handleExportGPX = async () => {
-    if (!SUPABASE_URL || !SUPABASE_KEY) return;
-    setExporting(true);
-    try {
-      const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/ride_snapshots?session_id=eq.${ride.id}&order=timestamp.asc`,
-        {
-          headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-          },
-        }
-      );
-      if (!res.ok) return;
-      const snapshots = await res.json();
-
-      const points: TrackPoint[] = snapshots
-        .filter((s: Record<string, unknown>) => s.lat && s.lng)
-        .map((s: Record<string, unknown>) => ({
-          lat: s.lat as number,
-          lng: s.lng as number,
-          elevation: (s.elevation as number) ?? 0,
-          timestamp: new Date(s.timestamp as string).getTime(),
-          speed: s.speed_kmh as number | undefined,
-          power: s.power_w as number | undefined,
-          hr: s.hr_bpm as number | undefined,
-          cadence: s.cadence_rpm as number | undefined,
-        }));
-
-      if (points.length === 0) return;
-      const rideName = `BikeControl_${formatDate(ride.created_at).day.replace(/\s/g, '_')}`;
-      exportRideAsGPX(rideName, points);
-    } catch {
-      // Export failed silently
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  return (
-    <div
-      className={`bg-gray-800/60 rounded-xl p-3 flex gap-3 border-l-[3px] ${
-        highlight ? 'border-l-emerald-500' : 'border-l-gray-700'
-      }`}
-    >
-      {/* Date column */}
-      <div className="flex flex-col items-center justify-center min-w-[50px]">
-        <span className="text-sm font-bold text-white">{day}</span>
-        <span className="text-xs text-gray-500 capitalize">{weekday}</span>
-      </div>
-
-      {/* Metrics */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
-          <span>{(ride.distance_km || 0).toFixed(1)} km</span>
-          <span>{formatDuration(ride.duration_s || 0)}</span>
-          <span>{Math.round(ride.elevation_gain_m || 0)}m ↑</span>
-        </div>
-        <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-          <span>{Math.round(ride.avg_power_w || 0)}W avg</span>
-          <span>TSS {Math.round(ride.tss || 0)}</span>
-          <span>🔋 {ride.battery_start ?? 0}→{ride.battery_end ?? 0}%</span>
-        </div>
-      </div>
-
-      {/* Export GPX + Intensity dot */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={handleExportGPX}
-          disabled={exporting}
-          className="w-9 h-9 rounded-lg bg-gray-700/60 flex items-center justify-center active:scale-95 transition-transform"
-          title="Export GPX"
-        >
-          <span className={`material-symbols-outlined text-base ${exporting ? 'text-gray-600 animate-spin' : 'text-emerald-400'}`}>
-            {exporting ? 'progress_activity' : 'download'}
-          </span>
-        </button>
-        <div className={`w-3 h-3 rounded-full ${intensityColor(ride.tss || 0)}`} />
-      </div>
-    </div>
-  );
-}
-
-function SummaryPill({ icon, value, label }: { icon: string; value: string; label: string }) {
-  return (
-    <div className="flex-1 bg-gray-800 rounded-lg px-3 py-2.5 flex items-center gap-2">
-      <span className="material-symbols-outlined text-emerald-400 text-lg">{icon}</span>
-      <div>
-        <div className="text-sm font-bold text-white">{value}</div>
-        <div className="text-xs text-gray-500">{label}</div>
-      </div>
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center h-full gap-4 text-gray-500">
-      <span className="material-symbols-outlined text-6xl">history</span>
-      <div className="text-center">
-        <p className="text-lg font-bold text-gray-400">Sem rides gravados</p>
-        <p className="text-sm mt-1">Inicia uma sessao no Dashboard para comecar a gravar</p>
-      </div>
-    </div>
-  );
 }
