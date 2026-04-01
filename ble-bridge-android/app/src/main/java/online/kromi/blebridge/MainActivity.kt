@@ -247,29 +247,17 @@ class MainActivity : AppCompatActivity() {
                 val hex = json.optString("hex")
                 appendLog("RAW", "cmd=%02X %s".format(cmd, hex))
             }
-            "sgRidingDiag" -> {
-                val hex = json.optString("rawHex")
-                appendLog("HEX", "41: $hex")
-                appendLog("ST_A", "spd=%.1f trq=%.1f cad=%.1f pwr=%.1f soc=%d".format(
-                    json.optDouble("a_speed"), json.optDouble("a_torque"),
-                    json.optDouble("a_cadence"), json.optDouble("a_power"),
-                    json.optInt("a_soc")))
-                appendLog("ST_B", "spd=%.1f trq=%.1f cad=%.1f pwr=%.1f soc=%d car=%d d=%.1f t=%d".format(
-                    json.optDouble("b_speed"), json.optDouble("b_torque"),
-                    json.optDouble("b_cadence"), json.optDouble("b_power"),
-                    json.optInt("b_soc"), json.optInt("b_carr"),
-                    json.optDouble("b_dist"), json.optInt("b_time")))
-            }
             "sgRiding" -> {
                 val spd = json.optDouble("speed", 0.0)
-                val trq = json.optDouble("torque", 0.0)
-                val pwr = json.optDouble("power", 0.0)
-                val cad = json.optDouble("cadence", 0.0)
-                val ast = json.optInt("assistRatio", 0)
                 val soc = json.optInt("batterySoc", 0)
-                val dst = json.optDouble("tripDistance", 0.0)
-                val tm = json.optInt("tripTime", 0)
-                appendLog("MOT", "spd=%.1f trq=%.1f pwr=%.1f cad=%.1f a=%d%% soc=%d%% d=%.1f t=%d".format(spd, trq, pwr, cad, ast, soc, dst, tm))
+                val mPwr = json.optInt("motorPower", 0)
+                val mTrq = json.optInt("motorTorque", 0)
+                val odo = json.optDouble("odo", 0.0)
+                appendLog("MOT", "spd=%.1f soc=%d%% mPwr=%d mTrq=%d odo=%.1f".format(spd, soc, mPwr, mTrq, odo))
+            }
+            "sgBatteryHealth" -> {
+                appendLog("BAT", "★ b1=%d%% b2=%d%% soc=%d%%".format(
+                    json.optInt("bat1Life"), json.optInt("bat2Life"), json.optInt("soc")))
             }
             "sgConnected" -> appendLog("GEV", if (json.optBoolean("success")) "★ SESSION ACTIVE!" else "Session failed")
             "sgBattery" -> appendLog("BAT", "★ SOC=${json.optInt("soc")}% life=${json.optInt("life")}%")
