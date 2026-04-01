@@ -9,6 +9,7 @@ import { GearWidget } from './GearWidget';
 import { TorqueWidget } from './TorqueWidget';
 import { RideSessionWidget } from './RideSessionWidget';
 import { TripStatsWidget } from './TripStatsWidget';
+import { TuningWidget } from './TuningWidget';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
@@ -35,6 +36,9 @@ export function Dashboard() {
 
       {/* Assist mode buttons */}
       <AssistModeWidget />
+
+      {/* Motor tuning — intensity control within each assist mode */}
+      <TuningWidget />
 
       {/* Trip stats */}
       {rideActive && <TripStatsWidget />}

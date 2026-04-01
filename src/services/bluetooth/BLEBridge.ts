@@ -19,6 +19,7 @@ import { wsClient } from './WebSocketBLEClient';
 import { isCapacitorNative, capacitorBLEService } from './CapacitorBLEService';
 import { giantBLEService } from './GiantBLEService';
 import { tpmsService } from './TPMSService';
+import type { TuningLevels, TuningMode } from '../../store/tuningStore';
 
 export type BLEMode = 'websocket' | 'native' | 'web';
 
@@ -248,6 +249,43 @@ export function getFrontTPMSDeviceName(): string | null {
 /** Get rear TPMS device name */
 export function getRearTPMSDeviceName(): string | null {
   return tpmsService.getRearDeviceName();
+}
+
+// === Tuning API (WebSocket bridge only) ===
+
+/** Read current tuning from motor */
+export function readTuning(): void {
+  if (bleMode === 'websocket') wsClient.readTuning();
+}
+
+/** Write tuning levels to motor */
+export function setTuning(levels: TuningLevels): void {
+  if (bleMode === 'websocket') wsClient.setTuning(levels);
+}
+
+/** Set a single mode's tuning level */
+export function setTuningMode(mode: TuningMode, level: number): void {
+  if (bleMode === 'websocket') wsClient.setTuningMode(mode, level);
+}
+
+/** Preset: all modes MAX */
+export function tuneMax(): void {
+  if (bleMode === 'websocket') wsClient.tuneMax();
+}
+
+/** Preset: all modes MIN */
+export function tuneMin(): void {
+  if (bleMode === 'websocket') wsClient.tuneMin();
+}
+
+/** Restore original tuning */
+export function tuneRestore(): void {
+  if (bleMode === 'websocket') wsClient.tuneRestore();
+}
+
+/** Whether tuning control is available */
+export function isTuningAvailable(): boolean {
+  return bleMode === 'websocket' && wsClient.isBikeConnected;
 }
 
 /** Get current BLE mode description */

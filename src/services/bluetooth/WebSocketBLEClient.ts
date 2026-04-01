@@ -8,6 +8,7 @@
  */
 
 import { useBikeStore } from '../../store/bikeStore';
+import { useTuningStore, type TuningLevels } from '../../store/tuningStore';
 import { batteryEstimationService } from '../battery/BatteryEstimationService';
 
 const WS_URL = 'ws://localhost:8765';
@@ -32,6 +33,8 @@ class WebSocketBLEClient {
         this._connected = true;
         this._bridgeAvailable = true;
         this.stopReconnect();
+        // Register beforeunload to auto-restore on page close/crash
+        window.addEventListener('beforeunload', this.handleBeforeUnload);
       };
 
       this.ws.onmessage = (event) => {
@@ -41,6 +44,7 @@ class WebSocketBLEClient {
       this.ws.onclose = () => {
         console.log('[WSClient] Disconnected from BLE Bridge');
         this._connected = false;
+        window.removeEventListener('beforeunload', this.handleBeforeUnload);
         this.startReconnect();
       };
 
@@ -111,6 +115,67 @@ class WebSocketBLEClient {
     this.send({ type: 'protoGet', module });
   }
 
+  // === Tuning API ===
+
+  /** Read current tuning levels from motor */
+  readTuning(): void {
+    useTuningStore.getState().setStatus('reading');
+    this.send({ type: 'readTuning' });
+  }
+
+  /** Write tuning levels to motor */
+  setTuning(levels: TuningLevels): void {
+    useTuningStore.getState().setStatus('writing');
+    this.send({
+      type: 'setTuning',
+      power: levels.power,
+      sport: levels.sport,
+      active: levels.active,
+      tour: levels.tour,
+      eco: levels.eco,
+    });
+  }
+
+  /** Set single mode's tuning level */
+  setTuningMode(mode: string, level: number): void {
+    const current = useTuningStore.getState().current;
+    this.setTuning({ ...current, [mode]: level });
+  }
+
+  /** Preset: all modes to MAX (level 1 = max power) */
+  tuneMax(): void {
+    this.send({ type: 'tuneMax' });
+  }
+
+  /** Preset: all modes to MIN (level 3 = min power) */
+  tuneMin(): void {
+    this.send({ type: 'tuneMin' });
+  }
+
+  /** Restore original tuning saved on connect */
+  tuneRestore(): void {
+    const original = useTuningStore.getState().original;
+    if (original) {
+      this.setTuning(original);
+    } else {
+      this.send({ type: 'tuneRestore' });
+    }
+  }
+
+  /** Auto-restore: called on disconnect/close to put motor back to original */
+  private autoRestore(): void {
+    const { original, hasRead } = useTuningStore.getState();
+    if (hasRead && original) {
+      console.log('[WSClient] Auto-restoring original tuning on disconnect');
+      this.setTuning(original);
+    }
+  }
+
+  /** beforeunload handler — restore tuning on page close/refresh */
+  private handleBeforeUnload = (): void => {
+    this.autoRestore();
+  };
+
   private handleMessage(raw: string): void {
     try {
       const msg = JSON.parse(raw);
@@ -121,11 +186,16 @@ class WebSocketBLEClient {
           this._bikeConnected = true;
           store.setBLEStatus('connected');
           console.log('[WSClient] Bike connected:', msg.device, 'bonded:', msg.bonded);
+          // Auto-read tuning on connect to capture original for restore
+          setTimeout(() => this.readTuning(), 1000);
           break;
 
         case 'disconnected':
+          // Auto-restore original tuning before marking disconnected
+          this.autoRestore();
           this._bikeConnected = false;
           store.setBLEStatus('disconnected');
+          useTuningStore.getState().reset();
           break;
 
         case 'battery':
@@ -255,8 +325,37 @@ class WebSocketBLEClient {
           console.log(`[WSClient] GEV session: ${msg.success ? 'ACTIVE' : 'FAILED'}`);
           break;
 
-        case 'sgTuning':
+        case 'sgTuning': {
           console.log(`[WSClient] Tuning data: ${msg.hex}`);
+          // Parse tuning levels from bridge response
+          if (msg.power !== undefined) {
+            const levels: TuningLevels = {
+              power: msg.power,
+              sport: msg.sport,
+              active: msg.active,
+              tour: msg.tour,
+              eco: msg.eco,
+            };
+            const tuning = useTuningStore.getState();
+            tuning.setCurrent(levels);
+            // First read after connect → save as original for auto-restore
+            if (!tuning.original) {
+              tuning.setOriginal(levels);
+              console.log('[WSClient] Saved original tuning for auto-restore:', levels);
+            }
+          }
+          break;
+        }
+
+        case 'sgTuningSet':
+          // SET_TUNING confirmation from bridge
+          if (msg.success) {
+            useTuningStore.getState().setStatus('success');
+            console.log('[WSClient] Tuning SET confirmed');
+          } else {
+            useTuningStore.getState().setStatus('error');
+            console.warn('[WSClient] Tuning SET failed');
+          }
           break;
 
         case 'sgResponse':
