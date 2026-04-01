@@ -231,9 +231,11 @@ Se a cadência caiu >15rpm nos últimos 10s, o rider está a perder ritmo. É um
 
 | Condição | Bias | Razão |
 |----------|:---:|--------|
-| Cadência caiu >15rpm em 10s (e era >40rpm) | +10 | Grinding/fadiga — HR vai subir |
+| Cadência caiu >15rpm em 10s (e era >55rpm) | +10 | Fadiga real — HR vai subir |
 
 **Exemplo**: cadência cai de 75 para 55rpm em 10s numa subida → +10 bias → motor antecipa antes do HR confirmar.
+
+**Floor >55rpm**: abaixo de 55rpm o rider já está em grinding extremo. Uma queda de 42→26rpm não acrescenta informação — o sistema já sabe pelo HR ou pelo terrain. O floor de 55 filtra ruído de singletrack técnico onde cadência é naturalmente errática.
 
 ### Lookahead Dinâmico (baseado em velocidade)
 ```
@@ -460,6 +462,62 @@ Explicação UI: "Motor MAX — HR 6bpm acima de Z2" + "Torque cap — Cadência
 ```
 **Safety feature**: max support mas torque limitado para não patinar a roda em subida técnica com cadência baixa.
 
+### 7.8 Plano com headwind — powerBias demonstra o valor (cenário diferenciador)
+Z2 target (98-114), HR 108bpm (dentro da zona, meio), plano, 260W, rider 80kg, cadência 78rpm estável
+```
+posição = (108-98)/(114-98) = 10/16 = 0.625
+hrTarget = 40 + (0.625 × 20) = 52.5 ≈ 53
+
+Anticipation:
+  terrainBias:      0 (plano)
+  transitionBias:   0 (sem transição à frente)
+  weightBias:       0 (plano, não aplica)
+  powerBias:        260/80 = 3.25 W/kg → +15 ← rider a esforçar-se, HR vai subir
+  cadenceTrendBias: 0 (78rpm estável)
+  Total: +15
+
+Battery: ×1.0
+
+intensity = clamp(53 + 15, 0, 100) × 1.0 = 68
+
+Support:  68 → wire 0 (>62)      → S360%
+Torque:   68 → wire 0             → T300
+MidTorq:  68-10=58 → wire 1      → M200
+LowTorq:  68-20=48 → wire 1      → L150
+Launch:   68 × 0.7 = 48 → wire 1 → R75
+
+Motor: S360% T300/200/150 R75
+
+SEM powerBias: intensity = 53 → wire 1 (MID) → S350%
+COM powerBias: intensity = 68 → wire 0 (MAX) → S360%
+
+Motor antecipa HR spike 30-60s antes de acontecer.
+Explicação UI: "Motor MAX — Esforço alto (3.2 W/kg), a proteger"
+```
+**Este cenário justifica o powerBias**: o terreno diz "plano, tudo calmo". Mas o rider está a produzir 260W contra headwind. Sem powerBias, o motor ficaria em MID até o HR subir 30-60s depois. Com powerBias, o motor antecipa e previne o spike.
+
+### 7.9 Fadiga em subida — cadenceTrendBias
+Z2 target (98-114), HR 110bpm (dentro da zona), gradient 6%, cadência a cair de 72→54rpm em 10s, 180W
+```
+hrTarget = 40 + (0.75 × 20) = 55
+
+Anticipation:
+  terrainBias:      gradient 6% → +10
+  transitionBias:   0
+  weightBias:       0
+  powerBias:        180/80 = 2.25 W/kg → +8
+  cadenceTrendBias: 72→54 = queda 18rpm em 10s (>15, era >55) → +10
+  Total: +28
+
+intensity = clamp(55 + 28, 0, 100) × 1.0 = 83
+
+Support: 83 → wire 0 → S360%
+
+SEM cadenceTrendBias: intensity = 73 → wire 0 (mesmo resultado aqui)
+SEM cadence + power:  intensity = 65 → wire 0 (borderline, com ruído flipa)
+```
+**Nota**: neste exemplo os 3 sinais convergem (terrain+power+cadence). Em casos borderline (intensity 60-68), os +10 do cadenceTrendBias fazem a diferença entre wire 0 e wire 1.
+
 ---
 
 ## 8. Comparação: Terrain-Reactive vs HR-Regulated
@@ -471,8 +529,10 @@ Explicação UI: "Motor MAX — HR 6bpm acima de Z2" + "Torque cap — Cadência
 | Subida 5%, HR 80bpm (abaixo Z2) | 70 → MAX | 0 → MIN | HR baixa, rider aguenta |
 | Pré-subida, HR 110bpm (Z2 ok) | 25+20=45 → MID | 55+25=80 → MAX | Antecipa subida |
 | Subida técnica, cad 40rpm | 85 → MAX torque | 100 support, 55 torque | Safety: torque limitado |
+| **Plano + headwind 260W** | **25 → MIN** | **68 → MAX** | **powerBias antecipa HR spike** |
+| **Fadiga, cad 72→54rpm** | **60 → MID** | **83 → MAX** | **cadenceTrend + power** |
 
-**A diferença fundamental**: o motor agora serve o rider, não o terreno.
+**A diferença fundamental**: o motor agora serve o rider, não o terreno. E antecipa o que o HR vai fazer antes de acontecer.
 
 ---
 

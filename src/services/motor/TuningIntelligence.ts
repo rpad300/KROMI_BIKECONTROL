@@ -183,7 +183,7 @@ class TuningIntelligence {
     if (this.cadenceHistory.length >= 3 && input.cadence > 0) {
       const oldest = this.cadenceHistory[0]!;
       const cadenceDrop = oldest - input.cadence;
-      if (cadenceDrop > 15 && oldest > 40) {
+      if (cadenceDrop > 15 && oldest > 55) {
         anticipation += 10; // cadence falling fast → HR will spike
         factors.push({ name: 'Cadência ↓', value: 10, detail: `${oldest}→${input.cadence}rpm em ${this.cadenceHistory.length * 2}s` });
       }
