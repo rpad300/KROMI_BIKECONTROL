@@ -181,6 +181,7 @@ class BLEBridgeService : Service() {
             }
             "protoGet" -> bleManager.writeProtoGet(json.optString("module", "bikeInfo"))
             "testSG" -> bleManager.testSGWrite()
+            "startSession" -> bleManager.startGEVSession()
 
             // === Motor tuning control (SET_TUNING) ===
             "setTuning" -> {

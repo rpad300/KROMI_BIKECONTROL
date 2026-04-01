@@ -487,6 +487,8 @@ class BLEManager(private val context: Context) {
         if (pendingNotifications.isEmpty()) {
             Log.i(TAG, "★ All notifications enabled! Listening for data...")
             onStatusChanged?.invoke("All subscribed — listening...")
+            // Auto-start GEV session for FC23 telemetry (mode detection, motor data)
+            handler.postDelayed({ startGEVSession() }, 500)
             return
         }
         val char = pendingNotifications.first()
@@ -971,6 +973,63 @@ class BLEManager(private val context: Context) {
      * - CRC = XOR of all preceding bytes
      * - ASSIST_UP: [FB,21,AES(1C,03,02,00,00,zeros,key3),keyIdx=3,CRC]
      */
+    /**
+     * Auto-start GEV session after BLE connection + subscriptions.
+     * Sends CONNECT_GEV (0x02) + enableRidingNotification to trigger FC23 telemetry.
+     * Without this, the SG only responds to standard BLE services (battery, CSC, power).
+     * FC23 telemetry gives us: speed, motor power, SOC, ODO, assist mode (cmd 0x41).
+     */
+    fun startGEVSession() {
+        val g = gatt ?: return
+        val char = sgWriteChar ?: run {
+            Log.i(TAG, "startGEVSession: SG Write char not available — skipping")
+            return
+        }
+
+        Log.i(TAG, "★ AUTO-START GEV SESSION")
+
+        // CONNECT_GEV: [FB, 21, AES(02,00,zeros×14, key0), keyIdx=0, CRC]
+        val connectPlain = ByteArray(16).also { it[0] = 0x02; it[1] = 0x00 }
+        val connectEnc = GEVCrypto.encrypt(connectPlain, 0)
+        val connectPkt = ByteArray(20)
+        connectPkt[0] = 0xFB.toByte()
+        connectPkt[1] = 0x21
+        System.arraycopy(connectEnc, 0, connectPkt, 2, 16)
+        connectPkt[18] = 0x00
+        var xor = 0; for (i in 0..18) xor = xor xor (connectPkt[i].toInt() and 0xFF)
+        connectPkt[19] = xor.toByte()
+
+        // enableRidingNotification: [FB, 22, 01, CRC=D8]
+        val enableRiding = byteArrayOf(0xFB.toByte(), 0x22, 0x01, 0xD8.toByte())
+
+        // Send CONNECT_GEV
+        char.value = connectPkt
+        char.writeType = android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        g.writeCharacteristic(char)
+        Log.i(TAG, ">>> CONNECT_GEV sent")
+        onDataReceived?.invoke(org.json.JSONObject()
+            .put("type", "sgCmd").put("name", "AUTO_CONNECT_GEV").put("ok", true))
+
+        // Send enableRiding after 1s delay
+        handler.postDelayed({
+            char.value = enableRiding
+            char.writeType = android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+            g.writeCharacteristic(char)
+            Log.i(TAG, ">>> ENABLE_RIDING sent — FC23 telemetry should start")
+            onDataReceived?.invoke(org.json.JSONObject()
+                .put("type", "sgCmd").put("name", "AUTO_ENABLE_RIDING").put("ok", true))
+        }, 1000)
+
+        // Repeat enableRiding a few times (sometimes first one is missed)
+        for (i in 1..3) {
+            handler.postDelayed({
+                char.value = enableRiding
+                char.writeType = android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                g.writeCharacteristic(char)
+            }, (1000 + i * 2000).toLong())
+        }
+    }
+
     fun testSGWrite() {
         val g = gatt ?: return
         val char = sgWriteChar ?: run {
