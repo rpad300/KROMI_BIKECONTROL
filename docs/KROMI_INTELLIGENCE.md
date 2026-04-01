@@ -1,14 +1,19 @@
-# KROMI Intelligence — Motor Calibration Engine
+# KROMI Intelligence — HR Zone Regulated Motor Calibration
 
-## Version: v0.6.0-b34 (2026-04-01)
+## Version: v0.6.0-b34 final (2026-04-01)
 
 ---
 
 ## 1. Visão Geral
 
-O KROMI Intelligence é o cérebro do sistema BikeControl. Calcula continuamente a calibração óptima do motor da Giant Trance X E+ 2 (2023), ajustando 5 parâmetros independentes do SyncDrive Pro a cada 2 segundos.
+O KROMI Intelligence é um **regulador de zona cardíaca** — o motor ajuda a manter o rider na zona HR escolhida. Não é um reactor de terreno.
 
-**Princípio fundamental**: O KROMI não "escolhe presets" — calcula uma intensidade contínua (0-100%) para cada parâmetro e envia a calibração mais próxima que o motor aceita.
+**Princípio fundamental**: O motor não reage ao terreno dando MAX em subidas. Em vez disso, monitoriza a frequência cardíaca e ajusta o assist para manter o rider na zona alvo. O terreno é usado para **antecipação** (pre-boost antes de uma subida para evitar picos de HR).
+
+**Hierarquia de decisão**:
+1. **PRIMARY** — HR zone regulation (manter na zona alvo)
+2. **SECONDARY** — Terrain anticipation (pre-boost/reduce)
+3. **TERTIARY** — Battery conservation (redução progressiva)
 
 ### Quando está activo
 - **Apenas em POWER mode** — o utilizador controla o modo via RideControl físico
