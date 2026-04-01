@@ -54,6 +54,48 @@ export interface SimulationSummary {
   bike_motor: string;
 }
 
+/**
+ * Physics-based motor consumption model.
+ * Calculates Watts consumed by the motor based on terrain, speed, weight, and assist level.
+ * Returns electrical power in Watts (multiply by dt_hours for Wh).
+ */
+function motorConsumptionW(
+  speed_kmh: number, gradient_pct: number, riderWeight_kg: number,
+  support_pct: number, torque_nm: number, maxPower_w: number,
+): number {
+  if (speed_kmh < 2) return 0; // motor off when stopped
+
+  const totalMass = riderWeight_kg + 25; // rider + bike (~25kg for e-MTB)
+  const speedMs = speed_kmh / 3.6;
+  const g = 9.81;
+
+  // Forces (Newtons)
+  const gradeAngle = Math.atan(gradient_pct / 100);
+  const gradeForce = totalMass * g * Math.sin(gradeAngle);
+  const rollingForce = totalMass * g * 0.006; // Crr MTB tires
+  const aeroForce = 0.5 * 0.5 * 0.8 * 1.225 * speedMs * speedMs; // CdA ~0.4
+
+  // Total force needed (negative = downhill, motor not needed)
+  const totalForce = Math.max(0, gradeForce + rollingForce + aeroForce);
+  const totalPowerW = totalForce * speedMs;
+
+  // Motor share: assist_pct means motor adds (assist/100) × rider input
+  // So motor provides assist/(100+assist) of total
+  const motorShare = support_pct / (100 + support_pct);
+  let motorPowerW = totalPowerW * motorShare;
+
+  // Cap by torque limit (torque × estimated angular velocity)
+  const estCadenceRpm = speed_kmh < 10 ? 55 : speed_kmh < 20 ? 65 : 75;
+  const torqueCap = torque_nm * estCadenceRpm * 2 * Math.PI / 60;
+  motorPowerW = Math.min(motorPowerW, torqueCap);
+
+  // Cap by motor max power
+  motorPowerW = Math.min(motorPowerW, maxPower_w);
+
+  // Electrical consumption (motor efficiency ~80%)
+  return motorPowerW / 0.80;
+}
+
 export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
   const rider = useSettingsStore.getState().riderProfile;
   const bike = safeBikeConfig(useSettingsStore.getState().bikeConfig);
@@ -208,25 +250,26 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
           support_pct: Math.round(lerp(bike.tuning_min.assist_pct, bike.tuning_mid.assist_pct, score / 50)),
           torque: Math.round(lerp(bike.tuning_min.torque_nm, bike.tuning_mid.torque_nm, score / 50)),
           launch: Math.round(lerp(bike.tuning_min.launch, bike.tuning_mid.launch, score / 50)),
-          consumption: lerp(bike.tuning_min.consumption_wh_km, bike.tuning_mid.consumption_wh_km, score / 50),
         }
       : {
           support_pct: Math.round(lerp(bike.tuning_mid.assist_pct, bike.tuning_max.assist_pct, (score - 50) / 50)),
           torque: Math.round(lerp(bike.tuning_mid.torque_nm, bike.tuning_max.torque_nm, (score - 50) / 50)),
           launch: Math.round(lerp(bike.tuning_mid.launch, bike.tuning_max.launch, (score - 50) / 50)),
-          consumption: lerp(bike.tuning_mid.consumption_wh_km, bike.tuning_max.consumption_wh_km, (score - 50) / 50),
         };
 
-    // === BATTERY SIMULATION ===
+    // === BATTERY SIMULATION (physics-based) ===
     const dt = i > 0 ? (r.elapsed_s - records[i - 1]!.elapsed_s) : 0;
     const dtH = dt / 3600;
     if (r.speed_kmh > 2 && dtH > 0) {
-      // KROMI: consumption interpolated from score
-      batteryWh = Math.max(0, batteryWh - asmo.consumption * r.speed_kmh * dtH);
-      // Fixed baseline: user's normal config
-      batteryFixedWh = Math.max(0, batteryFixedWh - bike.fixed_baseline.consumption_wh_km * r.speed_kmh * dtH);
-      // Always MAX: worst case reference
-      batteryMaxWh = Math.max(0, batteryMaxWh - bike.tuning_max.consumption_wh_km * r.speed_kmh * dtH);
+      // KROMI: consumption from physics model with interpolated ASMO values
+      const kromiW = motorConsumptionW(r.speed_kmh, gradient, rider.weight_kg, asmo.support_pct, asmo.torque, bike.max_power_w);
+      batteryWh = Math.max(0, batteryWh - kromiW * dtH);
+      // Fixed baseline: same physics, fixed assist params
+      const fixedW = motorConsumptionW(r.speed_kmh, gradient, rider.weight_kg, bike.fixed_baseline.assist_pct, bike.fixed_baseline.torque_nm, bike.max_power_w);
+      batteryFixedWh = Math.max(0, batteryFixedWh - fixedW * dtH);
+      // Always MAX: worst case
+      const maxW = motorConsumptionW(r.speed_kmh, gradient, rider.weight_kg, bike.tuning_max.assist_pct, bike.tuning_max.torque_nm, bike.max_power_w);
+      batteryMaxWh = Math.max(0, batteryMaxWh - maxW * dtH);
     }
 
     scoreSum += score;
