@@ -258,8 +258,8 @@ class WebSocketBLEClient {
           console.log('[WSClient] Bike connected:', msg.device, 'bonded:', msg.bonded);
           // Auto-read tuning on connect
           setTimeout(() => this.readTuning(), 1000);
-          // Read battery details + range (first read)
-          setTimeout(() => this.send({ type: 'readBattery' }), 2000);
+          // Read battery details + range AFTER GEV session (needs ~4s to be active)
+          setTimeout(() => this.send({ type: 'readBattery' }), 5000);
           // Start periodic range polling (every 2 minutes)
           this.startRangePolling();
           break;

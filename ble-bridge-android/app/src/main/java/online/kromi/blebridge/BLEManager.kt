@@ -1354,20 +1354,22 @@ class BLEManager(private val context: Context) {
     /** Read full battery details + range for all modes */
     fun readBatteryDetails() {
         val h = android.os.Handler(android.os.Looper.getMainLooper())
-        // cmd 17: remaining range per mode (ECO, TOUR, ACTIVE, SPORT, POWER...)
-        sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 17 }, 0, "RANGE_ALL_MODES")
-        // cmd 13: main battery firmware
-        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 13 }, 0, "BAT_MAIN_FW") }, 400)
-        // cmd 14: main battery cycles
-        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 14 }, 0, "BAT_MAIN_CYCLES") }, 800)
-        // cmd 19: main battery level + health
-        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 19 }, 0, "BAT_MAIN_LEVEL") }, 1200)
-        // cmd 55: sub battery level + health
-        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 55 }, 0, "BAT_SUB_LEVEL") }, 1600)
-        // cmd 56: sub battery firmware
-        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 56 }, 0, "BAT_SUB_FW") }, 2000)
-        // cmd 57: sub battery cycles
-        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 57 }, 0, "BAT_SUB_CYCLES") }, 2400)
+        // Format: plaintext[0]=cmd, plaintext[1]=0x00, rest zeros, AES key 0
+        // (same format as readTuning which uses [0x2C, 0x00, ...])
+        // cmd 17 (0x11): remaining range per mode
+        sendEncryptedCommand(ByteArray(16).also { it[0] = 0x11 }, 0, "RANGE_ALL_MODES")
+        // cmd 13 (0x0D): main battery firmware
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x0D }, 0, "BAT_MAIN_FW") }, 400)
+        // cmd 14 (0x0E): main battery cycles
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x0E }, 0, "BAT_MAIN_CYCLES") }, 800)
+        // cmd 19 (0x13): main battery level + health
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x13 }, 0, "BAT_MAIN_LEVEL") }, 1200)
+        // cmd 55 (0x37): sub battery level + health
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x37 }, 0, "BAT_SUB_LEVEL") }, 1600)
+        // cmd 56 (0x38): sub battery firmware
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x38 }, 0, "BAT_SUB_FW") }, 2000)
+        // cmd 57 (0x39): sub battery cycles
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x39 }, 0, "BAT_SUB_CYCLES") }, 2400)
     }
 
     /** Convenience: ASSIST UP — cmd=0x1C, sub=0x03, action=0x02, key 3 */
