@@ -47,6 +47,11 @@ class WebSocketBLEClient {
   /** Try to connect to the BLE Bridge middleware */
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
+    // Clean up any existing connection attempt
+    if (this.ws) {
+      try { this.ws.close(); } catch { /* ignore */ }
+      this.ws = null;
+    }
 
     try {
       this.ws = new WebSocket(WS_URL);
@@ -72,8 +77,9 @@ class WebSocketBLEClient {
       };
 
       this.ws.onerror = () => {
-        // Silent — bridge not running is expected when using PWA without middleware
+        // Bridge not running is expected — reconnect silently
         this._connected = false;
+        this.startReconnect();
       };
     } catch {
       this._connected = false;

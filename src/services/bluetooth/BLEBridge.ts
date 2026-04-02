@@ -38,18 +38,31 @@ export async function initBLE(): Promise<void> {
   // Try connecting to WebSocket bridge (middleware app)
   wsClient.connect();
 
-  // Wait briefly to see if bridge is available
-  await new Promise((resolve) => setTimeout(resolve, 1500));
+  // Wait for bridge — try twice with increasing timeout
+  await new Promise((resolve) => setTimeout(resolve, 2000));
 
   if (wsClient.isConnected) {
     bleMode = 'websocket';
     console.log('[BLE Bridge] Mode: WebSocket Bridge — full BLE via middleware');
-    // Auto-connect all saved sensors when bridge is available
     setTimeout(() => autoConnectSensors(), 2000);
   } else {
+    // Default to web but keep trying WS in background
     bleMode = 'web';
-    console.log('[BLE Bridge] Mode: Web Bluetooth — standard services only');
-    console.log('[BLE Bridge] Install the BLE Bridge app for motor control');
+    console.log('[BLE Bridge] Mode: Web Bluetooth — WS bridge not yet available');
+    console.log('[BLE Bridge] Will auto-switch to WebSocket when bridge connects');
+
+    // Listen for WS connection and auto-switch mode
+    const checkInterval = setInterval(() => {
+      if (wsClient.isConnected && bleMode === 'web') {
+        bleMode = 'websocket';
+        console.log('[BLE Bridge] Mode switched: WebSocket Bridge now available!');
+        setTimeout(() => autoConnectSensors(), 1000);
+        clearInterval(checkInterval);
+      }
+    }, 2000);
+
+    // Stop checking after 2 minutes
+    setTimeout(() => clearInterval(checkInterval), 120_000);
   }
 }
 
