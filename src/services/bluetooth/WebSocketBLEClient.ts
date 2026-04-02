@@ -12,6 +12,7 @@ import { useTuningStore, type TuningLevels } from '../../store/tuningStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { calculateZones } from '../../types/athlete.types';
 import { batteryEstimationService } from '../battery/BatteryEstimationService';
+import { calibrateFromMotorRanges } from '../battery/ConsumptionCalibration';
 import { recordBikeData, recordBatteryInfo, recordDeviceInfo, resetBikeProfile } from '../sync/BikeProfileSync';
 
 const WS_URL = 'ws://localhost:8765';
@@ -410,13 +411,15 @@ class WebSocketBLEClient {
 
         case 'rangePerMode': {
           // Range calculated by motor for each assist mode (in km)
-          console.log(`[WSClient] Range: ECO=${msg.eco}km TOUR=${msg.tour}km ACTIVE=${msg.active}km SPORT=${msg.sport}km POWER=${msg.power}km`);
-          // Store in bikeStore for display
-          store.setRangePerMode?.({
+          const ranges = {
             eco: msg.eco as number, tour: msg.tour as number,
             active: msg.active as number, sport: msg.sport as number,
             power: msg.power as number, smart: msg.smart as number,
-          });
+          };
+          console.log(`[WSClient] Range: ECO=${ranges.eco}km TOUR=${ranges.tour}km ACTIVE=${ranges.active}km SPORT=${ranges.sport}km POWER=${ranges.power}km`);
+          store.setRangePerMode(ranges);
+          // Auto-calibrate consumption from motor data
+          calibrateFromMotorRanges(ranges);
           break;
         }
 
