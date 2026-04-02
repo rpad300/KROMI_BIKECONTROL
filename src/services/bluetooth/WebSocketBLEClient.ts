@@ -408,6 +408,18 @@ class WebSocketBLEClient {
           console.log(`[WSClient] Motor battery: SOC=${msg.soc}% life=${msg.life}%`);
           break;
 
+        case 'rangePerMode': {
+          // Range calculated by motor for each assist mode (in km)
+          console.log(`[WSClient] Range: ECO=${msg.eco}km TOUR=${msg.tour}km ACTIVE=${msg.active}km SPORT=${msg.sport}km POWER=${msg.power}km`);
+          // Store in bikeStore for display
+          store.setRangePerMode?.({
+            eco: msg.eco as number, tour: msg.tour as number,
+            active: msg.active as number, sport: msg.sport as number,
+            power: msg.power as number, smart: msg.smart as number,
+          });
+          break;
+        }
+
         case 'batteryInfo': {
           // Detailed battery info from GEV commands (cmd 13,14,19,55,56,57)
           const battery = msg.battery as string;

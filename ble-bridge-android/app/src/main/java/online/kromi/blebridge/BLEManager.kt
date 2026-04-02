@@ -744,6 +744,31 @@ class BLEManager(private val context: Context) {
                                             .put("type", "sgConnected")
                                             .put("success", success))
                                     }
+                                    0x11 -> {
+                                        // cmd 17: REMAINING RANGE per mode (calculated by motor)
+                                        // payload[0]=eco, [1]=tour, [2]=power, [3]=boost+,
+                                        // [4]=boost, [5]=power+, [6]=climb+, [7]=climb,
+                                        // [8]=normal+, [9]=tour+, [10]=tour, [11]=smart
+                                        // Values are in km (single byte, 0-255)
+                                        val eco = dec[2].toInt() and 0xFF
+                                        val tour = dec[3].toInt() and 0xFF
+                                        val power = dec[4].toInt() and 0xFF
+                                        val sport = dec[6].toInt() and 0xFF  // boost+ = sport
+                                        val active = dec[10].toInt() and 0xFF // tour+ ≈ active
+                                        val smart = dec[13].toInt() and 0xFF
+
+                                        Log.i(TAG, "★ RANGE: eco=%dkm tour=%dkm active=%dkm sport=%dkm power=%dkm smart=%dkm"
+                                            .format(eco, tour, active, sport, power, smart))
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "rangePerMode")
+                                            .put("eco", eco)
+                                            .put("tour", tour)
+                                            .put("active", active)
+                                            .put("sport", sport)
+                                            .put("power", power)
+                                            .put("smart", smart)
+                                            .put("raw", dec.joinToString("") { "%02x".format(it) }))
+                                    }
                                     0x0D -> {
                                         // cmd 13: MAIN battery firmware
                                         // [2]=sw1, [3]=sw2 → "XXYY" format
@@ -1326,21 +1351,23 @@ class BLEManager(private val context: Context) {
             .put("hex", hex))
     }
 
-    /** Read full battery details — firmware, capacity, health, cycles for both batteries */
+    /** Read full battery details + range for all modes */
     fun readBatteryDetails() {
         val h = android.os.Handler(android.os.Looper.getMainLooper())
-        // cmd 13: main battery firmware (HW+SW version)
-        sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 13 }, 0, "BAT_MAIN_FW")
+        // cmd 17: remaining range per mode (ECO, TOUR, ACTIVE, SPORT, POWER...)
+        sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 17 }, 0, "RANGE_ALL_MODES")
+        // cmd 13: main battery firmware
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 13 }, 0, "BAT_MAIN_FW") }, 400)
         // cmd 14: main battery cycles
-        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 14 }, 0, "BAT_MAIN_CYCLES") }, 400)
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 14 }, 0, "BAT_MAIN_CYCLES") }, 800)
         // cmd 19: main battery level + health
-        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 19 }, 0, "BAT_MAIN_LEVEL") }, 800)
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 19 }, 0, "BAT_MAIN_LEVEL") }, 1200)
         // cmd 55: sub battery level + health
-        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 55 }, 0, "BAT_SUB_LEVEL") }, 1200)
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 55 }, 0, "BAT_SUB_LEVEL") }, 1600)
         // cmd 56: sub battery firmware
-        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 56 }, 0, "BAT_SUB_FW") }, 1600)
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 56 }, 0, "BAT_SUB_FW") }, 2000)
         // cmd 57: sub battery cycles
-        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 57 }, 0, "BAT_SUB_CYCLES") }, 2000)
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 57 }, 0, "BAT_SUB_CYCLES") }, 2400)
     }
 
     /** Convenience: ASSIST UP — cmd=0x1C, sub=0x03, action=0x02, key 3 */
