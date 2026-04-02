@@ -404,18 +404,15 @@ class WebSocketBLEClient {
           break;
 
         case 'sgBatteryHealth': {
-          // Dual battery from cmd 0x43
-          // bat1Life/bat2Life = health %, bat1Soc/bat2Soc = charge %, soc = combined
+          // Dual battery from cmd 0x43 — REAL SOC source
+          // bat1Health/bat2Health = battery health %, soc = combined charge %
+          // No individual SOC available from protocol — only combined
           if (msg.soc !== undefined) store.setBatteryPercent(msg.soc);
-
-          // Use individual SOC if available (byte[6]/byte[7]), fall back to health
-          const b1 = msg.bat1Soc ?? msg.bat1Life;
-          const b2 = msg.bat2Soc ?? msg.bat2Life;
-          if (b1 !== undefined) store.setBatteryMain(b1);
-          if (b2 !== undefined) store.setBatterySub(b2);
-
-          // Log raw data for protocol analysis
-          if (msg.raw) console.log(`[WSClient] BAT43 raw: ${msg.raw}`);
+          if (msg.bat1Health !== undefined) store.setBatteryMain(msg.bat1Health);
+          if (msg.bat2Health !== undefined) store.setBatterySub(msg.bat2Health);
+          // Legacy field names (old APK compat)
+          if (msg.bat1Life !== undefined && msg.bat1Health === undefined) store.setBatteryMain(msg.bat1Life);
+          if (msg.bat2Life !== undefined && msg.bat2Health === undefined) store.setBatterySub(msg.bat2Life);
           break;
         }
 

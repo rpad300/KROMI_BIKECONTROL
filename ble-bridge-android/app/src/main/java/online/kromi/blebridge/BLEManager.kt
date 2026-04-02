@@ -643,7 +643,8 @@ class BLEManager(private val context: Context) {
 
                                     // PWA compat broadcasts
                                     if (speed > 0.5) onDataReceived?.invoke(JSONObject().put("type", "speed").put("value", speed))
-                                    if (soc in 1..100) onDataReceived?.invoke(JSONObject().put("type", "battery").put("value", soc))
+                                    // NOTE: byte[18] in cmd 0x40 is NOT battery SOC (always 100/0x64)
+                                    // Real SOC comes from cmd 0x43 (sgBatteryHealth)
                                 }
                                 0x42 -> {
                                     // SENSOR DATA — all zeros when stopped, may have cadence/power
@@ -665,29 +666,29 @@ class BLEManager(private val context: Context) {
                                     }
                                 }
                                 0x43 -> {
-                                    // BATTERY HEALTH — dual battery data
-                                    // byte[4] = bat1 life%, byte[5] = bat2 life%
-                                    // byte[6] = bat1 SOC?, byte[7] = bat2 SOC?
-                                    // byte[8] = combined SOC
-                                    val b1Life = data[4].toInt() and 0xFF
-                                    val b2Life = data[5].toInt() and 0xFF
-                                    val b6 = if (data.size > 6) data[6].toInt() and 0xFF else 0
-                                    val b7 = if (data.size > 7) data[7].toInt() and 0xFF else 0
-                                    val batSoc = if (data.size > 8) data[8].toInt() and 0xFF else 0
+                                    // BATTERY — the ONLY reliable SOC source
+                                    // byte[4] = bat1 health %, byte[5] = bat2 health %
+                                    // byte[8] = combined SOC % (REAL battery level)
+                                    // byte[6,7] = always 0 (no individual SOC available)
+                                    val b1Health = data[4].toInt() and 0xFF
+                                    val b2Health = data[5].toInt() and 0xFF
+                                    val soc = if (data.size > 8) data[8].toInt() and 0xFF else 0
+
+                                    // ALWAYS broadcast SOC (cmd 0x40 byte[18] is NOT SOC)
+                                    if (soc in 1..100) {
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "battery").put("value", soc))
+                                    }
+                                    onDataReceived?.invoke(JSONObject()
+                                        .put("type", "sgBatteryHealth")
+                                        .put("bat1Health", b1Health)
+                                        .put("bat2Health", b2Health)
+                                        .put("soc", soc))
 
                                     if (now - fc23LogTimes.getOrDefault("bat43", 0L) > 5000) {
                                         fc23LogTimes["bat43"] = now
-                                        val hex = data.joinToString(" ") { "%02X".format(it) }
-                                        Log.i(TAG, "BAT43: b1Life=%d%% b2Life=%d%% b6=%d b7=%d soc=%d%% raw=[%s]"
-                                            .format(b1Life, b2Life, b6, b7, batSoc, hex))
-                                        onDataReceived?.invoke(JSONObject()
-                                            .put("type", "sgBatteryHealth")
-                                            .put("bat1Life", b1Life)
-                                            .put("bat2Life", b2Life)
-                                            .put("bat1Soc", b6)
-                                            .put("bat2Soc", b7)
-                                            .put("soc", batSoc)
-                                            .put("raw", hex))
+                                        Log.i(TAG, "BAT43: b1Health=%d%% b2Health=%d%% SOC=%d%%"
+                                            .format(b1Health, b2Health, soc))
                                     }
                                 }
                                 0x41 -> {
