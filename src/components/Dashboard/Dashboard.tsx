@@ -11,6 +11,7 @@ import { RideSessionWidget } from './RideSessionWidget';
 import { TripStatsWidget } from './TripStatsWidget';
 import { IntelligenceWidget } from './IntelligenceWidget';
 import { MiniMap } from './MiniMap';
+import { WeatherWidget } from './WeatherWidget';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
@@ -51,6 +52,9 @@ export function Dashboard() {
         <BatteryWidget />
         {hrConnected && <HRWidget />}
       </div>
+
+      {/* Weather */}
+      <WeatherWidget />
 
       {/* Mini map + Elevation profile */}
       <MiniMap />
