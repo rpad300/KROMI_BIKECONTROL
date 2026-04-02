@@ -28,8 +28,8 @@ export function App() {
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center bg-ev-bg">
-        <div className="w-10 h-10 border-2 border-ev-primary border-t-transparent rounded-full animate-spin" />
+      <div className="h-full flex items-center justify-center bg-[#0e0e0e]">
+        <div className="w-10 h-10 border-2 border-[#3fff8b] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -63,7 +63,7 @@ function MobileApp() {
   useMotorControl();
 
   return (
-    <div className="h-full flex flex-col bg-ev-bg text-ev-on-surface">
+    <div className="h-full flex flex-col bg-[#0e0e0e] text-white">
       {/* Content — no scroll on dashboard, scroll on settings/history */}
       <div className={`flex-1 min-h-0 ${screen === 'settings' || screen === 'history' ? 'overflow-y-auto' : 'overflow-hidden'}`}>
         {screen === 'dashboard' && <Dashboard />}
@@ -75,7 +75,7 @@ function MobileApp() {
       </div>
 
       {/* Bottom Nav — Stitch style */}
-      <nav className="flex-none flex justify-around items-center h-20 bg-ev-bg/90 backdrop-blur-xl border-t border-ev-primary/10 shadow-[0_-4px_24px_rgba(0,0,0,0.8)]">
+      <nav className="flex-none flex justify-around items-center h-20 bg-[#0e0e0e]/90 backdrop-blur-xl border-t border-[#3fff8b]/10 shadow-[0_-4px_24px_rgba(0,0,0,0.8)]">
         <NavButton label="Dash" icon="speed" active={screen === 'dashboard'} onClick={() => setScreen('dashboard')} />
         <NavButton label="Map" icon="map" active={screen === 'map'} onClick={() => setScreen('map')} />
         <NavButton label="Climb" icon="terrain" active={screen === 'climb'} onClick={() => setScreen('climb')} />
@@ -106,13 +106,13 @@ function DesktopApp() {
   const logout = useAuthStore((s) => s.logout);
 
   return (
-    <div className="h-full flex bg-ev-bg text-ev-on-surface">
+    <div className="h-full flex bg-[#0e0e0e] text-white">
       {/* Sidebar */}
-      <aside className="w-64 flex-none flex flex-col border-r border-ev-outline-variant/20 bg-ev-surface-low">
+      <aside className="w-64 flex-none flex flex-col border-r border-[#494847]/20 bg-[#131313]">
         {/* Logo */}
-        <div className="p-6 border-b border-ev-outline-variant/20">
-          <h1 className="text-xl font-headline font-bold text-ev-primary tracking-tight">STEALTH-EV</h1>
-          <p className="text-xs text-ev-on-surface-variant mt-1 font-label uppercase tracking-widest">BikeControl</p>
+        <div className="p-6 border-b border-[#494847]/20">
+          <h1 className="text-xl font-headline font-bold text-[#3fff8b] tracking-tight">STEALTH-EV</h1>
+          <p className="text-xs text-[#adaaaa] mt-1 font-label uppercase tracking-widest">BikeControl</p>
         </div>
 
         {/* Nav items */}
@@ -123,8 +123,8 @@ function DesktopApp() {
               onClick={() => setScreen(item.screen)}
               className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
                 screen === item.screen
-                  ? 'bg-ev-primary/10 text-ev-primary border-l-2 border-ev-primary'
-                  : 'text-ev-on-surface-variant hover:bg-ev-surface-high hover:text-white'
+                  ? 'bg-[#3fff8b]/10 text-[#3fff8b] border-l-2 border-[#3fff8b]'
+                  : 'text-[#adaaaa] hover:bg-[#201f1f] hover:text-white'
               }`}
             >
               <span className="material-symbols-outlined text-xl">{item.icon}</span>
@@ -134,21 +134,21 @@ function DesktopApp() {
         </nav>
 
         {/* Desktop info banner */}
-        <div className="p-4 m-3 bg-ev-surface-container">
-          <p className="text-xs text-ev-on-surface-variant">
+        <div className="p-4 m-3 bg-[#1a1919]">
+          <p className="text-xs text-[#adaaaa]">
             Modo desktop — configuração e histórico.
           </p>
-          <p className="text-xs text-ev-outline mt-1">
+          <p className="text-xs text-[#777575] mt-1">
             Para dashboard live, abre no Android.
           </p>
         </div>
 
         {/* User + logout */}
-        <div className="p-4 border-t border-ev-outline-variant/20">
-          <div className="text-xs text-ev-outline truncate">{user?.email}</div>
+        <div className="p-4 border-t border-[#494847]/20">
+          <div className="text-xs text-[#777575] truncate">{user?.email}</div>
           <button
             onClick={logout}
-            className="mt-2 text-xs text-ev-error hover:text-ev-error-dim"
+            className="mt-2 text-xs text-[#ff716c] hover:text-[#d7383b]"
           >
             Terminar sessão
           </button>
@@ -180,8 +180,8 @@ function NavButton({ label, icon, active, onClick }: {
       onClick={onClick}
       className={`flex flex-col items-center justify-center w-16 h-16 active:scale-90 transition-all duration-150 ${
         active
-          ? 'bg-ev-primary text-black rounded-sm'
-          : 'text-zinc-400 hover:text-ev-primary'
+          ? 'bg-[#3fff8b] text-black rounded-sm'
+          : 'text-zinc-400 hover:text-[#3fff8b]'
       }`}
     >
       <span

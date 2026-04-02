@@ -1,32 +1,24 @@
 @import "tailwindcss";
 
 /* === STEALTH-EV Design System (from Stitch) === */
-@theme {
-  --color-ev-primary: #3fff8b;
-  --color-ev-primary-dim: #24f07e;
-  --color-ev-primary-container: #13ea79;
-  --color-ev-secondary: #6e9bff;
-  --color-ev-secondary-dim: #0f6df3;
-  --color-ev-secondary-container: #0058ca;
-  --color-ev-tertiary: #e966ff;
-  --color-ev-tertiary-dim: #c500e6;
-  --color-ev-error: #ff716c;
-  --color-ev-error-dim: #d7383b;
-  --color-ev-bg: #0e0e0e;
-  --color-ev-surface: #0e0e0e;
-  --color-ev-surface-low: #131313;
-  --color-ev-surface-container: #1a1919;
-  --color-ev-surface-high: #201f1f;
-  --color-ev-surface-highest: #262626;
-  --color-ev-surface-bright: #2c2c2c;
-  --color-ev-on-surface: #ffffff;
-  --color-ev-on-surface-variant: #adaaaa;
-  --color-ev-outline: #777575;
-  --color-ev-outline-variant: #494847;
-
-  --font-headline: 'Space Grotesk', sans-serif;
-  --font-body: 'Inter', sans-serif;
-  --font-label: 'Space Grotesk', sans-serif;
+:root {
+  --ev-primary: #3fff8b;
+  --ev-primary-dim: #24f07e;
+  --ev-secondary: #6e9bff;
+  --ev-secondary-container: #0058ca;
+  --ev-tertiary: #e966ff;
+  --ev-error: #ff716c;
+  --ev-error-dim: #d7383b;
+  --ev-bg: #0e0e0e;
+  --ev-surface-low: #131313;
+  --ev-surface-container: #1a1919;
+  --ev-surface-high: #201f1f;
+  --ev-surface-highest: #262626;
+  --ev-surface-bright: #2c2c2c;
+  --ev-on-surface: #ffffff;
+  --ev-on-surface-variant: #adaaaa;
+  --ev-outline: #777575;
+  --ev-outline-variant: #494847;
 }
 
 /* Base styles */

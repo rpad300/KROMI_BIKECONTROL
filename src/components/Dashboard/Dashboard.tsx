@@ -11,7 +11,7 @@ import { ElevationProfile } from './ElevationProfile';
  */
 export function Dashboard() {
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-ev-bg">
+    <div className="h-full flex flex-col overflow-hidden bg-[#0e0e0e]">
       {/* Top Bar */}
       <TopBar />
       {/* Main sections — flex-1 fills remaining space */}
@@ -35,28 +35,28 @@ function TopBar() {
   const now = new Date();
   const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-  const bleColor = bleStatus === 'connected' ? 'text-ev-primary' : bleStatus === 'connecting' ? 'text-yellow-400' : 'text-ev-on-surface-variant';
+  const bleColor = bleStatus === 'connected' ? 'text-[#3fff8b]' : bleStatus === 'connecting' ? 'text-yellow-400' : 'text-[#adaaaa]';
 
   return (
     <header className="h-10 flex-none flex justify-between items-center px-6 bg-black z-50">
       <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-ev-primary text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>electric_bike</span>
-        <h1 className="font-headline font-black text-xs text-ev-primary uppercase tracking-widest">STEALTH-EV</h1>
+        <span className="material-symbols-outlined text-[#3fff8b] text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>electric_bike</span>
+        <h1 className="font-headline font-black text-xs text-[#3fff8b] uppercase tracking-widest">STEALTH-EV</h1>
       </div>
-      <div className="flex items-center gap-4 text-xs font-bold text-ev-on-surface-variant">
+      <div className="flex items-center gap-4 text-xs font-bold text-[#adaaaa]">
         <span className={`flex items-center gap-1 ${bleColor}`}>
           <span className="material-symbols-outlined text-[14px]">bluetooth</span>BLE
         </span>
-        <span className={`flex items-center gap-1 ${gpsActive ? 'text-ev-primary' : 'text-ev-on-surface-variant'}`}>
+        <span className={`flex items-center gap-1 ${gpsActive ? 'text-[#3fff8b]' : 'text-[#adaaaa]'}`}>
           <span className="material-symbols-outlined text-[14px]">location_on</span>GPS
         </span>
         {battery > 0 && (
-          <span className="flex items-center gap-1 text-ev-primary">
+          <span className="flex items-center gap-1 text-[#3fff8b]">
             <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>battery_full</span>
             {battery}%
           </span>
         )}
-        <span className="font-headline tracking-tighter text-ev-on-surface">{time}</span>
+        <span className="font-headline tracking-tighter text-white">{time}</span>
       </div>
     </header>
   );
@@ -70,14 +70,14 @@ function SpeedSection() {
   return (
     <section className="h-[15%] flex-none flex flex-col items-center justify-center bg-black">
       <div className="flex items-baseline gap-2">
-        <span className="font-headline font-black text-7xl tracking-tighter text-ev-on-surface leading-none tabular-nums">
+        <span className="font-headline font-black text-7xl tracking-tighter text-white leading-none tabular-nums">
           {speed > 0 ? speed.toFixed(1) : '0.0'}
         </span>
-        <span className="font-headline font-bold text-2xl text-ev-primary">KM/H</span>
+        <span className="font-headline font-bold text-2xl text-[#3fff8b]">KM/H</span>
       </div>
       <div className="flex items-center gap-2 opacity-80">
-        <span className="text-xs font-label uppercase text-ev-on-surface-variant tracking-widest">Trip</span>
-        <span className="font-headline font-bold text-xl text-ev-on-surface">{tripDist.toFixed(1)} KM</span>
+        <span className="text-xs font-label uppercase text-[#adaaaa] tracking-widest">Trip</span>
+        <span className="font-headline font-bold text-xl text-white">{tripDist.toFixed(1)} KM</span>
       </div>
     </section>
   );
@@ -92,20 +92,20 @@ function MapSection() {
   return (
     <section className="h-[30%] flex-none relative overflow-hidden">
       {/* Map background */}
-      <div className="absolute inset-0 bg-ev-surface-low">
+      <div className="absolute inset-0 bg-[#131313]">
         <MiniMap />
       </div>
       {/* Overlay cards */}
       <div className="absolute top-3 left-3 flex flex-col gap-2 z-10">
-        <OverlayCard label="Elevation" value={`${Math.round(altitude)}`} unit="m" color="border-ev-tertiary" />
+        <OverlayCard label="Elevation" value={`${Math.round(altitude)}`} unit="m" color="border-[#e966ff]" />
         {gradient !== 0 && (
-          <OverlayCard label="Grade" value={`${gradient > 0 ? '+' : ''}${gradient.toFixed(0)}`} unit="%" color="border-ev-error" />
+          <OverlayCard label="Grade" value={`${gradient > 0 ? '+' : ''}${gradient.toFixed(0)}`} unit="%" color="border-[#ff716c]" />
         )}
       </div>
       {range > 0 && (
-        <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-4 py-2 border-l-2 border-ev-primary z-10">
-          <p className="text-[10px] font-label uppercase text-ev-on-surface-variant leading-none">Range</p>
-          <p className="font-headline font-black text-2xl text-ev-on-surface">{Math.round(range)}<span className="text-sm font-normal ml-1">km</span></p>
+        <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-4 py-2 border-l-2 border-[#3fff8b] z-10">
+          <p className="text-[10px] font-label uppercase text-[#adaaaa] leading-none">Range</p>
+          <p className="font-headline font-black text-2xl text-white">{Math.round(range)}<span className="text-sm font-normal ml-1">km</span></p>
         </div>
       )}
     </section>
@@ -115,8 +115,8 @@ function MapSection() {
 function OverlayCard({ label, value, unit, color }: { label: string; value: string; unit: string; color: string }) {
   return (
     <div className={`bg-black/60 backdrop-blur-md px-4 py-2 border-l-2 ${color}`}>
-      <p className="text-[10px] font-label uppercase text-ev-on-surface-variant leading-none">{label}</p>
-      <p className="font-headline font-black text-2xl text-ev-on-surface">{value}<span className="text-sm font-normal ml-1">{unit}</span></p>
+      <p className="text-[10px] font-label uppercase text-[#adaaaa] leading-none">{label}</p>
+      <p className="font-headline font-black text-2xl text-white">{value}<span className="text-sm font-normal ml-1">{unit}</span></p>
     </div>
   );
 }
@@ -129,10 +129,10 @@ function MetricsRow() {
   const torque = useBikeStore((s) => s.torque_nm);
 
   return (
-    <section className="h-[12%] flex-none grid grid-cols-4 gap-0 border-y border-ev-outline-variant/20">
-      <MetricCell icon="bolt" iconColor="text-ev-secondary" label="Power" value={String(power)} unit="W" />
-      <MetricCell icon="battery_5_bar" iconColor="text-ev-primary" label="Battery" value={String(battery)} unit="%" fill />
-      <MetricCell icon="speed" iconColor="text-ev-tertiary" label="Cadence" value={String(cadence)} unit="RPM" />
+    <section className="h-[12%] flex-none grid grid-cols-4 gap-0 border-y border-[#494847]/20">
+      <MetricCell icon="bolt" iconColor="text-[#6e9bff]" label="Power" value={String(power)} unit="W" />
+      <MetricCell icon="battery_5_bar" iconColor="text-[#3fff8b]" label="Battery" value={String(battery)} unit="%" fill />
+      <MetricCell icon="speed" iconColor="text-[#e966ff]" label="Cadence" value={String(cadence)} unit="RPM" />
       <MetricCell icon="electric_bolt" iconColor="text-yellow-400" label="Torque" value={torque > 0 ? torque.toFixed(1) : '0'} unit="Nm" />
     </section>
   );
@@ -142,9 +142,9 @@ function MetricCell({ icon, iconColor, label, value, unit, fill }: {
   icon: string; iconColor: string; label: string; value: string; unit: string; fill?: boolean;
 }) {
   return (
-    <div className={`flex flex-col items-center justify-center ${fill ? 'bg-ev-surface-container' : 'bg-ev-surface-low'} border-r border-ev-outline-variant/10 last:border-r-0`}>
+    <div className={`flex flex-col items-center justify-center ${fill ? 'bg-[#1a1919]' : 'bg-[#131313]'} border-r border-[#494847]/10 last:border-r-0`}>
       <span className={`material-symbols-outlined ${iconColor} text-lg mb-0.5`} style={fill ? { fontVariationSettings: "'FILL' 1" } : undefined}>{icon}</span>
-      <p className="text-[9px] font-label uppercase text-ev-on-surface-variant">{label}</p>
+      <p className="text-[9px] font-label uppercase text-[#adaaaa]">{label}</p>
       <p className="font-headline font-bold text-xl leading-tight tabular-nums">{value}<span className="text-[10px] font-normal ml-0.5 opacity-60">{unit}</span></p>
     </div>
   );
@@ -174,8 +174,8 @@ function AssistBar() {
               key={mode}
               className={`flex-1 h-full font-headline font-black text-[10px] tracking-tighter flex items-center justify-center uppercase active:scale-95 transition-transform ${
                 active
-                  ? 'bg-ev-primary text-black shadow-[0_0_20px_rgba(63,255,139,0.3)]'
-                  : 'bg-ev-surface-highest text-ev-on-surface-variant'
+                  ? 'bg-[#3fff8b] text-black shadow-[0_0_20px_rgba(63,255,139,0.3)]'
+                  : 'bg-[#262626] text-[#adaaaa]'
               }`}
             >
               {label}
@@ -184,18 +184,18 @@ function AssistBar() {
         })}
         {/* Gear indicator */}
         {rearGear > 0 && (
-          <div className="w-10 h-full bg-ev-surface-container flex flex-col items-center justify-center border-l border-ev-outline-variant/20">
-            <span className="text-[8px] font-label text-ev-on-surface-variant">GR</span>
-            <span className="font-headline font-black text-lg leading-none text-ev-on-surface">{rearGear}</span>
+          <div className="w-10 h-full bg-[#1a1919] flex flex-col items-center justify-center border-l border-[#494847]/20">
+            <span className="text-[8px] font-label text-[#adaaaa]">GR</span>
+            <span className="font-headline font-black text-lg leading-none text-white">{rearGear}</span>
           </div>
         )}
       </div>
       {/* Auto-assist indicator */}
       {autoAssist && (
         <div className="flex justify-center mt-0.5">
-          <div className="flex items-center gap-1.5 px-3 py-0.5 bg-ev-primary/10 border border-ev-primary/20">
-            <div className="w-1.5 h-1.5 rounded-full bg-ev-primary animate-pulse" />
-            <span className="text-[9px] font-bold uppercase tracking-widest text-ev-primary">KROMI Auto</span>
+          <div className="flex items-center gap-1.5 px-3 py-0.5 bg-[#3fff8b]/10 border border-[#3fff8b]/20">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#3fff8b] animate-pulse" />
+            <span className="text-[9px] font-bold uppercase tracking-widest text-[#3fff8b]">KROMI Auto</span>
           </div>
         </div>
       )}
@@ -218,31 +218,31 @@ function ElevationSection() {
   };
 
   return (
-    <section className="flex-1 min-h-0 bg-ev-surface-low relative flex flex-col">
+    <section className="flex-1 min-h-0 bg-[#131313] relative flex flex-col">
       {/* Elevation chart takes most space */}
       <div className="flex-1 min-h-0 p-2">
         {gpsActive ? (
           <ElevationProfile />
         ) : (
-          <div className="h-full flex items-center justify-center text-ev-outline text-xs font-label uppercase tracking-widest">
+          <div className="h-full flex items-center justify-center text-[#777575] text-xs font-label uppercase tracking-widest">
             GPS needed for elevation
           </div>
         )}
       </div>
       {/* Bottom stats bar */}
-      <div className="flex-none flex justify-between items-center px-4 py-1.5 bg-black/40 border-t border-ev-outline-variant/10">
+      <div className="flex-none flex justify-between items-center px-4 py-1.5 bg-black/40 border-t border-[#494847]/10">
         {hrBpm > 0 && (
           <div className="flex items-center gap-1">
-            <span className="material-symbols-outlined text-ev-error text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>favorite</span>
+            <span className="material-symbols-outlined text-[#ff716c] text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>favorite</span>
             <span className="font-headline font-bold text-sm">{hrBpm}</span>
-            <span className="text-[9px] text-ev-on-surface-variant">Z{hrZone}</span>
+            <span className="text-[9px] text-[#adaaaa]">Z{hrZone}</span>
           </div>
         )}
         {tripTime > 0 && (
-          <span className="font-headline text-sm text-ev-on-surface-variant">{formatTime(tripTime)}</span>
+          <span className="font-headline text-sm text-[#adaaaa]">{formatTime(tripTime)}</span>
         )}
         {motorOdo > 0 && (
-          <span className="text-[9px] text-ev-outline font-label uppercase tracking-widest">ODO {motorOdo.toLocaleString()}km</span>
+          <span className="text-[9px] text-[#777575] font-label uppercase tracking-widest">ODO {motorOdo.toLocaleString()}km</span>
         )}
       </div>
     </section>
