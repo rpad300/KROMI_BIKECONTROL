@@ -609,12 +609,22 @@ class WebSocketBLEClient {
           if (wireMode !== undefined) {
             const mapped = GIANT_MODE_MAP[wireMode];
             if (mapped !== undefined) {
-              const rpm = store.range_per_mode;
-              const modeMap: Record<number, string> = { 1: 'eco', 2: 'tour', 3: 'active', 4: 'sport', 5: 'power', 6: 'smart' };
-              const mk = modeMap[mapped] ?? '?';
-              const rng = rpm ? (rpm as Record<string, number>)[mk] ?? 0 : 0;
-              this.sendLog(`MODE: wire=${wireMode}→enum=${mapped}(${mk}) rng=${rng}km`);
               store.setAssistMode(mapped);
+
+              // uint16 remaining range from FC23 cmd 0x41 (direct from motor!)
+              const currentRange = msg.currentRange as number | undefined;
+              if (currentRange !== undefined && currentRange > 0) {
+                const modeMap: Record<number, string> = { 1: 'eco', 2: 'tour', 3: 'active', 4: 'sport', 5: 'power', 6: 'smart' };
+                const mk = modeMap[mapped] ?? 'power';
+                const rpm = store.range_per_mode ?? { eco: 0, tour: 0, active: 0, sport: 0, power: 0, smart: 0 };
+                // Update range_per_mode with motor-reported uint16 for current mode
+                const updated = { ...rpm, [mk]: currentRange };
+                // Only the overflow modes were estimated — motor range replaces ratio
+                const estimated = new Set(store.range_estimated_modes);
+                estimated.delete(mk); // Motor gave us the real value!
+                store.setRangePerMode(updated, estimated);
+                this.sendLog(`MODE: wire=${wireMode}→${mk} range=${currentRange}km (uint16)`);
+              }
             }
           }
           break;

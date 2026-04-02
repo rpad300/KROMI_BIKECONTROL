@@ -690,18 +690,22 @@ class BLEManager(private val context: Context) {
                                     }
                                 }
                                 0x41 -> {
-                                    // MOTOR/ASSIST STATE — byte[7] = assist mode (Giant wire values)
-                                    // Giant wire: ECO=3, TOUR=1, ACTIVE=2, SPORT=4, POWER=6
+                                    // MOTOR/ASSIST STATE — parsed using RideControl's resolveTd23Data format
+                                    // FC23 cmd 0x41 = "indexOne" (part two) in the Td23 stream
+                                    // Remaining range = uint16 LE at bytes[5-6] (confirmed from decompilation)
                                     val wireMode = data[7].toInt() and 0xFF
                                     val b5 = data[5].toInt() and 0xFF
+                                    val b6 = data[6].toInt() and 0xFF
                                     val b14 = data[14].toInt() and 0xFF
+                                    // uint16 LE remaining range for current mode (direct from motor!)
+                                    val currentRange = b5 or (b6 shl 8)
                                     if (now - fc23LogTimes.getOrDefault("cmd41", 0L) > 2000) {
                                         fc23LogTimes["cmd41"] = now
-                                        Log.i(TAG, "CMD41: mode=%d b5=%02X b14=%d".format(wireMode, b5, b14))
+                                        Log.i(TAG, "C41: mode=%d range=%dkm b14=%d".format(wireMode, currentRange, b14))
                                         onDataReceived?.invoke(JSONObject()
                                             .put("type", "fc23cmd41")
                                             .put("wireMode", wireMode)
-                                            .put("b5", b5)
+                                            .put("currentRange", currentRange)
                                             .put("b14", b14))
                                     }
                                 }
