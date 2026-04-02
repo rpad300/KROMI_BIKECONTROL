@@ -79,6 +79,7 @@ class BLEManager(private val context: Context) {
 
     val isConnected: Boolean get() = gatt != null
     val isScanning: Boolean get() = scanCallback != null
+    val connectedAddress: String? get() = gatt?.device?.address
 
     private var scanCallback: ScanCallback? = null
 
@@ -322,10 +323,10 @@ class BLEManager(private val context: Context) {
                 Log.w(TAG, "Proto service NOT found (bond:$bondState)")
             }
 
-            // HR
-            g.getService(HR_SERVICE)?.getCharacteristic(HR_MEASUREMENT)?.let { char ->
-                services.put("hr", true)
-                pendingNotifications.add(char)
+            // HR — NOT subscribed on gateway; handled by SensorManager (external HR strap)
+            g.getService(HR_SERVICE)?.let {
+                services.put("hr", true) // report capability but don't subscribe
+                Log.i(TAG, "HR service found on gateway (not subscribing — use external sensor)")
             } ?: services.put("hr", false)
 
             // Smart Gateway proprietary service (4d500001)

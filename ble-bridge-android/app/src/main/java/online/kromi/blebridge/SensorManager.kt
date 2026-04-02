@@ -52,9 +52,12 @@ class SensorManager(private val context: Context) {
 
     private var hrScanCallback: ScanCallback? = null
 
+    /** Address to exclude from HR scan (e.g., the connected bike gateway) */
+    var excludeAddress: String? = null
+
     fun scanForHR() {
         val scanner = adapter?.bluetoothLeScanner ?: return
-        Log.i(TAG, "Scanning for HR sensors (auto-connect first found)...")
+        Log.i(TAG, "Scanning for HR sensors (exclude: $excludeAddress)...")
 
         val filter = ScanFilter.Builder()
             .setServiceUuid(ParcelUuid(HR_SERVICE))
@@ -68,6 +71,13 @@ class SensorManager(private val context: Context) {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val device = result.device
                 val name = device.name ?: "HR Monitor"
+
+                // Skip the bike gateway — we want an EXTERNAL HR sensor
+                if (device.address == excludeAddress) {
+                    Log.d(TAG, "Skipping bike gateway: $name (${device.address})")
+                    return
+                }
+
                 Log.i(TAG, "HR sensor found: $name (${device.address}) — auto-connecting")
 
                 // Stop scan and auto-connect to first HR device found

@@ -178,6 +178,8 @@ class BLEBridgeService : Service() {
 
             // === External sensor management ===
             "scanSensor" -> {
+                // Exclude the connected bike from sensor scans
+                sensorManager.excludeAddress = bleManager.connectedAddress
                 when (json.optString("sensor")) {
                     "hr" -> sensorManager.scanForHR()
                     else -> Log.w(TAG, "Unknown sensor type: ${json.optString("sensor")}")
@@ -186,12 +188,12 @@ class BLEBridgeService : Service() {
 
             "connectSensor" -> {
                 val address = json.optString("address", "")
+                sensorManager.excludeAddress = bleManager.connectedAddress
                 when (json.optString("sensor")) {
                     "hr" -> {
                         if (address.isNotEmpty()) {
                             sensorManager.connectHR(address)
                         } else {
-                            // No address — scan first
                             sensorManager.scanForHR()
                         }
                     }
