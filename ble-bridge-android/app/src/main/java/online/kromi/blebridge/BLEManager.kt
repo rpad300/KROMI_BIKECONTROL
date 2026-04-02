@@ -746,16 +746,19 @@ class BLEManager(private val context: Context) {
                                         //   [7]=power+, [8]=climb+, [9]=climb, [10]=normal+
                                         //   [11]=tour+, [12]=tour, [13]=smart
                                         // Giant mode names → display: power+=POWER, climb+=SPORT, climb=ACTIVE
-                                        fun rangeVal(b: Byte): Int {
-                                            val v = b.toInt() and 0xFF
-                                            return if (v >= 245) -1 else v  // ≥245 = overflow, send -1
-                                        }
-                                        val power = rangeVal(dec[7])   // Power+ = POWER mode
-                                        val sport = rangeVal(dec[8])   // Climb+ = SPORT mode
-                                        val active = rangeVal(dec[9])  // Climb = ACTIVE mode
-                                        val tour = rangeVal(dec[12])   // Tour = TOUR mode
-                                        val eco = rangeVal(dec[2])     // Eco
-                                        val smart = rangeVal(dec[13])  // Smart
+                                        fun u8(b: Byte): Int = b.toInt() and 0xFF
+
+                                        val power = u8(dec[7])    // Power+ = POWER mode
+                                        val sport = u8(dec[8])    // Climb+ = SPORT mode
+                                        val active = u8(dec[9])   // Climb = ACTIVE mode
+                                        var tour = u8(dec[12])    // Tour = TOUR mode
+                                        var eco = u8(dec[2])      // Eco
+                                        val smart = u8(dec[13])   // Smart
+
+                                        // Semantic overflow: ECO/TOUR MUST have more range than ACTIVE
+                                        // If not, the uint8 byte overflowed (>255km wraps to garbage)
+                                        if (eco <= active) eco = -1
+                                        if (tour <= active) tour = -1
 
                                         val rawHex = dec.joinToString("") { "%02x".format(it) }
                                         Log.i(TAG, "★ RANGE: eco=%d tour=%d active=%d sport=%d power=%d smart=%d raw=%s"
