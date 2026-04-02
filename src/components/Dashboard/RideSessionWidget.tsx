@@ -47,7 +47,7 @@ export function RideSessionWidget() {
     return (
       <button
         onClick={handleStart}
-        className="w-full h-16 rounded-xl font-bold text-white text-xl bg-green-600 active:scale-95 transition-transform flex items-center justify-center gap-3"
+        className="w-full h-16 rounded-sm font-bold text-white text-xl bg-[#24f07e] active:scale-95 transition-transform flex items-center justify-center gap-3"
       >
         <span className="text-2xl">&#9654;</span>
         INICIAR VOLTA
@@ -56,12 +56,12 @@ export function RideSessionWidget() {
   }
 
   return (
-    <div className="bg-gray-800 rounded-xl p-3 space-y-3">
+    <div className="bg-[#1a1919] rounded-sm p-3 space-y-3">
       {/* Timer + recording indicator */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-          <span className="text-red-400 text-sm font-bold">A GRAVAR</span>
+          <span className="w-3 h-3 rounded-full bg-[#ff716c] animate-pulse" />
+          <span className="text-[#ff716c] text-sm font-bold">A GRAVAR</span>
         </div>
         <span className="text-3xl font-bold tabular-nums text-white">
           {formatTime(elapsed)}
@@ -69,17 +69,17 @@ export function RideSessionWidget() {
       </div>
 
       {/* Live stats */}
-      <div className="flex items-center justify-between text-xs text-gray-400">
+      <div className="flex items-center justify-between text-xs text-[#adaaaa]">
         <span>{snapshotCount} snapshots</span>
-        {saving > 0 && <span className="text-green-400">Poupanca: {saving}% vs SPORT</span>}
+        {saving > 0 && <span className="text-[#3fff8b]">Poupanca: {saving}% vs SPORT</span>}
       </div>
 
       {/* Stop button */}
       <button
         onClick={handleStop}
-        className={`w-full h-14 rounded-xl font-bold text-white text-lg active:scale-95 transition-all ${
+        className={`w-full h-14 rounded-sm font-bold text-white text-lg active:scale-95 transition-all ${
           confirmStop
-            ? 'bg-red-600 animate-pulse'
+            ? 'bg-[#d7383b] animate-pulse'
             : 'bg-red-800'
         }`}
       >

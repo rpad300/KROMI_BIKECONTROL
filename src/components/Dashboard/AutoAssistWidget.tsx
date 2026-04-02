@@ -19,13 +19,13 @@ export function AutoAssistWidget() {
   const nextTransition = terrain?.next_transition;
 
   return (
-    <div className="bg-gray-800 rounded-xl p-3 space-y-2">
+    <div className="bg-[#1a1919] rounded-sm p-3 space-y-2">
       {/* Header + toggle */}
       <div className="flex items-center justify-between">
         <button
           onClick={handleToggle}
           className={`flex items-center gap-2 font-bold text-sm ${
-            enabled ? 'text-blue-400' : 'text-gray-500'
+            enabled ? 'text-[#6e9bff]' : 'text-[#777575]'
           }`}
         >
           <span>{enabled ? '🤖' : '○'}</span>
@@ -34,14 +34,14 @@ export function AutoAssistWidget() {
 
         {/* Override countdown */}
         {overrideActive && (
-          <span className="text-yellow-400 text-sm font-bold">
+          <span className="text-[#fbbf24] text-sm font-bold">
             ✋ Override {overrideRemaining}s
           </span>
         )}
 
         {/* Current decision reason */}
         {enabled && !overrideActive && decision && (
-          <span className="text-gray-400 text-xs truncate max-w-[60%] text-right">
+          <span className="text-[#adaaaa] text-xs truncate max-w-[60%] text-right">
             {decision.reason}
           </span>
         )}
@@ -50,13 +50,13 @@ export function AutoAssistWidget() {
       {/* Pre-emptive alert banner */}
       {isPreemptive && nextTransition && (
         <div className="bg-yellow-900/60 border border-yellow-600/40 rounded-lg px-3 py-2 flex items-center gap-2 animate-pulse">
-          <span className="text-yellow-400 text-lg">⚡</span>
+          <span className="text-[#fbbf24] text-lg">⚡</span>
           <div className="flex-1">
             <div className="text-yellow-300 font-bold text-sm">
               {nextTransition.type.includes('climb') ? 'Subida' : 'Descida'} em{' '}
               {Math.round(nextTransition.distance_m)}m
             </div>
-            <div className="text-yellow-400/70 text-xs">
+            <div className="text-[#fbbf24]/70 text-xs">
               {nextTransition.gradient_after_pct > 0 ? '+' : ''}
               {nextTransition.gradient_after_pct.toFixed(1)}% →{' '}
               {ASSIST_MODE_LABELS[decision!.new_mode as AssistMode] ?? '?'}

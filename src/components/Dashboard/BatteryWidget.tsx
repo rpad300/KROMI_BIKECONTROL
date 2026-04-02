@@ -29,16 +29,16 @@ export function BatteryWidget() {
   const subSoc = bat2 > 0 ? bat2 : soc;
 
   const socColor =
-    soc > 50 ? 'text-emerald-400' :
-    soc > 30 ? 'text-yellow-400' :
-    soc > 15 ? 'text-orange-400' : 'text-red-400';
+    soc > 50 ? 'text-[#3fff8b]' :
+    soc > 30 ? 'text-[#fbbf24]' :
+    soc > 15 ? 'text-[#fbbf24]' : 'text-[#ff716c]';
 
   return (
-    <div className="bg-gray-800 rounded-xl p-2.5 flex-1 min-w-0">
+    <div className="bg-[#1a1919] rounded-sm p-2.5 flex-1 min-w-0">
       {/* Header */}
       <div className="flex items-center gap-1 mb-1">
-        <span className="material-symbols-outlined text-xs text-gray-500">battery_full</span>
-        <span className="text-[8px] text-gray-600">
+        <span className="material-symbols-outlined text-xs text-[#777575]">battery_full</span>
+        <span className="text-[8px] text-[#777575]">
           {estimate.remaining_wh}Wh / 1050Wh
           {voltage > 0 && ` · ${voltage.toFixed(1)}V`}
         </span>
@@ -48,14 +48,14 @@ export function BatteryWidget() {
       <div className="flex items-baseline justify-between">
         <div className="flex items-baseline gap-0.5">
           <span className={`text-2xl font-black tabular-nums leading-none ${socColor}`}>{soc}</span>
-          <span className="text-[9px] text-gray-600">%</span>
+          <span className="text-[9px] text-[#777575]">%</span>
         </div>
         <div className="text-right">
           <span className="text-sm font-bold text-white tabular-nums">
             {displayRange > 0 ? `${isEstimated ? '~' : ''}${displayRange.toFixed(0)}km` : '--'}
           </span>
           {estimate.consumption_wh_km > 0 && (
-            <div className="text-[8px] text-gray-600">{estimate.consumption_wh_km}Wh/km</div>
+            <div className="text-[8px] text-[#777575]">{estimate.consumption_wh_km}Wh/km</div>
           )}
         </div>
       </div>
@@ -67,7 +67,7 @@ export function BatteryWidget() {
           <BatteryBar label="250" soc={subSoc} health={bat2} wh={Math.round(250 * subSoc / 100)} />
         </div>
       ) : (
-        <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden mt-1.5">
+        <div className="h-1.5 bg-[#262626] rounded-full overflow-hidden mt-1.5">
           <div
             className={`h-full rounded-full transition-all duration-1000 ${barColor(soc)}`}
             style={{ width: `${Math.max(soc, 1)}%` }}
@@ -80,7 +80,7 @@ export function BatteryWidget() {
         <div className="mt-1.5">
           <button
             onClick={() => setShowModes(!showModes)}
-            className="text-[9px] text-gray-500 w-full text-left"
+            className="text-[9px] text-[#777575] w-full text-left"
           >
             {showModes ? '▾ Ranges' : '▸ Ranges por modo'}
           </button>
@@ -91,7 +91,7 @@ export function BatteryWidget() {
                 const est = estimatedModes.has(mode);
                 const isCurrent = modeKey === mode;
                 return (
-                  <div key={mode} className={`flex justify-between text-[9px] tabular-nums ${isCurrent ? 'text-white font-bold' : 'text-gray-500'}`}>
+                  <div key={mode} className={`flex justify-between text-[9px] tabular-nums ${isCurrent ? 'text-white font-bold' : 'text-[#777575]'}`}>
                     <span className="uppercase">{mode.slice(0, 3)}</span>
                     <span>{r > 0 ? `${est ? '~' : ''}${r}` : '--'}km</span>
                   </div>
@@ -106,7 +106,7 @@ export function BatteryWidget() {
 }
 
 function barColor(pct: number): string {
-  return pct > 50 ? 'bg-emerald-500' : pct > 30 ? 'bg-yellow-500' : pct > 15 ? 'bg-orange-500' : 'bg-red-500';
+  return pct > 50 ? 'bg-[#3fff8b]' : pct > 30 ? 'bg-[#fbbf24]' : pct > 15 ? 'bg-[#fbbf24]' : 'bg-[#ff716c]';
 }
 
 function BatteryBar({ label, soc, health, wh }: {
@@ -114,16 +114,16 @@ function BatteryBar({ label, soc, health, wh }: {
 }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-[8px] text-gray-600 w-5 text-right">{label}</span>
-      <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+      <span className="text-[8px] text-[#777575] w-5 text-right">{label}</span>
+      <div className="flex-1 h-1.5 bg-[#262626] rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full transition-all duration-1000 ${barColor(soc)}`}
           style={{ width: `${Math.max(soc, 1)}%` }}
         />
       </div>
-      <span className="text-[8px] text-gray-500 w-10 text-right tabular-nums">{wh}Wh</span>
+      <span className="text-[8px] text-[#777575] w-10 text-right tabular-nums">{wh}Wh</span>
       {health > 0 && health < 100 && (
-        <span className="text-[7px] text-gray-600">({health}%)</span>
+        <span className="text-[7px] text-[#777575]">({health}%)</span>
       )}
     </div>
   );

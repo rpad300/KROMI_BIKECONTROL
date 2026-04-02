@@ -24,27 +24,27 @@ export function SpeedDisplay() {
       {/* Speed */}
       <div className="flex items-baseline justify-center">
         <span className="text-6xl font-bold tabular-nums tracking-tight">{integer}</span>
-        <span className="text-3xl font-bold text-gray-400">.{decimal}</span>
-        <span className="text-sm text-gray-500 ml-1 self-end mb-2">km/h</span>
+        <span className="text-3xl font-bold text-[#adaaaa]">.{decimal}</span>
+        <span className="text-sm text-[#777575] ml-1 self-end mb-2">km/h</span>
       </div>
 
       {/* Compact stats bar: distance | duration | avg speed */}
       <div className="flex items-center justify-center gap-4 mt-1">
         <div className="flex items-baseline gap-0.5">
-          <span className="text-sm font-bold text-gray-300 tabular-nums">{distance.toFixed(2)}</span>
-          <span className="text-[10px] text-gray-600">km</span>
+          <span className="text-sm font-bold text-[#adaaaa] tabular-nums">{distance.toFixed(2)}</span>
+          <span className="text-[10px] text-[#777575]">km</span>
         </div>
-        <div className="w-px h-3 bg-gray-700" />
+        <div className="w-px h-3 bg-[#262626]" />
         <div className="flex items-baseline gap-0.5">
-          <span className="text-sm font-bold text-gray-300 tabular-nums">{formatTime(rideTime)}</span>
-          <span className="text-[10px] text-gray-600">tempo</span>
+          <span className="text-sm font-bold text-[#adaaaa] tabular-nums">{formatTime(rideTime)}</span>
+          <span className="text-[10px] text-[#777575]">tempo</span>
         </div>
-        <div className="w-px h-3 bg-gray-700" />
+        <div className="w-px h-3 bg-[#262626]" />
         <div className="flex items-baseline gap-0.5">
-          <span className="text-sm font-bold text-gray-300 tabular-nums">
+          <span className="text-sm font-bold text-[#adaaaa] tabular-nums">
             {rideTime > 0 ? (distance / (rideTime / 3600)).toFixed(1) : '0.0'}
           </span>
-          <span className="text-[10px] text-gray-600">avg</span>
+          <span className="text-[10px] text-[#777575]">avg</span>
         </div>
       </div>
     </div>

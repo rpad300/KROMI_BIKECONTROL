@@ -7,14 +7,14 @@ export function PowerCadenceWidget() {
   return (
     <div className="grid grid-cols-2 gap-2">
       {/* Power */}
-      <div className="bg-gray-800 rounded-xl p-3 text-center">
+      <div className="bg-[#1a1919] rounded-sm p-3 text-center">
         <div className="text-3xl font-bold tabular-nums">{power}</div>
-        <div className="text-gray-400 text-sm">W</div>
+        <div className="text-[#adaaaa] text-sm">W</div>
       </div>
       {/* Cadence */}
-      <div className="bg-gray-800 rounded-xl p-3 text-center">
+      <div className="bg-[#1a1919] rounded-sm p-3 text-center">
         <div className="text-3xl font-bold tabular-nums">{cadence}</div>
-        <div className="text-gray-400 text-sm">RPM</div>
+        <div className="text-[#adaaaa] text-sm">RPM</div>
       </div>
     </div>
   );

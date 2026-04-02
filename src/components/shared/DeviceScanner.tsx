@@ -88,12 +88,12 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
   });
 
   return (
-    <div className="fixed inset-0 bg-gray-950/98 z-50 flex flex-col">
+    <div className="fixed inset-0 bg-[#0e0e0e]/98 z-50 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-4 border-b border-gray-800">
+      <div className="flex items-center justify-between px-4 py-4 border-b border-[#494847]">
         <div>
           <h2 className="text-lg font-bold text-white">Seleccionar Dispositivo</h2>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-[#777575]">
             {scanning
               ? `A procurar... (${devices.length} encontrados)`
               : `${devices.length} dispositivos — toca para ligar`}
@@ -103,14 +103,14 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
           {!scanning && (
             <button
               onClick={handleRescan}
-              className="bg-gray-700 text-white text-sm px-3 py-2 rounded-lg active:scale-95"
+              className="bg-[#262626] text-white text-sm px-3 py-2 rounded-lg active:scale-95"
             >
               Scan
             </button>
           )}
           <button
             onClick={onCancel}
-            className="bg-gray-800 text-gray-400 text-sm px-3 py-2 rounded-lg active:scale-95"
+            className="bg-[#1a1919] text-[#adaaaa] text-sm px-3 py-2 rounded-lg active:scale-95"
           >
             Cancelar
           </button>
@@ -121,7 +121,7 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
       {scanning && (
         <div className="flex items-center gap-2 px-4 py-2 bg-blue-900/30">
           <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs text-blue-400">A procurar dispositivos BLE...</span>
+          <span className="text-xs text-[#6e9bff]">A procurar dispositivos BLE...</span>
         </div>
       )}
 
@@ -137,12 +137,12 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
         ))}
 
         {!scanning && devices.length === 0 && (
-          <div className="text-center text-gray-600 py-12">
+          <div className="text-center text-[#777575] py-12">
             <span className="material-symbols-outlined text-4xl">bluetooth_searching</span>
             <p className="mt-2 text-sm">Nenhum dispositivo encontrado</p>
             <button
               onClick={handleRescan}
-              className="mt-4 bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold active:scale-95"
+              className="mt-4 bg-[#24f07e] text-white px-6 py-3 rounded-sm font-bold active:scale-95"
             >
               Tentar novamente
             </button>
@@ -163,8 +163,8 @@ function DeviceRow({ device, connecting, onSelect }: {
   const isSRAM = device.tags.includes('SRAM');
 
   const rssiColor =
-    device.rssi > -60 ? 'text-emerald-400' :
-    device.rssi > -80 ? 'text-yellow-400' : 'text-red-400';
+    device.rssi > -60 ? 'text-[#3fff8b]' :
+    device.rssi > -80 ? 'text-[#fbbf24]' : 'text-[#ff716c]';
 
   const rssiLabel =
     device.rssi > -60 ? 'Forte' :
@@ -174,14 +174,14 @@ function DeviceRow({ device, connecting, onSelect }: {
     <button
       onClick={onSelect}
       disabled={connecting}
-      className={`w-full flex items-center gap-3 p-3 rounded-xl active:scale-[0.98] transition-transform
-        ${isBike ? 'bg-emerald-900/30 border border-emerald-800' : 'bg-gray-800'}
+      className={`w-full flex items-center gap-3 p-3 rounded-sm active:scale-[0.98] transition-transform
+        ${isBike ? 'bg-[#3fff8b]/10 border border-[#3fff8b]/30' : 'bg-[#1a1919]'}
         ${connecting ? 'opacity-60' : ''}
       `}
     >
       {/* Icon */}
       <span className={`material-symbols-outlined text-2xl ${
-        isBike ? 'text-emerald-400' : isHR ? 'text-red-400' : isSRAM ? 'text-orange-400' : 'text-gray-500'
+        isBike ? 'text-[#3fff8b]' : isHR ? 'text-[#ff716c]' : isSRAM ? 'text-[#fbbf24]' : 'text-[#777575]'
       }`}>
         {isBike ? 'pedal_bike' : isHR ? 'favorite' : 'bluetooth'}
       </span>
@@ -190,13 +190,13 @@ function DeviceRow({ device, connecting, onSelect }: {
       <div className="flex-1 text-left">
         <div className="text-white font-bold text-sm">
           {device.name}
-          {isBike && <span className="ml-2 text-emerald-400 text-xs font-normal">BIKE</span>}
-          {isHR && !isBike && <span className="ml-2 text-red-400 text-xs font-normal">HR</span>}
-          {isSRAM && <span className="ml-2 text-orange-400 text-xs font-normal">SRAM</span>}
-          {device.tags.includes('DI2') && <span className="ml-2 text-blue-400 text-xs font-normal">Di2</span>}
-          {device.tags.includes('POWER') && !isBike && <span className="ml-2 text-yellow-400 text-xs font-normal">POWER</span>}
+          {isBike && <span className="ml-2 text-[#3fff8b] text-xs font-normal">BIKE</span>}
+          {isHR && !isBike && <span className="ml-2 text-[#ff716c] text-xs font-normal">HR</span>}
+          {isSRAM && <span className="ml-2 text-[#fbbf24] text-xs font-normal">SRAM</span>}
+          {device.tags.includes('DI2') && <span className="ml-2 text-[#6e9bff] text-xs font-normal">Di2</span>}
+          {device.tags.includes('POWER') && !isBike && <span className="ml-2 text-[#fbbf24] text-xs font-normal">POWER</span>}
         </div>
-        <div className="text-gray-500 text-[10px]">{device.address}</div>
+        <div className="text-[#777575] text-[10px]">{device.address}</div>
       </div>
 
       {/* RSSI + connecting */}
@@ -206,7 +206,7 @@ function DeviceRow({ device, connecting, onSelect }: {
         ) : (
           <>
             <div className={`text-xs font-bold ${rssiColor}`}>{device.rssi} dB</div>
-            <div className="text-[10px] text-gray-600">{rssiLabel}</div>
+            <div className="text-[10px] text-[#777575]">{rssiLabel}</div>
           </>
         )}
       </div>

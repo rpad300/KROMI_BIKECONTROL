@@ -10,13 +10,13 @@ export function ElevationProfile() {
 
   const gradient = terrain?.current_gradient_pct ?? 0;
   const gradientColor =
-    gradient > 10 ? 'text-red-400' :
-    gradient > 6 ? 'text-orange-400' :
-    gradient > 2 ? 'text-yellow-400' :
-    gradient > -3 ? 'text-green-400' : 'text-blue-400';
+    gradient > 10 ? 'text-[#ff716c]' :
+    gradient > 6 ? 'text-[#fbbf24]' :
+    gradient > 2 ? 'text-[#fbbf24]' :
+    gradient > -3 ? 'text-[#3fff8b]' : 'text-[#6e9bff]';
 
   return (
-    <div className="bg-gray-800 rounded-xl overflow-hidden relative">
+    <div className="bg-[#1a1919] rounded-sm overflow-hidden relative">
       {/* Chart */}
       <div className="h-20">
         <ResponsiveContainer width="100%" height="100%">
@@ -45,7 +45,7 @@ export function ElevationProfile() {
       {/* Next mode change marker */}
       {nextModeChange && (
         <div
-          className="absolute top-1 text-xs text-yellow-400 font-bold"
+          className="absolute top-1 text-xs text-[#fbbf24] font-bold"
           style={{ left: `${nextModeChange.position_percent}%` }}
         >
           ↑ {nextModeChange.mode}
@@ -57,7 +57,7 @@ export function ElevationProfile() {
         <span className={`text-xs font-bold ${gradientColor}`}>
           {gradient > 0 ? '+' : ''}{gradient.toFixed(1)}%
         </span>
-        <span className="text-xs text-gray-400">
+        <span className="text-xs text-[#adaaaa]">
           {Math.round(profile[profile.length - 1]!.distance_from_current)}m
         </span>
       </div>

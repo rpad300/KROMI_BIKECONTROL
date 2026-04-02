@@ -5,15 +5,15 @@ export function RangeWidget() {
   const battery = useBikeStore((s) => s.battery_percent);
 
   const color =
-    battery > 30 ? 'text-emerald-400' :
-    battery > 15 ? 'text-yellow-400' : 'text-red-400';
+    battery > 30 ? 'text-[#3fff8b]' :
+    battery > 15 ? 'text-[#fbbf24]' : 'text-[#ff716c]';
 
   return (
-    <div className="bg-gray-800 rounded-xl p-2 text-center">
+    <div className="bg-[#1a1919] rounded-sm p-2 text-center">
       <div className={`text-2xl font-bold tabular-nums ${color}`}>
         {range > 0 ? range.toFixed(0) : '--'}
       </div>
-      <div className="text-gray-500 text-xs">RNG km</div>
+      <div className="text-[#777575] text-xs">RNG km</div>
     </div>
   );
 }

@@ -58,14 +58,14 @@ export function ConnectionStatus() {
           {saved && (
             <button
               onClick={() => connectDevice(saved.address)}
-              className="bg-blue-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs active:scale-95 transition-transform"
+              className="bg-[#0058ca] text-white px-3 py-1.5 rounded-lg font-bold text-xs active:scale-95 transition-transform"
             >
               Ligar
             </button>
           )}
           <button
             onClick={() => setShowScanner(true)}
-            className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs active:scale-95 transition-transform"
+            className="bg-[#24f07e] text-white px-3 py-1.5 rounded-lg font-bold text-xs active:scale-95 transition-transform"
           >
             {saved ? 'Outra' : 'Scan'}
           </button>
@@ -76,7 +76,7 @@ export function ConnectionStatus() {
 
   // No bridge
   const statusConfig = {
-    disconnected: { bg: 'bg-red-900/90', text: 'Desligado' },
+    disconnected: { bg: 'bg-[#9f0519]/90', text: 'Desligado' },
     connecting: { bg: 'bg-yellow-900/90', text: 'A ligar...' },
     reconnecting: { bg: 'bg-orange-900/90', text: 'A reconectar...' },
     connected: { bg: 'bg-green-900/90', text: 'Ligado' },

@@ -20,7 +20,7 @@ export function TripStatsWidget() {
   };
 
   return (
-    <div className="bg-gray-800 rounded-xl p-2">
+    <div className="bg-[#1a1919] rounded-sm p-2">
       <div className="grid grid-cols-5 gap-1 text-center">
         <TripStat value={dist.toFixed(1)} label="km" />
         <TripStat value={formatTime(time)} label="tempo" />
@@ -29,7 +29,7 @@ export function TripStatsWidget() {
         <TripStat value={speedAvg > 0 ? speedAvg.toFixed(1) : '--'} label="avg" />
       </div>
       {motorOdo > 0 && (
-        <div className="text-[8px] text-gray-600 text-right mt-0.5">ODO: {motorOdo.toLocaleString()}km</div>
+        <div className="text-[8px] text-[#777575] text-right mt-0.5">ODO: {motorOdo.toLocaleString()}km</div>
       )}
     </div>
   );
@@ -39,7 +39,7 @@ function TripStat({ value, label }: { value: string; label: string }) {
   return (
     <div>
       <div className="text-base font-bold tabular-nums text-white">{value}</div>
-      <div className="text-[10px] text-gray-500">{label}</div>
+      <div className="text-[10px] text-[#777575]">{label}</div>
     </div>
   );
 }

@@ -24,37 +24,37 @@ export function WeatherWidget() {
 
   if (!weather) return null;
 
-  const tempColor = weather.temp_c > 30 ? 'text-red-400'
-    : weather.temp_c > 20 ? 'text-yellow-400'
-    : weather.temp_c > 10 ? 'text-emerald-400'
-    : weather.temp_c > 0 ? 'text-blue-400' : 'text-blue-300';
+  const tempColor = weather.temp_c > 30 ? 'text-[#ff716c]'
+    : weather.temp_c > 20 ? 'text-[#fbbf24]'
+    : weather.temp_c > 10 ? 'text-[#3fff8b]'
+    : weather.temp_c > 0 ? 'text-[#6e9bff]' : 'text-blue-300';
 
   const weatherIcon = weather.cloud_cover_pct > 70 ? 'cloud'
     : weather.cloud_cover_pct > 30 ? 'partly_cloudy_day'
     : 'clear_day';
 
   return (
-    <div className="bg-gray-800 rounded-xl p-2 flex items-center gap-3">
-      <span className="material-symbols-outlined text-xl text-gray-400">{weatherIcon}</span>
+    <div className="bg-[#1a1919] rounded-sm p-2 flex items-center gap-3">
+      <span className="material-symbols-outlined text-xl text-[#adaaaa]">{weatherIcon}</span>
 
       <div className="flex items-baseline gap-0.5">
         <span className={`text-lg font-black tabular-nums ${tempColor}`}>{Math.round(weather.temp_c)}</span>
-        <span className="text-[9px] text-gray-600">°C</span>
+        <span className="text-[9px] text-[#777575]">°C</span>
       </div>
 
-      <div className="text-[9px] text-gray-500">
+      <div className="text-[9px] text-[#777575]">
         ST {Math.round(weather.feels_like_c)}°
       </div>
 
       <div className="flex items-center gap-0.5 ml-auto">
-        <span className="text-[10px] text-gray-500">{windArrow(weather.wind_dir_deg)}</span>
-        <span className="text-xs text-gray-400 tabular-nums">{Math.round(weather.wind_speed_kmh)}</span>
-        <span className="text-[8px] text-gray-600">km/h</span>
+        <span className="text-[10px] text-[#777575]">{windArrow(weather.wind_dir_deg)}</span>
+        <span className="text-xs text-[#adaaaa] tabular-nums">{Math.round(weather.wind_speed_kmh)}</span>
+        <span className="text-[8px] text-[#777575]">km/h</span>
       </div>
 
       <div className="flex items-center gap-0.5">
-        <span className="material-symbols-outlined text-xs text-blue-400">water_drop</span>
-        <span className="text-xs text-gray-400 tabular-nums">{weather.humidity_pct}%</span>
+        <span className="material-symbols-outlined text-xs text-[#6e9bff]">water_drop</span>
+        <span className="text-xs text-[#adaaaa] tabular-nums">{weather.humidity_pct}%</span>
       </div>
     </div>
   );

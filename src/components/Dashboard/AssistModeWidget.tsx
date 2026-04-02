@@ -23,7 +23,7 @@ export function AssistModeWidget() {
       </div>
 
       {/* KROMI status */}
-      <div className={`text-center text-[10px] px-2 ${kromiActive ? 'text-emerald-400' : 'text-gray-600'}`}>
+      <div className={`text-center text-[10px] px-2 ${kromiActive ? 'text-[#3fff8b]' : 'text-[#777575]'}`}>
         {!bleConnected
           ? 'Liga a bike para ver o modo'
           : kromiActive
@@ -38,8 +38,8 @@ function ModePill({ mode, active }: { mode: AssistMode; active: boolean }) {
   return (
     <div
       className={`
-        h-10 rounded-xl font-bold text-sm flex items-center justify-center
-        ${active ? `${ASSIST_MODE_COLORS[mode]} text-white ring-2 ring-white` : 'bg-gray-800 text-gray-600'}
+        h-10 rounded-sm font-bold text-sm flex items-center justify-center
+        ${active ? `${ASSIST_MODE_COLORS[mode]} text-white ring-2 ring-white` : 'bg-[#1a1919] text-[#777575]'}
         transition-colors
       `}
     >

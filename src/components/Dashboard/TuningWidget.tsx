@@ -33,10 +33,10 @@ export function TuningWidget() {
   };
 
   const statusColor =
-    lastStatus === 'success' ? 'text-emerald-400' :
-    lastStatus === 'error' ? 'text-red-400' :
-    lastStatus === 'reading' || lastStatus === 'writing' ? 'text-yellow-400' :
-    'text-gray-500';
+    lastStatus === 'success' ? 'text-[#3fff8b]' :
+    lastStatus === 'error' ? 'text-[#ff716c]' :
+    lastStatus === 'reading' || lastStatus === 'writing' ? 'text-[#fbbf24]' :
+    'text-[#777575]';
 
   const statusText =
     lastStatus === 'success' ? '✓' :
@@ -45,7 +45,7 @@ export function TuningWidget() {
     lastStatus === 'writing' ? '↑' : '';
 
   return (
-    <div className="bg-gray-800 rounded-xl p-3 space-y-2">
+    <div className="bg-[#1a1919] rounded-sm p-3 space-y-2">
       {/* Header — tap to expand/collapse */}
       <button
         onClick={() => setExpanded(!expanded)}
@@ -55,17 +55,17 @@ export function TuningWidget() {
           <span className="text-sm font-bold text-white">TUNING</span>
           <span className={`text-xs ${statusColor}`}>{statusText}</span>
           {!hasRead && available && (
-            <span className="text-xs text-gray-600">não lido</span>
+            <span className="text-xs text-[#777575]">não lido</span>
           )}
         </div>
         {/* Compact current levels when collapsed */}
         <div className="flex gap-1">
           {TUNING_MODES.map((m) => (
-            <span key={m} className="text-xs text-gray-400 tabular-nums">
+            <span key={m} className="text-xs text-[#adaaaa] tabular-nums">
               {current[m]}
             </span>
           ))}
-          <span className="text-gray-600 text-xs ml-1">{expanded ? '▲' : '▼'}</span>
+          <span className="text-[#777575] text-xs ml-1">{expanded ? '▲' : '▼'}</span>
         </div>
       </button>
 
@@ -74,7 +74,7 @@ export function TuningWidget() {
         <PresetBtn label="MAX" color="bg-red-700" onClick={() => handlePreset('max')} disabled={!available} />
         <PresetBtn label="MIN" color="bg-green-700" onClick={() => handlePreset('min')} disabled={!available} />
         <PresetBtn label="RESTORE" color="bg-blue-700" onClick={() => handlePreset('restore')} disabled={!available || !original} />
-        <PresetBtn label="READ" color="bg-gray-700" onClick={() => handlePreset('read')} disabled={!available} />
+        <PresetBtn label="READ" color="bg-[#262626]" onClick={() => handlePreset('read')} disabled={!available} />
       </div>
 
       {/* Expanded: per-mode level controls */}
@@ -95,7 +95,7 @@ export function TuningWidget() {
                       flex-1 h-10 rounded-lg font-bold text-sm
                       ${current[mode] === lvl
                         ? `${TUNING_MODE_COLORS[mode]} text-white ring-1 ring-white`
-                        : 'bg-gray-700 text-gray-400'}
+                        : 'bg-[#262626] text-[#adaaaa]'}
                       active:scale-95 transition-transform
                       disabled:opacity-40
                     `}
@@ -108,7 +108,7 @@ export function TuningWidget() {
           ))}
           {/* Original tuning reference */}
           {original && (
-            <div className="text-[10px] text-gray-600 text-center pt-1">
+            <div className="text-[10px] text-[#777575] text-center pt-1">
               Original: {TUNING_MODES.map((m) => `${TUNING_MODE_LABELS[m]}=${original[m]}`).join(' ')}
             </div>
           )}
@@ -117,7 +117,7 @@ export function TuningWidget() {
 
       {/* Not available message */}
       {!available && (
-        <div className="text-center text-xs text-gray-600">
+        <div className="text-center text-xs text-[#777575]">
           Liga a bike via Bridge para controlo do motor
         </div>
       )}

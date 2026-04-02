@@ -115,7 +115,7 @@ function TopBar() {
   const now = new Date();
   const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-  const bleColor = bleStatus === 'connected' ? 'text-[#3fff8b]' : bleStatus === 'connecting' ? 'text-yellow-400' : 'text-[#adaaaa]';
+  const bleColor = bleStatus === 'connected' ? 'text-[#3fff8b]' : bleStatus === 'connecting' ? 'text-[#fbbf24]' : 'text-[#adaaaa]';
 
   return (
     <header className="h-10 flex-none flex justify-between items-center px-6 bg-black z-50">
@@ -213,7 +213,7 @@ function MetricsRow() {
       <MetricCell icon="bolt" iconColor="text-[#6e9bff]" label="Power" value={String(power)} unit="W" />
       <MetricCell icon="battery_5_bar" iconColor="text-[#3fff8b]" label="Battery" value={String(battery)} unit="%" fill />
       <MetricCell icon="speed" iconColor="text-[#e966ff]" label="Cadence" value={String(cadence)} unit="RPM" />
-      <MetricCell icon="electric_bolt" iconColor="text-yellow-400" label="Torque" value={torque > 0 ? torque.toFixed(1) : '0'} unit="Nm" />
+      <MetricCell icon="electric_bolt" iconColor="text-[#fbbf24]" label="Torque" value={torque > 0 ? torque.toFixed(1) : '0'} unit="Nm" />
     </section>
   );
 }

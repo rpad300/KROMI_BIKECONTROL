@@ -26,7 +26,7 @@ export function IntelligenceWidget() {
 
   // Generate contextual explanation
   let explanation = '';
-  let explanationColor = 'text-gray-400';
+  let explanationColor = 'text-[#adaaaa]';
 
   // Determine wire value and battery state for consistent messaging
   const calibration = useIntelligenceStore.getState().calibration;
@@ -43,31 +43,31 @@ export function IntelligenceWidget() {
   // wire 2 + below:     "Motor reduzido — HR Xbpm abaixo, podes mais"
   if (!hasHR) {
     explanation = 'Sem sensor HR — a estimar pelo terreno';
-    explanationColor = 'text-gray-500';
+    explanationColor = 'text-[#777575]';
   } else if (hr > targetZone.max_bpm) {
     const above = hr - targetZone.max_bpm;
     const soc = useBikeStore.getState().battery_percent;
     if (batteryLimiting) {
       explanation = `Motor limitado pela bateria — HR ${above}bpm acima de ${targetZone.name} (SOC ${soc}%)`;
-      explanationColor = 'text-orange-400';
+      explanationColor = 'text-[#fbbf24]';
     } else if (isWire0) {
       explanation = `Motor MAX — HR ${above}bpm acima de ${targetZone.name}, a proteger`;
-      explanationColor = 'text-red-400';
+      explanationColor = 'text-[#ff716c]';
     } else {
       explanation = `Motor a ajudar — HR ${above}bpm acima de ${targetZone.name}`;
-      explanationColor = 'text-yellow-400';
+      explanationColor = 'text-[#fbbf24]';
     }
   } else if (hr < targetZone.min_bpm) {
     const below = targetZone.min_bpm - hr;
     explanation = `Motor reduzido — HR ${below}bpm abaixo de ${targetZone.name}, podes mais`;
-    explanationColor = 'text-blue-400';
+    explanationColor = 'text-[#6e9bff]';
   } else {
     explanation = `A manter ${targetZone.name} — HR controlada ✓`;
-    explanationColor = 'text-emerald-400';
+    explanationColor = 'text-[#3fff8b]';
   }
 
   return (
-    <div className="bg-gray-800 rounded-xl p-3 space-y-2">
+    <div className="bg-[#1a1919] rounded-sm p-3 space-y-2">
       {/* Decision explanation — the most important line */}
       <div className={`text-xs font-bold ${explanationColor}`}>
         {explanation}
@@ -76,18 +76,18 @@ export function IntelligenceWidget() {
       {/* Header: intensity + motor state */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-emerald-400">KROMI</span>
+          <span className="text-sm font-bold text-[#3fff8b]">KROMI</span>
           <span className="text-xl font-bold tabular-nums text-white">{intensity}%</span>
         </div>
-        <div className="text-[10px] text-gray-500 text-right">
+        <div className="text-[10px] text-[#777575] text-right">
           S{actual.support}% T{actual.torque} R{actual.launch}
         </div>
       </div>
 
       {/* 3 independent intensity bars */}
       <div className="space-y-1">
-        <IntensityBar label="Support" value={supportI} actual={`${actual.support}%`} color="bg-blue-500" />
-        <IntensityBar label="Torque" value={torqueI} actual={`${actual.torque}/${actual.midTorque}/${actual.lowTorque}`} color="bg-orange-500" />
+        <IntensityBar label="Support" value={supportI} actual={`${actual.support}%`} color="bg-[#6e9bff]" />
+        <IntensityBar label="Torque" value={torqueI} actual={`${actual.torque}/${actual.midTorque}/${actual.lowTorque}`} color="bg-[#fbbf24]" />
         <IntensityBar label="Launch" value={launchI} actual={`${actual.launch}`} color="bg-purple-500" />
       </div>
 
@@ -102,10 +102,10 @@ export function IntelligenceWidget() {
       <div className="space-y-0.5">
         {factors.map((f) => (
           <div key={f.name} className="flex items-center justify-between text-[11px]">
-            <span className="text-gray-500 w-20">{f.name}</span>
-            <span className="text-gray-400 flex-1 text-right mr-2 truncate">{f.detail}</span>
+            <span className="text-[#777575] w-20">{f.name}</span>
+            <span className="text-[#adaaaa] flex-1 text-right mr-2 truncate">{f.detail}</span>
             {f.value !== 0 && (
-              <span className={`font-bold tabular-nums w-8 text-right ${f.value > 0 ? 'text-red-400' : 'text-green-400'}`}>
+              <span className={`font-bold tabular-nums w-8 text-right ${f.value > 0 ? 'text-[#ff716c]' : 'text-[#3fff8b]'}`}>
                 {f.value > 0 ? '+' : ''}{f.value}
               </span>
             )}
@@ -121,13 +121,13 @@ function IntensityBar({ label, value, actual, color }: {
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[10px] text-gray-500 w-14">{label}</span>
-      <div className="flex-1 h-2.5 bg-gray-700 rounded-full overflow-hidden relative">
+      <span className="text-[10px] text-[#777575] w-14">{label}</span>
+      <div className="flex-1 h-2.5 bg-[#262626] rounded-full overflow-hidden relative">
         <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${value}%` }} />
-        <div className="absolute top-0 left-[35%] w-px h-full bg-gray-500/30" />
-        <div className="absolute top-0 left-[65%] w-px h-full bg-gray-500/30" />
+        <div className="absolute top-0 left-[35%] w-px h-full bg-[#777575]/30" />
+        <div className="absolute top-0 left-[65%] w-px h-full bg-[#777575]/30" />
       </div>
-      <span className="text-[10px] text-gray-500 tabular-nums w-20 text-right">{actual}</span>
+      <span className="text-[10px] text-[#777575] tabular-nums w-20 text-right">{actual}</span>
     </div>
   );
 }

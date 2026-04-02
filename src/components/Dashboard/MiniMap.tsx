@@ -78,27 +78,27 @@ export function MiniMap() {
 
   if (error) {
     return (
-      <div className="bg-gray-800 rounded-xl p-3 h-16 flex items-center justify-center gap-2">
-        <span className="material-symbols-outlined text-yellow-400 text-sm">map</span>
-        <span className="text-gray-500 text-xs">Mapa indisponivel</span>
+      <div className="bg-[#1a1919] rounded-sm p-3 h-16 flex items-center justify-center gap-2">
+        <span className="material-symbols-outlined text-[#fbbf24] text-sm">map</span>
+        <span className="text-[#777575] text-xs">Mapa indisponivel</span>
       </div>
     );
   }
 
   if (gpsError) {
     return (
-      <div className="bg-gray-800 rounded-xl p-3 h-16 flex items-center justify-center gap-2">
-        <span className="material-symbols-outlined text-red-400 text-sm">location_off</span>
-        <span className="text-red-400 text-xs">{gpsError}</span>
+      <div className="bg-[#1a1919] rounded-sm p-3 h-16 flex items-center justify-center gap-2">
+        <span className="material-symbols-outlined text-[#ff716c] text-sm">location_off</span>
+        <span className="text-[#ff716c] text-xs">{gpsError}</span>
       </div>
     );
   }
 
   if (!lat && !lng && !ready) {
     return (
-      <div className="bg-gray-800 rounded-xl p-3 h-16 flex items-center justify-center gap-2">
+      <div className="bg-[#1a1919] rounded-sm p-3 h-16 flex items-center justify-center gap-2">
         <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-        <span className="text-gray-500 text-xs">A obter localizacao GPS...</span>
+        <span className="text-[#777575] text-xs">A obter localizacao GPS...</span>
       </div>
     );
   }
@@ -110,34 +110,34 @@ export function MiniMap() {
   const mapTypeLabel = mapType === 'hybrid' ? 'Satelite' : mapType === 'terrain' ? 'Terreno' : 'Mapa';
 
   return (
-    <div className="bg-gray-800 rounded-xl overflow-hidden relative">
+    <div className="bg-[#1a1919] rounded-sm overflow-hidden relative">
       <div ref={mapRef} className="h-36 w-full" />
       <button
         onClick={cycleMapType}
-        className="absolute top-2 right-2 bg-gray-900/80 text-[9px] text-gray-300 px-2 py-1 rounded font-bold active:scale-95"
+        className="absolute top-2 right-2 bg-[#131313]/80 text-[9px] text-[#adaaaa] px-2 py-1 rounded font-bold active:scale-95"
       >
         {mapTypeLabel}
       </button>
       <div className="flex items-center justify-between px-3 py-1.5">
         <div className="flex items-center gap-1.5">
-          <span className="material-symbols-outlined text-emerald-400 text-xs">my_location</span>
-          <span className="text-[9px] text-gray-500 tabular-nums">
+          <span className="material-symbols-outlined text-[#3fff8b] text-xs">my_location</span>
+          <span className="text-[9px] text-[#777575] tabular-nums">
             {lat ? `${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'A localizar...'}
           </span>
         </div>
         <div className="flex items-center gap-2">
           {alt !== null && (
-            <span className="text-[9px] text-gray-400">
-              <span className="text-gray-300 font-bold">{Math.round(alt)}</span>m
+            <span className="text-[9px] text-[#adaaaa]">
+              <span className="text-[#adaaaa] font-bold">{Math.round(alt)}</span>m
             </span>
           )}
           {accuracy < 500 && (
-            <span className={`text-[9px] ${accuracy < 10 ? 'text-emerald-600' : accuracy < 30 ? 'text-yellow-600' : 'text-red-600'}`}>
+            <span className={`text-[9px] ${accuracy < 10 ? 'text-[#24f07e]' : accuracy < 30 ? 'text-[#d97706]' : 'text-[#d7383b]'}`}>
               ±{Math.round(accuracy)}m
             </span>
           )}
           {accSamples > 5 && (
-            <span className="text-[9px] text-gray-600">avg ±{Math.round(accAvg)}m</span>
+            <span className="text-[9px] text-[#777575]">avg ±{Math.round(accAvg)}m</span>
           )}
         </div>
       </div>
