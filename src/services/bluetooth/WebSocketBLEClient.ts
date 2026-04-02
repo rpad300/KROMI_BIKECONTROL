@@ -40,6 +40,10 @@ class WebSocketBLEClient {
   private scanListeners: ScanListener[] = [];
   private scanDoneListeners: ScanDoneListener[] = [];
 
+  // Periodic range polling
+  private rangePollingTimer: ReturnType<typeof setInterval> | null = null;
+  private static RANGE_POLL_MS = 2 * 60 * 1000; // Every 2 minutes
+
   /** Try to connect to the BLE Bridge middleware */
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
@@ -163,6 +167,24 @@ class WebSocketBLEClient {
     return () => { this.scanDoneListeners = this.scanDoneListeners.filter((l) => l !== listener); };
   }
 
+  // === Range polling (periodic cmd 17 to get updated ranges during ride) ===
+
+  private startRangePolling(): void {
+    this.stopRangePolling();
+    this.rangePollingTimer = setInterval(() => {
+      if (this._bikeConnected) {
+        this.send({ type: 'readBattery' });
+      }
+    }, WebSocketBLEClient.RANGE_POLL_MS);
+  }
+
+  private stopRangePolling(): void {
+    if (this.rangePollingTimer) {
+      clearInterval(this.rangePollingTimer);
+      this.rangePollingTimer = null;
+    }
+  }
+
   // === Tuning API ===
 
   /** Read current tuning levels from motor */
@@ -234,10 +256,12 @@ class WebSocketBLEClient {
           this._bikeConnected = true;
           store.setBLEStatus('connected');
           console.log('[WSClient] Bike connected:', msg.device, 'bonded:', msg.bonded);
-          // Auto-read tuning on connect to capture original for restore
+          // Auto-read tuning on connect
           setTimeout(() => this.readTuning(), 1000);
-          // Read individual battery SOC after tuning
+          // Read battery details + range (first read)
           setTimeout(() => this.send({ type: 'readBattery' }), 2000);
+          // Start periodic range polling (every 2 minutes)
+          this.startRangePolling();
           break;
 
         case 'disconnected':
@@ -247,6 +271,7 @@ class WebSocketBLEClient {
           store.setBLEStatus('disconnected');
           useTuningStore.getState().reset();
           resetBikeProfile();
+          this.stopRangePolling();
           break;
 
         case 'battery':
