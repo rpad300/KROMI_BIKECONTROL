@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { wsClient, type ScanResultDevice } from '../../services/bluetooth/WebSocketBLEClient';
-import { connectDevice, saveDevice, startScan, stopScan } from '../../services/bluetooth/BLEBridge';
+import { connectDevice, saveDevice, saveHRDevice, startScan, stopScan } from '../../services/bluetooth/BLEBridge';
 
 interface DeviceScannerProps {
   onConnected: () => void;
@@ -52,10 +52,19 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
   const handleSelect = useCallback((device: ScanResultDevice) => {
     setConnecting(device.address);
     stopScan();
-    saveDevice({ name: device.name, address: device.address });
-    connectDevice(device.address);
-    // Wait for connected event (ConnectionStatus handles this)
-    // Give it a moment then signal parent
+
+    const isHR = device.tags.includes('HR');
+
+    if (isHR) {
+      // Route HR devices to SensorManager (not BLEManager)
+      saveHRDevice({ name: device.name, address: device.address });
+      wsClient.send({ type: 'connectSensor', sensor: 'hr', address: device.address });
+    } else {
+      // Bike or other gateway device → BLEManager
+      saveDevice({ name: device.name, address: device.address });
+      connectDevice(device.address);
+    }
+
     setTimeout(() => onConnected(), 500);
   }, [onConnected]);
 
@@ -78,7 +87,7 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-gray-800">
         <div>
-          <h2 className="text-lg font-bold text-white">Seleccionar Bike</h2>
+          <h2 className="text-lg font-bold text-white">Seleccionar Dispositivo</h2>
           <p className="text-xs text-gray-500">
             {scanning
               ? `A procurar... (${devices.length} encontrados)`

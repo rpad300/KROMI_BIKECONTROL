@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import * as BLE from '../../services/bluetooth/BLEBridge';
 import { webSensorService } from '../../services/sensors/WebSensorService';
@@ -80,6 +80,13 @@ export function Connections() {
   const [sensorScanning, setSensorScanning] = useState<string | null>(null);
   const [phoneSensorsOn, setPhoneSensorsOn] = useState(webSensorService.isRunning);
 
+  // Clear scanning state when sensor actually connects
+  useEffect(() => {
+    if (sensorScanning === 'hr' && services.heartRate) setSensorScanning(null);
+    if (sensorScanning === 'di2' && services.di2) setSensorScanning(null);
+    if (sensorScanning === 'sram' && services.sram) setSensorScanning(null);
+  }, [services, sensorScanning]);
+
   const connectedCount = Object.values(services).filter(Boolean).length;
   const totalSensors = Object.keys(services).length;
   const bleModeBadge = BLE.getBLEModeDescription();
@@ -103,11 +110,17 @@ export function Connections() {
     setSensorScanning(sensor.key);
     try {
       await sensor.onConnect();
+      // WebSocket mode: connectHR returns immediately, keep scanning state
+      // It clears when sensorConnected arrives (sets service flag → UI updates)
+      if (BLE.bleMode === 'websocket') {
+        // Keep scanning indicator for 15s max, or until service connects
+        setTimeout(() => setSensorScanning(null), 15000);
+        return;
+      }
     } catch {
       // User cancelled or no device found
-    } finally {
-      setSensorScanning(null);
     }
+    setSensorScanning(null);
   };
 
   const togglePhoneSensors = async () => {
