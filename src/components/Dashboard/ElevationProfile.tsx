@@ -1,59 +1,12 @@
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
-import { useMapStore } from '../../store/mapStore';
 
 export function ElevationProfile() {
   const profile = useAutoAssistStore((s) => s.elevationProfile);
   const nextModeChange = useAutoAssistStore((s) => s.nextModeChange);
   const terrain = useAutoAssistStore((s) => s.terrain);
-  const lat = useMapStore((s) => s.latitude);
-  const lng = useMapStore((s) => s.longitude);
-  const alt = useMapStore((s) => s.altitude);
-  const accuracy = useMapStore((s) => s.accuracy);
-  const gpsError = useMapStore((s) => s.gpsError);
 
-  if (profile.length < 2) {
-    // GPS position available but no elevation profile yet
-    if (lat !== 0 && lng !== 0) {
-      return (
-        <div className="bg-gray-800 rounded-xl p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="material-symbols-outlined text-emerald-400 text-sm">my_location</span>
-            <span className="text-[10px] text-emerald-400 font-bold">GPS Activo</span>
-            <span className="text-[9px] text-gray-600 ml-auto">±{Math.round(accuracy)}m</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-400 tabular-nums">
-              {lat.toFixed(5)}, {lng.toFixed(5)}
-            </div>
-            {alt !== null && (
-              <div className="text-xs text-gray-400">
-                <span className="text-gray-300 font-bold">{Math.round(alt)}</span>
-                <span className="text-gray-600 ml-0.5">m alt</span>
-              </div>
-            )}
-          </div>
-          <div className="text-[9px] text-gray-600 mt-1">Inicia uma volta para ver o perfil de elevacao</div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="bg-gray-800 rounded-xl p-3 h-16 flex items-center justify-center gap-2">
-        {gpsError ? (
-          <>
-            <span className="material-symbols-outlined text-red-400 text-sm">location_off</span>
-            <span className="text-red-400 text-xs">{gpsError}</span>
-          </>
-        ) : (
-          <>
-            <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-            <span className="text-gray-500 text-xs">A obter localizacao GPS...</span>
-          </>
-        )}
-      </div>
-    );
-  }
+  if (profile.length < 2) return null;
 
   const gradient = terrain?.current_gradient_pct ?? 0;
   const gradientColor =

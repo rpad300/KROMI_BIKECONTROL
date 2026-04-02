@@ -11,6 +11,7 @@ import { RideSessionWidget } from './RideSessionWidget';
 import { TripStatsWidget } from './TripStatsWidget';
 import { TuningWidget } from './TuningWidget';
 import { IntelligenceWidget } from './IntelligenceWidget';
+import { MiniMap } from './MiniMap';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
@@ -50,7 +51,8 @@ export function Dashboard() {
       {/* Battery detail */}
       <BatteryWidget />
 
-      {/* Elevation profile (needs GPS) */}
+      {/* Mini map + Elevation profile */}
+      <MiniMap />
       {gpsActive && <ElevationProfile />}
 
       {/* Auto-assist status (only if enabled) */}
