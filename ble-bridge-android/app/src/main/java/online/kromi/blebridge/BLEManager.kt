@@ -698,8 +698,8 @@ class BLEManager(private val context: Context) {
                                 0x41 -> {
                                     // MOTOR/ASSIST STATE — parsed using RideControl's resolveTd23Data format
                                     // FC23 cmd 0x41 = "indexOne" (part two) in the Td23 stream
-                                    // Wire modes on BIKE HARDWARE: 1=TOUR, 2=ACTIVE, 3=ECO, 4=SPORT, 5=POWER, 6=SMART
-                                    // (confirmed by user observation — RideControl ba/g4.java uses translated values)
+                                    // Wire modes 1:1: 1=ECO, 2=TOUR, 3=ACTIVE, 4=SPORT, 5=POWER, 6=SMART
+                                    // (confirmed by user with v0.9.2)
                                     // Remaining range = uint16 LE at bytes[5-6]
                                     val wireMode = data[7].toInt() and 0xFF
                                     val b5 = data[5].toInt() and 0xFF
