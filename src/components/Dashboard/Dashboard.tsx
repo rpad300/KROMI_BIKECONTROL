@@ -1,142 +1,33 @@
-import { useState } from 'react';
-import { SpeedDisplay } from './SpeedDisplay';
-import { BatteryWidget } from './BatteryWidget';
-import { AssistModeWidget } from './AssistModeWidget';
-import { ElevationProfile } from './ElevationProfile';
-import { AutoAssistWidget } from './AutoAssistWidget';
-import { HRWidget } from './HRWidget';
-import { GearWidget } from './GearWidget';
-import { TorqueWidget } from './TorqueWidget';
-import { MotorWidget } from './MotorWidget';
-import { RideSessionWidget } from './RideSessionWidget';
-import { TripStatsWidget } from './TripStatsWidget';
-import { IntelligenceWidget } from './IntelligenceWidget';
-import { MiniMap } from './MiniMap';
-import { WeatherWidget } from './WeatherWidget';
-import { TrailWidget } from './TrailWidget';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
+import { AssistMode } from '../../types/bike.types';
+import { MiniMap } from './MiniMap';
+import { ElevationProfile } from './ElevationProfile';
 
+/**
+ * STEALTH-EV Dashboard — Fullscreen, no-scroll, fixed height sections.
+ * Design from Stitch project 1881497936854696524 (Fullscreen Ride Dashboard).
+ */
 export function Dashboard() {
-  const gpsActive = useMapStore((s) => s.gpsActive);
-  const hrConnected = useBikeStore((s) => s.ble_services.heartRate || s.hr_bpm > 0);
-  const di2Connected = useBikeStore((s) => s.ble_services.di2);
-  const autoAssistEnabled = useAutoAssistStore((s) => s.enabled);
-  const hasTorque = useBikeStore((s) => s.torque_nm > 0);
-  const hasMotorData = useBikeStore((s) => s.power_watts > 0 || s.torque_nm > 0 || s.front_gear > 0 || s.rear_gear > 0);
-  const [showSession, setShowSession] = useState(false);
-
   return (
-    <div className="flex flex-col gap-2 p-3 pb-1">
-      {/* Status bar */}
-      <StatusBar />
-
-      {/* Speed - hero element */}
-      <SpeedDisplay />
-
-      {/* Compact metrics row: Power | Battery% | Range | Cadence */}
-      <CompactMetricsRow />
-
-      {/* Assist mode buttons */}
-      <AssistModeWidget />
-
-      {/* Motor telemetry — torque, cadence, power, current + gear */}
-      {hasMotorData && <MotorWidget />}
-
-      {/* KROMI intelligence — shows scoring and decisions (POWER mode) */}
-      <IntelligenceWidget />
-
-      {/* Trip stats (always show when connected — motor provides trip data) */}
-      <TripStatsWidget />
-
-      {/* Battery + HR side by side */}
-      <div className="flex gap-2">
-        <BatteryWidget />
-        {hrConnected && <HRWidget />}
-      </div>
-
-      {/* Weather + Trail */}
-      <WeatherWidget />
-      <TrailWidget />
-
-      {/* Mini map + Elevation profile */}
-      <MiniMap />
-      {gpsActive && <ElevationProfile />}
-
-      {/* Auto-assist status (only if enabled) */}
-      {autoAssistEnabled && <AutoAssistWidget />}
-
-      {/* Legacy gear/torque (only if Di2 provides additional data beyond FC23) */}
-      {di2Connected && !hasMotorData && <GearWidget />}
-      {hasTorque && !hasMotorData && <TorqueWidget />}
-
-      {/* Ride session - floating button */}
-      {showSession ? (
-        <div className="relative">
-          <button
-            onClick={() => setShowSession(false)}
-            className="absolute -top-1 right-0 text-gray-500 text-xs p-1 z-10"
-          >
-            &#x2715;
-          </button>
-          <RideSessionWidget />
-        </div>
-      ) : (
-        <button
-          onClick={() => setShowSession(true)}
-          className="w-full h-14 rounded-xl font-bold text-white text-lg bg-gray-700 active:scale-95 transition-transform"
-        >
-          VOLTA
-        </button>
-      )}
+    <div className="h-full flex flex-col overflow-hidden bg-ev-bg">
+      {/* Top Bar */}
+      <TopBar />
+      {/* Main sections — flex-1 fills remaining space */}
+      <main className="flex-1 flex flex-col min-h-0">
+        <SpeedSection />
+        <MapSection />
+        <MetricsRow />
+        <AssistBar />
+        <ElevationSection />
+      </main>
     </div>
   );
 }
 
-/** Compact 4-column metrics row */
-function CompactMetricsRow() {
-  const power = useBikeStore((s) => s.power_watts);
-  const battery = useBikeStore((s) => s.battery_percent);
-  const rangeEstimated = useBikeStore((s) => s.range_km);
-  const rangePerMode = useBikeStore((s) => s.range_per_mode);
-  const estimatedModes = useBikeStore((s) => s.range_estimated_modes);
-  const assistMode = useBikeStore((s) => s.assist_mode);
-  const cadence = useBikeStore((s) => s.cadence_rpm);
-
-  // Use motor-reported range for current mode when available
-  const modeMap: Record<number, string> = { 1: 'eco', 2: 'tour', 3: 'active', 4: 'sport', 5: 'power', 6: 'smart' };
-  const modeKey = modeMap[assistMode] ?? 'power';
-  const motorRange = rangePerMode ? (rangePerMode as Record<string, number>)[modeKey] : 0;
-  const range = motorRange && motorRange > 0 ? motorRange : rangeEstimated;
-  const rangePrefix = estimatedModes.has(modeKey) ? '~' : '';
-
-  const batColor =
-    battery > 30 ? 'text-emerald-400' :
-    battery > 15 ? 'text-yellow-400' : 'text-red-400';
-
-  return (
-    <div className="grid grid-cols-4 gap-1.5">
-      <MetricCell value={String(power)} label="PWR" unit="W" />
-      <MetricCell value={String(battery)} label="BAT" unit="%" color={batColor} />
-      <MetricCell value={range > 0 ? `${rangePrefix}${range.toFixed(0)}` : '--'} label="RNG" unit="km" />
-      <MetricCell value={String(cadence)} label="CAD" unit="rpm" />
-    </div>
-  );
-}
-
-function MetricCell({ value, label, unit, color }: {
-  value: string; label: string; unit: string; color?: string;
-}) {
-  return (
-    <div className="bg-gray-800 rounded-lg p-2 text-center">
-      <div className={`text-xl font-bold tabular-nums ${color ?? 'text-white'}`}>{value}</div>
-      <div className="text-[10px] text-gray-500">{label} <span className="text-gray-600">{unit}</span></div>
-    </div>
-  );
-}
-
-function StatusBar() {
+/** Top status bar — BLE, GPS, Battery, Time */
+function TopBar() {
   const bleStatus = useBikeStore((s) => s.ble_status);
   const battery = useBikeStore((s) => s.battery_percent);
   const gpsActive = useMapStore((s) => s.gpsActive);
@@ -144,27 +35,216 @@ function StatusBar() {
   const now = new Date();
   const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-  const bleIndicator = {
-    connected: 'text-green-400',
-    connecting: 'text-yellow-400',
-    reconnecting: 'text-orange-400',
-    disconnected: 'text-red-400',
-  } as const;
+  const bleColor = bleStatus === 'connected' ? 'text-ev-primary' : bleStatus === 'connecting' ? 'text-yellow-400' : 'text-ev-on-surface-variant';
 
   return (
-    <div className="flex items-center justify-between text-xs text-gray-400 px-1">
-      <div className="flex items-center gap-3">
-        <span className={bleIndicator[bleStatus]}>
-          {bleStatus === 'connected' ? '● BLE' : '○ BLE'}
-        </span>
-        <span className={gpsActive ? 'text-green-400' : 'text-gray-600'}>
-          {gpsActive ? '● GPS' : '○ GPS'}
-        </span>
+    <header className="h-10 flex-none flex justify-between items-center px-6 bg-black z-50">
+      <div className="flex items-center gap-2">
+        <span className="material-symbols-outlined text-ev-primary text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>electric_bike</span>
+        <h1 className="font-headline font-black text-xs text-ev-primary uppercase tracking-widest">STEALTH-EV</h1>
       </div>
-      <div className="flex items-center gap-3">
-        {battery > 0 && <span>🔋 {battery}%</span>}
-        <span className="tabular-nums">{time}</span>
+      <div className="flex items-center gap-4 text-xs font-bold text-ev-on-surface-variant">
+        <span className={`flex items-center gap-1 ${bleColor}`}>
+          <span className="material-symbols-outlined text-[14px]">bluetooth</span>BLE
+        </span>
+        <span className={`flex items-center gap-1 ${gpsActive ? 'text-ev-primary' : 'text-ev-on-surface-variant'}`}>
+          <span className="material-symbols-outlined text-[14px]">location_on</span>GPS
+        </span>
+        {battery > 0 && (
+          <span className="flex items-center gap-1 text-ev-primary">
+            <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>battery_full</span>
+            {battery}%
+          </span>
+        )}
+        <span className="font-headline tracking-tighter text-ev-on-surface">{time}</span>
       </div>
+    </header>
+  );
+}
+
+/** Speed — hero element (~15%) */
+function SpeedSection() {
+  const speed = useBikeStore((s) => s.speed_kmh);
+  const tripDist = useBikeStore((s) => s.trip_distance_km || s.distance_km);
+
+  return (
+    <section className="h-[15%] flex-none flex flex-col items-center justify-center bg-black">
+      <div className="flex items-baseline gap-2">
+        <span className="font-headline font-black text-7xl tracking-tighter text-ev-on-surface leading-none tabular-nums">
+          {speed > 0 ? speed.toFixed(1) : '0.0'}
+        </span>
+        <span className="font-headline font-bold text-2xl text-ev-primary">KM/H</span>
+      </div>
+      <div className="flex items-center gap-2 opacity-80">
+        <span className="text-xs font-label uppercase text-ev-on-surface-variant tracking-widest">Trip</span>
+        <span className="font-headline font-bold text-xl text-ev-on-surface">{tripDist.toFixed(1)} KM</span>
+      </div>
+    </section>
+  );
+}
+
+/** Map section (~30%) */
+function MapSection() {
+  const altitude = useMapStore((s) => s.altitude) ?? 0;
+  const gradient = useAutoAssistStore((s) => s.terrain?.current_gradient_pct ?? 0);
+  const range = useBikeStore((s) => s.range_km);
+
+  return (
+    <section className="h-[30%] flex-none relative overflow-hidden">
+      {/* Map background */}
+      <div className="absolute inset-0 bg-ev-surface-low">
+        <MiniMap />
+      </div>
+      {/* Overlay cards */}
+      <div className="absolute top-3 left-3 flex flex-col gap-2 z-10">
+        <OverlayCard label="Elevation" value={`${Math.round(altitude)}`} unit="m" color="border-ev-tertiary" />
+        {gradient !== 0 && (
+          <OverlayCard label="Grade" value={`${gradient > 0 ? '+' : ''}${gradient.toFixed(0)}`} unit="%" color="border-ev-error" />
+        )}
+      </div>
+      {range > 0 && (
+        <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-4 py-2 border-l-2 border-ev-primary z-10">
+          <p className="text-[10px] font-label uppercase text-ev-on-surface-variant leading-none">Range</p>
+          <p className="font-headline font-black text-2xl text-ev-on-surface">{Math.round(range)}<span className="text-sm font-normal ml-1">km</span></p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OverlayCard({ label, value, unit, color }: { label: string; value: string; unit: string; color: string }) {
+  return (
+    <div className={`bg-black/60 backdrop-blur-md px-4 py-2 border-l-2 ${color}`}>
+      <p className="text-[10px] font-label uppercase text-ev-on-surface-variant leading-none">{label}</p>
+      <p className="font-headline font-black text-2xl text-ev-on-surface">{value}<span className="text-sm font-normal ml-1">{unit}</span></p>
     </div>
+  );
+}
+
+/** Metrics row — Power, Battery, Cadence (~12%) */
+function MetricsRow() {
+  const power = useBikeStore((s) => s.power_watts);
+  const battery = useBikeStore((s) => s.battery_percent);
+  const cadence = useBikeStore((s) => s.cadence_rpm);
+  const torque = useBikeStore((s) => s.torque_nm);
+
+  return (
+    <section className="h-[12%] flex-none grid grid-cols-4 gap-0 border-y border-ev-outline-variant/20">
+      <MetricCell icon="bolt" iconColor="text-ev-secondary" label="Power" value={String(power)} unit="W" />
+      <MetricCell icon="battery_5_bar" iconColor="text-ev-primary" label="Battery" value={String(battery)} unit="%" fill />
+      <MetricCell icon="speed" iconColor="text-ev-tertiary" label="Cadence" value={String(cadence)} unit="RPM" />
+      <MetricCell icon="electric_bolt" iconColor="text-yellow-400" label="Torque" value={torque > 0 ? torque.toFixed(1) : '0'} unit="Nm" />
+    </section>
+  );
+}
+
+function MetricCell({ icon, iconColor, label, value, unit, fill }: {
+  icon: string; iconColor: string; label: string; value: string; unit: string; fill?: boolean;
+}) {
+  return (
+    <div className={`flex flex-col items-center justify-center ${fill ? 'bg-ev-surface-container' : 'bg-ev-surface-low'} border-r border-ev-outline-variant/10 last:border-r-0`}>
+      <span className={`material-symbols-outlined ${iconColor} text-lg mb-0.5`} style={fill ? { fontVariationSettings: "'FILL' 1" } : undefined}>{icon}</span>
+      <p className="text-[9px] font-label uppercase text-ev-on-surface-variant">{label}</p>
+      <p className="font-headline font-bold text-xl leading-tight tabular-nums">{value}<span className="text-[10px] font-normal ml-0.5 opacity-60">{unit}</span></p>
+    </div>
+  );
+}
+
+/** Assist mode bar (~10%) */
+function AssistBar() {
+  const assistMode = useBikeStore((s) => s.assist_mode);
+  const autoAssist = useAutoAssistStore((s) => s.enabled);
+  const rearGear = useBikeStore((s) => s.rear_gear);
+
+  const modes = [
+    { mode: AssistMode.ECO, label: 'ECO' },
+    { mode: AssistMode.TOUR, label: 'TOUR' },
+    { mode: AssistMode.ACTIVE, label: 'ACTV' },
+    { mode: AssistMode.SPORT, label: 'SPRT' },
+    { mode: AssistMode.POWER, label: 'PWR' },
+  ];
+
+  return (
+    <section className="h-[10%] flex-none bg-black px-2 py-1 flex flex-col justify-center">
+      <div className="flex justify-between items-center gap-1 h-3/4">
+        {modes.map(({ mode, label }) => {
+          const active = assistMode === mode;
+          return (
+            <button
+              key={mode}
+              className={`flex-1 h-full font-headline font-black text-[10px] tracking-tighter flex items-center justify-center uppercase active:scale-95 transition-transform ${
+                active
+                  ? 'bg-ev-primary text-black shadow-[0_0_20px_rgba(63,255,139,0.3)]'
+                  : 'bg-ev-surface-highest text-ev-on-surface-variant'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+        {/* Gear indicator */}
+        {rearGear > 0 && (
+          <div className="w-10 h-full bg-ev-surface-container flex flex-col items-center justify-center border-l border-ev-outline-variant/20">
+            <span className="text-[8px] font-label text-ev-on-surface-variant">GR</span>
+            <span className="font-headline font-black text-lg leading-none text-ev-on-surface">{rearGear}</span>
+          </div>
+        )}
+      </div>
+      {/* Auto-assist indicator */}
+      {autoAssist && (
+        <div className="flex justify-center mt-0.5">
+          <div className="flex items-center gap-1.5 px-3 py-0.5 bg-ev-primary/10 border border-ev-primary/20">
+            <div className="w-1.5 h-1.5 rounded-full bg-ev-primary animate-pulse" />
+            <span className="text-[9px] font-bold uppercase tracking-widest text-ev-primary">KROMI Auto</span>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Elevation mini-chart (~18%) */
+function ElevationSection() {
+  const gpsActive = useMapStore((s) => s.gpsActive);
+  const hrBpm = useBikeStore((s) => s.hr_bpm);
+  const hrZone = useBikeStore((s) => s.hr_zone);
+  const tripTime = useBikeStore((s) => s.trip_time_s);
+  const motorOdo = useBikeStore((s) => s.motor_odo_km);
+
+  const formatTime = (s: number) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    return `${h}:${m.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <section className="flex-1 min-h-0 bg-ev-surface-low relative flex flex-col">
+      {/* Elevation chart takes most space */}
+      <div className="flex-1 min-h-0 p-2">
+        {gpsActive ? (
+          <ElevationProfile />
+        ) : (
+          <div className="h-full flex items-center justify-center text-ev-outline text-xs font-label uppercase tracking-widest">
+            GPS needed for elevation
+          </div>
+        )}
+      </div>
+      {/* Bottom stats bar */}
+      <div className="flex-none flex justify-between items-center px-4 py-1.5 bg-black/40 border-t border-ev-outline-variant/10">
+        {hrBpm > 0 && (
+          <div className="flex items-center gap-1">
+            <span className="material-symbols-outlined text-ev-error text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>favorite</span>
+            <span className="font-headline font-bold text-sm">{hrBpm}</span>
+            <span className="text-[9px] text-ev-on-surface-variant">Z{hrZone}</span>
+          </div>
+        )}
+        {tripTime > 0 && (
+          <span className="font-headline text-sm text-ev-on-surface-variant">{formatTime(tripTime)}</span>
+        )}
+        {motorOdo > 0 && (
+          <span className="text-[9px] text-ev-outline font-label uppercase tracking-widest">ODO {motorOdo.toLocaleString()}km</span>
+        )}
+      </div>
+    </section>
   );
 }

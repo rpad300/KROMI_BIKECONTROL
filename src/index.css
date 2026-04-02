@@ -1,13 +1,53 @@
 @import "tailwindcss";
 
-/* Giant eBike Command Center - MTB optimized */
+/* === STEALTH-EV Design System (from Stitch) === */
+@theme {
+  --color-ev-primary: #3fff8b;
+  --color-ev-primary-dim: #24f07e;
+  --color-ev-primary-container: #13ea79;
+  --color-ev-secondary: #6e9bff;
+  --color-ev-secondary-dim: #0f6df3;
+  --color-ev-secondary-container: #0058ca;
+  --color-ev-tertiary: #e966ff;
+  --color-ev-tertiary-dim: #c500e6;
+  --color-ev-error: #ff716c;
+  --color-ev-error-dim: #d7383b;
+  --color-ev-bg: #0e0e0e;
+  --color-ev-surface: #0e0e0e;
+  --color-ev-surface-low: #131313;
+  --color-ev-surface-container: #1a1919;
+  --color-ev-surface-high: #201f1f;
+  --color-ev-surface-highest: #262626;
+  --color-ev-surface-bright: #2c2c2c;
+  --color-ev-on-surface: #ffffff;
+  --color-ev-on-surface-variant: #adaaaa;
+  --color-ev-outline: #777575;
+  --color-ev-outline-variant: #494847;
+
+  --font-headline: 'Space Grotesk', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-label: 'Space Grotesk', sans-serif;
+}
+
+/* Base styles */
 html, body, #root {
   height: 100%;
   overflow: hidden;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  background-color: #0e0e0e;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.font-headline { font-family: 'Space Grotesk', sans-serif; }
+.font-label { font-family: 'Space Grotesk', sans-serif; }
+.font-body { font-family: 'Inter', sans-serif; }
 
 /* Adaptive brightness — night mode (red tints, preserves night vision) */
 html.night-mode {

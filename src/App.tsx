@@ -28,8 +28,8 @@ export function App() {
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center bg-gray-950">
-        <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      <div className="h-full flex items-center justify-center bg-ev-bg">
+        <div className="w-10 h-10 border-2 border-ev-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -63,8 +63,9 @@ function MobileApp() {
   useMotorControl();
 
   return (
-    <div className="h-full flex flex-col bg-gray-950 text-white">
-      <div className="flex-1 min-h-0 overflow-y-auto">
+    <div className="h-full flex flex-col bg-ev-bg text-ev-on-surface">
+      {/* Content — no scroll on dashboard, scroll on settings/history */}
+      <div className={`flex-1 min-h-0 ${screen === 'settings' || screen === 'history' ? 'overflow-y-auto' : 'overflow-hidden'}`}>
         {screen === 'dashboard' && <Dashboard />}
         {screen === 'map' && <MapView />}
         {screen === 'climb' && <ClimbApproach />}
@@ -73,12 +74,13 @@ function MobileApp() {
         {screen === 'history' && <RideHistory />}
       </div>
 
-      <nav className="flex-none grid grid-cols-5 border-t border-gray-800 bg-gray-900">
+      {/* Bottom Nav — Stitch style */}
+      <nav className="flex-none flex justify-around items-center h-20 bg-ev-bg/90 backdrop-blur-xl border-t border-ev-primary/10 shadow-[0_-4px_24px_rgba(0,0,0,0.8)]">
         <NavButton label="Dash" icon="speed" active={screen === 'dashboard'} onClick={() => setScreen('dashboard')} />
-        <NavButton label="Mapa" icon="map" active={screen === 'map'} onClick={() => setScreen('map')} />
+        <NavButton label="Map" icon="map" active={screen === 'map'} onClick={() => setScreen('map')} />
         <NavButton label="Climb" icon="terrain" active={screen === 'climb'} onClick={() => setScreen('climb')} />
-        <NavButton label="BLE" icon="bluetooth" active={screen === 'connections'} onClick={() => setScreen('connections')} />
-        <NavButton label="Config" icon="settings" active={screen === 'settings'} onClick={() => setScreen('settings')} />
+        <NavButton label="BLE" icon="settings_bluetooth" active={screen === 'connections'} onClick={() => setScreen('connections')} />
+        <NavButton label="Setup" icon="settings" active={screen === 'settings'} onClick={() => setScreen('settings')} />
       </nav>
 
       <ConnectionStatus />
@@ -104,13 +106,13 @@ function DesktopApp() {
   const logout = useAuthStore((s) => s.logout);
 
   return (
-    <div className="h-full flex bg-gray-950 text-white">
+    <div className="h-full flex bg-ev-bg text-ev-on-surface">
       {/* Sidebar */}
-      <aside className="w-64 flex-none flex flex-col border-r border-gray-800 bg-gray-900">
+      <aside className="w-64 flex-none flex flex-col border-r border-ev-outline-variant/20 bg-ev-surface-low">
         {/* Logo */}
-        <div className="p-6 border-b border-gray-800">
-          <h1 className="text-xl font-bold text-emerald-400">KROMI</h1>
-          <p className="text-xs text-gray-500 mt-1">BikeControl</p>
+        <div className="p-6 border-b border-ev-outline-variant/20">
+          <h1 className="text-xl font-headline font-bold text-ev-primary tracking-tight">STEALTH-EV</h1>
+          <p className="text-xs text-ev-on-surface-variant mt-1 font-label uppercase tracking-widest">BikeControl</p>
         </div>
 
         {/* Nav items */}
@@ -119,34 +121,34 @@ function DesktopApp() {
             <button
               key={item.screen}
               onClick={() => setScreen(item.screen)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
+              className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
                 screen === item.screen
-                  ? 'bg-emerald-500/10 text-emerald-400'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                  ? 'bg-ev-primary/10 text-ev-primary border-l-2 border-ev-primary'
+                  : 'text-ev-on-surface-variant hover:bg-ev-surface-high hover:text-white'
               }`}
             >
               <span className="material-symbols-outlined text-xl">{item.icon}</span>
-              {item.label}
+              <span className="font-label">{item.label}</span>
             </button>
           ))}
         </nav>
 
         {/* Desktop info banner */}
-        <div className="p-4 m-3 bg-gray-800 rounded-xl">
-          <p className="text-xs text-gray-400">
+        <div className="p-4 m-3 bg-ev-surface-container">
+          <p className="text-xs text-ev-on-surface-variant">
             Modo desktop — configuração e histórico.
           </p>
-          <p className="text-xs text-gray-500 mt-1">
-            Para controlo do motor e dashboard live, abre no telemóvel Android.
+          <p className="text-xs text-ev-outline mt-1">
+            Para dashboard live, abre no Android.
           </p>
         </div>
 
         {/* User + logout */}
-        <div className="p-4 border-t border-gray-800">
-          <div className="text-xs text-gray-500 truncate">{user?.email}</div>
+        <div className="p-4 border-t border-ev-outline-variant/20">
+          <div className="text-xs text-ev-outline truncate">{user?.email}</div>
           <button
             onClick={logout}
-            className="mt-2 text-xs text-red-400 hover:text-red-300"
+            className="mt-2 text-xs text-ev-error hover:text-ev-error-dim"
           >
             Terminar sessão
           </button>
@@ -176,12 +178,17 @@ function NavButton({ label, icon, active, onClick }: {
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col items-center justify-center py-3 transition-colors min-h-[56px] ${
-        active ? 'text-emerald-400' : 'text-gray-500'
+      className={`flex flex-col items-center justify-center w-16 h-16 active:scale-90 transition-all duration-150 ${
+        active
+          ? 'bg-ev-primary text-black rounded-sm'
+          : 'text-zinc-400 hover:text-ev-primary'
       }`}
     >
-      <span className="material-symbols-outlined text-2xl">{icon}</span>
-      <span className="text-[10px] mt-0.5 font-medium">{label}</span>
+      <span
+        className="material-symbols-outlined text-2xl"
+        style={active ? { fontVariationSettings: "'FILL' 1" } : undefined}
+      >{icon}</span>
+      <span className="font-body font-bold text-[10px] uppercase mt-1">{label}</span>
     </button>
   );
 }
