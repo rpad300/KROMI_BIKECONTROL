@@ -98,8 +98,16 @@ export function Dashboard() {
 function CompactMetricsRow() {
   const power = useBikeStore((s) => s.power_watts);
   const battery = useBikeStore((s) => s.battery_percent);
-  const range = useBikeStore((s) => s.range_km);
+  const rangeEstimated = useBikeStore((s) => s.range_km);
+  const rangePerMode = useBikeStore((s) => s.range_per_mode);
+  const assistMode = useBikeStore((s) => s.assist_mode);
   const cadence = useBikeStore((s) => s.cadence_rpm);
+
+  // Use motor-reported range for current mode when available
+  const modeMap: Record<number, string> = { 1: 'eco', 2: 'tour', 3: 'active', 4: 'sport', 5: 'power', 6: 'smart' };
+  const modeKey = modeMap[assistMode] ?? 'power';
+  const motorRange = rangePerMode ? (rangePerMode as Record<string, number>)[modeKey] : 0;
+  const range = motorRange && motorRange > 0 ? motorRange : rangeEstimated;
 
   const batColor =
     battery > 30 ? 'text-emerald-400' :
