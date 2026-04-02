@@ -78,6 +78,22 @@ export async function loadSettingsFromDB(): Promise<boolean> {
     const row = data[0] as DBSettings;
     const settings = useSettingsStore.getState();
 
+    // Load bike hardware profile (wheel circ, etc.) from bike_configs
+    try {
+      const bikeRes = await supabaseFetch(
+        `/bike_configs?user_id=eq.${userId}&select=wheel_circumference_mm,total_odo_km,bat1_capacity_pct,bat1_health_pct,bat1_cycles,bat2_capacity_pct,bat2_health_pct,bat2_cycles&limit=1`,
+        { headers: { 'Prefer': 'return=representation' } }
+      );
+      const bikeData = await bikeRes.json();
+      if (Array.isArray(bikeData) && bikeData.length > 0) {
+        const hw = bikeData[0];
+        if (hw.wheel_circumference_mm) {
+          settings.updateBikeConfig({ wheel_circumference_mm: hw.wheel_circumference_mm });
+          console.log(`[Sync] Wheel circumference from DB: ${hw.wheel_circumference_mm}mm`);
+        }
+      }
+    } catch { /* bike_configs may not exist yet */ }
+
     // Merge DB settings into local stores
     if (row.bike_config && Object.keys(row.bike_config).length > 0) {
       settings.updateBikeConfig(row.bike_config);
