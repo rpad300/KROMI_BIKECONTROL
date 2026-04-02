@@ -576,10 +576,33 @@ class MainActivity : AppCompatActivity() {
         }, 15000)
     }
 
+    @android.annotation.SuppressLint("MissingPermission")
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.scheme == "kromi-bridge") {
-            appendLog("LINK", "Deep link — tap SCAN to connect")
+            val service = BLEBridgeService.instance
+            val ble = service?.bleManager
+            if (ble != null && !ble.isConnected) {
+                appendLog("LINK", "Deep link — auto-scanning...")
+                // Auto-scan and connect to first Giant device
+                ble.startScan(
+                    onFound = { device, _, uuids ->
+                        val name = device.name ?: ""
+                        val isBike = name.contains("GBHA", true) || name.contains("Giant", true)
+                            || uuids.contains("F0BA", true) || uuids.contains("1816") || uuids.contains("1818")
+                        if (isBike && !ble.isConnected) {
+                            ble.stopScan()
+                            appendLog("LINK", "Found bike: $name — connecting...")
+                            ble.connectToDevice(device)
+                        }
+                    },
+                    onDone = {}
+                )
+            } else if (ble?.isConnected == true) {
+                appendLog("LINK", "Deep link — already connected")
+            } else {
+                appendLog("LINK", "Deep link — service not ready")
+            }
         }
     }
 

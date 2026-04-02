@@ -15,7 +15,8 @@ import { batteryEstimationService } from '../battery/BatteryEstimationService';
 import { calibrateFromMotorRanges } from '../battery/ConsumptionCalibration';
 import { recordBikeData, recordBatteryInfo, recordDeviceInfo, resetBikeProfile, recordMotorOdoHours, recordBatteryCapacity, recordMotorAvgCurrent, recordModeUsage, recordServiceStats } from '../sync/BikeProfileSync';
 
-const WS_URL = 'ws://localhost:8765';
+// Use 127.0.0.1 instead of localhost — Chrome Android blocks ws://localhost on HTTPS pages
+const WS_URL = 'ws://127.0.0.1:8765';
 const RECONNECT_INTERVAL = 3000;
 
 export interface ScanResultDevice {
