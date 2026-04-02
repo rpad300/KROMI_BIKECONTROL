@@ -344,6 +344,10 @@ class MainActivity : AppCompatActivity() {
             }
             "pwaLog" -> appendLog("PWA", json.optString("msg", ""))
             "rangePerMode" -> appendLog("RNG", "★ E=${json.optInt("eco")} T=${json.optInt("tour")} A=${json.optInt("active")} S=${json.optInt("sport")} P=${json.optInt("power")}")
+            "modeUsage" -> appendLog("USE", "★ eco=${json.optInt("eco")}% tour=${json.optInt("tour")}% climb=${json.optInt("climb")}% power=${json.optInt("powerPlus")}%")
+            "motorAvgCurrent" -> appendLog("AVG", "★ boost=%.2fA power=%.2fA climb=%.2fA svc=${json.optInt("serviceToolTimes")}".format(json.optDouble("boostAvgA"), json.optDouble("powerAvgA"), json.optDouble("climbAvgA")))
+            "motorOdoHours" -> appendLog("ODO", "★ motor=${json.optInt("motorOdo")}km hours=${json.optInt("totalHours")}h")
+            "batteryCapacity" -> appendLog("CAP", "★ capacity=%.1fAh notChgDays=${json.optInt("maxNotChargedDay")} cycles=${json.optInt("notChargedCycles")}".format(json.optDouble("epCapacity")))
             "barometer" -> updateSensor("Baro", "${json.optDouble("pressure").toInt()}hPa/${json.optDouble("altitude").toInt()}m")
             "light" -> updateSensor("Light", "${json.optDouble("lux").toInt()}lux")
             "accel" -> updateSensor("Lean", "${json.optDouble("lean").toInt()}°")

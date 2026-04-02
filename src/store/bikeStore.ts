@@ -31,6 +31,18 @@ interface BikeState {
   calories: number;
   elevation_gain_m: number;
 
+  // eShift (Di2/internal gear)
+  front_gear: number;
+  rear_gear: number;
+
+  // Trip (from FC23 cmd 0x40)
+  trip_distance_km: number;
+  trip_time_s: number;
+
+  // Motor stats (from GEV commands)
+  motor_odo_km: number;
+  motor_total_hours: number;
+
   // Error
   error_code: number;
 
@@ -84,6 +96,10 @@ interface BikeState {
   setBatteryVoltage: (v: number) => void;
   setTorque: (v: number) => void;
   setAssistCurrent: (v: number) => void;
+  setTripDistance: (v: number) => void;
+  setTripTime: (v: number) => void;
+  setGears: (front: number, rear: number) => void;
+  setMotorOdo: (odo: number, hours: number) => void;
   setCalories: (v: number) => void;
   setElevationGain: (v: number) => void;
   setErrorCode: (v: number) => void;
@@ -131,6 +147,18 @@ export const useBikeStore = create<BikeState>((set) => ({
   // Trip
   calories: 0,
   elevation_gain_m: 0,
+
+  // eShift
+  front_gear: 0,
+  rear_gear: 0,
+
+  // Trip
+  trip_distance_km: 0,
+  trip_time_s: 0,
+
+  // Motor stats
+  motor_odo_km: 0,
+  motor_total_hours: 0,
 
   // Error
   error_code: 0,
@@ -199,6 +227,10 @@ export const useBikeStore = create<BikeState>((set) => ({
   setBatteryVoltage: (v) => set({ battery_voltage: v }),
   setTorque: (v) => set({ torque_nm: v }),
   setAssistCurrent: (v) => set({ assist_current_a: v }),
+  setTripDistance: (v) => set({ trip_distance_km: Math.round(v * 10) / 10 }),
+  setTripTime: (v) => set({ trip_time_s: v }),
+  setGears: (front, rear) => set({ front_gear: front, rear_gear: rear }),
+  setMotorOdo: (odo, hours) => set({ motor_odo_km: odo, motor_total_hours: hours }),
   setCalories: (v) => set({ calories: Math.round(v) }),
   setElevationGain: (v) => set({ elevation_gain_m: Math.round(v) }),
   setErrorCode: (v) => set({ error_code: v }),

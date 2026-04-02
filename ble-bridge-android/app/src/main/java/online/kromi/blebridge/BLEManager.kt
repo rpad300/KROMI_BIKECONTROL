@@ -616,57 +616,63 @@ class BLEManager(private val context: Context) {
 
                             when (cmdType) {
                                 0x40 -> {
-                                    // RIDE DATA — confirmed by CSC speed correlation (b23)
-                                    // [4-5]: speed (LE uint16, /10 km/h) ✅
-                                    // [6-7]: signed value (accel/slope?)
-                                    // [8-9]: motor power (/10 = watts, from RideControl decompile) ✅
-                                    // [12-13]: ODO (slowly incrementing, /10 km) ✅
-                                    // [16-17]: motor internal value (RPM? varies with load)
-                                    // [18]: battery SOC (0x64=100%) ✅
-                                    val speed = leU16(4) / 10.0
-                                    val motorWatts = leU16(8) / 10.0   // calibrated: /10 = watts
-                                    val accel = leS16(6)               // signed, raw
-                                    val odo = leU16(12) / 10.0
-                                    val motorVal = leU16(16)           // raw (RPM or torque TBD)
-                                    val soc = data[18].toInt() and 0xFF
+                                    // RIDE DATA (indexZero) — from RideControl resolveTd23Data decompilation
+                                    // Byte layout confirmed from g8/x4.java:727
+                                    val speed = leU16(4) / 10.0         // [4-5] speed km/h
+                                    val torqueNm = leS16(6) / 10.0      // [6-7] torque Nm (signed)
+                                    val cadenceRpm = leU16(8) / 10.0    // [8-9] cadence RPM
+                                    val assistCurrentA = leU16(10) / 100.0 // [10-11] assist current A
+                                    val tripDistKm = leU16(12) / 10.0   // [12-13] trip/ODO distance km
+                                    val tripTimeSec = leU16(14)          // [14-15] trip time seconds
+                                    val powerW = leS16(16) / 10.0       // [16-17] power watts
+                                    val soc = data[18].toInt() and 0xFF  // [18] battery SOC
 
                                     if (now - lastTelemetryLog > 2000) {
                                         lastTelemetryLog = now
-                                        Log.i(TAG, "RIDE: spd=%.1f mW=%.0f soc=%d%% acc=%d mv=%d odo=%.1f"
-                                            .format(speed, motorWatts, soc, accel, motorVal, odo))
+                                        Log.i(TAG, "RIDE: spd=%.1f trq=%.1f cad=%.0f pwr=%.0f cur=%.2fA dist=%.1f t=%ds"
+                                            .format(speed, torqueNm, cadenceRpm, powerW, assistCurrentA, tripDistKm, tripTimeSec))
                                     }
 
                                     onDataReceived?.invoke(JSONObject()
                                         .put("type", "sgRiding")
                                         .put("speed", speed)
+                                        .put("torqueNm", torqueNm)
+                                        .put("cadenceRpm", cadenceRpm)
+                                        .put("assistCurrentA", assistCurrentA)
+                                        .put("tripDistKm", tripDistKm)
+                                        .put("tripTimeSec", tripTimeSec)
+                                        .put("powerW", powerW)
                                         .put("batterySoc", soc)
-                                        .put("motorWatts", motorWatts)
-                                        .put("motorVal", motorVal)
-                                        .put("odo", odo)
-                                        .put("accel", accel))
+                                        // Legacy compat fields
+                                        .put("motorWatts", powerW)
+                                        .put("odo", tripDistKm))
 
                                     // PWA compat broadcasts
                                     if (speed > 0.5) onDataReceived?.invoke(JSONObject().put("type", "speed").put("value", speed))
-                                    // NOTE: byte[18] in cmd 0x40 is NOT battery SOC (always 100/0x64)
-                                    // Real SOC comes from cmd 0x43 (sgBatteryHealth)
+                                    if (powerW > 0) onDataReceived?.invoke(JSONObject().put("type", "power").put("value", powerW.toInt()))
+                                    if (cadenceRpm > 0) onDataReceived?.invoke(JSONObject().put("type", "cadence").put("value", cadenceRpm.toInt()))
                                 }
                                 0x42 -> {
-                                    // SENSOR DATA — all zeros when stopped, may have cadence/power
-                                    // Check if ANY byte [4..18] is non-zero
+                                    // SENSOR/ESHIFT DATA (indexTwo) — from resolveTd23Data decompilation
+                                    // byte[7] (raw offset, = extracted[5]) contains eShift gear info:
+                                    //   bits 5-7: front gear level (0-7)
+                                    //   bits 0-4: rear gear level (0-31)
+                                    val gearByte = data[7].toInt() and 0xFF
+                                    val frontGear = (gearByte shr 5) and 0x07
+                                    val rearGear = gearByte and 0x1F
+
                                     val payload = data.copyOfRange(4, 19)
                                     val hasData = payload.any { it != 0.toByte() }
                                     if (hasData) {
-                                        val hex = payload.joinToString(" ") { "%02X".format(it) }
-                                        Log.i(TAG, "CMD42 DATA: $hex")
+                                        if (now - fc23LogTimes.getOrDefault("cmd42", 0L) > 3000) {
+                                            fc23LogTimes["cmd42"] = now
+                                            Log.i(TAG, "C42: front=%d rear=%d raw=%02X".format(frontGear, rearGear, gearByte))
+                                        }
                                         onDataReceived?.invoke(JSONObject()
                                             .put("type", "fc23cmd42")
-                                            .put("hex", hex)
-                                            .put("bytes", payload.map { it.toInt() and 0xFF }
-                                                .joinToString(","))
-                                            .put("b0b1", leU16(4))    // possible cadence?
-                                            .put("b2b3", leU16(6))    // possible torque?
-                                            .put("b4b5", leU16(8))    // possible power?
-                                            .put("b6b7", leU16(10)))  // possible ?
+                                            .put("frontGear", frontGear)
+                                            .put("rearGear", rearGear)
+                                            .put("gearByte", gearByte))
                                     }
                                 }
                                 0x43 -> {
@@ -849,6 +855,67 @@ class BLEManager(private val context: Context) {
                                             .put("battery", "sub")
                                             .put("field", "cycles")
                                             .put("cycles", cycles))
+                                    }
+                                    0x06 -> {
+                                        // cmd 6: MODE USAGE PERCENTAGES (PASSIVE_DATA_RIDE_CONTROL_2)
+                                        // 13 bytes: % time in each mode
+                                        val hex = dec.joinToString("") { "%02x".format(it) }
+                                        val modeNames = listOf("smart","boostPlus","boost","powerPlus","power","climbPlus","climb","normalPlus","normal","tourPlus","tour","eco","off")
+                                        val json = JSONObject().put("type", "modeUsage").put("raw", hex)
+                                        for (i in modeNames.indices) {
+                                            val pct = if (i + 2 < dec.size) dec[i + 2].toInt() and 0xFF else 0
+                                            json.put(modeNames[i], pct)
+                                        }
+                                        Log.i(TAG, "★ MODE_USAGE: eco=${json.optInt("eco")}% tour=${json.optInt("tour")}% active=${json.optInt("climb")}% sport=${json.optInt("climbPlus")}% power=${json.optInt("powerPlus")}%")
+                                        onDataReceived?.invoke(json)
+                                    }
+                                    0x0A -> {
+                                        // cmd 10: MOTOR AVG CURRENT PER MODE (PASSIVE_DATA_SYNC_DRIVE_2)
+                                        // [2-3]=serviceToolTimes, [4-5]=lastServiceHour, [6-7]=lastServiceKm
+                                        // [8-9]=boostAvgA, [10-11]=powerAvgA, [12-13]=climbAvgA
+                                        fun avgA(off: Int): Double = ((dec[off].toInt() and 0xFF) or ((dec[off+1].toInt() and 0xFF) shl 8)) / 100.0
+                                        val svcTimes = (dec[2].toInt() and 0xFF) or ((dec[3].toInt() and 0xFF) shl 8)
+                                        val svcHour = (dec[4].toInt() and 0xFF) or ((dec[5].toInt() and 0xFF) shl 8)
+                                        val svcKm = (dec[6].toInt() and 0xFF) or ((dec[7].toInt() and 0xFF) shl 8)
+                                        val hex = dec.joinToString("") { "%02x".format(it) }
+                                        Log.i(TAG, "★ MOTOR_AVG: svc=%d h=%d km=%d boostA=%.2f powerA=%.2f climbA=%.2f raw=%s"
+                                            .format(svcTimes, svcHour, svcKm, avgA(8), avgA(10), avgA(12), hex))
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "motorAvgCurrent")
+                                            .put("serviceToolTimes", svcTimes)
+                                            .put("lastServiceHour", svcHour)
+                                            .put("lastServiceKm", svcKm)
+                                            .put("boostAvgA", avgA(8))
+                                            .put("powerAvgA", avgA(10))
+                                            .put("climbAvgA", avgA(12))
+                                            .put("raw", hex))
+                                    }
+                                    0x12 -> {
+                                        // cmd 18: ODO + TOTAL USAGE HOURS (ACTIVE_DATA_SYNC_DRIVE_1)
+                                        val motorOdo = (dec[2].toInt() and 0xFF) or ((dec[3].toInt() and 0xFF) shl 8)
+                                        val totalHours = (dec[4].toInt() and 0xFF) or ((dec[5].toInt() and 0xFF) shl 8)
+                                        val hex = dec.joinToString("") { "%02x".format(it) }
+                                        Log.i(TAG, "★ MOTOR_ODO: odo=%dkm hours=%dh raw=%s".format(motorOdo, totalHours, hex))
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "motorOdoHours")
+                                            .put("motorOdo", motorOdo)
+                                            .put("totalHours", totalHours)
+                                            .put("raw", hex))
+                                    }
+                                    0x10 -> {
+                                        // cmd 16: BATTERY CAPACITY DETAILS (PASSIVE_DATA_ENERGY_PAK_4)
+                                        val maxNotChargedDay = (dec[2].toInt() and 0xFF) or ((dec[3].toInt() and 0xFF) shl 8)
+                                        val notChargedCycles = (dec[4].toInt() and 0xFF) or ((dec[5].toInt() and 0xFF) shl 8)
+                                        val epCapacity = ((dec[6].toInt() and 0xFF) or ((dec[7].toInt() and 0xFF) shl 8)) / 10.0
+                                        val hex = dec.joinToString("") { "%02x".format(it) }
+                                        Log.i(TAG, "★ BAT_CAP: notChgDays=%d notChgCycles=%d capacity=%.1fAh raw=%s"
+                                            .format(maxNotChargedDay, notChargedCycles, epCapacity, hex))
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "batteryCapacity")
+                                            .put("maxNotChargedDay", maxNotChargedDay)
+                                            .put("notChargedCycles", notChargedCycles)
+                                            .put("epCapacity", epCapacity)
+                                            .put("raw", hex))
                                     }
                                     0x2C -> {
                                         // Tuning data response
@@ -1381,6 +1448,15 @@ class BLEManager(private val context: Context) {
         h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x38 }, 0, "BAT_SUB_FW") }, 2000)
         // cmd 57 (0x39): sub battery cycles
         h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x39 }, 0, "BAT_SUB_CYCLES") }, 2400)
+        // === NEW: additional data commands from RideControl decompilation ===
+        // cmd 6 (0x06): mode usage percentages (PASSIVE_DATA_RIDE_CONTROL_2)
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x06 }, 0, "MODE_USAGE") }, 2800)
+        // cmd 10 (0x0A): motor avg current per mode + service stats (PASSIVE_DATA_SYNC_DRIVE_2)
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x0A }, 0, "MOTOR_AVG_CURRENT") }, 3200)
+        // cmd 18 (0x12): ODO + total usage hours (ACTIVE_DATA_SYNC_DRIVE_1)
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x12 }, 0, "MOTOR_ODO_HOURS") }, 3600)
+        // cmd 16 (0x10): battery capacity details (PASSIVE_DATA_ENERGY_PAK_4)
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x10 }, 0, "BAT_CAPACITY") }, 4000)
     }
 
     /** Convenience: ASSIST UP — cmd=0x1C, sub=0x03, action=0x02, key 3 */

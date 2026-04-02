@@ -421,17 +421,28 @@ class WebSocketBLEClient {
           console.log(`[WSClient] ${msg.type}:`, msg.hex);
           break;
 
-        case 'sgRiding':
-          // Parsed motor telemetry — speed, torque, power, cadence, assist%, distance, time
-          if (msg.speed > 0.5) store.setSpeed(msg.speed);
-          if (msg.power) store.setPower(Math.round(msg.power));
-          if (msg.cadence) store.setCadence(Math.round(msg.cadence));
-          if (msg.torque) store.setTorque?.(msg.torque);
-          if (msg.tripDistance) store.setDistance(msg.tripDistance);
-          if (msg.odo) recordBikeData('total_odo_km', msg.odo as number);
-          batteryEstimationService.addSample(msg.speed || 0, msg.power || 0, store.battery_percent);
+        case 'sgRiding': {
+          // FC23 cmd 0x40 — full ride telemetry (from resolveTd23Data decompilation)
+          const spd = msg.speed as number || 0;
+          const pwr = msg.powerW as number || msg.motorWatts as number || 0;
+          const trq = msg.torqueNm as number || 0;
+          const cad = msg.cadenceRpm as number || 0;
+          const cur = msg.assistCurrentA as number || 0;
+          const tDist = msg.tripDistKm as number || msg.odo as number || 0;
+          const tTime = msg.tripTimeSec as number || 0;
+
+          if (spd > 0.5) store.setSpeed(spd);
+          if (pwr > 0) store.setPower(Math.round(pwr));
+          if (cad > 0) store.setCadence(Math.round(cad));
+          if (trq !== 0) store.setTorque(trq);
+          if (cur > 0) store.setAssistCurrent(cur);
+          if (tDist > 0) { store.setDistance(tDist); store.setTripDistance(tDist); }
+          if (tTime > 0) store.setTripTime(tTime);
+          if (tDist > 0) recordBikeData('total_odo_km', tDist);
+          batteryEstimationService.addSample(spd, pwr, store.battery_percent);
           store.setRange(batteryEstimationService.getEstimatedRange(store.battery_percent));
           break;
+        }
 
         case 'sgBattery':
           // Motor battery data (SOC + life %)
@@ -631,6 +642,42 @@ class WebSocketBLEClient {
           }
           break;
         }
+
+        case 'fc23cmd42': {
+          // eShift gear data from FC23 cmd 0x42
+          const fg = msg.frontGear as number;
+          const rg = msg.rearGear as number;
+          if (fg > 0 || rg > 0) {
+            store.setGears(fg, rg);
+            store.setGear(rg); // compat with existing gear display
+          }
+          break;
+        }
+
+        case 'modeUsage':
+          // Mode usage percentages from GEV cmd 6
+          console.log(`[WSClient] Mode usage: eco=${msg.eco}% tour=${msg.tour}% active=${msg.climb}% sport=${msg.climbPlus}% power=${msg.powerPlus}%`);
+          this.sendLog(`USAGE: eco=${msg.eco}% tour=${msg.tour}% climb=${msg.climb}% power=${msg.powerPlus}%`);
+          break;
+
+        case 'motorAvgCurrent':
+          // Motor avg current per mode from GEV cmd 10
+          console.log(`[WSClient] Motor avg: boost=${msg.boostAvgA}A power=${msg.powerAvgA}A climb=${msg.climbAvgA}A svc=${msg.serviceToolTimes}`);
+          this.sendLog(`AVGCUR: boost=${msg.boostAvgA}A power=${msg.powerAvgA}A climb=${msg.climbAvgA}A`);
+          break;
+
+        case 'motorOdoHours':
+          // Motor ODO + hours from GEV cmd 18
+          store.setMotorOdo(msg.motorOdo as number, msg.totalHours as number);
+          console.log(`[WSClient] Motor ODO=${msg.motorOdo}km hours=${msg.totalHours}h`);
+          this.sendLog(`MOTOR: odo=${msg.motorOdo}km hours=${msg.totalHours}h`);
+          break;
+
+        case 'batteryCapacity':
+          // Battery capacity details from GEV cmd 16
+          console.log(`[WSClient] Bat capacity: ${msg.epCapacity}Ah notChgDays=${msg.maxNotChargedDay} notChgCycles=${msg.notChargedCycles}`);
+          this.sendLog(`BATCAP: ${msg.epCapacity}Ah days=${msg.maxNotChargedDay} cycles=${msg.notChargedCycles}`);
+          break;
 
         case 'sgResponse':
           console.log(`[WSClient] Response cmd=${msg.cmd} key=${msg.key}: ${msg.decrypted}`);
