@@ -182,7 +182,8 @@ class MainActivity : AppCompatActivity() {
         registerReceiver(statusReceiver, IntentFilter("online.kromi.blebridge.STATUS"),
             RECEIVER_NOT_EXPORTED)
 
-        appendLog("INIT", "BLE Bridge v0.6.0 started")
+        val versionName = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }
+        appendLog("INIT", "BLE Bridge v$versionName started")
         appendLog("WS", "Server on ws://localhost:8765")
 
         // Setup service logging after a short delay (service may not be ready immediately)

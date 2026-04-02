@@ -77,6 +77,10 @@ class BLEManager(private val context: Context) {
     private val rideDataAccum = mutableListOf<Byte>()
     private var rideDataPending = false
 
+    // Battery SOC smoothing (cmd 0x43 fluctuates wildly)
+    private val socBuffer = mutableListOf<Int>()
+    private var smoothedSoc = -1
+
     val isConnected: Boolean get() = gatt != null
     val isScanning: Boolean get() = scanCallback != null
     val connectedAddress: String? get() = gatt?.device?.address
@@ -666,29 +670,32 @@ class BLEManager(private val context: Context) {
                                     }
                                 }
                                 0x43 -> {
-                                    // BATTERY — the ONLY reliable SOC source
-                                    // byte[4] = bat1 health %, byte[5] = bat2 health %
-                                    // byte[8] = combined SOC % (REAL battery level)
-                                    // byte[6,7] = always 0 (no individual SOC available)
+                                    // BATTERY — SOC from byte[8], smoothed (raw fluctuates ±10%)
                                     val b1Health = data[4].toInt() and 0xFF
                                     val b2Health = data[5].toInt() and 0xFF
-                                    val soc = if (data.size > 8) data[8].toInt() and 0xFF else 0
+                                    val rawSoc = if (data.size > 8) data[8].toInt() and 0xFF else 0
 
-                                    // ALWAYS broadcast SOC (cmd 0x40 byte[18] is NOT SOC)
-                                    if (soc in 1..100) {
+                                    // Smooth SOC: median of last 5 readings
+                                    if (rawSoc in 1..100) {
+                                        socBuffer.add(rawSoc)
+                                        if (socBuffer.size > 5) socBuffer.removeAt(0)
+                                        smoothedSoc = socBuffer.sorted()[socBuffer.size / 2]
+                                    }
+
+                                    if (smoothedSoc > 0) {
                                         onDataReceived?.invoke(JSONObject()
-                                            .put("type", "battery").put("value", soc))
+                                            .put("type", "battery").put("value", smoothedSoc))
                                     }
                                     onDataReceived?.invoke(JSONObject()
                                         .put("type", "sgBatteryHealth")
                                         .put("bat1Health", b1Health)
                                         .put("bat2Health", b2Health)
-                                        .put("soc", soc))
+                                        .put("soc", smoothedSoc))
 
                                     if (now - fc23LogTimes.getOrDefault("bat43", 0L) > 5000) {
                                         fc23LogTimes["bat43"] = now
-                                        Log.i(TAG, "BAT43: b1Health=%d%% b2Health=%d%% SOC=%d%%"
-                                            .format(b1Health, b2Health, soc))
+                                        Log.i(TAG, "BAT43: raw=%d smooth=%d b1H=%d%% b2H=%d%%"
+                                            .format(rawSoc, smoothedSoc, b1Health, b2Health))
                                     }
                                 }
                                 0x41 -> {
