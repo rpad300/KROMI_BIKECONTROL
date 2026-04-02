@@ -456,32 +456,27 @@ class WebSocketBLEClient {
           };
           if (validForCal.power > 0) calibrateFromMotorRanges(validForCal);
 
-          // Resolve overflow modes using calibrated consumption
+          // Resolve overflow modes — ECO/TOUR always overflow (>255km)
+          // Use ratio to POWER range (avoids circular calibration bug)
+          // Real data: ECO≈1.87×POWER, TOUR≈1.56×POWER (from RideControl)
           const estimated = new Set<string>();
           const resolved = { ...raw };
-          const settings = useSettingsStore.getState();
-          const bat1 = store.battery_main_pct;
-          const bat2 = store.battery_sub_pct;
-          const mainWh = settings.bikeConfig.main_battery_wh * (bat1 > 0 ? bat1 / 100 : 1);
-          const subWh = settings.bikeConfig.has_range_extender
-            ? settings.bikeConfig.sub_battery_wh * (bat2 > 0 ? bat2 / 100 : 1) : 0;
-          const totalWh = mainWh + subWh;
-
-          const consumptionMap: Record<string, number> = {
-            eco: settings.bikeConfig.consumption_eco,
-            tour: settings.bikeConfig.consumption_tour,
-            active: settings.bikeConfig.consumption_active,
-            sport: settings.bikeConfig.consumption_sport,
-            power: settings.bikeConfig.consumption_power,
-            smart: settings.bikeConfig.consumption_power,
-          };
+          const powerRange = raw.power > 0 ? raw.power : 166; // fallback
 
           const modes = ['eco', 'tour', 'active', 'sport', 'power', 'smart'] as const;
           type Mode = typeof modes[number];
+          const overflowRatio: Partial<Record<Mode, number>> = {
+            eco: 1.87,   // ECO ≈ 1.87× POWER range
+            tour: 1.56,  // TOUR ≈ 1.56× POWER range
+          };
           for (const mode of modes) {
-            if (resolved[mode as Mode] < 0 && totalWh > 50) {
-              const wh_km = consumptionMap[mode] || 6;
-              resolved[mode as Mode] = Math.round(totalWh / wh_km);
+            if (resolved[mode as Mode] < 0) {
+              const ratio = overflowRatio[mode];
+              if (ratio && powerRange > 0) {
+                resolved[mode as Mode] = Math.round(powerRange * ratio);
+              } else {
+                resolved[mode as Mode] = 0; // no estimate possible
+              }
               estimated.add(mode);
             }
           }
