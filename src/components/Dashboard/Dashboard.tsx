@@ -1,27 +1,108 @@
+import { useState } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
 import { AssistMode } from '../../types/bike.types';
 import { MiniMap } from './MiniMap';
 import { ElevationProfile } from './ElevationProfile';
+import { WeatherWidget } from './WeatherWidget';
+import { TrailWidget } from './TrailWidget';
+import { IntelligenceWidget } from './IntelligenceWidget';
+import { AutoAssistWidget } from './AutoAssistWidget';
+import { BatteryWidget } from './BatteryWidget';
+import { HRWidget } from './HRWidget';
+import { RideSessionWidget } from './RideSessionWidget';
 
 /**
  * STEALTH-EV Dashboard — Fullscreen, no-scroll, fixed height sections.
  * Design from Stitch project 1881497936854696524 (Fullscreen Ride Dashboard).
  */
 export function Dashboard() {
+  const [expanded, setExpanded] = useState(false);
+  const autoAssistEnabled = useAutoAssistStore((s) => s.enabled);
+  const hrConnected = useBikeStore((s) => s.hr_bpm > 0);
+
   return (
     <div className="h-full flex flex-col overflow-hidden bg-[#0e0e0e]">
-      {/* Top Bar */}
       <TopBar />
-      {/* Main sections — flex-1 fills remaining space */}
-      <main className="flex-1 flex flex-col min-h-0">
-        <SpeedSection />
-        <MapSection />
-        <MetricsRow />
-        <AssistBar />
-        <ElevationSection />
-      </main>
+
+      {!expanded ? (
+        /* === RIDE VIEW (default, no scroll) === */
+        <main className="flex-1 flex flex-col min-h-0">
+          <SpeedSection />
+          <MapSection />
+          <MetricsRow />
+          <AssistBar />
+          <InfoStrip />
+          <ElevationSection />
+          {/* Expand button */}
+          <button
+            onClick={() => setExpanded(true)}
+            className="flex-none h-8 bg-[#1a1919] flex items-center justify-center gap-1 border-t border-[#494847]/10"
+          >
+            <span className="material-symbols-outlined text-[#777575] text-sm">expand_less</span>
+            <span className="text-[9px] text-[#777575] font-label uppercase tracking-widest">More</span>
+          </button>
+        </main>
+      ) : (
+        /* === EXPANDED VIEW (scrollable, all widgets) === */
+        <main className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex flex-col gap-2 p-3 pb-4">
+            {/* Collapse button */}
+            <button
+              onClick={() => setExpanded(false)}
+              className="h-8 bg-[#1a1919] flex items-center justify-center gap-1"
+            >
+              <span className="material-symbols-outlined text-[#777575] text-sm">expand_more</span>
+              <span className="text-[9px] text-[#777575] font-label uppercase tracking-widest">Ride View</span>
+            </button>
+
+            {/* Compact speed + metrics */}
+            <CompactHeader />
+
+            {/* All widgets from old layout */}
+            <IntelligenceWidget />
+
+            <div className="flex gap-2">
+              <BatteryWidget />
+              {hrConnected && <HRWidget />}
+            </div>
+
+            <WeatherWidget />
+            <TrailWidget />
+
+            <MiniMap />
+            <ElevationProfile />
+
+            {autoAssistEnabled && <AutoAssistWidget />}
+
+            <RideSessionWidget />
+          </div>
+        </main>
+      )}
+    </div>
+  );
+}
+
+/** Compact header for expanded view */
+function CompactHeader() {
+  const speed = useBikeStore((s) => s.speed_kmh);
+  const power = useBikeStore((s) => s.power_watts);
+  const battery = useBikeStore((s) => s.battery_percent);
+  const assistMode = useBikeStore((s) => s.assist_mode);
+  const modeLabels: Record<number, string> = { 0: 'OFF', 1: 'ECO', 2: 'TOUR', 3: 'ACTV', 4: 'SPRT', 5: 'PWR', 6: 'SMART' };
+
+  return (
+    <div className="flex items-center justify-between bg-black px-4 py-2">
+      <div className="flex items-baseline gap-1">
+        <span className="font-headline font-black text-3xl tabular-nums">{speed > 0 ? speed.toFixed(1) : '0.0'}</span>
+        <span className="font-headline text-sm text-[#3fff8b]">km/h</span>
+      </div>
+      <div className="flex items-center gap-3 text-sm font-headline">
+        <span>{power}W</span>
+        <span className="text-[#3fff8b]">{battery}%</span>
+        <span className="bg-[#3fff8b] text-black px-2 py-0.5 font-black text-xs">{modeLabels[assistMode] ?? '?'}</span>
+      </div>
     </div>
   );
 }
@@ -203,11 +284,14 @@ function AssistBar() {
   );
 }
 
-/** Elevation mini-chart (~18%) */
-function ElevationSection() {
-  const gpsActive = useMapStore((s) => s.gpsActive);
+/** Info strip — HR, Battery dual, Weather, Current (~8%) */
+function InfoStrip() {
   const hrBpm = useBikeStore((s) => s.hr_bpm);
   const hrZone = useBikeStore((s) => s.hr_zone);
+  const bat1 = useBikeStore((s) => s.battery_main_pct);
+  const bat2 = useBikeStore((s) => s.battery_sub_pct);
+  const current = useBikeStore((s) => s.assist_current_a);
+  const temp = useBikeStore((s) => s.temperature_c);
   const tripTime = useBikeStore((s) => s.trip_time_s);
   const motorOdo = useBikeStore((s) => s.motor_odo_km);
 
@@ -217,32 +301,85 @@ function ElevationSection() {
     return `${h}:${m.toString().padStart(2, '0')}`;
   };
 
+  const hrColor = hrZone >= 4 ? 'text-[#ff716c]' : hrZone >= 3 ? 'text-yellow-400' : 'text-[#3fff8b]';
+
   return (
-    <section className="flex-1 min-h-0 bg-[#131313] relative flex flex-col">
-      {/* Elevation chart takes most space */}
-      <div className="flex-1 min-h-0 p-2">
+    <section className="h-[8%] flex-none flex items-center justify-between px-3 bg-[#131313] border-y border-[#494847]/10 gap-2">
+      {/* HR */}
+      {hrBpm > 0 ? (
+        <div className="flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-[#ff716c] text-base" style={{ fontVariationSettings: "'FILL' 1" }}>favorite</span>
+          <span className={`font-headline font-bold text-lg tabular-nums ${hrColor}`}>{hrBpm}</span>
+          <span className="text-[9px] text-[#777575] font-label">Z{hrZone}</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1">
+          <span className="material-symbols-outlined text-[#494847] text-base">favorite</span>
+          <span className="text-[10px] text-[#494847]">--</span>
+        </div>
+      )}
+
+      {/* Dual battery bars */}
+      {(bat1 > 0 || bat2 > 0) && (
+        <div className="flex items-center gap-1.5">
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1">
+              <span className="text-[8px] text-[#777575] w-4 text-right">800</span>
+              <div className="w-16 h-1.5 bg-[#262626] overflow-hidden">
+                <div className={`h-full ${bat1 > 30 ? 'bg-[#3fff8b]' : bat1 > 15 ? 'bg-yellow-500' : 'bg-[#ff716c]'}`} style={{ width: `${bat1}%` }} />
+              </div>
+              <span className="text-[8px] text-[#adaaaa] tabular-nums w-6">{bat1}%</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-[8px] text-[#777575] w-4 text-right">250</span>
+              <div className="w-16 h-1.5 bg-[#262626] overflow-hidden">
+                <div className={`h-full ${bat2 > 30 ? 'bg-[#3fff8b]' : bat2 > 15 ? 'bg-yellow-500' : 'bg-[#ff716c]'}`} style={{ width: `${bat2}%` }} />
+              </div>
+              <span className="text-[8px] text-[#adaaaa] tabular-nums w-6">{bat2}%</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Current + Temp */}
+      <div className="flex items-center gap-3">
+        {current > 0 && (
+          <div className="flex items-center gap-0.5">
+            <span className="material-symbols-outlined text-yellow-400 text-sm">electric_bolt</span>
+            <span className="font-headline font-bold text-sm tabular-nums">{current.toFixed(1)}</span>
+            <span className="text-[8px] text-[#777575]">A</span>
+          </div>
+        )}
+        {temp > 0 && (
+          <div className="flex items-center gap-0.5">
+            <span className="material-symbols-outlined text-[#6e9bff] text-sm">thermostat</span>
+            <span className="font-headline text-sm tabular-nums">{temp.toFixed(0)}°</span>
+          </div>
+        )}
+      </div>
+
+      {/* Time + ODO */}
+      <div className="flex flex-col items-end">
+        {tripTime > 0 && <span className="font-headline font-bold text-sm tabular-nums">{formatTime(tripTime)}</span>}
+        {motorOdo > 0 && <span className="text-[8px] text-[#777575] font-label tracking-widest">{motorOdo.toLocaleString()}km</span>}
+      </div>
+    </section>
+  );
+}
+
+/** Elevation mini-chart (flex remaining) */
+function ElevationSection() {
+  const gpsActive = useMapStore((s) => s.gpsActive);
+
+  return (
+    <section className="flex-1 min-h-0 bg-[#131313] relative">
+      <div className="h-full p-2">
         {gpsActive ? (
           <ElevationProfile />
         ) : (
           <div className="h-full flex items-center justify-center text-[#777575] text-xs font-label uppercase tracking-widest">
-            GPS needed for elevation
+            GPS for elevation profile
           </div>
-        )}
-      </div>
-      {/* Bottom stats bar */}
-      <div className="flex-none flex justify-between items-center px-4 py-1.5 bg-black/40 border-t border-[#494847]/10">
-        {hrBpm > 0 && (
-          <div className="flex items-center gap-1">
-            <span className="material-symbols-outlined text-[#ff716c] text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>favorite</span>
-            <span className="font-headline font-bold text-sm">{hrBpm}</span>
-            <span className="text-[9px] text-[#adaaaa]">Z{hrZone}</span>
-          </div>
-        )}
-        {tripTime > 0 && (
-          <span className="font-headline text-sm text-[#adaaaa]">{formatTime(tripTime)}</span>
-        )}
-        {motorOdo > 0 && (
-          <span className="text-[9px] text-[#777575] font-label uppercase tracking-widest">ODO {motorOdo.toLocaleString()}km</span>
         )}
       </div>
     </section>
