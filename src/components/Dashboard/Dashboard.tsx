@@ -12,6 +12,7 @@ import { TripStatsWidget } from './TripStatsWidget';
 import { IntelligenceWidget } from './IntelligenceWidget';
 import { MiniMap } from './MiniMap';
 import { WeatherWidget } from './WeatherWidget';
+import { TrailWidget } from './TrailWidget';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
@@ -53,8 +54,9 @@ export function Dashboard() {
         {hrConnected && <HRWidget />}
       </div>
 
-      {/* Weather */}
+      {/* Weather + Trail */}
       <WeatherWidget />
+      <TrailWidget />
 
       {/* Mini map + Elevation profile */}
       <MiniMap />
