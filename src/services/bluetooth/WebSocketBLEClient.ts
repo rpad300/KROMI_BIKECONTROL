@@ -10,6 +10,7 @@
 import { useBikeStore } from '../../store/bikeStore';
 import { useTuningStore, type TuningLevels } from '../../store/tuningStore';
 import { useSettingsStore } from '../../store/settingsStore';
+import { calculateZones } from '../../types/athlete.types';
 import { batteryEstimationService } from '../battery/BatteryEstimationService';
 
 const WS_URL = 'ws://localhost:8765';
@@ -272,11 +273,13 @@ class WebSocketBLEClient {
           break;
 
         case 'hr': {
-          // Calculate zone from athlete profile HRmax (not hardcoded)
           const bpm = msg.bpm as number;
           const hrMax = useSettingsStore.getState().riderProfile.hr_max;
-          const pct = hrMax > 0 ? bpm / hrMax : 0;
-          const zone = pct < 0.5 ? 0 : pct < 0.6 ? 1 : pct < 0.7 ? 2 : pct < 0.8 ? 3 : pct < 0.9 ? 4 : 5;
+          const zones = calculateZones(hrMax > 0 ? hrMax : 185);
+          let zone = 0;
+          for (let i = zones.length - 1; i >= 0; i--) {
+            if (bpm >= zones[i]!.min_bpm) { zone = i + 1; break; }
+          }
           store.setHR(bpm, zone);
           break;
         }
