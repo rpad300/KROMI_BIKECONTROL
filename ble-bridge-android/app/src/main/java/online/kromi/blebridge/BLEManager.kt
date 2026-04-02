@@ -745,20 +745,28 @@ class BLEManager(private val context: Context) {
                                             .put("success", success))
                                     }
                                     0x11 -> {
-                                        // cmd 17: REMAINING RANGE per mode (calculated by motor)
-                                        // payload[0]=eco, [1]=tour, [2]=power, [3]=boost+,
-                                        // [4]=boost, [5]=power+, [6]=climb+, [7]=climb,
-                                        // [8]=normal+, [9]=tour+, [10]=tour, [11]=smart
-                                        // Values are in km (single byte, 0-255)
-                                        val eco = dec[2].toInt() and 0xFF
-                                        val tour = dec[3].toInt() and 0xFF
-                                        val power = dec[4].toInt() and 0xFF
-                                        val sport = dec[6].toInt() and 0xFF  // boost+ = sport
-                                        val active = dec[10].toInt() and 0xFF // tour+ ≈ active
-                                        val smart = dec[13].toInt() and 0xFF
+                                        // cmd 17: REMAINING RANGE per mode (motor-calculated)
+                                        // Confirmed from real bike data vs RideControl display:
+                                        //   dec[7]=0xA6=166 → POWER: 166km ✓
+                                        //   dec[8]=0xCF=207 → SPORT: 207km ✓
+                                        //   dec[9]=0xD9=217 → ACTIVE: 217km ✓
+                                        // RideControl field mapping (from decompilation):
+                                        //   [2]=eco, [3]=normal, [4]=power(raw), [5]=boost+, [6]=boost
+                                        //   [7]=power+, [8]=climb+, [9]=climb, [10]=normal+
+                                        //   [11]=tour+, [12]=tour, [13]=smart
+                                        // Giant mode names → display: power+=POWER, climb+=SPORT, climb=ACTIVE
+                                        val power = dec[7].toInt() and 0xFF   // Power+ = POWER mode
+                                        val sport = dec[8].toInt() and 0xFF   // Climb+ = SPORT mode
+                                        val active = dec[9].toInt() and 0xFF  // Climb = ACTIVE mode
+                                        val tour = dec[12].toInt() and 0xFF   // Tour = TOUR mode
+                                        val eco = dec[2].toInt() and 0xFF     // Eco (may need uint16 for >255km)
+                                        val smart = dec[13].toInt() and 0xFF  // Smart
 
-                                        Log.i(TAG, "★ RANGE: eco=%dkm tour=%dkm active=%dkm sport=%dkm power=%dkm smart=%dkm"
-                                            .format(eco, tour, active, sport, power, smart))
+                                        // ECO/TOUR might be >255km — check if high bytes exist
+                                        // For now log raw hex for further analysis
+                                        val rawHex = dec.joinToString("") { "%02x".format(it) }
+                                        Log.i(TAG, "★ RANGE: eco=%dkm tour=%dkm active=%dkm sport=%dkm power=%dkm smart=%dkm raw=%s"
+                                            .format(eco, tour, active, sport, power, smart, rawHex))
                                         onDataReceived?.invoke(JSONObject()
                                             .put("type", "rangePerMode")
                                             .put("eco", eco)
@@ -767,7 +775,7 @@ class BLEManager(private val context: Context) {
                                             .put("sport", sport)
                                             .put("power", power)
                                             .put("smart", smart)
-                                            .put("raw", dec.joinToString("") { "%02x".format(it) }))
+                                            .put("raw", rawHex))
                                     }
                                     0x0D -> {
                                         // cmd 13: MAIN battery firmware
