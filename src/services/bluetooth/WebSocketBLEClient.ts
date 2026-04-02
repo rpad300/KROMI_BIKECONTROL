@@ -405,6 +405,18 @@ class WebSocketBLEClient {
           console.log(`[WSClient] Motor battery: SOC=${msg.soc}% life=${msg.life}%`);
           break;
 
+        case 'batteryInfo': {
+          // Detailed battery info from GEV commands (cmd 13,14,19,55,56,57)
+          const battery = msg.battery as string;
+          const field = msg.field as string;
+          if (field === 'level') {
+            if (battery === 'main') store.setBatteryMain(msg.capacity as number);
+            else if (battery === 'sub') store.setBatterySub(msg.capacity as number);
+          }
+          console.log(`[WSClient] Battery ${battery} ${field}:`, JSON.stringify(msg));
+          break;
+        }
+
         case 'sgBatteryIndividual': {
           // Individual battery SOC from GEV cmd 0x13 (main) or 0x37 (sub)
           const bat = msg.battery as string; // 'main' or 'sub'

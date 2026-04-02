@@ -744,31 +744,75 @@ class BLEManager(private val context: Context) {
                                             .put("type", "sgConnected")
                                             .put("success", success))
                                     }
-                                    0x13 -> {
-                                        // MAIN battery: [2]=soc%, [3]=life%
-                                        val mainSoc = dec[2].toInt() and 0xFF
-                                        val mainLife = dec[3].toInt() and 0xFF
-                                        Log.i(TAG, "★ MAIN BATTERY: SOC=$mainSoc% life=$mainLife%")
+                                    0x0D -> {
+                                        // cmd 13: MAIN battery firmware
+                                        // [2]=sw1, [3]=sw2 → "XXYY" format
+                                        val sw = "%02X%02X".format(dec[2], dec[3])
+                                        val hw = String(dec.copyOfRange(2, 14).filter { it != 0.toByte() }.toByteArray())
+                                        Log.i(TAG, "★ MAIN BAT FW: sw=$sw hw=$hw")
                                         onDataReceived?.invoke(JSONObject()
-                                            .put("type", "sgBattery")
-                                            .put("soc", mainSoc)
-                                            .put("life", mainLife))
-                                        onDataReceived?.invoke(JSONObject()
-                                            .put("type", "sgBatteryIndividual")
+                                            .put("type", "batteryInfo")
                                             .put("battery", "main")
-                                            .put("soc", mainSoc)
-                                            .put("health", mainLife))
+                                            .put("field", "firmware")
+                                            .put("softwareVersion", sw)
+                                            .put("hardwareVersion", hw)
+                                            .put("raw", dec.joinToString("") { "%02x".format(it) }))
+                                    }
+                                    0x0E -> {
+                                        // cmd 14: MAIN battery cycles
+                                        // [2-3]=LE uint16 cycles
+                                        val cycles = (dec[2].toInt() and 0xFF) or ((dec[3].toInt() and 0xFF) shl 8)
+                                        Log.i(TAG, "★ MAIN BAT CYCLES: $cycles")
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "batteryInfo")
+                                            .put("battery", "main")
+                                            .put("field", "cycles")
+                                            .put("cycles", cycles))
+                                    }
+                                    0x13 -> {
+                                        // cmd 19: MAIN battery level + health
+                                        val level = dec[2].toInt() and 0xFF  // capacity %
+                                        val health = dec[3].toInt() and 0xFF // health %
+                                        Log.i(TAG, "★ MAIN BAT: capacity=$level% health=$health%")
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "batteryInfo")
+                                            .put("battery", "main")
+                                            .put("field", "level")
+                                            .put("capacity", level)
+                                            .put("health", health))
                                     }
                                     0x37 -> {
-                                        // SUB battery: [2]=soc%, [3]=life%
-                                        val subSoc = dec[2].toInt() and 0xFF
-                                        val subLife = dec[3].toInt() and 0xFF
-                                        Log.i(TAG, "★ SUB BATTERY: SOC=$subSoc% life=$subLife%")
+                                        // cmd 55: SUB battery level + health
+                                        val level = dec[2].toInt() and 0xFF
+                                        val health = dec[3].toInt() and 0xFF
+                                        Log.i(TAG, "★ SUB BAT: capacity=$level% health=$health%")
                                         onDataReceived?.invoke(JSONObject()
-                                            .put("type", "sgBatteryIndividual")
+                                            .put("type", "batteryInfo")
                                             .put("battery", "sub")
-                                            .put("soc", subSoc)
-                                            .put("health", subLife))
+                                            .put("field", "level")
+                                            .put("capacity", level)
+                                            .put("health", health))
+                                    }
+                                    0x38 -> {
+                                        // cmd 56: SUB battery firmware
+                                        val sw = "%02X%02X".format(dec[2], dec[3])
+                                        Log.i(TAG, "★ SUB BAT FW: sw=$sw")
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "batteryInfo")
+                                            .put("battery", "sub")
+                                            .put("field", "firmware")
+                                            .put("softwareVersion", sw)
+                                            .put("raw", dec.joinToString("") { "%02x".format(it) }))
+                                    }
+                                    0x39 -> {
+                                        // cmd 57: SUB battery cycles
+                                        val cycles = (dec[2].toInt() and 0xFF) or ((dec[3].toInt() and 0xFF) shl 8)
+                                        Log.i(TAG, "★ SUB BAT CYCLES: $cycles")
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "batteryInfo")
+                                            .put("battery", "sub")
+                                            .put("field", "cycles")
+                                            .put("cycles", cycles))
                                     }
                                     0x2C -> {
                                         // Tuning data response
@@ -1282,17 +1326,21 @@ class BLEManager(private val context: Context) {
             .put("hex", hex))
     }
 
-    /** Read individual battery SOC — ACTIVE_DATA_ENERGY_PAK_1 (cmd 19 = main, cmd 55 = sub) */
+    /** Read full battery details — firmware, capacity, health, cycles for both batteries */
     fun readBatteryDetails() {
-        // Main battery: cmd=19 (0x13), encrypted with key 0
-        val mainPlain = ByteArray(16).also { it[0] = 0x21; it[1] = 19 }
-        sendEncryptedCommand(mainPlain, 0, "READ_BAT_MAIN")
-
-        // Sub battery: after a small delay to avoid collision
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            val subPlain = ByteArray(16).also { it[0] = 0x21; it[1] = 55 }
-            sendEncryptedCommand(subPlain, 0, "READ_BAT_SUB")
-        }, 500)
+        val h = android.os.Handler(android.os.Looper.getMainLooper())
+        // cmd 13: main battery firmware (HW+SW version)
+        sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 13 }, 0, "BAT_MAIN_FW")
+        // cmd 14: main battery cycles
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 14 }, 0, "BAT_MAIN_CYCLES") }, 400)
+        // cmd 19: main battery level + health
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 19 }, 0, "BAT_MAIN_LEVEL") }, 800)
+        // cmd 55: sub battery level + health
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 55 }, 0, "BAT_SUB_LEVEL") }, 1200)
+        // cmd 56: sub battery firmware
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 56 }, 0, "BAT_SUB_FW") }, 1600)
+        // cmd 57: sub battery cycles
+        h.postDelayed({ sendEncryptedCommand(ByteArray(16).also { it[0] = 0x21; it[1] = 57 }, 0, "BAT_SUB_CYCLES") }, 2000)
     }
 
     /** Convenience: ASSIST UP — cmd=0x1C, sub=0x03, action=0x02, key 3 */
