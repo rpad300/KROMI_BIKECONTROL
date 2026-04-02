@@ -7,6 +7,7 @@ import { AutoAssistWidget } from './AutoAssistWidget';
 import { HRWidget } from './HRWidget';
 import { GearWidget } from './GearWidget';
 import { TorqueWidget } from './TorqueWidget';
+import { MotorWidget } from './MotorWidget';
 import { RideSessionWidget } from './RideSessionWidget';
 import { TripStatsWidget } from './TripStatsWidget';
 import { IntelligenceWidget } from './IntelligenceWidget';
@@ -23,7 +24,7 @@ export function Dashboard() {
   const di2Connected = useBikeStore((s) => s.ble_services.di2);
   const autoAssistEnabled = useAutoAssistStore((s) => s.enabled);
   const hasTorque = useBikeStore((s) => s.torque_nm > 0);
-  const rideActive = useBikeStore((s) => s.ride_time_s > 0);
+  const hasMotorData = useBikeStore((s) => s.power_watts > 0 || s.torque_nm > 0 || s.front_gear > 0 || s.rear_gear > 0);
   const [showSession, setShowSession] = useState(false);
 
   return (
@@ -40,13 +41,14 @@ export function Dashboard() {
       {/* Assist mode buttons */}
       <AssistModeWidget />
 
+      {/* Motor telemetry — torque, cadence, power, current + gear */}
+      {hasMotorData && <MotorWidget />}
+
       {/* KROMI intelligence — shows scoring and decisions (POWER mode) */}
       <IntelligenceWidget />
 
-      {/* TuningWidget removed — KROMI handles tuning in POWER, other modes use factory defaults */}
-
-      {/* Trip stats */}
-      {rideActive && <TripStatsWidget />}
+      {/* Trip stats (always show when connected — motor provides trip data) */}
+      <TripStatsWidget />
 
       {/* Battery + HR side by side */}
       <div className="flex gap-2">
@@ -65,11 +67,9 @@ export function Dashboard() {
       {/* Auto-assist status (only if enabled) */}
       {autoAssistEnabled && <AutoAssistWidget />}
 
-      {/* Gear (only if Di2 connected) */}
-      {di2Connected && <GearWidget />}
-
-      {/* Torque (only if data) */}
-      {hasTorque && <TorqueWidget />}
+      {/* Legacy gear/torque (only if Di2 provides additional data beyond FC23) */}
+      {di2Connected && !hasMotorData && <GearWidget />}
+      {hasTorque && !hasMotorData && <TorqueWidget />}
 
       {/* Ride session - floating button */}
       {showSession ? (

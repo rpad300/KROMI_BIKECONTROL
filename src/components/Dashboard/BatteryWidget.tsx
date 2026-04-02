@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import { batteryEstimationService } from '../../services/battery/BatteryEstimationService';
 import { ASSIST_MODE_LABELS } from '../../types/bike.types';
 
 export function BatteryWidget() {
+  const [showModes, setShowModes] = useState(false);
   const soc = useBikeStore((s) => s.battery_percent);
   const bat1 = useBikeStore((s) => s.battery_main_pct); // individual SOC or health
   const bat2 = useBikeStore((s) => s.battery_sub_pct);  // individual SOC or health
@@ -70,6 +72,33 @@ export function BatteryWidget() {
             className={`h-full rounded-full transition-all duration-1000 ${barColor(soc)}`}
             style={{ width: `${Math.max(soc, 1)}%` }}
           />
+        </div>
+      )}
+
+      {/* Range per mode (expandable) */}
+      {rangePerMode && (
+        <div className="mt-1.5">
+          <button
+            onClick={() => setShowModes(!showModes)}
+            className="text-[9px] text-gray-500 w-full text-left"
+          >
+            {showModes ? '▾ Ranges' : '▸ Ranges por modo'}
+          </button>
+          {showModes && (
+            <div className="grid grid-cols-3 gap-x-2 gap-y-0.5 mt-1">
+              {(['eco', 'tour', 'active', 'sport', 'power', 'smart'] as const).map((mode) => {
+                const r = (rangePerMode as Record<string, number>)[mode] ?? 0;
+                const est = estimatedModes.has(mode);
+                const isCurrent = modeKey === mode;
+                return (
+                  <div key={mode} className={`flex justify-between text-[9px] tabular-nums ${isCurrent ? 'text-white font-bold' : 'text-gray-500'}`}>
+                    <span className="uppercase">{mode.slice(0, 3)}</span>
+                    <span>{r > 0 ? `${est ? '~' : ''}${r}` : '--'}km</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
