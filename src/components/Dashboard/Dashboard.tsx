@@ -284,84 +284,80 @@ function AssistBar() {
   );
 }
 
-/** Info strip — HR, Battery dual, Weather, Current (~8%) */
+/** Info strip — HR, Battery dual, Current, Temp, Time, ODO (~8%) */
 function InfoStrip() {
   const hrBpm = useBikeStore((s) => s.hr_bpm);
   const hrZone = useBikeStore((s) => s.hr_zone);
   const bat1 = useBikeStore((s) => s.battery_main_pct);
   const bat2 = useBikeStore((s) => s.battery_sub_pct);
+  const battery = useBikeStore((s) => s.battery_percent);
   const current = useBikeStore((s) => s.assist_current_a);
   const temp = useBikeStore((s) => s.temperature_c);
   const tripTime = useBikeStore((s) => s.trip_time_s);
   const motorOdo = useBikeStore((s) => s.motor_odo_km);
+  const range = useBikeStore((s) => s.range_km);
 
   const formatTime = (s: number) => {
+    if (s <= 0) return '0:00';
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
     return `${h}:${m.toString().padStart(2, '0')}`;
   };
 
-  const hrColor = hrZone >= 4 ? 'text-[#ff716c]' : hrZone >= 3 ? 'text-yellow-400' : 'text-[#3fff8b]';
+  const hrColor = hrZone >= 4 ? '#ff716c' : hrZone >= 3 ? '#fbbf24' : hrBpm > 0 ? '#3fff8b' : '#777575';
+  const hasDual = bat1 > 0 || bat2 > 0;
 
   return (
-    <section className="h-[8%] flex-none flex items-center justify-between px-3 bg-[#131313] border-y border-[#494847]/10 gap-2">
-      {/* HR */}
-      {hrBpm > 0 ? (
-        <div className="flex items-center gap-1.5">
-          <span className="material-symbols-outlined text-[#ff716c] text-base" style={{ fontVariationSettings: "'FILL' 1" }}>favorite</span>
-          <span className={`font-headline font-bold text-lg tabular-nums ${hrColor}`}>{hrBpm}</span>
-          <span className="text-[9px] text-[#777575] font-label">Z{hrZone}</span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-1">
-          <span className="material-symbols-outlined text-[#494847] text-base">favorite</span>
-          <span className="text-[10px] text-[#494847]">--</span>
-        </div>
-      )}
+    <section className="h-[8%] flex-none grid grid-cols-4 gap-0 bg-[#1a1919] border-y border-[#494847]/20">
+      {/* HR cell */}
+      <div className="flex flex-col items-center justify-center border-r border-[#494847]/10">
+        <span className="material-symbols-outlined text-sm" style={{ color: hrColor, fontVariationSettings: "'FILL' 1" }}>favorite</span>
+        <span className="font-headline font-bold text-base tabular-nums" style={{ color: hrColor }}>
+          {hrBpm > 0 ? hrBpm : '--'}
+        </span>
+        <span className="text-[8px]" style={{ color: '#777575' }}>{hrBpm > 0 ? `Z${hrZone}` : 'HR'}</span>
+      </div>
 
-      {/* Dual battery bars */}
-      {(bat1 > 0 || bat2 > 0) && (
-        <div className="flex items-center gap-1.5">
-          <div className="flex flex-col gap-0.5">
+      {/* Battery cell */}
+      <div className="flex flex-col items-center justify-center border-r border-[#494847]/10 px-1">
+        {hasDual ? (
+          <div className="flex flex-col gap-0.5 w-full px-1">
             <div className="flex items-center gap-1">
-              <span className="text-[8px] text-[#777575] w-4 text-right">800</span>
-              <div className="w-16 h-1.5 bg-[#262626] overflow-hidden">
-                <div className={`h-full ${bat1 > 30 ? 'bg-[#3fff8b]' : bat1 > 15 ? 'bg-yellow-500' : 'bg-[#ff716c]'}`} style={{ width: `${bat1}%` }} />
+              <span className="text-[7px]" style={{ color: '#777575' }}>800</span>
+              <div className="flex-1 h-1.5 bg-[#262626] overflow-hidden">
+                <div style={{ width: `${bat1}%`, backgroundColor: bat1 > 30 ? '#3fff8b' : bat1 > 15 ? '#fbbf24' : '#ff716c', height: '100%' }} />
               </div>
-              <span className="text-[8px] text-[#adaaaa] tabular-nums w-6">{bat1}%</span>
+              <span className="text-[7px] tabular-nums" style={{ color: '#adaaaa' }}>{bat1}%</span>
             </div>
             <div className="flex items-center gap-1">
-              <span className="text-[8px] text-[#777575] w-4 text-right">250</span>
-              <div className="w-16 h-1.5 bg-[#262626] overflow-hidden">
-                <div className={`h-full ${bat2 > 30 ? 'bg-[#3fff8b]' : bat2 > 15 ? 'bg-yellow-500' : 'bg-[#ff716c]'}`} style={{ width: `${bat2}%` }} />
+              <span className="text-[7px]" style={{ color: '#777575' }}>250</span>
+              <div className="flex-1 h-1.5 bg-[#262626] overflow-hidden">
+                <div style={{ width: `${bat2}%`, backgroundColor: bat2 > 30 ? '#3fff8b' : bat2 > 15 ? '#fbbf24' : '#ff716c', height: '100%' }} />
               </div>
-              <span className="text-[8px] text-[#adaaaa] tabular-nums w-6">{bat2}%</span>
+              <span className="text-[7px] tabular-nums" style={{ color: '#adaaaa' }}>{bat2}%</span>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Current + Temp */}
-      <div className="flex items-center gap-3">
-        {current > 0 && (
-          <div className="flex items-center gap-0.5">
-            <span className="material-symbols-outlined text-yellow-400 text-sm">electric_bolt</span>
-            <span className="font-headline font-bold text-sm tabular-nums">{current.toFixed(1)}</span>
-            <span className="text-[8px] text-[#777575]">A</span>
-          </div>
-        )}
-        {temp > 0 && (
-          <div className="flex items-center gap-0.5">
-            <span className="material-symbols-outlined text-[#6e9bff] text-sm">thermostat</span>
-            <span className="font-headline text-sm tabular-nums">{temp.toFixed(0)}°</span>
-          </div>
+        ) : (
+          <>
+            <span className="material-symbols-outlined text-sm" style={{ color: '#3fff8b', fontVariationSettings: "'FILL' 1" }}>battery_full</span>
+            <span className="font-headline font-bold text-base tabular-nums">{battery}%</span>
+            <span className="text-[8px]" style={{ color: '#777575' }}>{range > 0 ? `${Math.round(range)}km` : 'BAT'}</span>
+          </>
         )}
       </div>
 
-      {/* Time + ODO */}
-      <div className="flex flex-col items-end">
-        {tripTime > 0 && <span className="font-headline font-bold text-sm tabular-nums">{formatTime(tripTime)}</span>}
-        {motorOdo > 0 && <span className="text-[8px] text-[#777575] font-label tracking-widest">{motorOdo.toLocaleString()}km</span>}
+      {/* Current + Temp cell */}
+      <div className="flex flex-col items-center justify-center border-r border-[#494847]/10">
+        <span className="material-symbols-outlined text-sm" style={{ color: '#fbbf24' }}>electric_bolt</span>
+        <span className="font-headline font-bold text-base tabular-nums">{current > 0 ? current.toFixed(1) : '0'}</span>
+        <span className="text-[8px]" style={{ color: '#777575' }}>{temp > 0 ? `${temp.toFixed(0)}°C` : 'AMP'}</span>
+      </div>
+
+      {/* Time + ODO cell */}
+      <div className="flex flex-col items-center justify-center">
+        <span className="material-symbols-outlined text-sm" style={{ color: '#6e9bff' }}>timer</span>
+        <span className="font-headline font-bold text-base tabular-nums">{formatTime(tripTime)}</span>
+        <span className="text-[8px]" style={{ color: '#777575' }}>{motorOdo > 0 ? `${motorOdo.toLocaleString()}km` : 'TIME'}</span>
       </div>
     </section>
   );
