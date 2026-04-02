@@ -22,6 +22,7 @@ export function Dashboard() {
   const di2Connected = useBikeStore((s) => s.ble_services.di2);
   const autoAssistEnabled = useAutoAssistStore((s) => s.enabled);
   const hasTorque = useBikeStore((s) => s.torque_nm > 0);
+  const assistMode = useBikeStore((s) => s.assist_mode);
   const rideActive = useBikeStore((s) => s.ride_time_s > 0);
   const [showSession, setShowSession] = useState(false);
 
@@ -39,11 +40,11 @@ export function Dashboard() {
       {/* Assist mode buttons */}
       <AssistModeWidget />
 
-      {/* KROMI intelligence — shows scoring and decisions */}
+      {/* KROMI intelligence — shows scoring and decisions (POWER mode) */}
       <IntelligenceWidget />
 
-      {/* Motor tuning — manual override for intensity */}
-      <TuningWidget />
+      {/* Motor tuning — only when NOT in POWER mode (KROMI handles tuning in POWER) */}
+      {assistMode !== 5 && <TuningWidget />}
 
       {/* Trip stats */}
       {rideActive && <TripStatsWidget />}
