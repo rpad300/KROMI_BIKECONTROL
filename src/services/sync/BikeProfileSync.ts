@@ -161,16 +161,19 @@ async function saveBikeProfile(): Promise<void> {
   if (nonEmpty.length < 3) return; // Not enough data
 
   try {
-    // Check if bike exists
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/bike_configs?user_id=eq.${userId}&select=id&limit=1`, {
+    // Use BLE device name as bike identifier (supports multiple bikes per user)
+    const deviceName = savedDevice?.name ?? profile.sg_type ?? 'Unknown';
+
+    // Check if this specific bike exists for this user
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/bike_configs?user_id=eq.${userId}&ble_device_name=eq.${encodeURIComponent(deviceName)}&select=id&limit=1`, {
       headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
     });
     const existing = await res.json();
 
     const data = {
       user_id: userId,
-      name: 'Giant Trance X E+ 2 (2023)',
-      ble_device_name: savedDevice?.name ?? 'GBHA25704',
+      name: deviceName,
+      ble_device_name: deviceName,
       frame_number: profile.frame_number,
       wheel_circumference_mm: profile.wheel_circumference_mm,
       total_odo_km: profile.total_odo_km,

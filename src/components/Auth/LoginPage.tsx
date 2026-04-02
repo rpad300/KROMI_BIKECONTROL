@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { sendOTP, verifyOTP } from '../../services/auth/AuthService';
+import { sendOTP, verifyOTP, registerDevice } from '../../services/auth/AuthService';
 import { useAuthStore } from '../../store/authStore';
 
 type Step = 'email' | 'otp' | 'loading';
@@ -39,6 +39,8 @@ export function LoginPage() {
     const result = await verifyOTP(email, otp);
     if (result.success && result.user && result.session_token && result.expires_at) {
       setSession(result.user, result.session_token, result.expires_at);
+      // Register this device for auto-login next time
+      registerDevice(result.user);
     } else {
       setError(result.error ?? 'Codigo invalido');
       setStep('otp');
