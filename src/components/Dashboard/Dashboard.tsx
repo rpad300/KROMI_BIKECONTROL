@@ -9,7 +9,6 @@ import { GearWidget } from './GearWidget';
 import { TorqueWidget } from './TorqueWidget';
 import { RideSessionWidget } from './RideSessionWidget';
 import { TripStatsWidget } from './TripStatsWidget';
-import { TuningWidget } from './TuningWidget';
 import { IntelligenceWidget } from './IntelligenceWidget';
 import { MiniMap } from './MiniMap';
 import { useBikeStore } from '../../store/bikeStore';
@@ -22,7 +21,6 @@ export function Dashboard() {
   const di2Connected = useBikeStore((s) => s.ble_services.di2);
   const autoAssistEnabled = useAutoAssistStore((s) => s.enabled);
   const hasTorque = useBikeStore((s) => s.torque_nm > 0);
-  const assistMode = useBikeStore((s) => s.assist_mode);
   const rideActive = useBikeStore((s) => s.ride_time_s > 0);
   const [showSession, setShowSession] = useState(false);
 
@@ -43,8 +41,7 @@ export function Dashboard() {
       {/* KROMI intelligence — shows scoring and decisions (POWER mode) */}
       <IntelligenceWidget />
 
-      {/* Motor tuning — only when NOT in POWER mode (KROMI handles tuning in POWER) */}
-      {assistMode !== 5 && <TuningWidget />}
+      {/* TuningWidget removed — KROMI handles tuning in POWER, other modes use factory defaults */}
 
       {/* Trip stats */}
       {rideActive && <TripStatsWidget />}
