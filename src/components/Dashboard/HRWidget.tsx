@@ -1,101 +1,95 @@
+import { useEffect, useRef } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { calculateZones } from '../../types/athlete.types';
 import { getSavedSensorDevice } from '../../services/bluetooth/BLEBridge';
 
-const ZONE_COLORS: Record<number, string> = {
-  0: '#777575',
-  1: '#adaaaa',
-  2: '#6e9bff',
-  3: '#3fff8b',
-  4: '#fbbf24',
-  5: '#ff716c',
-};
+const ZONE_COLORS = ['#777575', '#adaaaa', '#6e9bff', '#3fff8b', '#fbbf24', '#ff716c'];
+const ZONE_BG = ['#494847', '#777575', '#0058ca', '#24f07e', '#d97706', '#d7383b'];
 
-const ZONE_BG: Record<number, string> = {
-  0: '#494847',
-  1: '#777575',
-  2: '#0058ca',
-  3: '#24f07e',
-  4: '#d97706',
-  5: '#d7383b',
-};
-
+/**
+ * HRWidget — updates via direct DOM refs (no React re-render flicker).
+ * Subscribes to store outside React cycle for zero-flicker real-time updates.
+ */
 export function HRWidget() {
-  const hrBpm = useBikeStore((s) => s.hr_bpm);
-  const hrMax = useSettingsStore((s) => s.riderProfile.hr_max);
-  const targetZone = useSettingsStore((s) => s.riderProfile.target_zone);
+  const bpmRef = useRef<HTMLSpanElement>(null);
+  const zoneRef = useRef<HTMLSpanElement>(null);
+  const pctRef = useRef<HTMLDivElement>(null);
+  const iconRef = useRef<HTMLSpanElement>(null);
+  const barsRef = useRef<(HTMLDivElement | null)[]>([]);
 
   const savedHR = getSavedSensorDevice('hr');
-  const zones = calculateZones(hrMax > 0 ? hrMax : 185);
+  const hrMax = useSettingsStore((s) => s.riderProfile.hr_max) || 185;
+  const zones = calculateZones(hrMax);
 
-  let hrZone = 0;
-  if (hrBpm > 0) {
-    for (let i = zones.length - 1; i >= 0; i--) {
-      if (hrBpm >= zones[i]!.min_bpm) { hrZone = i + 1; break; }
-    }
-  }
+  // Direct DOM updates — bypasses React reconciliation entirely
+  useEffect(() => {
+    const unsub = useBikeStore.subscribe((state) => {
+      const bpm = state.hr_bpm;
+      const zone = state.hr_zone;
+      const color = ZONE_COLORS[zone] ?? '#777575';
+      const pct = bpm > 0 ? Math.round((bpm / hrMax) * 100) : 0;
 
-  const color = ZONE_COLORS[hrZone] ?? '#777575';
-  const hrPct = hrMax > 0 && hrBpm > 0 ? Math.round((hrBpm / hrMax) * 100) : 0;
-  const isTarget = hrZone === targetZone && hrBpm > 0;
+      if (bpmRef.current) {
+        bpmRef.current.textContent = bpm > 0 ? String(bpm) : '--';
+        bpmRef.current.style.color = color;
+      }
+      if (zoneRef.current) {
+        zoneRef.current.textContent = bpm > 0 ? `Z${zone}` : '--';
+        zoneRef.current.style.color = color;
+      }
+      if (pctRef.current) {
+        pctRef.current.textContent = pct > 0 ? `${pct}%` : '';
+      }
+      if (iconRef.current) {
+        iconRef.current.style.color = bpm > 0 ? '#ff716c' : '#494847';
+      }
+      // Update zone bars
+      barsRef.current.forEach((bar, i) => {
+        if (!bar) return;
+        const zNum = i + 1;
+        const active = zone === zNum;
+        const past = zone > zNum;
+        bar.style.backgroundColor = (active || past) ? (ZONE_BG[zNum] ?? '#494847') : '#262626';
+        bar.style.opacity = active ? '1' : past ? '0.3' : '1';
+      });
+    });
+    return unsub;
+  }, [hrMax]);
 
-  // ALWAYS render — never return null (prevents mount/unmount flicker)
   return (
-    <div className="flex-1 min-w-0" style={{ backgroundColor: '#201f1f', padding: '10px', borderRadius: '2px' }}>
-      {/* Header — NO animate-pulse */}
+    <div style={{ backgroundColor: '#201f1f', padding: '10px', borderRadius: '2px', flex: 1, minWidth: 0 }}>
+      {/* Header — static, no re-render */}
       <div className="flex items-center gap-1 mb-1">
         <span
+          ref={iconRef}
           className="material-symbols-outlined text-xs"
-          style={{ color: hrBpm > 0 ? '#ff716c' : '#494847', fontVariationSettings: "'FILL' 1", transition: 'color 0.5s' }}
-        >
-          favorite
-        </span>
+          style={{ color: '#494847', fontVariationSettings: "'FILL' 1" }}
+        >favorite</span>
         <span style={{ fontSize: '8px', color: '#777575' }} className="truncate">{savedHR?.name ?? 'Heart Rate'}</span>
-        {isTarget && (
-          <span style={{ fontSize: '7px', backgroundColor: 'rgba(63,255,139,0.2)', color: '#3fff8b', padding: '0 4px', marginLeft: 'auto' }}>ALVO</span>
-        )}
       </div>
 
-      {/* BPM + Zone — transition prevents flicker */}
+      {/* BPM + Zone — updated via refs, zero flicker */}
       <div className="flex items-baseline justify-between">
         <div className="flex items-baseline gap-0.5">
-          <span
-            className="text-2xl font-black tabular-nums leading-none"
-            style={{ color, transition: 'color 0.5s' }}
-          >
-            {hrBpm > 0 ? hrBpm : '--'}
-          </span>
+          <span ref={bpmRef} className="text-2xl font-black tabular-nums leading-none" style={{ color: '#777575' }}>--</span>
           <span style={{ fontSize: '9px', color: '#777575' }}>bpm</span>
         </div>
         <div className="text-right">
-          <span className="text-sm font-black font-headline" style={{ color, transition: 'color 0.5s' }}>
-            {hrBpm > 0 ? `Z${hrZone}` : '--'}
-          </span>
-          {hrPct > 0 && <div style={{ fontSize: '8px', color: '#777575' }}>{hrPct}%</div>}
+          <span ref={zoneRef} className="text-sm font-black font-headline" style={{ color: '#777575' }}>--</span>
+          <div ref={pctRef} style={{ fontSize: '8px', color: '#777575' }} />
         </div>
       </div>
 
       {/* Zone bar */}
       <div className="flex gap-px h-1.5 mt-1.5">
-        {zones.map((_z, i) => {
-          const zNum = i + 1;
-          const bg = ZONE_BG[zNum] ?? '#494847';
-          const active = hrZone === zNum;
-          const past = hrZone > zNum;
-          return (
-            <div
-              key={zNum}
-              style={{
-                flex: 1,
-                borderRadius: '1px',
-                backgroundColor: active ? bg : past ? bg : '#262626',
-                opacity: active ? 1 : past ? 0.3 : 1,
-                transition: 'background-color 0.5s, opacity 0.5s',
-              }}
-            />
-          );
-        })}
+        {zones.map((_z, i) => (
+          <div
+            key={i}
+            ref={(el) => { barsRef.current[i] = el; }}
+            style={{ flex: 1, borderRadius: '1px', backgroundColor: '#262626' }}
+          />
+        ))}
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
@@ -283,80 +283,86 @@ function AssistBar() {
   );
 }
 
-/** Info strip — HR, Battery dual, Current, Temp, Time, ODO (~8%) */
+/** Info strip — updates via DOM refs (zero React re-renders = zero flicker) */
 function InfoStrip() {
-  const hrBpm = useBikeStore((s) => s.hr_bpm);
-  const hrZone = useBikeStore((s) => s.hr_zone);
-  const bat1 = useBikeStore((s) => s.battery_main_pct);
-  const bat2 = useBikeStore((s) => s.battery_sub_pct);
-  const battery = useBikeStore((s) => s.battery_percent);
-  const current = useBikeStore((s) => s.assist_current_a);
-  const temp = useBikeStore((s) => s.temperature_c);
-  const tripTime = useBikeStore((s) => s.trip_time_s);
-  const motorOdo = useBikeStore((s) => s.motor_odo_km);
-  const range = useBikeStore((s) => s.range_km);
+  const hrValRef = useRef<HTMLSpanElement>(null);
+  const hrIconRef = useRef<HTMLSpanElement>(null);
+  const hrLabelRef = useRef<HTMLSpanElement>(null);
+  const bat1BarRef = useRef<HTMLDivElement>(null);
+  const bat1PctRef = useRef<HTMLSpanElement>(null);
+  const bat2BarRef = useRef<HTMLDivElement>(null);
+  const bat2PctRef = useRef<HTMLSpanElement>(null);
+  const curValRef = useRef<HTMLSpanElement>(null);
+  const curLabelRef = useRef<HTMLSpanElement>(null);
+  const timeValRef = useRef<HTMLSpanElement>(null);
+  const timeLabelRef = useRef<HTMLSpanElement>(null);
 
-  const formatTime = (s: number) => {
-    if (s <= 0) return '0:00';
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    return `${h}:${m.toString().padStart(2, '0')}`;
-  };
+  useEffect(() => {
+    const unsub = useBikeStore.subscribe((s) => {
+      const hrColor = s.hr_zone >= 4 ? '#ff716c' : s.hr_zone >= 3 ? '#fbbf24' : s.hr_bpm > 0 ? '#3fff8b' : '#777575';
 
-  const hrColor = hrZone >= 4 ? '#ff716c' : hrZone >= 3 ? '#fbbf24' : hrBpm > 0 ? '#3fff8b' : '#777575';
-  const hasDual = bat1 > 0 || bat2 > 0;
+      if (hrValRef.current) {
+        hrValRef.current.textContent = s.hr_bpm > 0 ? String(s.hr_bpm) : '--';
+        hrValRef.current.style.color = hrColor;
+      }
+      if (hrIconRef.current) hrIconRef.current.style.color = s.hr_bpm > 0 ? '#ff716c' : '#494847';
+      if (hrLabelRef.current) hrLabelRef.current.textContent = s.hr_bpm > 0 ? `Zone ${s.hr_zone}` : 'No HR';
+
+      const batColor = (v: number) => v > 30 ? '#3fff8b' : v > 15 ? '#fbbf24' : '#ff716c';
+      if (bat1BarRef.current) { bat1BarRef.current.style.width = `${s.battery_main_pct}%`; bat1BarRef.current.style.backgroundColor = batColor(s.battery_main_pct); }
+      if (bat1PctRef.current) bat1PctRef.current.textContent = `${s.battery_main_pct}%`;
+      if (bat2BarRef.current) { bat2BarRef.current.style.width = `${s.battery_sub_pct}%`; bat2BarRef.current.style.backgroundColor = batColor(s.battery_sub_pct); }
+      if (bat2PctRef.current) bat2PctRef.current.textContent = `${s.battery_sub_pct}%`;
+
+      if (curValRef.current) curValRef.current.textContent = s.assist_current_a > 0 ? s.assist_current_a.toFixed(1) : '0';
+      if (curLabelRef.current) curLabelRef.current.textContent = s.temperature_c > 0 ? `${s.temperature_c.toFixed(0)}°C` : 'AMP';
+
+      const t = s.trip_time_s;
+      if (timeValRef.current) timeValRef.current.textContent = t > 0 ? `${Math.floor(t/3600)}:${String(Math.floor((t%3600)/60)).padStart(2,'0')}` : '0:00';
+      if (timeLabelRef.current) timeLabelRef.current.textContent = s.motor_odo_km > 0 ? `${s.motor_odo_km.toLocaleString()}km` : 'TIME';
+    });
+    return unsub;
+  }, []);
 
   return (
-    <section className="h-[8%] flex-none grid grid-cols-4 gap-0 bg-[#1a1919] border-y border-[#494847]/20">
-      {/* HR cell — transition prevents flicker on value changes */}
-      <div className="flex flex-col items-center justify-center border-r border-[#494847]/10 transition-colors duration-500">
-        <span className="material-symbols-outlined text-sm transition-colors duration-500" style={{ color: hrColor, fontVariationSettings: "'FILL' 1" }}>favorite</span>
-        <span className="font-headline font-bold text-base tabular-nums transition-colors duration-500" style={{ color: hrColor }}>
-          {hrBpm > 0 ? hrBpm : '--'}
-        </span>
-        <span className="text-[8px]" style={{ color: '#adaaaa' }}>{hrBpm > 0 ? `Zone ${hrZone}` : 'No HR'}</span>
+    <section style={{ height: '8%', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', backgroundColor: '#1a1919', borderTop: '1px solid rgba(73,72,71,0.2)', borderBottom: '1px solid rgba(73,72,71,0.2)' }}>
+      {/* HR */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid rgba(73,72,71,0.1)' }}>
+        <span ref={hrIconRef} className="material-symbols-outlined" style={{ fontSize: '14px', color: '#494847', fontVariationSettings: "'FILL' 1" }}>favorite</span>
+        <span ref={hrValRef} className="font-headline font-bold tabular-nums" style={{ fontSize: '16px', color: '#777575' }}>--</span>
+        <span ref={hrLabelRef} style={{ fontSize: '8px', color: '#adaaaa' }}>No HR</span>
       </div>
 
-      {/* Battery cell */}
-      <div className="flex flex-col items-center justify-center border-r border-[#494847]/10 px-1">
-        {hasDual ? (
-          <div className="flex flex-col gap-0.5 w-full px-1">
-            <div className="flex items-center gap-1">
-              <span className="text-[7px]" style={{ color: '#777575' }}>800</span>
-              <div className="flex-1 h-1.5 bg-[#262626] overflow-hidden">
-                <div style={{ width: `${bat1}%`, backgroundColor: bat1 > 30 ? '#3fff8b' : bat1 > 15 ? '#fbbf24' : '#ff716c', height: '100%' }} />
-              </div>
-              <span className="text-[7px] tabular-nums" style={{ color: '#adaaaa' }}>{bat1}%</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-[7px]" style={{ color: '#777575' }}>250</span>
-              <div className="flex-1 h-1.5 bg-[#262626] overflow-hidden">
-                <div style={{ width: `${bat2}%`, backgroundColor: bat2 > 30 ? '#3fff8b' : bat2 > 15 ? '#fbbf24' : '#ff716c', height: '100%' }} />
-              </div>
-              <span className="text-[7px] tabular-nums" style={{ color: '#adaaaa' }}>{bat2}%</span>
-            </div>
+      {/* Battery dual */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid rgba(73,72,71,0.1)', padding: '0 4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '3px', width: '100%' }}>
+          <span style={{ fontSize: '7px', color: '#777575' }}>800</span>
+          <div style={{ flex: 1, height: '5px', backgroundColor: '#262626', overflow: 'hidden' }}>
+            <div ref={bat1BarRef} style={{ height: '100%', width: '0%', backgroundColor: '#3fff8b' }} />
           </div>
-        ) : (
-          <>
-            <span className="material-symbols-outlined text-sm" style={{ color: '#3fff8b', fontVariationSettings: "'FILL' 1" }}>battery_full</span>
-            <span className="font-headline font-bold text-base tabular-nums">{battery}%</span>
-            <span className="text-[8px]" style={{ color: '#777575' }}>{range > 0 ? `${Math.round(range)}km` : 'BAT'}</span>
-          </>
-        )}
+          <span ref={bat1PctRef} className="tabular-nums" style={{ fontSize: '7px', color: '#adaaaa' }}>0%</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '3px', width: '100%', marginTop: '2px' }}>
+          <span style={{ fontSize: '7px', color: '#777575' }}>250</span>
+          <div style={{ flex: 1, height: '5px', backgroundColor: '#262626', overflow: 'hidden' }}>
+            <div ref={bat2BarRef} style={{ height: '100%', width: '0%', backgroundColor: '#3fff8b' }} />
+          </div>
+          <span ref={bat2PctRef} className="tabular-nums" style={{ fontSize: '7px', color: '#adaaaa' }}>0%</span>
+        </div>
       </div>
 
-      {/* Current + Temp cell */}
-      <div className="flex flex-col items-center justify-center border-r border-[#494847]/10">
-        <span className="material-symbols-outlined text-sm" style={{ color: '#fbbf24' }}>electric_bolt</span>
-        <span className="font-headline font-bold text-base tabular-nums">{current > 0 ? current.toFixed(1) : '0'}</span>
-        <span className="text-[8px]" style={{ color: '#777575' }}>{temp > 0 ? `${temp.toFixed(0)}°C` : 'AMP'}</span>
+      {/* Current */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid rgba(73,72,71,0.1)' }}>
+        <span className="material-symbols-outlined" style={{ fontSize: '14px', color: '#fbbf24' }}>electric_bolt</span>
+        <span ref={curValRef} className="font-headline font-bold tabular-nums" style={{ fontSize: '16px' }}>0</span>
+        <span ref={curLabelRef} style={{ fontSize: '8px', color: '#777575' }}>AMP</span>
       </div>
 
-      {/* Time + ODO cell */}
-      <div className="flex flex-col items-center justify-center">
-        <span className="material-symbols-outlined text-sm" style={{ color: '#6e9bff' }}>timer</span>
-        <span className="font-headline font-bold text-base tabular-nums">{formatTime(tripTime)}</span>
-        <span className="text-[8px]" style={{ color: '#777575' }}>{motorOdo > 0 ? `${motorOdo.toLocaleString()}km` : 'TIME'}</span>
+      {/* Time */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <span className="material-symbols-outlined" style={{ fontSize: '14px', color: '#6e9bff' }}>timer</span>
+        <span ref={timeValRef} className="font-headline font-bold tabular-nums" style={{ fontSize: '16px' }}>0:00</span>
+        <span ref={timeLabelRef} style={{ fontSize: '8px', color: '#777575' }}>TIME</span>
       </div>
     </section>
   );
