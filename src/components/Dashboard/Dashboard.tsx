@@ -46,8 +46,11 @@ export function Dashboard() {
       {/* Trip stats */}
       {rideActive && <TripStatsWidget />}
 
-      {/* Battery detail */}
-      <BatteryWidget />
+      {/* Battery + HR side by side */}
+      <div className="flex gap-2">
+        <BatteryWidget />
+        {hrConnected && <HRWidget />}
+      </div>
 
       {/* Mini map + Elevation profile */}
       <MiniMap />
@@ -55,9 +58,6 @@ export function Dashboard() {
 
       {/* Auto-assist status (only if enabled) */}
       {autoAssistEnabled && <AutoAssistWidget />}
-
-      {/* Heart rate (only if HR connected) */}
-      {hrConnected && <HRWidget />}
 
       {/* Gear (only if Di2 connected) */}
       {di2Connected && <GearWidget />}
