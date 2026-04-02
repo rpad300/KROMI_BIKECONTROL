@@ -14,6 +14,8 @@ import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import { getTargetZone } from '../../types/athlete.types';
 import { type AsmoCalibration, type AsmoWire, DU7_TABLES, resolveCalibration } from '../../types/tuning.types';
 import { useLearningStore } from '../../store/learningStore';
+import { getCachedTrail } from '../maps/TerrainService';
+import { getCachedWeather } from '../weather/WeatherService';
 
 export interface TuningInput {
   gradient: number;
@@ -285,27 +287,78 @@ class TuningIntelligence {
       factors.push({ name: 'Aprendido', value: learnedAdj, detail: `Ajuste aprendido de overrides anteriores` });
     }
 
+    // ═══════════════════════════════════════════════
+    // LAYER 4: Environment context (terrain + weather)
+    // ═══════════════════════════════════════════════
+    const trail = getCachedTrail();
+    const weather = getCachedWeather();
+    let envAdj = 0;
+
+    // Terrain: dirt/technical = more effort needed → more assist
+    if (trail) {
+      if (trail.category === 'technical') { envAdj += 8; }
+      else if (trail.category === 'dirt') { envAdj += 4; }
+      else if (trail.category === 'gravel') { envAdj += 2; }
+      // MTB scale S3+ = very technical → significant boost
+      if (trail.mtb_scale !== null && trail.mtb_scale >= 3) { envAdj += 5; }
+      if (envAdj > 0) {
+        factors.push({ name: 'Terreno', value: envAdj, detail: `${trail.category}${trail.mtb_scale !== null ? ` S${trail.mtb_scale}` : ''} — ${trail.surface || trail.highway}` });
+      }
+    }
+
+    // Weather: headwind = more effort, extreme temp = fatigue
+    if (weather) {
+      // Wind: compare with rider heading for head/tailwind
+      const windSpeed = weather.wind_speed_kmh;
+      if (windSpeed > 15) {
+        // Simplified: strong wind always adds effort (proper head/tail needs heading comparison)
+        const windAdj = Math.min(8, Math.round((windSpeed - 15) / 5) * 2);
+        envAdj += windAdj;
+        factors.push({ name: 'Vento', value: windAdj, detail: `${Math.round(windSpeed)}km/h` });
+      }
+      // Extreme heat: rider fatigues faster
+      if (weather.temp_c > 32) {
+        const heatAdj = Math.min(6, Math.round((weather.temp_c - 32) / 3) * 2);
+        envAdj += heatAdj;
+        factors.push({ name: 'Calor', value: heatAdj, detail: `${Math.round(weather.temp_c)}°C` });
+      }
+    }
+
+    // Battery: cold temperature reduces effective capacity
+    let coldBatteryMod = 1.0;
+    if (weather && weather.temp_c < 5) {
+      // Lithium batteries lose ~1% capacity per °C below 5°C
+      coldBatteryMod = Math.max(0.7, 1 - (5 - weather.temp_c) * 0.015);
+    }
+
     const rawIntensity = Math.max(0, Math.min(100,
-      hrTarget + anticipation + stoppedPenalty + altitudeBoost + learnedAdj));
-    const overallIntensity = Math.round(rawIntensity * batteryConstraint);
+      hrTarget + anticipation + stoppedPenalty + altitudeBoost + learnedAdj + envAdj));
+    const overallIntensity = Math.round(rawIntensity * batteryConstraint * coldBatteryMod);
 
     // ═══════════════════════════════════════════════
-    // BUG 5 FIX: Per-parameter ASMO intensities (restored)
-    // Support follows overall, torque has safety cap, launch independent
+    // Per-parameter ASMO intensities
+    // Support follows overall, torque adjusted by terrain, launch independent
     // ═══════════════════════════════════════════════
     const supportI = overallIntensity;
 
-    // TORQUE: safety cap on technical terrain (prevent wheel spin)
+    // TORQUE: terrain-aware safety cap
     let torqueI = overallIntensity;
+    const isTechnical = trail?.category === 'technical' || trail?.category === 'dirt';
     if (input.cadence > 0 && input.cadence < 50 && input.gradient > 8) {
-      torqueI = Math.min(torqueI, 55); // cap torque, keep support high
+      torqueI = Math.min(torqueI, 55);
       factors.push({ name: 'Torque cap', value: 0, detail: `Cadência ${input.cadence}rpm em ${input.gradient}% — limitar torque` });
     }
+    // Technical/dirt terrain: reduce torque to prevent wheel spin
+    if (isTechnical && torqueI > 50) {
+      torqueI = Math.round(torqueI * 0.8);
+      factors.push({ name: 'Torque terreno', value: -Math.round(overallIntensity * 0.2), detail: `${trail!.category} — torque reduzido para tração` });
+    }
 
-    // LAUNCH: lower baseline, spikes on starts
+    // LAUNCH: lower baseline, spikes on starts, reduce on loose terrain
     let launchI = Math.round(overallIntensity * 0.7);
     if (input.speed < 5 && input.gradient > 3) launchI += 25;
     if (input.speed > 20) launchI -= 15;
+    if (isTechnical) launchI = Math.round(launchI * 0.7); // gentle launch on dirt
     launchI = Math.max(0, Math.min(100, launchI));
 
     // Map to wire values — progressive torque curve restored

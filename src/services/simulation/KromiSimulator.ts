@@ -60,20 +60,30 @@ export interface SimulationSummary {
  * Calculates Watts consumed by the motor based on terrain, speed, weight, and assist level.
  * Returns electrical power in Watts (multiply by dt_hours for Wh).
  */
+/** Rolling resistance by surface type (Crr) */
+const SURFACE_CRR: Record<string, number> = {
+  paved: 0.004,      // smooth asphalt
+  gravel: 0.008,     // compacted gravel
+  dirt: 0.012,       // dirt/earth trail
+  technical: 0.018,  // roots, rocks, loose
+};
+
 function motorConsumptionW(
   speed_kmh: number, gradient_pct: number, riderWeight_kg: number,
   support_pct: number, torque_nm: number, maxPower_w: number,
+  surfaceType: string = 'gravel',
 ): number {
   if (speed_kmh < 2) return 0; // motor off when stopped
 
   const totalMass = riderWeight_kg + 25; // rider + bike (~25kg for e-MTB)
   const speedMs = speed_kmh / 3.6;
   const g = 9.81;
+  const crr = SURFACE_CRR[surfaceType] ?? 0.008;
 
   // Forces (Newtons)
   const gradeAngle = Math.atan(gradient_pct / 100);
   const gradeForce = totalMass * g * Math.sin(gradeAngle);
-  const rollingForce = totalMass * g * 0.006; // Crr MTB tires
+  const rollingForce = totalMass * g * crr;
   const aeroForce = 0.5 * 0.5 * 0.8 * 1.225 * speedMs * speedMs; // CdA ~0.4
 
   // Total force needed (negative = downhill, motor not needed)
