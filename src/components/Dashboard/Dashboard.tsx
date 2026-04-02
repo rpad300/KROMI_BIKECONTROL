@@ -17,7 +17,7 @@ import { useAutoAssistStore } from '../../store/autoAssistStore';
 
 export function Dashboard() {
   const gpsActive = useMapStore((s) => s.gpsActive);
-  const hrConnected = useBikeStore((s) => s.ble_services.heartRate);
+  const hrConnected = useBikeStore((s) => s.ble_services.heartRate || s.hr_bpm > 0);
   const di2Connected = useBikeStore((s) => s.ble_services.di2);
   const autoAssistEnabled = useAutoAssistStore((s) => s.enabled);
   const hasTorque = useBikeStore((s) => s.torque_nm > 0);
