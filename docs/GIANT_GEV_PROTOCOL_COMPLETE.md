@@ -53,7 +53,7 @@ This is DIFFERENT from the RideControl decompiled format which expects raw telem
 | [12-13] | uint16 LE | /10 | **ODO (km)** | ✅ ~2161 km, increments |
 | [14-15] | uint16 LE | - | Static (0xB0 0x21) | HW ID? |
 | [16-17] | uint16 LE | raw | Motor value (RPM?) | Varies with load |
-| [18] | uint8 | raw | **Battery SOC (%)** | ✅ 0x64=100% |
+| [18] | uint8 | raw | ~~Battery SOC~~  **NOT SOC** — always 0x64=100 (motor flag) | ⚠️ Do NOT use |
 | [19] | uint8 | - | CRC (XOR bytes 0-18) | ✅ |
 
 ### cmd 0x41 — MOTOR/ASSIST STATE
@@ -66,17 +66,34 @@ This is DIFFERENT from the RideControl decompiled format which expects raw telem
 All zeros when stationary. May contain cadence/rider power when pedaling with force.
 Needs testing with significant pedal torque (>10 Nm).
 
-### cmd 0x43 — BATTERY HEALTH ✅ CONFIRMED
+### cmd 0x43 — DUAL BATTERY SOC ✅ CONFIRMED (session 3)
 | Byte | Type | Field | Status |
 |------|------|-------|--------|
-| [4] | uint8 | Battery 1 life (%) | ✅ 0x61=97% |
-| [5] | uint8 | Battery 2 life (%) | ✅ 0x61=97% (dual battery) |
+| [4] | uint8 | **Battery 1 SOC (%)** | ✅ 0x60=96% (main 800Wh) |
+| [5] | uint8 | **Battery 2 SOC (%)** | ✅ 0x60=96% (sub 250Wh) |
 | [6-7] | - | 0x00 0x00 | - |
-| [8] | uint8 | SOC (~100%, oscillates) | ✅ |
-| [9] | uint8 | 0xA0 (constant) | Voltage ref? |
-| [10-11] | - | 0x98 0x98 (constant) | - |
+| [8] | uint8 | ~~SOC~~ **NOT reliable** — fluctuates ±15% | ⚠️ Do NOT use as SOC |
+| [9] | uint8 | 0xA0 (constant) | Internal metric |
+| [10-11] | - | 0x96 0x96 (constant) | Internal metric |
 | [12-18] | - | zeros | - |
 | [19] | uint8 | CRC | ✅ |
+
+**Combined SOC = (bat1_soc × 800 + bat2_soc × 250) / 1050**
+
+### GEV Active Data Commands (AES key 0, for battery details + range)
+
+| Cmd | Name | Response | Field |
+|-----|------|----------|-------|
+| 17 (0x11) | RANGE_PER_MODE | payload[0-11] | Range in km per assist mode (motor-calculated) |
+| 13 (0x0D) | BAT_MAIN_FW | payload[0-14] | Main battery hardware + software version |
+| 14 (0x0E) | BAT_MAIN_CYCLES | payload[2-3] LE | Main battery charge cycles |
+| 19 (0x13) | BAT_MAIN_LEVEL | payload[2]=capacity%, [3]=health% | Main battery state |
+| 55 (0x37) | BAT_SUB_LEVEL | payload[2]=capacity%, [3]=health% | Sub battery state |
+| 56 (0x38) | BAT_SUB_FW | payload[0-14] | Sub battery firmware |
+| 57 (0x39) | BAT_SUB_CYCLES | payload[2-3] LE | Sub battery charge cycles |
+
+**Send format:** `[FB, 21, AES([0x21, cmd, zeros...], key0), 0x00, CRC]`
+**Polled every 2min during ride for updated ranges.**
 
 ## FC21 Encrypted Poll — readRidingData (cmd 0x1B)
 

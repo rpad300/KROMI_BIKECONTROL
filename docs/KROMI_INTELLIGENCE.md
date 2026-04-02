@@ -1,26 +1,44 @@
 # KROMI Intelligence — Continuous HR Zone Regulator
 
-## Version: v0.6.0 session 2 (2026-04-01)
+## Version: v0.7.9 session 3 (2026-04-02)
 
 ---
 
 ## 1. Princípio
 
-O KROMI é um **regulador de zona cardíaca**. O motor mantém o rider na zona HR escolhida. Não reage ao terreno — antecipa-o.
+O KROMI é um **regulador de zona cardíaca calibrado pelo motor**. O motor mantém o rider na zona HR escolhida. Usa dados do motor, terreno, weather e aprendizagem adaptativa.
 
-**Arquitectura layered (não aditiva)**:
+**Arquitectura 5-layer**:
 ```
-anticipationBias = terrainBias + transitionBias + weightBias + powerBias + cadenceTrendBias + speedBias
-intensity = clamp(hrTarget + anticipation + contextPenalty + stoppedPenalty + learnedAdj, 0, 100) × batteryMod
+intensity = clamp(
+  hrTarget              ← Layer 1: HR zone (20-42 in-zone, conservative)
+  + anticipation        ← Layer 2: 6 sub-components × comfort scaling
+  + contextPenalty      ← Layer 3: downhill/speed override
+  + learnedAdj          ← Layer 4: adaptive learning from overrides
+  + envAdj              ← Layer 5: terrain (OSM) + weather (Google)
+  + stoppedPenalty + altitudeBoost
+, 0, 100) × batteryConstraint × coldBatteryMod
 ```
 
-**Novidades v0.6.0 session 2**:
+**Novidades session 3 (v0.7.9)**:
+- Consumo calibrado pelo motor (cmd 17): ECO≈3.2, POWER≈6.1 Wh/km (eram 6/35 hardcoded)
+- Battery constraint baseado em range real do motor (km), não % SOC
+- Polling cada 2min — motor recalcula range com condições actuais
+- Terrain awareness (OSM Overpass): dirt +4, technical +8, torque ×0.8
+- Weather awareness (Google): vento, calor, frio → ajuste automático
+- Dual battery SOC individual: cmd 0x43 byte[4]=bat1, byte[5]=bat2
+- Battery details: firmware, cycles, health via GEV cmd 13-57
+- Auto-calibração: motor range → consumption Wh/km → settingsStore
+- Physics model com rolling resistance por superfície (Crr 0.004-0.018)
+- HR sensor: auto-connect via SensorManager (GATT independente)
+- BikeProfileSync: hardware data auto-saved to Supabase
+
+**Anteriores (session 2)**:
 - HR Target conservador: 20-42 em zona (era 40-60)
 - Context override: descida e velocidade crescente reduzem assist
-- EMA smoothing (alpha 0.15) + hold time 15s entre mudanças de nível
+- EMA smoothing (alpha 0.15) + hold time 15s
 - ASMO values interpolados do score contínuo (não 3 presets)
-- Consumo calculado por física (forças + motor share + eficiência)
-- Adaptive learning: overrides ensinam o algoritmo por contexto (gradient×HR zone)
+- Adaptive learning: overrides por contexto (gradient×HR zone)
 
 **Auxiliary modifiers** (outside anticipation):
 - Stopped (<2km/h): -20 (save battery)
