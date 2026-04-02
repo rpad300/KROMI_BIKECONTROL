@@ -665,20 +665,29 @@ class BLEManager(private val context: Context) {
                                     }
                                 }
                                 0x43 -> {
-                                    // BATTERY HEALTH
+                                    // BATTERY HEALTH — dual battery data
+                                    // byte[4] = bat1 life%, byte[5] = bat2 life%
+                                    // byte[6] = bat1 SOC?, byte[7] = bat2 SOC?
+                                    // byte[8] = combined SOC
                                     val b1Life = data[4].toInt() and 0xFF
                                     val b2Life = data[5].toInt() and 0xFF
-                                    val batSoc = data[8].toInt() and 0xFF
+                                    val b6 = if (data.size > 6) data[6].toInt() and 0xFF else 0
+                                    val b7 = if (data.size > 7) data[7].toInt() and 0xFF else 0
+                                    val batSoc = if (data.size > 8) data[8].toInt() and 0xFF else 0
 
                                     if (now - fc23LogTimes.getOrDefault("bat43", 0L) > 5000) {
                                         fc23LogTimes["bat43"] = now
-                                        Log.i(TAG, "BAT43: b1=%d%% b2=%d%% soc=%d%%"
-                                            .format(b1Life, b2Life, batSoc))
+                                        val hex = data.joinToString(" ") { "%02X".format(it) }
+                                        Log.i(TAG, "BAT43: b1Life=%d%% b2Life=%d%% b6=%d b7=%d soc=%d%% raw=[%s]"
+                                            .format(b1Life, b2Life, b6, b7, batSoc, hex))
                                         onDataReceived?.invoke(JSONObject()
                                             .put("type", "sgBatteryHealth")
                                             .put("bat1Life", b1Life)
                                             .put("bat2Life", b2Life)
-                                            .put("soc", batSoc))
+                                            .put("bat1Soc", b6)
+                                            .put("bat2Soc", b7)
+                                            .put("soc", batSoc)
+                                            .put("raw", hex))
                                     }
                                 }
                                 0x41 -> {

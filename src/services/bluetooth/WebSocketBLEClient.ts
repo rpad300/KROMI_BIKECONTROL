@@ -245,7 +245,11 @@ class WebSocketBLEClient {
           break;
 
         case 'battery':
-          store.setBatteryPercent(msg.value);
+          // BLE Battery Service (0x180F) — gateway battery, not motor SOC
+          // Only use if we haven't received sgBattery/sgBatteryHealth yet
+          if (store.battery_main_pct === 0 && store.battery_sub_pct === 0) {
+            store.setBatteryPercent(msg.value);
+          }
           break;
 
         case 'speed':
@@ -399,12 +403,21 @@ class WebSocketBLEClient {
           console.log(`[WSClient] Motor battery: SOC=${msg.soc}% life=${msg.life}%`);
           break;
 
-        case 'sgBatteryHealth':
-          // Dual battery health from cmd 0x43: bat1Life, bat2Life, soc
-          if (msg.bat1Life !== undefined) store.setBatteryMain(msg.bat1Life);
-          if (msg.bat2Life !== undefined) store.setBatterySub(msg.bat2Life);
+        case 'sgBatteryHealth': {
+          // Dual battery from cmd 0x43
+          // bat1Life/bat2Life = health %, bat1Soc/bat2Soc = charge %, soc = combined
           if (msg.soc !== undefined) store.setBatteryPercent(msg.soc);
+
+          // Use individual SOC if available (byte[6]/byte[7]), fall back to health
+          const b1 = msg.bat1Soc ?? msg.bat1Life;
+          const b2 = msg.bat2Soc ?? msg.bat2Life;
+          if (b1 !== undefined) store.setBatteryMain(b1);
+          if (b2 !== undefined) store.setBatterySub(b2);
+
+          // Log raw data for protocol analysis
+          if (msg.raw) console.log(`[WSClient] BAT43 raw: ${msg.raw}`);
           break;
+        }
 
         case 'sgMotorStatus':
           // Motor status with voltage

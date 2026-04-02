@@ -4,20 +4,18 @@ import { ASSIST_MODE_LABELS } from '../../types/bike.types';
 
 export function BatteryWidget() {
   const soc = useBikeStore((s) => s.battery_percent);
-  const mainHealth = useBikeStore((s) => s.battery_main_pct);
-  const subHealth = useBikeStore((s) => s.battery_sub_pct);
+  const bat1 = useBikeStore((s) => s.battery_main_pct); // individual SOC or health
+  const bat2 = useBikeStore((s) => s.battery_sub_pct);  // individual SOC or health
   const voltage = useBikeStore((s) => s.battery_voltage);
   const assistMode = useBikeStore((s) => s.assist_mode);
   const modeName = ASSIST_MODE_LABELS[assistMode]?.toLowerCase() ?? 'power';
-  const estimate = batteryEstimationService.getFullEstimate(soc, modeName, mainHealth || 100, subHealth || 100);
+  const estimate = batteryEstimationService.getFullEstimate(soc, modeName, bat1 || 100, bat2 || 100);
 
-  const hasDual = mainHealth > 0 || subHealth > 0;
+  const hasDual = bat1 > 0 || bat2 > 0;
 
-  // Estimate individual SOC from combined: proportional to capacity (800:250)
-  const mainCapRatio = 800 / 1050;
-  const subCapRatio = 250 / 1050;
-  const mainSoc = Math.round(soc * mainCapRatio + (1 - mainCapRatio) * soc); // approximate
-  const subSoc = Math.round(soc * subCapRatio + (1 - subCapRatio) * soc);   // approximate
+  // Use individual battery data from SG cmd 0x43
+  const mainSoc = bat1 > 0 ? bat1 : soc;
+  const subSoc = bat2 > 0 ? bat2 : soc;
 
   const socColor =
     soc > 50 ? 'text-emerald-400' :
@@ -54,8 +52,8 @@ export function BatteryWidget() {
       {/* Dual battery bars */}
       {hasDual ? (
         <div className="space-y-1 mt-1.5">
-          <BatteryBar label="800" soc={mainSoc} health={mainHealth} wh={Math.round(800 * soc / 100)} />
-          <BatteryBar label="250" soc={subSoc} health={subHealth} wh={Math.round(250 * soc / 100)} />
+          <BatteryBar label="800" soc={mainSoc} health={bat1} wh={Math.round(800 * mainSoc / 100)} />
+          <BatteryBar label="250" soc={subSoc} health={bat2} wh={Math.round(250 * subSoc / 100)} />
         </div>
       ) : (
         <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden mt-1.5">
