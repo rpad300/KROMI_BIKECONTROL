@@ -46,7 +46,7 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   max_torque_nm: 85,
   max_power_w: 600,
   speed_limit_kmh: 25,
-  wheel_circumference_mm: 2290,
+  wheel_circumference_mm: 2369,  // From RideControl bike details
   consumption_eco: 6,
   consumption_tour: 15,
   consumption_active: 22,

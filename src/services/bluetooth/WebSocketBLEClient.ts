@@ -12,6 +12,7 @@ import { useTuningStore, type TuningLevels } from '../../store/tuningStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { calculateZones } from '../../types/athlete.types';
 import { batteryEstimationService } from '../battery/BatteryEstimationService';
+import { recordBikeData, recordBatteryInfo, recordDeviceInfo, resetBikeProfile } from '../sync/BikeProfileSync';
 
 const WS_URL = 'ws://localhost:8765';
 const RECONNECT_INTERVAL = 3000;
@@ -244,6 +245,7 @@ class WebSocketBLEClient {
           this._bikeConnected = false;
           store.setBLEStatus('disconnected');
           useTuningStore.getState().reset();
+          resetBikeProfile();
           break;
 
         case 'battery':
@@ -395,6 +397,7 @@ class WebSocketBLEClient {
           if (msg.cadence) store.setCadence(Math.round(msg.cadence));
           if (msg.torque) store.setTorque?.(msg.torque);
           if (msg.tripDistance) store.setDistance(msg.tripDistance);
+          if (msg.odo) recordBikeData('total_odo_km', msg.odo as number);
           batteryEstimationService.addSample(msg.speed || 0, msg.power || 0, store.battery_percent);
           store.setRange(batteryEstimationService.getEstimatedRange(store.battery_percent));
           break;
@@ -413,6 +416,8 @@ class WebSocketBLEClient {
             if (battery === 'main') store.setBatteryMain(msg.capacity as number);
             else if (battery === 'sub') store.setBatterySub(msg.capacity as number);
           }
+          // Save to bike hardware profile
+          recordBatteryInfo(msg);
           console.log(`[WSClient] Battery ${battery} ${field}:`, JSON.stringify(msg));
           break;
         }
@@ -542,6 +547,8 @@ class WebSocketBLEClient {
           if (msg.short === '2A27') store.setHardwareVersion(msg.ascii);
           if (msg.short === '2A28') store.setSoftwareVersion(msg.ascii);
           if (msg.short === '2A26') store.setFirmwareVersion(msg.ascii);
+          // Save to bike hardware profile
+          if (msg.short && msg.ascii) recordDeviceInfo(msg.short as string, msg.ascii as string);
           console.log(`[WSClient] Read [${msg.short}]: ${msg.ascii || msg.hex}`);
           break;
 
