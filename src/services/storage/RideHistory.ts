@@ -159,6 +159,7 @@ class RideSessionManager {
       battery_end: bike.battery_percent,
       override_count: this.overrideCount,
       override_rate: this.snapshotCount > 0 ? this.overrideCount / this.snapshotCount : 0,
+      avg_gps_accuracy: map.accuracySamples > 0 ? Math.round(map.accuracySum / map.accuracySamples * 10) / 10 : null,
       end_lat: map.latitude || null,
       end_lng: map.longitude || null,
     }, 'PATCH', `/ride_sessions?id=eq.${this.sessionId}`);

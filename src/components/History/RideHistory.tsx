@@ -26,6 +26,7 @@ interface RideSession {
   max_hr: number;
   battery_start: number;
   battery_end: number;
+  avg_gps_accuracy: number | null;
   devices_connected: Record<string, unknown>;
 }
 
@@ -319,6 +320,7 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
           <StatCard label="Velocidade média" value={`${ride.avg_speed_kmh?.toFixed(1) ?? 0}`} unit="km/h" />
           {ride.avg_hr > 0 && <StatCard label="Freq. cardíaca média" value={`${ride.avg_hr}`} unit="bpm" />}
           {ride.max_hr > 0 && <StatCard label="Freq. cardíaca máxima" value={`${ride.max_hr}`} unit="bpm" />}
+          {ride.avg_gps_accuracy != null && <StatCard label="GPS accuracy média" value={`±${ride.avg_gps_accuracy.toFixed(1)}`} unit="m" />}
           {ride.avg_power_w > 0 && <StatCard label="Potência média" value={`${ride.avg_power_w}`} unit="W" />}
           <StatCard label="Vel. máxima" value={`${ride.max_speed_kmh?.toFixed(0) ?? 0}`} unit="km/h" />
         </div>
