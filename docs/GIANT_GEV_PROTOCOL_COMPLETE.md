@@ -43,28 +43,50 @@ NOTIFY             = 4D500003
 ```
 This is DIFFERENT from the RideControl decompiled format which expects raw telemetry at byte[2].
 
-### cmd 0x40 — RIDE DATA ✅ CONFIRMED
+### cmd 0x40 — RIDE DATA (indexZero in Td23) ✅ CONFIRMED v0.9.2
+Corrected from RideControl decompilation (g8/x4.java:727 resolveTd23Data):
+
 | Byte(s) | Type | Scale | Field | Status |
 |---------|------|-------|-------|--------|
-| [4-5] | uint16 LE | /10 | **Speed (km/h)** | ✅ Confirmed via CSC correlation |
-| [6-7] | int16 LE | raw | Acceleration/slope | TBD |
-| [8-9] | uint16 LE | /10 | **Motor power (W)** | ✅ Calibrated from RideControl |
-| [10-11] | uint16 LE | - | Always 0x0000 | - |
-| [12-13] | uint16 LE | /10 | **ODO (km)** | ✅ ~2161 km, increments |
-| [14-15] | uint16 LE | - | Static (0xB0 0x21) | HW ID? |
-| [16-17] | uint16 LE | raw | Motor value (RPM?) | Varies with load |
-| [18] | uint8 | raw | ~~Battery SOC~~  **NOT SOC** — always 0x64=100 (motor flag) | ⚠️ Do NOT use |
+| [4-5] | uint16 LE | /10 | **Speed (km/h)** | ✅ Confirmed via CSC |
+| [6-7] | int16 LE | /10 | **Torque (Nm)** | ✅ Was "accel/slope" — WRONG |
+| [8-9] | uint16 LE | /10 | **Cadence (RPM)** | ✅ Was "motor power" — WRONG |
+| [10-11] | uint16 LE | /100 | **Assist Current (A)** | ✅ New field |
+| [12-13] | uint16 LE | /10 | **Trip Distance (km)** | ✅ Was "ODO" — same value |
+| [14-15] | uint16 LE | raw | **Trip Time (seconds)** | ✅ New field |
+| [16-17] | int16 LE | /10 | **Power (W)** | ✅ Was "motorVal/RPM" — WRONG |
+| [18] | uint8 | raw | Battery flag (always 0x64) | ⚠️ NOT SOC |
 | [19] | uint8 | - | CRC (XOR bytes 0-18) | ✅ |
 
-### cmd 0x41 — MOTOR/ASSIST STATE
-**NOT ride telemetry.** Mostly static bytes with slow-changing values.
-- bytes[5,7] change with motor activity
-- byte[14] may be current assist level
-- Do NOT parse as speed/torque/cadence
+### cmd 0x41 — ASSIST STATE + RANGE (indexOne in Td23) ✅ CONFIRMED v0.9.0
+From resolveTd23Data decompilation + FC23 stream mapping (ba/o3.java:78):
 
-### cmd 0x42 — SENSOR DATA
-All zeros when stationary. May contain cadence/rider power when pedaling with force.
-Needs testing with significant pedal torque (>10 Nm).
+| Byte(s) | Type | Field | Status |
+|---------|------|-------|--------|
+| [5-6] | uint16 LE | **Remaining Range (km)** for current mode | ✅ Values >255 work! |
+| [7] | uint8 | **Assist Mode** (wire code, 1:1 mapping) | ✅ Confirmed v0.9.4 |
+| [14] | uint8 | Mode sub-index (b14) | TBD |
+
+**Wire Mode Mapping (1:1, confirmed by user + RideControl ba/g4.java):**
+| Wire | Mode | Range example |
+|------|------|---------------|
+| 0 | OFF | — |
+| 1 | ECO | 311km |
+| 2 | TOUR | 259km |
+| 3 | ACTIVE | 217km |
+| 4 | SPORT | 207km |
+| 5 | POWER | 166km |
+| 6 | SMART(Auto) | 280km |
+
+### cmd 0x42 — SENSOR/ESHIFT DATA (indexTwo in Td23)
+From resolveTd23Data: eShift gear levels encoded in byte[7]:
+
+| Byte | Bits | Field | Status |
+|------|------|-------|--------|
+| [7] | 5-7 | **Front gear** (0-7) | ✅ From decompilation |
+| [7] | 0-4 | **Rear gear** (0-31) | ✅ From decompilation |
+
+All zeros when stationary. Gear data appears when pedaling.
 
 ### cmd 0x43 — DUAL BATTERY SOC ✅ CONFIRMED (session 3)
 | Byte | Type | Field | Status |
@@ -84,16 +106,20 @@ Needs testing with significant pedal torque (>10 Nm).
 
 | Cmd | Name | Response | Field |
 |-----|------|----------|-------|
-| 17 (0x11) | RANGE_PER_MODE | payload[0-11] uint8 each | Range in km per assist mode (uint8, ≥245=overflow) |
+| 6 (0x06) | MODE_USAGE | payload[0-12] uint8 | % time per assist mode (13 modes) |
+| 10 (0x0A) | MOTOR_AVG_CURRENT | [2-3]=svcTimes, [4-5]=svcH, [6-7]=svcKm, [8-13]=avgA×6 | Avg current per mode (uint16/100 = A) + service stats |
 | 13 (0x0D) | BAT_MAIN_FW | payload[0-14] | Main battery hardware + software version |
 | 14 (0x0E) | BAT_MAIN_CYCLES | payload[2-3] LE | Main battery charge cycles |
+| 16 (0x10) | BAT_CAPACITY | [2-3]=notChgDays, [4-5]=notChgCycles, [6-7]=capacity/10 Ah | Battery capacity + degradation details |
+| 17 (0x11) | RANGE_PER_MODE | payload[0-11] uint8 each | Range in km per assist mode (uint8, overflow for >245) |
+| 18 (0x12) | MOTOR_ODO_HOURS | [2-3]=odo km, [4-5]=totalHours | Motor lifetime ODO + usage hours |
 | 19 (0x13) | BAT_MAIN_LEVEL | payload[2]=capacity%, [3]=health% | Main battery state |
 | 55 (0x37) | BAT_SUB_LEVEL | payload[2]=capacity%, [3]=health% | Sub battery state |
 | 56 (0x38) | BAT_SUB_FW | payload[0-14] | Sub battery firmware |
 | 57 (0x39) | BAT_SUB_CYCLES | payload[2-3] LE | Sub battery charge cycles |
 
-**Send format:** `[FB, 21, AES([0x21, cmd, zeros...], key0), 0x00, CRC]`
-**Polled every 2min during ride for updated ranges.**
+**Send format:** `[FB, 21, AES([cmd, 0x00, zeros...], key0), 0x00, CRC]`
+**Polled on connect + every 2min during ride.**
 
 ### Cmd 17 — RANGE_PER_MODE Byte Layout (confirmed via RideControl decompilation)
 
@@ -115,7 +141,13 @@ RideControl (ba/g4.java:380) displays `∞` for values ≥255. Protocol has NO u
 | [10] | tour | **TOUR** | Often overflows (>245km) |
 | [11] | smart | SMART | |
 
-**Overflow handling:** When byte ≥245, BLE bridge sends -1. PWA computes estimated range from `totalWh / calibrated_consumption_wh_km`. UI shows `~` prefix for estimated values.
+**Overflow handling:**
+- Semantic: if `eco ≤ active` or `tour ≤ active` or `smart ≤ active` → overflow (motor wraps >255)
+- K10 ACK filter: SG sends two responses (K14=data, K10=ACK zeros). Skip when `power ≤ 10`
+- BLE bridge sends -1 for overflow modes
+- PWA estimates via ratio to POWER range: ECO×1.87, TOUR×1.56, SMART×1.69
+- FC23 cmd 0x41 uint16 replaces estimates once mode is active (~3s)
+- UI shows `~` prefix for estimated values, no prefix for motor-reported
 
 ## FC21 Encrypted Poll — readRidingData (cmd 0x1B)
 
