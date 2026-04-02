@@ -24,7 +24,7 @@ export function HRWidget() {
 
   // Direct DOM updates — bypasses React reconciliation entirely
   useEffect(() => {
-    const unsub = useBikeStore.subscribe((state) => {
+    const update = (state: ReturnType<typeof useBikeStore.getState>) => {
       const bpm = state.hr_bpm;
       const zone = state.hr_zone;
       const color = ZONE_COLORS[zone] ?? '#777575';
@@ -53,7 +53,9 @@ export function HRWidget() {
         bar.style.backgroundColor = (active || past) ? (ZONE_BG[zNum] ?? '#494847') : '#262626';
         bar.style.opacity = active ? '1' : past ? '0.3' : '1';
       });
-    });
+    };
+    update(useBikeStore.getState());
+    const unsub = useBikeStore.subscribe(update);
     return unsub;
   }, [hrMax]);
 

@@ -235,30 +235,34 @@ function AssistBar() {
   const assistMode = useBikeStore((s) => s.assist_mode);
   const autoAssist = useAutoAssistStore((s) => s.enabled);
   const rearGear = useBikeStore((s) => s.rear_gear);
+  const rangePerMode = useBikeStore((s) => s.range_per_mode);
 
   const modes = [
-    { mode: AssistMode.ECO, label: 'ECO' },
-    { mode: AssistMode.TOUR, label: 'TOUR' },
-    { mode: AssistMode.ACTIVE, label: 'ACTV' },
-    { mode: AssistMode.SPORT, label: 'SPRT' },
-    { mode: AssistMode.POWER, label: 'PWR' },
+    { mode: AssistMode.ECO, label: 'ECO', key: 'eco' },
+    { mode: AssistMode.TOUR, label: 'TOUR', key: 'tour' },
+    { mode: AssistMode.ACTIVE, label: 'ACTV', key: 'active' },
+    { mode: AssistMode.SPORT, label: 'SPRT', key: 'sport' },
+    { mode: AssistMode.POWER, label: 'PWR', key: 'power' },
+    { mode: AssistMode.SMART, label: 'AUTO', key: 'smart' },
   ];
 
   return (
     <section className="h-[10%] flex-none bg-black px-2 py-1 flex flex-col justify-center">
       <div className="flex justify-between items-center gap-1 h-3/4">
-        {modes.map(({ mode, label }) => {
+        {modes.map(({ mode, label, key }) => {
           const active = assistMode === mode;
+          const range = rangePerMode ? (rangePerMode as Record<string, number>)[key] : 0;
           return (
             <button
               key={mode}
-              className={`flex-1 h-full font-headline font-black text-[10px] tracking-tighter flex items-center justify-center uppercase active:scale-95 transition-transform ${
+              className={`flex-1 h-full font-headline font-black text-[9px] tracking-tighter flex flex-col items-center justify-center uppercase active:scale-95 transition-transform ${
                 active
                   ? 'bg-[#3fff8b] text-black shadow-[0_0_20px_rgba(63,255,139,0.3)]'
                   : 'bg-[#262626] text-[#adaaaa]'
               }`}
             >
-              {label}
+              <span>{label}</span>
+              {(range ?? 0) > 0 && <span className={`text-[7px] font-bold ${active ? 'text-black/70' : 'text-[#777575]'}`}>{range}km</span>}
             </button>
           );
         })}
@@ -298,7 +302,7 @@ function InfoStrip() {
   const timeLabelRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
-    const unsub = useBikeStore.subscribe((s) => {
+    const update = (s: ReturnType<typeof useBikeStore.getState>) => {
       const hrColor = s.hr_zone >= 4 ? '#ff716c' : s.hr_zone >= 3 ? '#fbbf24' : s.hr_bpm > 0 ? '#3fff8b' : '#777575';
 
       if (hrValRef.current) {
@@ -320,7 +324,10 @@ function InfoStrip() {
       const t = s.trip_time_s;
       if (timeValRef.current) timeValRef.current.textContent = t > 0 ? `${Math.floor(t/3600)}:${String(Math.floor((t%3600)/60)).padStart(2,'0')}` : '0:00';
       if (timeLabelRef.current) timeLabelRef.current.textContent = s.motor_odo_km > 0 ? `${s.motor_odo_km.toLocaleString()}km` : 'TIME';
-    });
+    };
+    // Fire immediately with current state (subscribe only fires on CHANGES)
+    update(useBikeStore.getState());
+    const unsub = useBikeStore.subscribe(update);
     return unsub;
   }, []);
 
