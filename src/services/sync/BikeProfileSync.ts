@@ -44,6 +44,24 @@ interface BikeHardwareProfile {
   remote_type?: string;
   remote_hw_version?: string;
   remote_sw_version?: string;
+
+  // Motor stats (GEV cmd 18)
+  motor_odo_km?: number;
+  motor_total_hours?: number;
+
+  // Battery capacity (GEV cmd 16)
+  bat_capacity_ah?: number;
+  bat_not_charged_days?: number;
+  bat_not_charged_cycles?: number;
+
+  // Service stats (GEV cmd 10)
+  service_tool_times?: number;
+  last_service_hours?: number;
+  last_service_km?: number;
+
+  // JSONB fields
+  mode_avg_current?: Record<string, number>;
+  mode_usage_pct?: Record<string, number>;
 }
 
 const profile: BikeHardwareProfile = {};
@@ -72,6 +90,42 @@ export function recordBatteryInfo(msg: Record<string, unknown>): void {
     if (msg.softwareVersion) recordBikeData(`${prefix}_sw_version` as keyof BikeHardwareProfile, msg.softwareVersion as string);
     if (msg.hardwareVersion) recordBikeData(`${prefix}_hw_version` as keyof BikeHardwareProfile, msg.hardwareVersion as string);
   }
+}
+
+/** Record motor ODO + hours from GEV cmd 18 */
+export function recordMotorOdoHours(odo: number, hours: number): void {
+  if (odo > 0) recordBikeData('motor_odo_km', odo);
+  if (hours > 0) recordBikeData('motor_total_hours', hours);
+}
+
+/** Record battery capacity details from GEV cmd 16 */
+export function recordBatteryCapacity(capacityAh: number, notChargedDays: number, notChargedCycles: number): void {
+  if (capacityAh > 0) recordBikeData('bat_capacity_ah', capacityAh);
+  recordBikeData('bat_not_charged_days', notChargedDays);
+  recordBikeData('bat_not_charged_cycles', notChargedCycles);
+}
+
+/** Record motor avg current per mode from GEV cmd 10 */
+export function recordMotorAvgCurrent(data: Record<string, number>): void {
+  // Only save non-zero data
+  const nonZero = Object.entries(data).filter(([, v]) => v > 0);
+  if (nonZero.length > 0) {
+    profile.mode_avg_current = { ...profile.mode_avg_current, ...Object.fromEntries(nonZero) };
+    debounceSave();
+  }
+}
+
+/** Record mode usage percentages from GEV cmd 6 */
+export function recordModeUsage(data: Record<string, number>): void {
+  profile.mode_usage_pct = data;
+  debounceSave();
+}
+
+/** Record service tool stats from GEV cmd 10 */
+export function recordServiceStats(times: number, hours: number, km: number): void {
+  if (times > 0) recordBikeData('service_tool_times', times);
+  if (hours > 0) recordBikeData('last_service_hours', hours);
+  if (km > 0) recordBikeData('last_service_km', km);
 }
 
 /** Record device info from BLE reads (0x180A) */
@@ -139,6 +193,20 @@ async function saveBikeProfile(): Promise<void> {
       remote_type: profile.remote_type,
       remote_hw_version: profile.remote_hw_version,
       remote_sw_version: profile.remote_sw_version,
+      // Motor stats (GEV cmd 18)
+      motor_odo_km: profile.motor_odo_km,
+      motor_total_hours: profile.motor_total_hours,
+      // Battery capacity (GEV cmd 16)
+      bat_capacity_ah: profile.bat_capacity_ah,
+      bat_not_charged_days: profile.bat_not_charged_days,
+      bat_not_charged_cycles: profile.bat_not_charged_cycles,
+      // Service stats (GEV cmd 10)
+      service_tool_times: profile.service_tool_times,
+      last_service_hours: profile.last_service_hours,
+      last_service_km: profile.last_service_km,
+      // JSONB (mode data)
+      mode_avg_current: profile.mode_avg_current,
+      mode_usage_pct: profile.mode_usage_pct,
       hw_synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };

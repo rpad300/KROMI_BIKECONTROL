@@ -13,7 +13,7 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { calculateZones } from '../../types/athlete.types';
 import { batteryEstimationService } from '../battery/BatteryEstimationService';
 import { calibrateFromMotorRanges } from '../battery/ConsumptionCalibration';
-import { recordBikeData, recordBatteryInfo, recordDeviceInfo, resetBikeProfile } from '../sync/BikeProfileSync';
+import { recordBikeData, recordBatteryInfo, recordDeviceInfo, resetBikeProfile, recordMotorOdoHours, recordBatteryCapacity, recordMotorAvgCurrent, recordModeUsage, recordServiceStats } from '../sync/BikeProfileSync';
 
 const WS_URL = 'ws://localhost:8765';
 const RECONNECT_INTERVAL = 3000;
@@ -643,26 +643,33 @@ class WebSocketBLEClient {
         }
 
         case 'modeUsage':
-          // Mode usage percentages from GEV cmd 6
+          // Mode usage percentages from GEV cmd 6 → persist to bike_configs
+          recordModeUsage(msg as Record<string, number>);
           console.log(`[WSClient] Mode usage: eco=${msg.eco}% tour=${msg.tour}% active=${msg.climb}% sport=${msg.climbPlus}% power=${msg.powerPlus}%`);
           this.sendLog(`USAGE: eco=${msg.eco}% tour=${msg.tour}% climb=${msg.climb}% power=${msg.powerPlus}%`);
           break;
 
-        case 'motorAvgCurrent':
-          // Motor avg current per mode from GEV cmd 10
+        case 'motorAvgCurrent': {
+          // Motor avg current per mode from GEV cmd 10 → persist to bike_configs
+          const avgData = { boost: msg.boostAvgA as number, power: msg.powerAvgA as number, climb: msg.climbAvgA as number };
+          recordMotorAvgCurrent(avgData);
+          recordServiceStats(msg.serviceToolTimes as number, msg.lastServiceHour as number, msg.lastServiceKm as number);
           console.log(`[WSClient] Motor avg: boost=${msg.boostAvgA}A power=${msg.powerAvgA}A climb=${msg.climbAvgA}A svc=${msg.serviceToolTimes}`);
           this.sendLog(`AVGCUR: boost=${msg.boostAvgA}A power=${msg.powerAvgA}A climb=${msg.climbAvgA}A`);
           break;
+        }
 
         case 'motorOdoHours':
-          // Motor ODO + hours from GEV cmd 18
+          // Motor ODO + hours from GEV cmd 18 → persist to bike_configs
           store.setMotorOdo(msg.motorOdo as number, msg.totalHours as number);
+          recordMotorOdoHours(msg.motorOdo as number, msg.totalHours as number);
           console.log(`[WSClient] Motor ODO=${msg.motorOdo}km hours=${msg.totalHours}h`);
           this.sendLog(`MOTOR: odo=${msg.motorOdo}km hours=${msg.totalHours}h`);
           break;
 
         case 'batteryCapacity':
-          // Battery capacity details from GEV cmd 16
+          // Battery capacity details from GEV cmd 16 → persist to bike_configs
+          recordBatteryCapacity(msg.epCapacity as number, msg.maxNotChargedDay as number, msg.notChargedCycles as number);
           console.log(`[WSClient] Bat capacity: ${msg.epCapacity}Ah notChgDays=${msg.maxNotChargedDay} notChgCycles=${msg.notChargedCycles}`);
           this.sendLog(`BATCAP: ${msg.epCapacity}Ah days=${msg.maxNotChargedDay} cycles=${msg.notChargedCycles}`);
           break;

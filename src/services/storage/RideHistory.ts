@@ -58,6 +58,13 @@ interface SnapshotRow {
   auto_assist_active: boolean;
   auto_assist_reason: string;
   was_overridden: boolean;
+  // New fields (v0.9.2+)
+  assist_current_a: number;
+  front_gear: number;
+  rear_gear: number;
+  trip_distance_km: number;
+  trip_time_s: number;
+  range_km: number;
 }
 
 export interface RideSessionState {
@@ -278,6 +285,13 @@ class RideSessionManager {
       auto_assist_active: aaStore.enabled && !isOverride,
       auto_assist_reason: aaStore.lastDecision?.reason ?? '',
       was_overridden: isOverride,
+      // New telemetry (v0.9.2+)
+      assist_current_a: bike.assist_current_a,
+      front_gear: bike.front_gear,
+      rear_gear: bike.rear_gear,
+      trip_distance_km: bike.trip_distance_km,
+      trip_time_s: bike.trip_time_s,
+      range_km: bike.range_km,
     };
 
     this.snapshotBuffer.push(row);
