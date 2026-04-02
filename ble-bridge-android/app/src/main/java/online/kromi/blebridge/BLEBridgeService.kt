@@ -202,6 +202,7 @@ class BLEBridgeService : Service() {
                 sensorManager.disconnectSensor(sensor)
             }
 
+            "readBattery" -> bleManager.readBatteryDetails()
             "disconnect" -> bleManager.disconnect()
             "assistMode" -> bleManager.writeAssistMode(json.optInt("value", 1))
             "assistUp" -> {

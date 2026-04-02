@@ -740,14 +740,30 @@ class BLEManager(private val context: Context) {
                                             .put("success", success))
                                     }
                                     0x13 -> {
-                                        // Battery data: [0]=cmd, [1]=?, [2]=soc%, [3]=life%, [4-5]=capacity
-                                        val soc = dec[2].toInt() and 0xFF
-                                        val life = dec[3].toInt() and 0xFF
-                                        Log.i(TAG, "★ BATTERY: SOC=$soc% life=$life%")
+                                        // MAIN battery: [2]=soc%, [3]=life%
+                                        val mainSoc = dec[2].toInt() and 0xFF
+                                        val mainLife = dec[3].toInt() and 0xFF
+                                        Log.i(TAG, "★ MAIN BATTERY: SOC=$mainSoc% life=$mainLife%")
                                         onDataReceived?.invoke(JSONObject()
                                             .put("type", "sgBattery")
-                                            .put("soc", soc)
-                                            .put("life", life))
+                                            .put("soc", mainSoc)
+                                            .put("life", mainLife))
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "sgBatteryIndividual")
+                                            .put("battery", "main")
+                                            .put("soc", mainSoc)
+                                            .put("health", mainLife))
+                                    }
+                                    0x37 -> {
+                                        // SUB battery: [2]=soc%, [3]=life%
+                                        val subSoc = dec[2].toInt() and 0xFF
+                                        val subLife = dec[3].toInt() and 0xFF
+                                        Log.i(TAG, "★ SUB BATTERY: SOC=$subSoc% life=$subLife%")
+                                        onDataReceived?.invoke(JSONObject()
+                                            .put("type", "sgBatteryIndividual")
+                                            .put("battery", "sub")
+                                            .put("soc", subSoc)
+                                            .put("health", subLife))
                                     }
                                     0x2C -> {
                                         // Tuning data response
@@ -1259,6 +1275,19 @@ class BLEManager(private val context: Context) {
             .put("name", label)
             .put("ok", ok)
             .put("hex", hex))
+    }
+
+    /** Read individual battery SOC — ACTIVE_DATA_ENERGY_PAK_1 (cmd 19 = main, cmd 55 = sub) */
+    fun readBatteryDetails() {
+        // Main battery: cmd=19 (0x13), encrypted with key 0
+        val mainPlain = ByteArray(16).also { it[0] = 0x21; it[1] = 19 }
+        sendEncryptedCommand(mainPlain, 0, "READ_BAT_MAIN")
+
+        // Sub battery: after a small delay to avoid collision
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            val subPlain = ByteArray(16).also { it[0] = 0x21; it[1] = 55 }
+            sendEncryptedCommand(subPlain, 0, "READ_BAT_SUB")
+        }, 500)
     }
 
     /** Convenience: ASSIST UP — cmd=0x1C, sub=0x03, action=0x02, key 3 */

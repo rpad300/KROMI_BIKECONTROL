@@ -234,6 +234,8 @@ class WebSocketBLEClient {
           console.log('[WSClient] Bike connected:', msg.device, 'bonded:', msg.bonded);
           // Auto-read tuning on connect to capture original for restore
           setTimeout(() => this.readTuning(), 1000);
+          // Read individual battery SOC after tuning
+          setTimeout(() => this.send({ type: 'readBattery' }), 2000);
           break;
 
         case 'disconnected':
@@ -402,6 +404,21 @@ class WebSocketBLEClient {
           store.setBatteryPercent(msg.soc);
           console.log(`[WSClient] Motor battery: SOC=${msg.soc}% life=${msg.life}%`);
           break;
+
+        case 'sgBatteryIndividual': {
+          // Individual battery SOC from GEV cmd 0x13 (main) or 0x37 (sub)
+          const bat = msg.battery as string; // 'main' or 'sub'
+          const socVal = msg.soc as number;
+          const healthVal = msg.health as number;
+          if (bat === 'main') {
+            store.setBatteryMain(socVal);
+            console.log(`[WSClient] Main battery: SOC=${socVal}% health=${healthVal}%`);
+          } else if (bat === 'sub') {
+            store.setBatterySub(socVal);
+            console.log(`[WSClient] Sub battery: SOC=${socVal}% health=${healthVal}%`);
+          }
+          break;
+        }
 
         case 'sgBatteryHealth': {
           // Dual battery from cmd 0x43 — REAL SOC source
