@@ -249,6 +249,13 @@ class BLEBridgeService : Service() {
             "tuneMax" -> bleManager.tuningMax()
             "tuneMin" -> bleManager.tuningMin()
             "tuneRestore" -> bleManager.tuningRestore()
+            "pwaLog" -> {
+                val msg = json.optString("msg", "")
+                Log.i("PWA", msg)
+                // Echo to UI log via onDataReceived
+                bleManager.onDataReceived?.invoke(JSONObject()
+                    .put("type", "pwaLog").put("msg", msg))
+            }
         }
     }
 

@@ -108,6 +108,11 @@ class WebSocketBLEClient {
     this.ws.send(JSON.stringify(data));
   }
 
+  /** Send log message back to bridge (appears in APK logcat) */
+  sendLog(msg: string): void {
+    this.send({ type: 'pwaLog', msg });
+  }
+
   /** Request bike connection via bridge */
   connectBike(): void {
     this.send({ type: 'connect' });
@@ -481,7 +486,9 @@ class WebSocketBLEClient {
             }
           }
 
-          console.log(`[WSClient] Range: ECO=${resolved.eco}km${estimated.has('eco') ? '~' : ''} TOUR=${resolved.tour}km${estimated.has('tour') ? '~' : ''} ACTIVE=${resolved.active}km SPORT=${resolved.sport}km POWER=${resolved.power}km`);
+          const rangeLog = `RNG: E=${resolved.eco}${estimated.has('eco') ? '~' : ''} T=${resolved.tour}${estimated.has('tour') ? '~' : ''} A=${resolved.active} S=${resolved.sport} P=${resolved.power} (raw:e${raw.eco},t${raw.tour})`;
+          console.log(`[WSClient] ${rangeLog}`);
+          this.sendLog(rangeLog);
           store.setRangePerMode(resolved, estimated);
           break;
         }
@@ -606,6 +613,11 @@ class WebSocketBLEClient {
           if (wireMode !== undefined) {
             const mapped = GIANT_MODE_MAP[wireMode];
             if (mapped !== undefined) {
+              const rpm = store.range_per_mode;
+              const modeMap: Record<number, string> = { 1: 'eco', 2: 'tour', 3: 'active', 4: 'sport', 5: 'power', 6: 'smart' };
+              const mk = modeMap[mapped] ?? '?';
+              const rng = rpm ? (rpm as Record<string, number>)[mk] ?? 0 : 0;
+              this.sendLog(`MODE: wire=${wireMode}→enum=${mapped}(${mk}) rng=${rng}km`);
               store.setAssistMode(mapped);
             }
           }

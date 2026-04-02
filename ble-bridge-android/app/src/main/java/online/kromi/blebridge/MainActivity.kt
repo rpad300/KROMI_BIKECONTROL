@@ -342,6 +342,8 @@ class MainActivity : AppCompatActivity() {
                 val marker = if (json.optBoolean("hasGevHeader")) " ★FC!" else ""
                 appendLog("DEC", "K${json.optInt("key")}: ${json.optString("hex")}$marker")
             }
+            "pwaLog" -> appendLog("PWA", json.optString("msg", ""))
+            "rangePerMode" -> appendLog("RNG", "★ E=${json.optInt("eco")} T=${json.optInt("tour")} A=${json.optInt("active")} S=${json.optInt("sport")} P=${json.optInt("power")}")
             "barometer" -> updateSensor("Baro", "${json.optDouble("pressure").toInt()}hPa/${json.optDouble("altitude").toInt()}m")
             "light" -> updateSensor("Light", "${json.optDouble("lux").toInt()}lux")
             "accel" -> updateSensor("Lean", "${json.optDouble("lean").toInt()}°")
