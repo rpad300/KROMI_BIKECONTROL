@@ -44,8 +44,8 @@ export async function initBLE(): Promise<void> {
   if (wsClient.isConnected) {
     bleMode = 'websocket';
     console.log('[BLE Bridge] Mode: WebSocket Bridge — full BLE via middleware');
-    // Auto-connect saved HR sensor when bridge is available
-    setTimeout(() => autoConnectHR(), 2000);
+    // Auto-connect all saved sensors when bridge is available
+    setTimeout(() => autoConnectSensors(), 2000);
   } else {
     bleMode = 'web';
     console.log('[BLE Bridge] Mode: Web Bluetooth — standard services only');
@@ -139,65 +139,38 @@ export function getDeviceName(): string | null {
   }
 }
 
-/** Connect HR */
-export async function connectHR(): Promise<void> {
+/** Connect external sensor (scan + auto-connect first found) */
+function connectSensor(sensor: string, webFallback: () => Promise<void>): Promise<void> {
   if (bleMode === 'websocket') {
-    wsClient.send({ type: 'scanSensor', sensor: 'hr' });
+    const saved = getSavedSensorDevice(sensor as SensorType);
+    if (saved) {
+      wsClient.send({ type: 'connectSensor', sensor, address: saved.address });
+    } else {
+      wsClient.send({ type: 'scanSensor', sensor });
+    }
+    return Promise.resolve();
+  }
+  return webFallback();
+}
+
+/** Disconnect external sensor */
+function disconnectSensorBridge(sensor: string, webFallback: () => void): void {
+  if (bleMode === 'websocket') {
+    wsClient.send({ type: 'disconnectSensor', sensor });
   } else {
-    await giantBLEService.connectHR();
+    webFallback();
   }
 }
 
-/** Connect Di2 */
-export async function connectDi2(): Promise<void> {
-  if (bleMode === 'websocket') {
-    wsClient.send({ type: 'scanSensor', sensor: 'di2' });
-  } else {
-    await giantBLEService.connectDi2();
-  }
-}
+export const connectHR = () => connectSensor('hr', () => giantBLEService.connectHR());
+export const connectDi2 = () => connectSensor('di2', () => giantBLEService.connectDi2());
+export const connectSRAM = () => connectSensor('sram', () => giantBLEService.connectSRAM());
+export const connectExtPower = () => connectSensor('power', () => giantBLEService.connectExtPower());
 
-/** Connect SRAM AXS */
-export async function connectSRAM(): Promise<void> {
-  if (bleMode === 'websocket') {
-    wsClient.send({ type: 'scanSensor', sensor: 'sram' });
-  } else {
-    await giantBLEService.connectSRAM();
-  }
-}
-
-/** Connect external Power Meter */
-export async function connectExtPower(): Promise<void> {
-  if (bleMode === 'websocket') {
-    wsClient.send({ type: 'scanSensor', sensor: 'power' });
-  } else {
-    await giantBLEService.connectExtPower();
-  }
-}
-
-/** Disconnect HR */
-export function disconnectHR(): void {
-  if (bleMode === 'websocket') {
-    wsClient.send({ type: 'disconnectSensor', sensor: 'hr' });
-  } else {
-    giantBLEService.disconnectHR();
-  }
-}
-
-/** Disconnect Di2 */
-export function disconnectDi2(): void {
-  if (bleMode === 'web') giantBLEService.disconnectDi2();
-}
-
-/** Disconnect SRAM */
-export function disconnectSRAM(): void {
-  if (bleMode === 'web') giantBLEService.disconnectSRAM();
-}
-
-/** Disconnect external Power Meter */
-export function disconnectExtPower(): void {
-  if (bleMode === 'web') giantBLEService.disconnectExtPower();
-}
+export const disconnectHR = () => disconnectSensorBridge('hr', () => giantBLEService.disconnectHR());
+export const disconnectDi2 = () => disconnectSensorBridge('di2', () => giantBLEService.disconnectDi2());
+export const disconnectSRAM = () => disconnectSensorBridge('sram', () => giantBLEService.disconnectSRAM());
+export const disconnectExtPower = () => disconnectSensorBridge('power', () => giantBLEService.disconnectExtPower());
 
 /** Get HR device name */
 export function getHRDeviceName(): string | null {
@@ -314,7 +287,6 @@ export function connectDevice(address: string): void {
 // === Saved devices (remember last connected bike + sensors) ===
 
 const SAVED_DEVICE_KEY = 'kromi_saved_device';
-const SAVED_HR_KEY = 'kromi_saved_hr';
 
 export interface SavedDevice {
   name: string;
@@ -338,32 +310,43 @@ export function clearSavedDevice(): void {
   localStorage.removeItem(SAVED_DEVICE_KEY);
 }
 
-// === Saved HR sensor ===
+// === Saved sensors (generic) ===
 
-/** Save HR device for auto-connect */
-export function saveHRDevice(device: SavedDevice): void {
-  localStorage.setItem(SAVED_HR_KEY, JSON.stringify(device));
+const SENSOR_TYPES = ['hr', 'di2', 'sram', 'power'] as const;
+type SensorType = typeof SENSOR_TYPES[number];
+
+/** Save sensor device for auto-connect */
+export function saveSensorDevice(sensor: SensorType, device: SavedDevice): void {
+  localStorage.setItem(`kromi_saved_${sensor}`, JSON.stringify(device));
 }
 
-/** Get saved HR device */
-export function getSavedHRDevice(): SavedDevice | null {
-  const raw = localStorage.getItem(SAVED_HR_KEY);
+/** Get saved sensor device */
+export function getSavedSensorDevice(sensor: SensorType): SavedDevice | null {
+  const raw = localStorage.getItem(`kromi_saved_${sensor}`);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
 }
 
-/** Clear saved HR device */
-export function clearHRDevice(): void {
-  localStorage.removeItem(SAVED_HR_KEY);
+/** Clear saved sensor device */
+export function clearSensorDevice(sensor: SensorType): void {
+  localStorage.removeItem(`kromi_saved_${sensor}`);
 }
 
-/** Auto-connect saved HR sensor via bridge */
-export function autoConnectHR(): void {
+// Legacy aliases
+export const saveHRDevice = (d: SavedDevice) => saveSensorDevice('hr', d);
+export const getSavedHRDevice = () => getSavedSensorDevice('hr');
+export const clearHRDevice = () => clearSensorDevice('hr');
+
+/** Auto-connect all saved sensors via bridge */
+export function autoConnectSensors(): void {
   if (bleMode !== 'websocket') return;
-  const saved = getSavedHRDevice();
-  if (!saved) return;
-  console.log(`[BLE Bridge] Auto-connecting HR: ${saved.name} (${saved.address})`);
-  wsClient.send({ type: 'connectSensor', sensor: 'hr', address: saved.address });
+  for (const sensor of SENSOR_TYPES) {
+    const saved = getSavedSensorDevice(sensor);
+    if (saved) {
+      console.log(`[BLE Bridge] Auto-connecting ${sensor}: ${saved.name} (${saved.address})`);
+      wsClient.send({ type: 'connectSensor', sensor, address: saved.address });
+    }
+  }
 }
 
 /** Get current BLE mode description */

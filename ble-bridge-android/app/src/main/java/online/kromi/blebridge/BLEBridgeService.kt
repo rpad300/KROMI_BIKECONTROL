@@ -122,8 +122,11 @@ class BLEBridgeService : Service() {
                         if (name.contains("GBHA", true) || name.contains("Giant", true)) tags.add("GIANT")
                         if (uuids.contains("F0BA", true)) tags.add("GEV")
                         if (uuids.contains("1816") || uuids.contains("1818")) tags.add("BIKE")
-                        if (uuids.contains("180D")) tags.add("HR")
+                        if (uuids.contains("180D", true)) tags.add("HR")
+                        if (uuids.contains("1818", true) && !tags.contains("GIANT")) tags.add("POWER")
                         if (name.contains("SRAM", true) || uuids.contains("4D50", true)) tags.add("SRAM")
+                        if (name.contains("Di2", true) || name.contains("SHIMANO", true)
+                            || uuids.contains("6E40FEC1", true)) tags.add("DI2")
 
                         val result = JSONObject().apply {
                             put("type", "scanResult")
@@ -176,35 +179,27 @@ class BLEBridgeService : Service() {
                 }
             }
 
-            // === External sensor management ===
+            // === External sensor management (hr, power, di2, sram) ===
             "scanSensor" -> {
-                // Exclude the connected bike from sensor scans
                 sensorManager.excludeAddress = bleManager.connectedAddress
-                when (json.optString("sensor")) {
-                    "hr" -> sensorManager.scanForHR()
-                    else -> Log.w(TAG, "Unknown sensor type: ${json.optString("sensor")}")
-                }
+                val sensor = json.optString("sensor", "")
+                sensorManager.scanFor(sensor)
             }
 
             "connectSensor" -> {
-                val address = json.optString("address", "")
                 sensorManager.excludeAddress = bleManager.connectedAddress
-                when (json.optString("sensor")) {
-                    "hr" -> {
-                        if (address.isNotEmpty()) {
-                            sensorManager.connectHR(address)
-                        } else {
-                            sensorManager.scanForHR()
-                        }
-                    }
-                    else -> Log.w(TAG, "Unknown sensor type: ${json.optString("sensor")}")
+                val sensor = json.optString("sensor", "")
+                val address = json.optString("address", "")
+                if (address.isNotEmpty()) {
+                    sensorManager.connectSensor(sensor, address)
+                } else {
+                    sensorManager.scanFor(sensor)
                 }
             }
 
             "disconnectSensor" -> {
-                when (json.optString("sensor")) {
-                    "hr" -> sensorManager.disconnectHR()
-                }
+                val sensor = json.optString("sensor", "")
+                sensorManager.disconnectSensor(sensor)
             }
 
             "disconnect" -> bleManager.disconnect()

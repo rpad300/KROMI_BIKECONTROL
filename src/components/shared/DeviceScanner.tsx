@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { wsClient, type ScanResultDevice } from '../../services/bluetooth/WebSocketBLEClient';
-import { connectDevice, saveDevice, saveHRDevice, startScan, stopScan } from '../../services/bluetooth/BLEBridge';
+import { connectDevice, saveDevice, saveSensorDevice, startScan, stopScan } from '../../services/bluetooth/BLEBridge';
 
 interface DeviceScannerProps {
   onConnected: () => void;
@@ -53,14 +53,19 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
     setConnecting(device.address);
     stopScan();
 
-    const isHR = device.tags.includes('HR');
+    // Route to correct manager based on device tags
+    const sensorType = device.tags.includes('HR') ? 'hr'
+      : device.tags.includes('DI2') ? 'di2'
+      : device.tags.includes('SRAM') ? 'sram'
+      : device.tags.includes('POWER') && !device.tags.includes('GIANT') ? 'power'
+      : null;
 
-    if (isHR) {
-      // Route HR devices to SensorManager (not BLEManager)
-      saveHRDevice({ name: device.name, address: device.address });
-      wsClient.send({ type: 'connectSensor', sensor: 'hr', address: device.address });
+    if (sensorType) {
+      // External sensor → SensorManager (independent GATT)
+      saveSensorDevice(sensorType, { name: device.name, address: device.address });
+      wsClient.send({ type: 'connectSensor', sensor: sensorType, address: device.address });
     } else {
-      // Bike or other gateway device → BLEManager
+      // Bike/gateway → BLEManager
       saveDevice({ name: device.name, address: device.address });
       connectDevice(device.address);
     }

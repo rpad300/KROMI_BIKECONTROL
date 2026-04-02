@@ -308,21 +308,27 @@ export function Connections() {
                       ? sensor.getDeviceName() ?? 'Connected'
                       : isScanning
                         ? 'Scanning...'
-                        : sensor.key === 'hr' && BLE.getSavedHRDevice()
-                          ? `Auto: ${BLE.getSavedHRDevice()!.name}`
-                          : 'Not connected'}
+                        : (() => {
+                            const sensorType = sensor.key === 'extPower' ? 'power' : sensor.key;
+                            const saved = BLE.getSavedSensorDevice(sensorType as 'hr' | 'di2' | 'sram' | 'power');
+                            return saved ? `Auto: ${saved.name}` : 'Not connected';
+                          })()}
                   </div>
                 </div>
                 <div className="flex gap-1">
-                  {sensor.key === 'hr' && !connected && BLE.getSavedHRDevice() && (
-                    <button
-                      onClick={() => { BLE.clearHRDevice(); }}
-                      className="h-10 px-2 rounded-lg text-[10px] font-bold bg-gray-700 text-gray-500 active:scale-95"
-                      title="Esquecer HR"
-                    >
-                      X
-                    </button>
-                  )}
+                  {!connected && (() => {
+                    const sType = sensor.key === 'extPower' ? 'power' : sensor.key;
+                    const saved = BLE.getSavedSensorDevice(sType as 'hr' | 'di2' | 'sram' | 'power');
+                    return saved ? (
+                      <button
+                        onClick={() => BLE.clearSensorDevice(sType as 'hr' | 'di2' | 'sram' | 'power')}
+                        className="h-10 px-2 rounded-lg text-[10px] font-bold bg-gray-700 text-gray-500 active:scale-95"
+                        title="Esquecer"
+                      >
+                        X
+                      </button>
+                    ) : null;
+                  })()}
                   <button
                     onClick={() =>
                       connected ? sensor.onDisconnect() : handleSensorConnect(sensor)

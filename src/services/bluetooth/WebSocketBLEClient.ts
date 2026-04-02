@@ -281,24 +281,32 @@ class WebSocketBLEClient {
           break;
         }
 
-        case 'sensorConnected':
-          // HR sensor connected — save for auto-reconnect
-          if (msg.sensor === 'hr' && msg.address) {
-            store.setServiceConnected('heartRate', true);
-            // Dynamic import to avoid circular dependency
-            import('./BLEBridge').then(({ saveHRDevice }) => {
-              saveHRDevice({ name: msg.name || 'HR Monitor', address: msg.address });
-              console.log(`[WSClient] HR sensor saved: ${msg.name} (${msg.address})`);
+        case 'sensorConnected': {
+          const sensorServiceMap: Record<string, string> = {
+            hr: 'heartRate', di2: 'di2', sram: 'sram', power: 'power',
+          };
+          const serviceKey = sensorServiceMap[msg.sensor as string];
+          if (serviceKey) {
+            store.setServiceConnected(serviceKey as 'heartRate' | 'di2' | 'sram' | 'power', true);
+            import('./BLEBridge').then(({ saveSensorDevice }) => {
+              saveSensorDevice(msg.sensor, { name: msg.name || msg.sensor, address: msg.address });
+              console.log(`[WSClient] ${msg.sensor} saved: ${msg.name} (${msg.address})`);
             });
           }
           break;
+        }
 
-        case 'sensorDisconnected':
-          if (msg.sensor === 'hr') {
-            store.setServiceConnected('heartRate', false);
-            store.setHR(0, 0);
+        case 'sensorDisconnected': {
+          const svcMap: Record<string, string> = {
+            hr: 'heartRate', di2: 'di2', sram: 'sram', power: 'power',
+          };
+          const svcKey = svcMap[msg.sensor as string];
+          if (svcKey) {
+            store.setServiceConnected(svcKey as 'heartRate' | 'di2' | 'sram' | 'power', false);
+            if (msg.sensor === 'hr') store.setHR(0, 0);
           }
           break;
+        }
 
         case 'gear':
           store.setGear(msg.value);
