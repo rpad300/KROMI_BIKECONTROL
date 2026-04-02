@@ -18,6 +18,8 @@ export function MiniMap() {
   const lng = useMapStore((s) => s.longitude);
   const alt = useMapStore((s) => s.altitude);
   const accuracy = useMapStore((s) => s.accuracy);
+  const accSamples = useMapStore((s) => s.accuracySamples);
+  const accAvg = useMapStore((s) => s.accuracySamples > 0 ? s.accuracySum / s.accuracySamples : 0);
   const gpsError = useMapStore((s) => s.gpsError);
 
   useEffect(() => {
@@ -130,7 +132,12 @@ export function MiniMap() {
             </span>
           )}
           {accuracy < 500 && (
-            <span className="text-[9px] text-gray-600">±{Math.round(accuracy)}m</span>
+            <span className={`text-[9px] ${accuracy < 10 ? 'text-emerald-600' : accuracy < 30 ? 'text-yellow-600' : 'text-red-600'}`}>
+              ±{Math.round(accuracy)}m
+            </span>
+          )}
+          {accSamples > 5 && (
+            <span className="text-[9px] text-gray-600">avg ±{Math.round(accAvg)}m</span>
           )}
         </div>
       </div>

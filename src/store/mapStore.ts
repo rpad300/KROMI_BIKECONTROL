@@ -13,12 +13,19 @@ interface MapState {
   gpsActive: boolean;
   gpsError: string | null;
 
+  // Accuracy stats (accumulated during session)
+  accuracySum: number;
+  accuracySamples: number;
+  accuracyMin: number;
+  accuracyMax: number;
+
   // Actions
   setPosition: (lat: number, lng: number, heading: number, accuracy: number) => void;
   setAltitude: (alt: number | null) => void;
   setGpsSpeed: (speed: number | null) => void;
   setGpsActive: (active: boolean) => void;
   setGpsError: (error: string | null) => void;
+  resetAccuracyStats: () => void;
 }
 
 export const useMapStore = create<MapState>((set) => ({
@@ -30,9 +37,19 @@ export const useMapStore = create<MapState>((set) => ({
   speed: null,
   gpsActive: false,
   gpsError: null,
+  accuracySum: 0,
+  accuracySamples: 0,
+  accuracyMin: 999,
+  accuracyMax: 0,
 
   setPosition: (lat, lng, heading, accuracy) =>
-    set({ latitude: lat, longitude: lng, heading, accuracy }),
+    set((s) => ({
+      latitude: lat, longitude: lng, heading, accuracy,
+      accuracySum: s.accuracySum + accuracy,
+      accuracySamples: s.accuracySamples + 1,
+      accuracyMin: Math.min(s.accuracyMin, accuracy),
+      accuracyMax: Math.max(s.accuracyMax, accuracy),
+    })),
 
   setAltitude: (alt) => set({ altitude: alt }),
 
@@ -41,4 +58,6 @@ export const useMapStore = create<MapState>((set) => ({
   setGpsActive: (active) => set({ gpsActive: active }),
 
   setGpsError: (error) => set({ gpsError: error }),
+
+  resetAccuracyStats: () => set({ accuracySum: 0, accuracySamples: 0, accuracyMin: 999, accuracyMax: 0 }),
 }));
