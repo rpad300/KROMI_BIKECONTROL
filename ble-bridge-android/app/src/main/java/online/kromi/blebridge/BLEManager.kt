@@ -739,13 +739,8 @@ class BLEManager(private val context: Context) {
                                     }
                                     0x11 -> {
                                         // cmd 17: REMAINING RANGE per mode (motor-calculated)
-                                        // GEV protocol uses uint8 per mode (0-254 valid, ≥245 = overflow)
-                                        // RideControl decompiled: single byte per mode, ≥255 shows "∞"
-                                        // RideControl field mapping (from decompilation):
-                                        //   [2]=eco, [3]=normal, [4]=power(raw), [5]=boost+, [6]=boost
-                                        //   [7]=power+, [8]=climb+, [9]=climb, [10]=normal+
-                                        //   [11]=tour+, [12]=tour, [13]=smart
-                                        // Giant mode names → display: power+=POWER, climb+=SPORT, climb=ACTIVE
+                                        // SG sends TWO responses: K14 = real data, K10 = ACK (zeros)
+                                        // Must ignore ACK responses where power ≤ 10
                                         fun u8(b: Byte): Int = b.toInt() and 0xFF
 
                                         val power = u8(dec[7])    // Power+ = POWER mode
@@ -755,23 +750,28 @@ class BLEManager(private val context: Context) {
                                         var eco = u8(dec[2])      // Eco
                                         val smart = u8(dec[13])   // Smart
 
-                                        // Semantic overflow: ECO/TOUR MUST have more range than ACTIVE
-                                        // If not, the uint8 byte overflowed (>255km wraps to garbage)
-                                        if (eco <= active) eco = -1
-                                        if (tour <= active) tour = -1
-
                                         val rawHex = dec.joinToString("") { "%02x".format(it) }
-                                        Log.i(TAG, "★ RANGE: eco=%d tour=%d active=%d sport=%d power=%d smart=%d raw=%s"
-                                            .format(eco, tour, active, sport, power, smart, rawHex))
-                                        onDataReceived?.invoke(JSONObject()
-                                            .put("type", "rangePerMode")
-                                            .put("eco", eco)
-                                            .put("tour", tour)
-                                            .put("active", active)
-                                            .put("sport", sport)
-                                            .put("power", power)
-                                            .put("smart", smart)
-                                            .put("raw", rawHex))
+
+                                        // Skip ACK/garbage responses (K10 has all near-zero)
+                                        if (power <= 10) {
+                                            Log.i(TAG, "★ RANGE ACK (skip): power=$power raw=$rawHex")
+                                        } else {
+                                            // Semantic overflow: ECO/TOUR MUST have more range than ACTIVE
+                                            if (eco <= active) eco = -1
+                                            if (tour <= active) tour = -1
+
+                                            Log.i(TAG, "★ RANGE: eco=%d tour=%d active=%d sport=%d power=%d smart=%d raw=%s"
+                                                .format(eco, tour, active, sport, power, smart, rawHex))
+                                            onDataReceived?.invoke(JSONObject()
+                                                .put("type", "rangePerMode")
+                                                .put("eco", eco)
+                                                .put("tour", tour)
+                                                .put("active", active)
+                                                .put("sport", sport)
+                                                .put("power", power)
+                                                .put("smart", smart)
+                                                .put("raw", rawHex))
+                                        }
                                     }
                                     0x0D -> {
                                         // cmd 13: MAIN battery firmware
