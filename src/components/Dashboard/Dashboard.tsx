@@ -20,7 +20,6 @@ import { RideSessionWidget } from './RideSessionWidget';
 export function Dashboard() {
   const [expanded, setExpanded] = useState(false);
   const autoAssistEnabled = useAutoAssistStore((s) => s.enabled);
-  const hrConnected = useBikeStore((s) => s.hr_bpm > 0);
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-[#0e0e0e]">
@@ -65,7 +64,7 @@ export function Dashboard() {
 
             <div className="flex gap-2">
               <BatteryWidget />
-              {hrConnected && <HRWidget />}
+              <HRWidget />
             </div>
 
             <WeatherWidget />
@@ -309,13 +308,13 @@ function InfoStrip() {
 
   return (
     <section className="h-[8%] flex-none grid grid-cols-4 gap-0 bg-[#1a1919] border-y border-[#494847]/20">
-      {/* HR cell */}
-      <div className="flex flex-col items-center justify-center border-r border-[#494847]/10">
-        <span className="material-symbols-outlined text-sm" style={{ color: hrColor, fontVariationSettings: "'FILL' 1" }}>favorite</span>
-        <span className="font-headline font-bold text-base tabular-nums" style={{ color: hrColor }}>
+      {/* HR cell — transition prevents flicker on value changes */}
+      <div className="flex flex-col items-center justify-center border-r border-[#494847]/10 transition-colors duration-500">
+        <span className="material-symbols-outlined text-sm transition-colors duration-500" style={{ color: hrColor, fontVariationSettings: "'FILL' 1" }}>favorite</span>
+        <span className="font-headline font-bold text-base tabular-nums transition-colors duration-500" style={{ color: hrColor }}>
           {hrBpm > 0 ? hrBpm : '--'}
         </span>
-        <span className="text-[8px]" style={{ color: '#777575' }}>{hrBpm > 0 ? `Z${hrZone}` : 'HR'}</span>
+        <span className="text-[8px]" style={{ color: '#adaaaa' }}>{hrBpm > 0 ? `Zone ${hrZone}` : 'No HR'}</span>
       </div>
 
       {/* Battery cell */}
@@ -363,21 +362,22 @@ function InfoStrip() {
   );
 }
 
-/** Elevation mini-chart (flex remaining) */
+/** Elevation mini-chart (flex remaining) — always visible */
 function ElevationSection() {
   const gpsActive = useMapStore((s) => s.gpsActive);
 
   return (
     <section className="flex-1 min-h-0 bg-[#131313] relative">
       <div className="h-full p-2">
-        {gpsActive ? (
-          <ElevationProfile />
-        ) : (
-          <div className="h-full flex items-center justify-center text-[#777575] text-xs font-label uppercase tracking-widest">
-            GPS for elevation profile
-          </div>
-        )}
+        <ElevationProfile />
       </div>
+      {/* Flat line overlay when no GPS — elevation chart shows empty gracefully */}
+      {!gpsActive && (
+        <div className="absolute inset-0 flex items-end justify-center pb-4 pointer-events-none">
+          {/* Flat horizon line */}
+          <div className="w-[90%] h-px bg-[#494847]" />
+        </div>
+      )}
     </section>
   );
 }
