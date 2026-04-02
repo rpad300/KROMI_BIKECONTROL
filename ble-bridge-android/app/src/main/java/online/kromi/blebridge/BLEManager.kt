@@ -677,18 +677,11 @@ class BLEManager(private val context: Context) {
                                     val bat2Soc = data[5].toInt() and 0xFF
                                     val combinedSoc = Math.round((bat1Soc * 800f + bat2Soc * 250f) / 1050f).toInt()
 
+                                    // Only send combined SOC from cmd 43 — individual SOC
+                                    // comes from cmd 19/55 (calibrated, more accurate)
+                                    // cmd 43 bytes are voltage-based and less reliable
                                     onDataReceived?.invoke(JSONObject()
                                         .put("type", "battery").put("value", combinedSoc))
-                                    onDataReceived?.invoke(JSONObject()
-                                        .put("type", "sgBatteryIndividual")
-                                        .put("battery", "main")
-                                        .put("soc", bat1Soc)
-                                        .put("health", 0))
-                                    onDataReceived?.invoke(JSONObject()
-                                        .put("type", "sgBatteryIndividual")
-                                        .put("battery", "sub")
-                                        .put("soc", bat2Soc)
-                                        .put("health", 0))
 
                                     if (now - fc23LogTimes.getOrDefault("bat43", 0L) > 5000) {
                                         fc23LogTimes["bat43"] = now

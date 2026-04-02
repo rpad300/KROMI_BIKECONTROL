@@ -591,16 +591,16 @@ class WebSocketBLEClient {
         case 'fc23cmd41': {
           // Motor/assist state from FC23 telemetry — byte[7] = Giant wire mode
           // Giant wire values → Our AssistMode enum
-          // Giant wire values map 1:1 to our AssistMode enum
-          // 6 = SMART ASSIST (startup default, not in UP/DOWN cycle)
+          // Giant wire: ECO=3, TOUR=1, ACTIVE=2, SPORT=4, POWER=5, SMART=6
+          // Our enum:   ECO=1, TOUR=2, ACTIVE=3, SPORT=4, POWER=5, SMART=6
           const GIANT_MODE_MAP: Record<number, number> = {
-            0: 0,  // OFF
-            1: 1,  // ECO
-            2: 2,  // TOUR
-            3: 3,  // ACTIVE
-            4: 4,  // SPORT
-            5: 5,  // POWER
-            6: 6,  // SMART (startup)
+            0: 0,  // OFF → OFF
+            1: 2,  // wire 1 = TOUR → AssistMode.TOUR
+            2: 3,  // wire 2 = ACTIVE → AssistMode.ACTIVE
+            3: 1,  // wire 3 = ECO → AssistMode.ECO
+            4: 4,  // wire 4 = SPORT → AssistMode.SPORT
+            5: 5,  // wire 5 = POWER → AssistMode.POWER
+            6: 6,  // wire 6 = SMART → AssistMode.SMART
           };
           const wireMode = msg.wireMode ?? msg.assistLevel;
           if (wireMode !== undefined) {
