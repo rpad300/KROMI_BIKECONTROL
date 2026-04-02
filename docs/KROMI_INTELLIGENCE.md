@@ -1,6 +1,6 @@
 # KROMI Intelligence — Continuous HR Zone Regulator
 
-## Version: v0.7.9 session 3 (2026-04-02)
+## Version: v0.9.4 session 4 (2026-04-02)
 
 ---
 
@@ -20,13 +20,28 @@ intensity = clamp(
 , 0, 100) × batteryConstraint × coldBatteryMod
 ```
 
-**Novidades session 3 (v0.7.9)**:
+**Novidades session 4 (v0.9.4)**:
+- **FC23 telemetria completa** (decompilada do RideControl g8/x4.java:727):
+  - Torque Nm, Cadence RPM, Assist Current A, Trip dist/time, Power W
+  - Labels anteriores estavam ERRADOS: "accel"=torque, "motorWatts"=cadence, "motorVal"=power
+- **uint16 remaining range** via FC23 cmd 0x41 bytes[5-6] — ECO=311, TOUR=259, SMART=280km directo do motor
+- **eShift gears** via FC23 cmd 0x42 byte[7]: front(bits 5-7) + rear(bits 0-4)
+- **4 novos GEV commands**: cmd 6 (mode usage %), cmd 10 (avg current/mode), cmd 16 (bat capacity), cmd 18 (ODO+hours)
+- Overflow semântico: eco≤active → overflow → ratio fallback (ECO×1.87, TOUR×1.56, SMART×1.69)
+- K10 ACK filter: SG envia 2 respostas ao cmd 17, skip quando power≤10
+- Wire mode 1:1 confirmado: 1=ECO, 2=TOUR, 3=ACTIVE, 4=SPORT, 5=POWER, 6=SMART
+- Individual battery SOC de cmd 19/55 (calibrado), não cmd 43 (voltage-based)
+- PWA→APK log bridge: logs da PWA aparecem no APK com [PWA] prefix
+- **Supabase persistence**: bike_configs (motor data + JSONB), ride_snapshots (6 novas colunas)
+- Motor stats: ODO=2161km, Hours=213h, Service tool times=5
+- Consumo real por modo: avg current do motor (cmd 10)
+
+**Session 3 (v0.7.9)**:
 - Consumo calibrado pelo motor (cmd 17): ECO≈3.2, POWER≈6.1 Wh/km (eram 6/35 hardcoded)
 - Battery constraint baseado em range real do motor (km), não % SOC
 - Polling cada 2min — motor recalcula range com condições actuais
 - Terrain awareness (OSM Overpass): dirt +4, technical +8, torque ×0.8
 - Weather awareness (Google): vento, calor, frio → ajuste automático
-- Dual battery SOC individual: cmd 0x43 byte[4]=bat1, byte[5]=bat2
 - Battery details: firmware, cycles, health via GEV cmd 13-57
 - Auto-calibração: motor range → consumption Wh/km → settingsStore
 - Physics model com rolling resistance por superfície (Crr 0.004-0.018)
