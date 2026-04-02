@@ -593,17 +593,19 @@ class WebSocketBLEClient {
 
         case 'fc23cmd41': {
           // Motor/assist state from FC23 telemetry — byte[7] = Giant wire mode
-          // Giant wire values → Our AssistMode enum
-          // Giant wire: ECO=3, TOUR=1, ACTIVE=2, SPORT=4, POWER=5, SMART=6
-          // Our enum:   ECO=1, TOUR=2, ACTIVE=3, SPORT=4, POWER=5, SMART=6
+          // Giant wire values → Our AssistMode enum (1:1 mapping!)
+          // Confirmed from RideControl decompilation (ba/g4.java color switch):
+          //   wire 1=ECO, 2=TOUR, 3=ACTIVE, 4=SPORT, 5=POWER, 6=SMART
+          // Also confirmed by uint16 range matching:
+          //   wire 1→311km(ECO), wire 2→259km(TOUR), wire 3→217km(ACTIVE)
           const GIANT_MODE_MAP: Record<number, number> = {
-            0: 0,  // OFF → OFF
-            1: 2,  // wire 1 = TOUR → AssistMode.TOUR
-            2: 3,  // wire 2 = ACTIVE → AssistMode.ACTIVE
-            3: 1,  // wire 3 = ECO → AssistMode.ECO
-            4: 4,  // wire 4 = SPORT → AssistMode.SPORT
-            5: 5,  // wire 5 = POWER → AssistMode.POWER
-            6: 6,  // wire 6 = SMART → AssistMode.SMART
+            0: 0,  // OFF
+            1: 1,  // ECO
+            2: 2,  // TOUR
+            3: 3,  // ACTIVE
+            4: 4,  // SPORT
+            5: 5,  // POWER
+            6: 6,  // SMART
           };
           const wireMode = msg.wireMode ?? msg.assistLevel;
           if (wireMode !== undefined) {
