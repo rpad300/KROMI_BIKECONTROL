@@ -291,6 +291,8 @@ class WebSocketBLEClient {
             import('./BLEBridge').then(({ saveSensorDevice }) => {
               saveSensorDevice(msg.sensor, { name: msg.name || msg.sensor, address: msg.address });
               console.log(`[WSClient] ${msg.sensor} saved: ${msg.name} (${msg.address})`);
+              // Sync to Supabase so other devices pick it up
+              import('../sync/SettingsSyncService').then(({ scheduleSave }) => scheduleSave());
             });
           }
           break;

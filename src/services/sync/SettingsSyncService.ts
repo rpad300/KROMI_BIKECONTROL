@@ -12,8 +12,10 @@
 
 import { useSettingsStore, type BikeConfig } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
-import { getSavedDevice, saveDevice, type SavedDevice } from '../bluetooth/BLEBridge';
+import { getSavedDevice, saveDevice, getSavedSensorDevice, saveSensorDevice, type SavedDevice } from '../bluetooth/BLEBridge';
 import type { RiderProfile } from '../../types/athlete.types';
+
+const SENSOR_TYPES = ['hr', 'di2', 'sram', 'power'] as const;
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -38,11 +40,19 @@ async function supabaseFetch(path: string, options: RequestInit = {}): Promise<R
   });
 }
 
+interface SavedSensors {
+  bike?: SavedDevice;
+  hr?: SavedDevice;
+  di2?: SavedDevice;
+  sram?: SavedDevice;
+  power?: SavedDevice;
+}
+
 interface DBSettings {
   bike_config: BikeConfig;
   rider_profile: RiderProfile;
   auto_assist: Record<string, unknown>;
-  saved_device: SavedDevice | null;
+  saved_device: SavedSensors | SavedDevice | null;
 }
 
 /** Load settings from Supabase and merge into local stores */
@@ -79,7 +89,19 @@ export async function loadSettingsFromDB(): Promise<boolean> {
       settings.updateAutoAssist(row.auto_assist);
     }
     if (row.saved_device) {
-      saveDevice(row.saved_device);
+      // Handle both old format (single device) and new format (all sensors)
+      const sd = row.saved_device;
+      if ('address' in sd && 'name' in sd) {
+        // Old format: single bike device
+        saveDevice(sd as SavedDevice);
+      } else {
+        // New format: all sensors
+        const sensors = sd as SavedSensors;
+        if (sensors.bike) saveDevice(sensors.bike);
+        for (const type of SENSOR_TYPES) {
+          if (sensors[type]) saveSensorDevice(type, sensors[type]!);
+        }
+      }
     }
 
     console.log('[Sync] Settings loaded from DB');
@@ -98,7 +120,15 @@ export async function saveSettingsToDB(): Promise<boolean> {
 
   try {
     const settings = useSettingsStore.getState();
-    const savedDevice = getSavedDevice();
+
+    // Collect all saved devices (bike + sensors)
+    const savedDevices: SavedSensors = {};
+    const bike = getSavedDevice();
+    if (bike) savedDevices.bike = bike;
+    for (const type of SENSOR_TYPES) {
+      const sensor = getSavedSensorDevice(type);
+      if (sensor) savedDevices[type] = sensor;
+    }
 
     await supabaseFetch('/user_settings?on_conflict=user_id', {
       method: 'POST',
@@ -108,7 +138,7 @@ export async function saveSettingsToDB(): Promise<boolean> {
         bike_config: settings.bikeConfig,
         rider_profile: settings.riderProfile,
         auto_assist: settings.autoAssist,
-        saved_device: savedDevice,
+        saved_device: savedDevices,
         updated_at: new Date().toISOString(),
       }),
     });
