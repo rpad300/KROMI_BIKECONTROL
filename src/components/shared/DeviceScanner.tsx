@@ -191,6 +191,10 @@ function DeviceRow({ device, connecting, onSelect }: {
         <div className="text-white font-bold text-sm">
           {device.name}
           {isBike && <span className="ml-2 text-emerald-400 text-xs font-normal">BIKE</span>}
+          {isHR && !isBike && <span className="ml-2 text-red-400 text-xs font-normal">HR</span>}
+          {isSRAM && <span className="ml-2 text-orange-400 text-xs font-normal">SRAM</span>}
+          {device.tags.includes('DI2') && <span className="ml-2 text-blue-400 text-xs font-normal">Di2</span>}
+          {device.tags.includes('POWER') && !isBike && <span className="ml-2 text-yellow-400 text-xs font-normal">POWER</span>}
         </div>
         <div className="text-gray-500 text-[10px]">{device.address}</div>
       </div>

@@ -92,6 +92,11 @@ export function Connections() {
   const bleModeBadge = BLE.getBLEModeDescription();
 
   const handleConnectBike = async () => {
+    if (BLE.bleMode === 'websocket') {
+      // WebSocket mode: open device scanner for user to pick
+      setShowDevicePicker(true);
+      return;
+    }
     setScanning(true);
     try {
       await BLE.connectBike();
@@ -107,16 +112,16 @@ export function Connections() {
   };
 
   const handleSensorConnect = async (sensor: ExternalSensor) => {
+    if (BLE.bleMode === 'websocket') {
+      // WebSocket mode: open the DeviceScanner (shows all devices with tags)
+      // Routing in DeviceScanner handles HR→SensorManager, bike→BLEManager
+      setShowDevicePicker(true);
+      return;
+    }
+    // Web BLE mode: use browser picker
     setSensorScanning(sensor.key);
     try {
       await sensor.onConnect();
-      // WebSocket mode: connectHR returns immediately, keep scanning state
-      // It clears when sensorConnected arrives (sets service flag → UI updates)
-      if (BLE.bleMode === 'websocket') {
-        // Keep scanning indicator for 15s max, or until service connects
-        setTimeout(() => setSensorScanning(null), 15000);
-        return;
-      }
     } catch {
       // User cancelled or no device found
     }
