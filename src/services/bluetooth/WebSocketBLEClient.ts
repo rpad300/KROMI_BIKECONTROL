@@ -604,19 +604,18 @@ class WebSocketBLEClient {
 
         case 'fc23cmd41': {
           // Motor/assist state from FC23 telemetry — byte[7] = Giant wire mode
-          // Giant wire values → Our AssistMode enum (1:1 mapping!)
-          // Confirmed from RideControl decompilation (ba/g4.java color switch):
-          //   wire 1=ECO, 2=TOUR, 3=ACTIVE, 4=SPORT, 5=POWER, 6=SMART
-          // Also confirmed by uint16 range matching:
-          //   wire 1→311km(ECO), wire 2→259km(TOUR), wire 3→217km(ACTIVE)
+          // Wire codes on bike hardware (confirmed by user observation):
+          //   wire 1=TOUR, 2=ACTIVE, 3=ECO, 4=SPORT, 5=POWER, 6=SMART
+          // NOTE: RideControl ba/g4.java uses TRANSLATED values (1=eco,2=tour,3=active)
+          //   which differ from raw wire codes. The Dart layer translates before the switch.
           const GIANT_MODE_MAP: Record<number, number> = {
             0: 0,  // OFF
-            1: 1,  // ECO
-            2: 2,  // TOUR
-            3: 3,  // ACTIVE
-            4: 4,  // SPORT
-            5: 5,  // POWER
-            6: 6,  // SMART
+            1: 2,  // wire 1 = TOUR on bike → AssistMode.TOUR
+            2: 3,  // wire 2 = ACTIVE on bike → AssistMode.ACTIVE
+            3: 1,  // wire 3 = ECO on bike → AssistMode.ECO
+            4: 4,  // wire 4 = SPORT
+            5: 5,  // wire 5 = POWER
+            6: 6,  // wire 6 = SMART
           };
           const wireMode = msg.wireMode ?? msg.assistLevel;
           if (wireMode !== undefined) {
@@ -624,20 +623,16 @@ class WebSocketBLEClient {
             if (mapped !== undefined) {
               store.setAssistMode(mapped);
 
-              // uint16 remaining range from FC23 cmd 0x41 (direct from motor!)
+              // uint16 remaining range from FC23 cmd 0x41 bytes[5-6]
+              // This is the motor's current range — use directly for display
+              // (don't assign per-mode — it lags behind mode changes)
               const currentRange = msg.currentRange as number | undefined;
-              if (currentRange !== undefined && currentRange > 0) {
-                const modeMap: Record<number, string> = { 1: 'eco', 2: 'tour', 3: 'active', 4: 'sport', 5: 'power', 6: 'smart' };
-                const mk = modeMap[mapped] ?? 'power';
-                const rpm = store.range_per_mode ?? { eco: 0, tour: 0, active: 0, sport: 0, power: 0, smart: 0 };
-                // Update range_per_mode with motor-reported uint16 for current mode
-                const updated = { ...rpm, [mk]: currentRange };
-                // Only the overflow modes were estimated — motor range replaces ratio
-                const estimated = new Set(store.range_estimated_modes);
-                estimated.delete(mk); // Motor gave us the real value!
-                store.setRangePerMode(updated, estimated);
-                this.sendLog(`MODE: wire=${wireMode}→${mk} range=${currentRange}km (uint16)`);
+              if (currentRange !== undefined && currentRange > 0 && currentRange < 65535) {
+                store.setRange(currentRange);
               }
+
+              const modeNames: Record<number, string> = { 0:'off', 1:'eco', 2:'tour', 3:'active', 4:'sport', 5:'power', 6:'smart' };
+              this.sendLog(`MODE: wire=${wireMode}→${modeNames[mapped] ?? '?'} rng=${currentRange ?? 0}km`);
             }
           }
           break;
