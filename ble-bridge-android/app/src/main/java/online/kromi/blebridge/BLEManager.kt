@@ -748,7 +748,7 @@ class BLEManager(private val context: Context) {
                                         val active = u8(dec[9])   // Climb = ACTIVE mode
                                         var tour = u8(dec[12])    // Tour = TOUR mode
                                         var eco = u8(dec[2])      // Eco
-                                        val smart = u8(dec[13])   // Smart
+                                        var smart = u8(dec[13])   // Smart
 
                                         val rawHex = dec.joinToString("") { "%02x".format(it) }
 
@@ -756,9 +756,10 @@ class BLEManager(private val context: Context) {
                                         if (power <= 10) {
                                             Log.i(TAG, "★ RANGE ACK (skip): power=$power raw=$rawHex")
                                         } else {
-                                            // Semantic overflow: ECO/TOUR MUST have more range than ACTIVE
+                                            // Semantic overflow: ECO/TOUR/SMART must have more range than ACTIVE
                                             if (eco <= active) eco = -1
                                             if (tour <= active) tour = -1
+                                            if (smart <= active) smart = -1
 
                                             Log.i(TAG, "★ RANGE: eco=%d tour=%d active=%d sport=%d power=%d smart=%d raw=%s"
                                                 .format(eco, tour, active, sport, power, smart, rawHex))

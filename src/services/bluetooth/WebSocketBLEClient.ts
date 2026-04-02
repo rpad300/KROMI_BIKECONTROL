@@ -466,8 +466,9 @@ class WebSocketBLEClient {
           const modes = ['eco', 'tour', 'active', 'sport', 'power', 'smart'] as const;
           type Mode = typeof modes[number];
           const overflowRatio: Partial<Record<Mode, number>> = {
-            eco: 1.87,   // ECO ≈ 1.87× POWER range
-            tour: 1.56,  // TOUR ≈ 1.56× POWER range
+            eco: 1.87,   // ECO ≈ 1.87× POWER range (311/166 from RideControl)
+            tour: 1.56,  // TOUR ≈ 1.56× POWER range (259/166)
+            smart: 1.69, // SMART(Auto) ≈ 1.69× POWER range (280/166)
           };
           for (const mode of modes) {
             if (resolved[mode as Mode] < 0) {
