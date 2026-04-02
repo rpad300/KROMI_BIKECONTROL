@@ -100,6 +100,7 @@ function CompactMetricsRow() {
   const battery = useBikeStore((s) => s.battery_percent);
   const rangeEstimated = useBikeStore((s) => s.range_km);
   const rangePerMode = useBikeStore((s) => s.range_per_mode);
+  const estimatedModes = useBikeStore((s) => s.range_estimated_modes);
   const assistMode = useBikeStore((s) => s.assist_mode);
   const cadence = useBikeStore((s) => s.cadence_rpm);
 
@@ -108,6 +109,7 @@ function CompactMetricsRow() {
   const modeKey = modeMap[assistMode] ?? 'power';
   const motorRange = rangePerMode ? (rangePerMode as Record<string, number>)[modeKey] : 0;
   const range = motorRange && motorRange > 0 ? motorRange : rangeEstimated;
+  const rangePrefix = estimatedModes.has(modeKey) ? '~' : '';
 
   const batColor =
     battery > 30 ? 'text-emerald-400' :
@@ -117,7 +119,7 @@ function CompactMetricsRow() {
     <div className="grid grid-cols-4 gap-1.5">
       <MetricCell value={String(power)} label="PWR" unit="W" />
       <MetricCell value={String(battery)} label="BAT" unit="%" color={batColor} />
-      <MetricCell value={range > 0 ? range.toFixed(0) : '--'} label="RNG" unit="km" />
+      <MetricCell value={range > 0 ? `${rangePrefix}${range.toFixed(0)}` : '--'} label="RNG" unit="km" />
       <MetricCell value={String(cadence)} label="CAD" unit="rpm" />
     </div>
   );

@@ -49,34 +49,36 @@ export function calibrateFromMotorRanges(ranges: {
   const totalWh = mainWh + subWh;
 
   if (totalWh < 50) return null; // Not enough data
-  if (ranges.eco <= 0 || ranges.power <= 0) return null;
+  if (ranges.power <= 0) return null; // Need at least POWER to calibrate
 
   // Derive consumption: Wh/km = available_Wh / range_km
+  // Skip overflow modes (0 or negative = bridge flagged uint8 overflow)
+  const derive = (range: number) => range > 0 ? Math.round((totalWh / range) * 100) / 100 : 0;
   const cal: CalibratedConsumption = {
-    eco: Math.round((totalWh / ranges.eco) * 100) / 100,
-    tour: ranges.tour > 0 ? Math.round((totalWh / ranges.tour) * 100) / 100 : 0,
-    active: ranges.active > 0 ? Math.round((totalWh / ranges.active) * 100) / 100 : 0,
-    sport: ranges.sport > 0 ? Math.round((totalWh / ranges.sport) * 100) / 100 : 0,
-    power: Math.round((totalWh / ranges.power) * 100) / 100,
+    eco: derive(ranges.eco),
+    tour: derive(ranges.tour),
+    active: derive(ranges.active),
+    sport: derive(ranges.sport),
+    power: derive(ranges.power),
     totalWh,
     calibrated_at: Date.now(),
   };
 
   console.log(`[Calibration] From motor ranges (${Math.round(totalWh)}Wh available):`);
-  console.log(`  ECO: ${ranges.eco}km → ${cal.eco} Wh/km`);
-  console.log(`  TOUR: ${ranges.tour}km → ${cal.tour} Wh/km`);
+  console.log(`  ECO: ${ranges.eco > 0 ? `${ranges.eco}km → ${cal.eco} Wh/km` : 'overflow (skipped)'}`);
+  console.log(`  TOUR: ${ranges.tour > 0 ? `${ranges.tour}km → ${cal.tour} Wh/km` : 'overflow (skipped)'}`);
   console.log(`  ACTIVE: ${ranges.active}km → ${cal.active} Wh/km`);
   console.log(`  SPORT: ${ranges.sport}km → ${cal.sport} Wh/km`);
   console.log(`  POWER: ${ranges.power}km → ${cal.power} Wh/km`);
 
-  // Update settingsStore with calibrated values
-  useSettingsStore.getState().updateBikeConfig({
-    consumption_eco: cal.eco,
-    consumption_tour: cal.tour,
-    consumption_active: cal.active,
-    consumption_sport: cal.sport,
-    consumption_power: cal.power,
-  });
+  // Update settingsStore with calibrated values (only for valid modes)
+  const update: Record<string, number> = {};
+  if (cal.eco > 0) update.consumption_eco = cal.eco;
+  if (cal.tour > 0) update.consumption_tour = cal.tour;
+  if (cal.active > 0) update.consumption_active = cal.active;
+  if (cal.sport > 0) update.consumption_sport = cal.sport;
+  if (cal.power > 0) update.consumption_power = cal.power;
+  useSettingsStore.getState().updateBikeConfig(update);
 
   lastCalibration = cal;
   return cal;

@@ -436,15 +436,53 @@ class WebSocketBLEClient {
 
         case 'rangePerMode': {
           // Range calculated by motor for each assist mode (in km)
-          const ranges = {
+          // GEV protocol uses uint8 per mode — bridge sends -1 for overflow (≥245)
+          const raw = {
             eco: msg.eco as number, tour: msg.tour as number,
             active: msg.active as number, sport: msg.sport as number,
             power: msg.power as number, smart: msg.smart as number,
           };
-          console.log(`[WSClient] Range: ECO=${ranges.eco}km TOUR=${ranges.tour}km ACTIVE=${ranges.active}km SPORT=${ranges.sport}km POWER=${ranges.power}km`);
-          store.setRangePerMode(ranges);
-          // Auto-calibrate consumption from motor data
-          calibrateFromMotorRanges(ranges);
+
+          // First calibrate from valid (non-overflow) modes
+          const validForCal = {
+            eco: Math.max(raw.eco, 0), tour: Math.max(raw.tour, 0),
+            active: Math.max(raw.active, 0), sport: Math.max(raw.sport, 0),
+            power: Math.max(raw.power, 0),
+          };
+          if (validForCal.power > 0) calibrateFromMotorRanges(validForCal);
+
+          // Resolve overflow modes using calibrated consumption
+          const estimated = new Set<string>();
+          const resolved = { ...raw };
+          const settings = useSettingsStore.getState();
+          const bat1 = store.battery_main_pct;
+          const bat2 = store.battery_sub_pct;
+          const mainWh = settings.bikeConfig.main_battery_wh * (bat1 > 0 ? bat1 / 100 : 1);
+          const subWh = settings.bikeConfig.has_range_extender
+            ? settings.bikeConfig.sub_battery_wh * (bat2 > 0 ? bat2 / 100 : 1) : 0;
+          const totalWh = mainWh + subWh;
+
+          const consumptionMap: Record<string, number> = {
+            eco: settings.bikeConfig.consumption_eco,
+            tour: settings.bikeConfig.consumption_tour,
+            active: settings.bikeConfig.consumption_active,
+            sport: settings.bikeConfig.consumption_sport,
+            power: settings.bikeConfig.consumption_power,
+            smart: settings.bikeConfig.consumption_power,
+          };
+
+          const modes = ['eco', 'tour', 'active', 'sport', 'power', 'smart'] as const;
+          type Mode = typeof modes[number];
+          for (const mode of modes) {
+            if (resolved[mode as Mode] < 0 && totalWh > 50) {
+              const wh_km = consumptionMap[mode] || 6;
+              resolved[mode as Mode] = Math.round(totalWh / wh_km);
+              estimated.add(mode);
+            }
+          }
+
+          console.log(`[WSClient] Range: ECO=${resolved.eco}km${estimated.has('eco') ? '~' : ''} TOUR=${resolved.tour}km${estimated.has('tour') ? '~' : ''} ACTIVE=${resolved.active}km SPORT=${resolved.sport}km POWER=${resolved.power}km`);
+          store.setRangePerMode(resolved, estimated);
           break;
         }
 

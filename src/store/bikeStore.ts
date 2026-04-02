@@ -13,6 +13,8 @@ interface BikeState {
   // Range & ODO
   range_km: number;
   range_per_mode: { eco: number; tour: number; active: number; sport: number; power: number; smart: number } | null;
+  /** Modes where range was estimated (overflow from uint8 protocol) rather than motor-reported */
+  range_estimated_modes: Set<string>;
   odo_km: number;
   service_interval_km: number;
 
@@ -74,7 +76,7 @@ interface BikeState {
   setAssistMode: (v: number) => void;
   setDistance: (v: number) => void;
   setRange: (v: number) => void;
-  setRangePerMode: (v: { eco: number; tour: number; active: number; sport: number; power: number; smart: number }) => void;
+  setRangePerMode: (v: { eco: number; tour: number; active: number; sport: number; power: number; smart: number }, estimated?: Set<string>) => void;
   setOdo: (v: number) => void;
   setServiceInterval: (v: number) => void;
   setBatteryMain: (v: number) => void;
@@ -113,6 +115,7 @@ export const useBikeStore = create<BikeState>((set) => ({
   // Range & ODO
   range_km: 0,
   range_per_mode: null,
+  range_estimated_modes: new Set<string>(),
   odo_km: 0,
   service_interval_km: 0,
 
@@ -188,7 +191,7 @@ export const useBikeStore = create<BikeState>((set) => ({
   setDistance: (v) => set({ distance_km: Math.round(v * 100) / 100 }),
 
   setRange: (v) => set({ range_km: Math.round(v * 10) / 10 }),
-  setRangePerMode: (v: { eco: number; tour: number; active: number; sport: number; power: number; smart: number }) => set({ range_per_mode: v }),
+  setRangePerMode: (v, estimated) => set({ range_per_mode: v, range_estimated_modes: estimated ?? new Set() }),
   setOdo: (v) => set({ odo_km: v }),
   setServiceInterval: (v) => set({ service_interval_km: v }),
   setBatteryMain: (v) => set({ battery_main_pct: v }),

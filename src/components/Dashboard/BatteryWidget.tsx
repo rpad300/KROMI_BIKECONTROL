@@ -9,6 +9,7 @@ export function BatteryWidget() {
   const voltage = useBikeStore((s) => s.battery_voltage);
   const assistMode = useBikeStore((s) => s.assist_mode);
   const rangePerMode = useBikeStore((s) => s.range_per_mode);
+  const estimatedModes = useBikeStore((s) => s.range_estimated_modes);
   const modeName = ASSIST_MODE_LABELS[assistMode]?.toLowerCase() ?? 'power';
   const estimate = batteryEstimationService.getFullEstimate(soc, modeName, bat1 || 100, bat2 || 100);
 
@@ -17,6 +18,7 @@ export function BatteryWidget() {
   const modeKey = modeMap[assistMode] ?? 'power';
   const motorRange = rangePerMode ? (rangePerMode as Record<string, number>)[modeKey] : 0;
   const displayRange = motorRange && motorRange > 0 ? motorRange : estimate.range_km;
+  const isEstimated = estimatedModes.has(modeKey);
 
   const hasDual = bat1 > 0 || bat2 > 0;
 
@@ -48,7 +50,7 @@ export function BatteryWidget() {
         </div>
         <div className="text-right">
           <span className="text-sm font-bold text-white tabular-nums">
-            {displayRange > 0 ? `${displayRange.toFixed(0)}km` : '--'}
+            {displayRange > 0 ? `${isEstimated ? '~' : ''}${displayRange.toFixed(0)}km` : '--'}
           </span>
           {estimate.consumption_wh_km > 0 && (
             <div className="text-[8px] text-gray-600">{estimate.consumption_wh_km}Wh/km</div>

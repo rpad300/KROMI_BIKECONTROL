@@ -84,7 +84,7 @@ Needs testing with significant pedal torque (>10 Nm).
 
 | Cmd | Name | Response | Field |
 |-----|------|----------|-------|
-| 17 (0x11) | RANGE_PER_MODE | payload[0-11] | Range in km per assist mode (motor-calculated) |
+| 17 (0x11) | RANGE_PER_MODE | payload[0-11] uint8 each | Range in km per assist mode (uint8, ≥245=overflow) |
 | 13 (0x0D) | BAT_MAIN_FW | payload[0-14] | Main battery hardware + software version |
 | 14 (0x0E) | BAT_MAIN_CYCLES | payload[2-3] LE | Main battery charge cycles |
 | 19 (0x13) | BAT_MAIN_LEVEL | payload[2]=capacity%, [3]=health% | Main battery state |
@@ -94,6 +94,28 @@ Needs testing with significant pedal torque (>10 Nm).
 
 **Send format:** `[FB, 21, AES([0x21, cmd, zeros...], key0), 0x00, CRC]`
 **Polled every 2min during ride for updated ranges.**
+
+### Cmd 17 — RANGE_PER_MODE Byte Layout (confirmed via RideControl decompilation)
+
+Each byte is uint8 (0-254 = km, ≥245 = overflow for high-range modes like ECO/TOUR).
+RideControl (ba/g4.java:380) displays `∞` for values ≥255. Protocol has NO uint16 encoding.
+
+| Offset | Giant Internal | KROMI Display | Notes |
+|--------|---------------|---------------|-------|
+| [0] | eco | ECO | Often overflows (>245km) |
+| [1] | normal | — | Unused in 5-mode bikes |
+| [2] | power | — | Raw power (different from power+) |
+| [3] | boostPlus | — | |
+| [4] | boost | — | |
+| [5] | powerPlus | **POWER** | Confirmed: dec[7]=0xA6=166km |
+| [6] | climbPlus | **SPORT** | Confirmed: dec[8]=0xCF=207km |
+| [7] | climb | **ACTIVE** | Confirmed: dec[9]=0xD9=217km |
+| [8] | normalPlus | — | |
+| [9] | tourPlus | — | |
+| [10] | tour | **TOUR** | Often overflows (>245km) |
+| [11] | smart | SMART | |
+
+**Overflow handling:** When byte ≥245, BLE bridge sends -1. PWA computes estimated range from `totalWh / calibrated_consumption_wh_km`. UI shows `~` prefix for estimated values.
 
 ## FC21 Encrypted Poll — readRidingData (cmd 0x1B)
 

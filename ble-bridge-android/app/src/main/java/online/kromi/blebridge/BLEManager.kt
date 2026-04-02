@@ -746,26 +746,26 @@ class BLEManager(private val context: Context) {
                                     }
                                     0x11 -> {
                                         // cmd 17: REMAINING RANGE per mode (motor-calculated)
-                                        // Confirmed from real bike data vs RideControl display:
-                                        //   dec[7]=0xA6=166 → POWER: 166km ✓
-                                        //   dec[8]=0xCF=207 → SPORT: 207km ✓
-                                        //   dec[9]=0xD9=217 → ACTIVE: 217km ✓
+                                        // GEV protocol uses uint8 per mode (0-254 valid, ≥245 = overflow)
+                                        // RideControl decompiled: single byte per mode, ≥255 shows "∞"
                                         // RideControl field mapping (from decompilation):
                                         //   [2]=eco, [3]=normal, [4]=power(raw), [5]=boost+, [6]=boost
                                         //   [7]=power+, [8]=climb+, [9]=climb, [10]=normal+
                                         //   [11]=tour+, [12]=tour, [13]=smart
                                         // Giant mode names → display: power+=POWER, climb+=SPORT, climb=ACTIVE
-                                        val power = dec[7].toInt() and 0xFF   // Power+ = POWER mode
-                                        val sport = dec[8].toInt() and 0xFF   // Climb+ = SPORT mode
-                                        val active = dec[9].toInt() and 0xFF  // Climb = ACTIVE mode
-                                        val tour = dec[12].toInt() and 0xFF   // Tour = TOUR mode
-                                        val eco = dec[2].toInt() and 0xFF     // Eco (may need uint16 for >255km)
-                                        val smart = dec[13].toInt() and 0xFF  // Smart
+                                        fun rangeVal(b: Byte): Int {
+                                            val v = b.toInt() and 0xFF
+                                            return if (v >= 245) -1 else v  // ≥245 = overflow, send -1
+                                        }
+                                        val power = rangeVal(dec[7])   // Power+ = POWER mode
+                                        val sport = rangeVal(dec[8])   // Climb+ = SPORT mode
+                                        val active = rangeVal(dec[9])  // Climb = ACTIVE mode
+                                        val tour = rangeVal(dec[12])   // Tour = TOUR mode
+                                        val eco = rangeVal(dec[2])     // Eco
+                                        val smart = rangeVal(dec[13])  // Smart
 
-                                        // ECO/TOUR might be >255km — check if high bytes exist
-                                        // For now log raw hex for further analysis
                                         val rawHex = dec.joinToString("") { "%02x".format(it) }
-                                        Log.i(TAG, "★ RANGE: eco=%dkm tour=%dkm active=%dkm sport=%dkm power=%dkm smart=%dkm raw=%s"
+                                        Log.i(TAG, "★ RANGE: eco=%d tour=%d active=%d sport=%d power=%d smart=%d raw=%s"
                                             .format(eco, tour, active, sport, power, smart, rawHex))
                                         onDataReceived?.invoke(JSONObject()
                                             .put("type", "rangePerMode")
