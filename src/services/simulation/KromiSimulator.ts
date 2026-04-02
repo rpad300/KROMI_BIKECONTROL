@@ -107,7 +107,14 @@ function motorConsumptionW(
   return motorPowerW / 0.80;
 }
 
-export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
+import type { SurfaceCategory } from '../import/RouteTerrainService';
+import type { HistoricalWeather } from '../import/HistoricalWeatherService';
+
+export function simulateKromi(
+  records: ImportedRecord[],
+  terrainSurfaces?: SurfaceCategory[],
+  weather?: HistoricalWeather,
+): SimulationSummary {
   const rider = useSettingsStore.getState().riderProfile;
   const bike = safeBikeConfig(useSettingsStore.getState().bikeConfig);
   const totalWh = bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0);
@@ -270,8 +277,25 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
       : r.hr_bpm >= targetZone.min_bpm ? 2 : 1) : 0;
     const learnedAdj = useLearningStore.getState().getAdjustment(gradient, hrZoneForLearning);
 
-    const rawScore = Math.max(0, Math.min(100, hrTarget + anticipation + contextPenalty + stoppedPenalty + learnedAdj));
-    const instantScore = Math.round(rawScore * batteryMod);
+    // === ENVIRONMENT: terrain + weather (from enrichment) ===
+    let envAdj = 0;
+    const surface: SurfaceCategory = terrainSurfaces?.[i] ?? 'gravel';
+    if (surface === 'technical') envAdj += 8;
+    else if (surface === 'dirt') envAdj += 4;
+    else if (surface === 'gravel') envAdj += 2;
+
+    if (weather) {
+      if (weather.wind_speed_kmh > 15) envAdj += Math.min(8, Math.round((weather.wind_speed_kmh - 15) / 5) * 2);
+      if (weather.temp_c > 32) envAdj += Math.min(6, Math.round((weather.temp_c - 32) / 3) * 2);
+    }
+
+    let coldBatteryMod = 1.0;
+    if (weather && weather.temp_c < 5) {
+      coldBatteryMod = Math.max(0.7, 1 - (5 - weather.temp_c) * 0.015);
+    }
+
+    const rawScore = Math.max(0, Math.min(100, hrTarget + anticipation + contextPenalty + stoppedPenalty + learnedAdj + envAdj));
+    const instantScore = Math.round(rawScore * batteryMod * coldBatteryMod);
 
     // === SMOOTHING: EMA prevents oscillation, gives time for HR to react ===
     smoothedScore = smoothedScore + EMA_ALPHA * (instantScore - smoothedScore);
@@ -305,14 +329,14 @@ export function simulateKromi(records: ImportedRecord[]): SimulationSummary {
     const dt = i > 0 ? (r.elapsed_s - records[i - 1]!.elapsed_s) : 0;
     const dtH = dt / 3600;
     if (r.speed_kmh > 2 && dtH > 0) {
-      // KROMI: consumption from physics model with interpolated ASMO values
-      const kromiW = motorConsumptionW(r.speed_kmh, gradient, rider.weight_kg, asmo.support_pct, asmo.torque, bike.max_power_w);
+      // KROMI: consumption from physics model with surface-aware rolling resistance
+      const kromiW = motorConsumptionW(r.speed_kmh, gradient, rider.weight_kg, asmo.support_pct, asmo.torque, bike.max_power_w, surface);
       batteryWh = Math.max(0, batteryWh - kromiW * dtH);
-      // Fixed baseline: same physics, fixed assist params
-      const fixedW = motorConsumptionW(r.speed_kmh, gradient, rider.weight_kg, bike.fixed_baseline.assist_pct, bike.fixed_baseline.torque_nm, bike.max_power_w);
+      // Fixed baseline: same physics + surface
+      const fixedW = motorConsumptionW(r.speed_kmh, gradient, rider.weight_kg, bike.fixed_baseline.assist_pct, bike.fixed_baseline.torque_nm, bike.max_power_w, surface);
       batteryFixedWh = Math.max(0, batteryFixedWh - fixedW * dtH);
       // Always MAX: worst case
-      const maxW = motorConsumptionW(r.speed_kmh, gradient, rider.weight_kg, bike.tuning_max.assist_pct, bike.tuning_max.torque_nm, bike.max_power_w);
+      const maxW = motorConsumptionW(r.speed_kmh, gradient, rider.weight_kg, bike.tuning_max.assist_pct, bike.tuning_max.torque_nm, bike.max_power_w, surface);
       batteryMaxWh = Math.max(0, batteryMaxWh - maxW * dtH);
     }
 

@@ -2,6 +2,8 @@ import { useState, useRef } from 'react';
 import { parseFitFile, enrichWithElevation, saveImportedRide, type ImportedRide } from '../../services/import/FitImportService';
 import { updateStatsFromRide, type AthleteStats } from '../../services/import/AthleteProfileBuilder';
 import { simulateKromi, type SimulationSummary } from '../../services/simulation/KromiSimulator';
+import { enrichRouteWithTerrain } from '../../services/import/RouteTerrainService';
+import { fetchHistoricalWeather } from '../../services/import/HistoricalWeatherService';
 
 /**
  * FIT file import UI.
@@ -26,7 +28,21 @@ export function FitImport({ onImported }: { onImported?: () => void } = {}) {
         const buffer = await file.arrayBuffer();
         const ride = await parseFitFile(buffer);
         await enrichWithElevation(ride);
-        const sim = simulateKromi(ride.records);
+
+        // Enrich with terrain (OSM Overpass) + historical weather (Open-Meteo)
+        const gpsRecords = ride.records.filter((r) => r.lat !== 0 || r.lng !== 0);
+        const terrain = gpsRecords.length > 0
+          ? await enrichRouteWithTerrain(gpsRecords).catch(() => null)
+          : null;
+
+        const rideDate = new Date(ride.startedAt);
+        const rideHour = rideDate.getHours();
+        const firstGps = gpsRecords[0];
+        const weather = firstGps
+          ? await fetchHistoricalWeather(firstGps.lat, firstGps.lng, rideDate, rideHour).catch(() => null)
+          : null;
+
+        const sim = simulateKromi(ride.records, terrain?.surfaces, weather ?? undefined);
         const saved = await saveImportedRide(ride, sim);
         const updatedStats = await updateStatsFromRide(ride);
         newResults.push({ ride, saved, sim });
