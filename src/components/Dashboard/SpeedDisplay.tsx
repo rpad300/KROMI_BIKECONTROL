@@ -34,22 +34,18 @@ export function SpeedDisplay() {
           <span className="text-sm font-bold text-gray-300 tabular-nums">{distance.toFixed(2)}</span>
           <span className="text-[10px] text-gray-600">km</span>
         </div>
-        {rideTime > 0 && (
-          <>
-            <div className="w-px h-3 bg-gray-700" />
-            <div className="flex items-baseline gap-0.5">
-              <span className="text-sm font-bold text-gray-300 tabular-nums">{formatTime(rideTime)}</span>
-              <span className="text-[10px] text-gray-600">tempo</span>
-            </div>
-            <div className="w-px h-3 bg-gray-700" />
-            <div className="flex items-baseline gap-0.5">
-              <span className="text-sm font-bold text-gray-300 tabular-nums">
-                {(distance / (rideTime / 3600)).toFixed(1)}
-              </span>
-              <span className="text-[10px] text-gray-600">avg</span>
-            </div>
-          </>
-        )}
+        <div className="w-px h-3 bg-gray-700" />
+        <div className="flex items-baseline gap-0.5">
+          <span className="text-sm font-bold text-gray-300 tabular-nums">{formatTime(rideTime)}</span>
+          <span className="text-[10px] text-gray-600">tempo</span>
+        </div>
+        <div className="w-px h-3 bg-gray-700" />
+        <div className="flex items-baseline gap-0.5">
+          <span className="text-sm font-bold text-gray-300 tabular-nums">
+            {rideTime > 0 ? (distance / (rideTime / 3600)).toFixed(1) : '0.0'}
+          </span>
+          <span className="text-[10px] text-gray-600">avg</span>
+        </div>
       </div>
     </div>
   );
