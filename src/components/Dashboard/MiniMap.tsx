@@ -12,6 +12,7 @@ export function MiniMap() {
   const markerRef = useRef<google.maps.Marker | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(false);
+  const [mapType, setMapType] = useState<'hybrid' | 'terrain' | 'roadmap'>('hybrid');
 
   const lat = useMapStore((s) => s.latitude);
   const lng = useMapStore((s) => s.longitude);
@@ -34,22 +35,20 @@ export function MiniMap() {
       mapInstance.current = new google.maps.Map(mapRef.current, {
         center: { lat: lat || 41.19, lng: lng || -8.43 },
         zoom: 15,
-        mapTypeId: 'terrain',
+        mapTypeId: mapType,
         disableDefaultUI: true,
         gestureHandling: 'greedy',
-        styles: [
-          { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
-          { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
-          { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
-          { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#304a7d' }] },
-          { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
-        ],
       });
     } catch (e) {
       console.error('[MiniMap] Failed to create map:', e);
       setError(true);
     }
   }, [ready]);
+
+  // Update map type
+  useEffect(() => {
+    mapInstance.current?.setMapTypeId(mapType);
+  }, [mapType]);
 
   // Update position
   useEffect(() => {
@@ -102,9 +101,21 @@ export function MiniMap() {
     );
   }
 
+  const cycleMapType = () => {
+    setMapType((t) => t === 'hybrid' ? 'terrain' : t === 'terrain' ? 'roadmap' : 'hybrid');
+  };
+
+  const mapTypeLabel = mapType === 'hybrid' ? 'Satelite' : mapType === 'terrain' ? 'Terreno' : 'Mapa';
+
   return (
-    <div className="bg-gray-800 rounded-xl overflow-hidden">
+    <div className="bg-gray-800 rounded-xl overflow-hidden relative">
       <div ref={mapRef} className="h-36 w-full" />
+      <button
+        onClick={cycleMapType}
+        className="absolute top-2 right-2 bg-gray-900/80 text-[9px] text-gray-300 px-2 py-1 rounded font-bold active:scale-95"
+      >
+        {mapTypeLabel}
+      </button>
       <div className="flex items-center justify-between px-3 py-1.5">
         <div className="flex items-center gap-1.5">
           <span className="material-symbols-outlined text-emerald-400 text-xs">my_location</span>
