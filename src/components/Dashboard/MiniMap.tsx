@@ -9,8 +9,9 @@ import { initGoogleMaps, isMapsLoaded } from '../../services/maps/GoogleMapsServ
 export function MiniMap() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<google.maps.Map | null>(null);
-  const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+  const markerRef = useRef<google.maps.Marker | null>(null);
   const [ready, setReady] = useState(false);
+  const [error, setError] = useState(false);
 
   const lat = useMapStore((s) => s.latitude);
   const lng = useMapStore((s) => s.longitude);
@@ -19,7 +20,9 @@ export function MiniMap() {
   const gpsError = useMapStore((s) => s.gpsError);
 
   useEffect(() => {
-    initGoogleMaps().then(() => setReady(true)).catch(() => {});
+    initGoogleMaps()
+      .then(() => setReady(true))
+      .catch(() => setError(true));
   }, []);
 
   // Create map
@@ -27,21 +30,26 @@ export function MiniMap() {
     if (!ready || !mapRef.current || mapInstance.current) return;
     if (!isMapsLoaded()) return;
 
-    mapInstance.current = new google.maps.Map(mapRef.current, {
-      center: { lat: lat || 41.19, lng: lng || -8.43 },
-      zoom: 15,
-      mapTypeId: 'terrain',
-      disableDefaultUI: true,
-      gestureHandling: 'greedy',
-      styles: [
-        { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
-        { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
-        { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
-        { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#304a7d' }] },
-        { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
-      ],
-    });
-  }, [ready, lat, lng]);
+    try {
+      mapInstance.current = new google.maps.Map(mapRef.current, {
+        center: { lat: lat || 41.19, lng: lng || -8.43 },
+        zoom: 15,
+        mapTypeId: 'terrain',
+        disableDefaultUI: true,
+        gestureHandling: 'greedy',
+        styles: [
+          { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
+          { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
+          { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
+          { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#304a7d' }] },
+          { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
+        ],
+      });
+    } catch (e) {
+      console.error('[MiniMap] Failed to create map:', e);
+      setError(true);
+    }
+  }, [ready]);
 
   // Update position
   useEffect(() => {
@@ -49,18 +57,32 @@ export function MiniMap() {
     const pos = { lat, lng };
     mapInstance.current.panTo(pos);
 
-    if (!markerRef.current && isMapsLoaded()) {
-      const dot = document.createElement('div');
-      dot.style.cssText = 'width:14px;height:14px;background:#10b981;border:3px solid #fff;border-radius:50%;box-shadow:0 0 8px #10b981';
-      markerRef.current = new google.maps.marker.AdvancedMarkerElement({
+    if (!markerRef.current) {
+      markerRef.current = new google.maps.Marker({
         map: mapInstance.current,
         position: pos,
-        content: dot,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: '#10b981',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+        },
       });
-    } else if (markerRef.current) {
-      markerRef.current.position = pos;
+    } else {
+      markerRef.current.setPosition(pos);
     }
   }, [lat, lng]);
+
+  if (error) {
+    return (
+      <div className="bg-gray-800 rounded-xl p-3 h-16 flex items-center justify-center gap-2">
+        <span className="material-symbols-outlined text-yellow-400 text-sm">map</span>
+        <span className="text-gray-500 text-xs">Mapa indisponivel</span>
+      </div>
+    );
+  }
 
   if (gpsError) {
     return (
@@ -71,7 +93,7 @@ export function MiniMap() {
     );
   }
 
-  if (!lat && !lng) {
+  if (!lat && !lng && !ready) {
     return (
       <div className="bg-gray-800 rounded-xl p-3 h-16 flex items-center justify-center gap-2">
         <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
@@ -82,13 +104,13 @@ export function MiniMap() {
 
   return (
     <div className="bg-gray-800 rounded-xl overflow-hidden">
-      {/* Map */}
       <div ref={mapRef} className="h-36 w-full" />
-      {/* Info bar */}
       <div className="flex items-center justify-between px-3 py-1.5">
         <div className="flex items-center gap-1.5">
           <span className="material-symbols-outlined text-emerald-400 text-xs">my_location</span>
-          <span className="text-[9px] text-gray-500 tabular-nums">{lat.toFixed(4)}, {lng.toFixed(4)}</span>
+          <span className="text-[9px] text-gray-500 tabular-nums">
+            {lat ? `${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'A localizar...'}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           {alt !== null && (
@@ -96,7 +118,9 @@ export function MiniMap() {
               <span className="text-gray-300 font-bold">{Math.round(alt)}</span>m
             </span>
           )}
-          <span className="text-[9px] text-gray-600">±{Math.round(accuracy)}m</span>
+          {accuracy < 500 && (
+            <span className="text-[9px] text-gray-600">±{Math.round(accuracy)}m</span>
+          )}
         </div>
       </div>
     </div>
