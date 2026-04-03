@@ -299,19 +299,26 @@ function RiderPage() {
 
       <SectionLabel>Zonas Cardíacas</SectionLabel>
       <Card>
-        {/* FC source indicator */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: '14px', color: profile.hr_max > 180 ? '#3fff8b' : '#fbbf24' }}>
-            {profile.hr_max > 180 ? 'verified' : 'info'}
-          </span>
-          <span style={{ fontSize: '10px', color: '#adaaaa' }}>
-            {profile.hr_max > 0 && profile.hr_max !== (220 - (profile.age || 30))
-              ? 'FC Máxima configurada manualmente ou detectada'
-              : 'FC Máxima estimada pela idade (220-idade) — será ajustada com dados reais'}
-          </span>
+        {/* Source indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '14px', color: profile.zones_source === 'manual' ? '#3fff8b' : profile.zones_source === 'learned' ? '#e966ff' : '#fbbf24' }}>
+              {profile.zones_source === 'manual' ? 'edit' : profile.zones_source === 'learned' ? 'psychology' : 'calculate'}
+            </span>
+            <span style={{ fontSize: '10px', color: '#adaaaa' }}>
+              {profile.zones_source === 'manual' ? 'Zonas definidas manualmente' :
+               profile.zones_source === 'learned' ? 'Zonas ajustadas pelo KROMI' :
+               'Zonas calculadas (220-idade)'}
+            </span>
+          </div>
+          {profile.zones_updated_at && (
+            <span style={{ fontSize: '8px', color: '#494847' }}>
+              {new Date(profile.zones_updated_at).toLocaleDateString()}
+            </span>
+          )}
         </div>
 
-        {/* HR Max — editable with estimate helper */}
+        {/* HR Max + Rest */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ color: '#adaaaa', fontSize: '13px' }}>FC Máxima (bpm)</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -330,33 +337,61 @@ function RiderPage() {
         </div>
         <NumberField label="FC Repouso (bpm)" value={profile.hr_rest} onChange={(v) => updateProfile({ hr_rest: v })} />
 
-        {/* Zone visualization + target selector */}
+        {/* Editable zones */}
         <div style={{ borderTop: '1px solid rgba(73,72,71,0.2)', marginTop: '8px', paddingTop: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-            <span style={{ fontSize: '10px', color: '#adaaaa' }}>Seleciona a zona alvo para o KROMI</span>
+            <span style={{ fontSize: '10px', color: '#adaaaa' }}>Define os limites de cada zona (bpm). Tap na zona para a selecionar como alvo.</span>
+            {profile.custom_zones && (
+              <button onClick={() => updateProfile({ custom_zones: undefined, zones_source: 'formula', zones_updated_at: new Date().toISOString() })}
+                style={{ fontSize: '9px', color: '#6e9bff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                Reset fórmula
+              </button>
+            )}
           </div>
         </div>
         <div className="space-y-1.5">
-          {calculateZones(profile.hr_max).map((zone, i) => {
+          {calculateZones(profile.hr_max, profile.custom_zones).map((zone, i) => {
             const isTarget = (profile.target_zone ?? 2) === i + 1;
             return (
-              <button key={zone.name} onClick={() => updateProfile({ target_zone: i + 1 })}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px', backgroundColor: isTarget ? 'rgba(63,255,139,0.1)' : '#262626', border: isTarget ? '1px solid rgba(63,255,139,0.3)' : '1px solid transparent', cursor: 'pointer', textAlign: 'left' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: zone.color }} />
-                  <span style={{ fontSize: '12px', color: 'white', fontWeight: 700 }}>{zone.name}</span>
-                  <span style={{ fontSize: '10px', color: '#777575' }}>{zone.min_bpm}-{zone.max_bpm}bpm</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '9px', color: '#494847' }}>{zone.description}</span>
-                  {isTarget && <span style={{ fontSize: '8px', padding: '2px 6px', backgroundColor: '#3fff8b', color: 'black', fontWeight: 900 }}>ALVO</span>}
-                </div>
-              </button>
+              <div key={zone.name} style={{
+                display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 8px',
+                backgroundColor: isTarget ? 'rgba(63,255,139,0.1)' : '#262626',
+                border: isTarget ? '1px solid rgba(63,255,139,0.3)' : '1px solid transparent',
+              }}>
+                {/* Color dot + name — tap to set as target */}
+                <button onClick={() => updateProfile({ target_zone: i + 1 })} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', cursor: 'pointer', minWidth: '100px' }}>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: zone.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: '11px', color: 'white', fontWeight: 700 }}>{zone.name.split(' ')[0]}</span>
+                </button>
+
+                {/* Editable min-max bpm */}
+                <input type="number" value={zone.min_bpm}
+                  onChange={(e) => {
+                    const customs = profile.custom_zones ? [...profile.custom_zones] : calculateZones(profile.hr_max).map((z) => ({ min_bpm: z.min_bpm, max_bpm: z.max_bpm }));
+                    customs[i] = { ...customs[i]!, min_bpm: Number(e.target.value) };
+                    updateProfile({ custom_zones: customs, zones_source: 'manual', zones_updated_at: new Date().toISOString() });
+                  }}
+                  style={{ width: '50px', backgroundColor: '#1a1919', color: 'white', padding: '4px', border: '1px solid #494847', textAlign: 'center', fontSize: '12px' }} className="tabular-nums" />
+                <span style={{ fontSize: '10px', color: '#494847' }}>—</span>
+                <input type="number" value={zone.max_bpm}
+                  onChange={(e) => {
+                    const customs = profile.custom_zones ? [...profile.custom_zones] : calculateZones(profile.hr_max).map((z) => ({ min_bpm: z.min_bpm, max_bpm: z.max_bpm }));
+                    customs[i] = { ...customs[i]!, max_bpm: Number(e.target.value) };
+                    updateProfile({ custom_zones: customs, zones_source: 'manual', zones_updated_at: new Date().toISOString() });
+                  }}
+                  style={{ width: '50px', backgroundColor: '#1a1919', color: 'white', padding: '4px', border: '1px solid #494847', textAlign: 'center', fontSize: '12px' }} className="tabular-nums" />
+                <span style={{ fontSize: '9px', color: '#777575', flex: 1, textAlign: 'right' }}>bpm</span>
+
+                {/* Target badge */}
+                {isTarget && <span style={{ fontSize: '7px', padding: '2px 4px', backgroundColor: '#3fff8b', color: 'black', fontWeight: 900, flexShrink: 0 }}>ALVO</span>}
+              </div>
             );
           })}
         </div>
         <div style={{ fontSize: '9px', color: '#494847', marginTop: '8px' }}>
-          Valores iniciais baseados na fórmula 220-idade. O KROMI ajusta automaticamente com dados das tuas voltas (FC max observada, tempo em zona, padrões de esforço).
+          {profile.zones_source === 'manual'
+            ? 'Zonas definidas por ti. O KROMI usa estes valores. Pode sugerir ajustes após análise de voltas.'
+            : 'Define os teus valores conhecidos. Sem dados, usa 220-idade como base. O KROMI ajusta com dados reais.'}
         </div>
       </Card>
 
