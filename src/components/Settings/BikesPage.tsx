@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   useSettingsStore, safeBikeConfig,
   bikeCategoryLabel, suspensionLabel,
@@ -7,6 +7,7 @@ import {
 } from '../../store/settingsStore';
 import { useBikeStore } from '../../store/bikeStore';
 import { AutocompleteField } from '../shared/AutocompleteField';
+import { getTopComponents, type BikeComponent } from '../../services/bike/BikeComponentService';
 
 // ═══════════════════════════════════════════════════════════
 // BIKE LIST — shows all bikes, active toggle, add, click→detail
@@ -208,6 +209,32 @@ function BikeDetailPage({ bikeId, onBack }: { bikeId: string; onBack: () => void
           {isEBike ? 'electric_bike' : 'pedal_bike'}
         </span>
       </div>
+
+      {/* ── Bike Model Picker — load from DB ────────────── */}
+      <BikeModelPicker bike={bike} onApply={(specs) => {
+        const s = specs as Record<string, unknown>;
+        update({
+          bike_type: (s.bike_type as 'ebike' | 'mechanical') ?? bike.bike_type,
+          category: (s.category as BikeCategory) ?? bike.category,
+          suspension: (s.suspension as SuspensionType) ?? bike.suspension,
+          frame_material: (s.frame_material as string) ?? bike.frame_material,
+          fork_travel_mm: (s.fork_travel_mm as number) ?? bike.fork_travel_mm,
+          rear_travel_mm: (s.rear_travel_mm as number) ?? bike.rear_travel_mm,
+          wheel_size: (s.wheel_size as string) ?? bike.wheel_size,
+          wheel_circumference_mm: s.wheel_size === '29"' ? 2290 : s.wheel_size === '27.5"' ? 2168 : s.wheel_size === '700c' ? 2105 : bike.wheel_circumference_mm,
+          fork_model: (s.fork as string) ?? bike.fork_model,
+          rear_shock_model: (s.shock as string) ?? bike.rear_shock_model,
+          brake_model: (s.brake as string) ?? bike.brake_model,
+          groupset_model: (s.groupset as string) ?? bike.groupset_model,
+          motor_name: (s.motor as string) ?? bike.motor_name,
+          main_battery_wh: (s.battery_wh as number) ?? bike.main_battery_wh,
+          cassette_range: (s.cassette as string) ?? bike.cassette_range,
+          drivetrain_type: (s.drivetrain as string)?.startsWith('1') ? '1x' : (s.drivetrain as string)?.startsWith('2') ? '2x' : bike.drivetrain_type,
+          weight_kg: s._weight_kg ? (s._weight_kg as number) : bike.weight_kg,
+          rotor_front_mm: (s.rotor_front_mm as number) ?? bike.rotor_front_mm,
+          rotor_rear_mm: (s.rotor_rear_mm as number) ?? bike.rotor_rear_mm,
+        });
+      }} />
 
       {/* ── Section: General ─────────────────────────────── */}
       <SectionHeader icon="info" color="#3fff8b" label="Geral" />
@@ -643,6 +670,96 @@ function EBikeSection({ bike, update }: { bike: BikeConfig; update: (p: Partial<
 // ═══════════════════════════════════════════════════════════
 // Shared UI components
 // ═══════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════
+// BIKE MODEL PICKER — load full bike specs from DB
+// ═══════════════════════════════════════════════════════════
+
+function BikeModelPicker({ bike, onApply }: { bike: BikeConfig; onApply: (specs: Record<string, unknown>) => void }) {
+  const [frames, setFrames] = useState<BikeComponent[]>([]);
+  const [brands, setBrands] = useState<string[]>([]);
+  const [models, setModels] = useState<BikeComponent[]>([]);
+  const [selectedBrand, setSelectedBrand] = useState('');
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    getTopComponents('frame', 300).then((data) => {
+      setFrames(data);
+      const brandMap = new Map<string, number>();
+      data.forEach((c) => brandMap.set(c.brand, (brandMap.get(c.brand) ?? 0) + c.usage_count));
+      setBrands([...brandMap.entries()].sort((a, b) => b[1] - a[1]).map(([b]) => b));
+
+      // Detect current brand
+      if (bike.brand) {
+        const found = [...brandMap.keys()].find((b) => b.toLowerCase() === bike.brand.toLowerCase());
+        if (found) {
+          setSelectedBrand(found);
+          setModels(data.filter((c) => c.brand === found));
+        }
+      }
+      setLoaded(true);
+    });
+  }, [bike.brand]);
+
+  const handleBrandChange = (brand: string) => {
+    setSelectedBrand(brand);
+    setModels(frames.filter((c) => c.brand === brand));
+  };
+
+  const handleModelSelect = (modelName: string) => {
+    const comp = models.find((c) => c.model === modelName);
+    if (!comp) return;
+    const s = comp.specs as Record<string, unknown>;
+    // Add weight_kg from weight_g
+    if (comp.weight_g) s._weight_kg = comp.weight_g / 1000;
+    // Update name to brand + model
+    onApply(s);
+    // Also update name, brand, model, year
+    const { updateBikeConfig } = useSettingsStore.getState();
+    updateBikeConfig({
+      name: `${comp.brand} ${comp.model}`,
+      brand: comp.brand,
+      model: comp.model,
+      year: comp.year_from ?? 0,
+    });
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <div style={{ padding: '10px 12px', backgroundColor: '#131313', borderRadius: '6px', border: '1px solid rgba(63,255,139,0.15)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+        <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#3fff8b' }}>auto_awesome</span>
+        <span style={{ fontSize: '11px', color: '#3fff8b', fontWeight: 700 }}>Carregar modelo da base de dados</span>
+        <span style={{ fontSize: '9px', color: '#494847', flex: 1, textAlign: 'right' }}>{frames.length} bikes</span>
+      </div>
+      <div style={{ display: 'flex', gap: '4px' }}>
+        <select value={selectedBrand} onChange={(e) => handleBrandChange(e.target.value)}
+          style={{ flex: '0 0 35%', padding: '8px 24px 8px 8px', backgroundColor: '#0e0e0e', border: '1px solid rgba(73,72,71,0.3)', borderRadius: '4px', color: selectedBrand ? 'white' : '#777575', fontSize: '12px', outline: 'none', appearance: 'none' as const, backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath d=\'M3 5l3 3 3-3\' fill=\'none\' stroke=\'%23777575\' stroke-width=\'1.5\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}>
+          <option value="" disabled>Marca</option>
+          {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
+        <select value="" onChange={(e) => handleModelSelect(e.target.value)} disabled={!selectedBrand}
+          style={{ flex: 1, padding: '8px 24px 8px 8px', backgroundColor: '#0e0e0e', border: '1px solid rgba(73,72,71,0.3)', borderRadius: '4px', color: '#777575', fontSize: '11px', outline: 'none', opacity: selectedBrand ? 1 : 0.5, appearance: 'none' as const, backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath d=\'M3 5l3 3 3-3\' fill=\'none\' stroke=\'%23777575\' stroke-width=\'1.5\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}>
+          <option value="" disabled>Escolher modelo → preenche tudo</option>
+          {models.map((c) => {
+            const s = c.specs as Record<string, unknown>;
+            const tag = [
+              s.suspension !== 'rigid' ? `${s.fork_travel_mm}/${s.rear_travel_mm}mm` : '',
+              s.motor ? `${s.motor}` : '',
+              c.weight_g ? `${(c.weight_g / 1000).toFixed(1)}kg` : '',
+              c.year_from ? `${c.year_from}` : '',
+            ].filter(Boolean).join(' · ');
+            return <option key={c.id} value={c.model}>{c.model}{tag ? ` — ${tag}` : ''}</option>;
+          })}
+        </select>
+      </div>
+      <div style={{ fontSize: '9px', color: '#494847', marginTop: '4px' }}>
+        Selecciona um modelo para carregar todas as specs. Podes editar tudo depois.
+      </div>
+    </div>
+  );
+}
 
 function SectionHeader({ icon, color, label, count }: { icon: string; color: string; label: string; count?: number }) {
   return (
