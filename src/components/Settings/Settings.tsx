@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSettingsStore, safeBikeConfig, type BikeConfig } from '../../store/settingsStore';
 import { calculateZones, calculatePowerZones } from '../../types/athlete.types';
 import { useBikeStore } from '../../store/bikeStore';
@@ -11,7 +11,7 @@ import { BikeFitPage } from './BikeFitPage';
 import { importKomootRoute } from '../../services/maps/KomootService';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
-type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'bikefit' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account';
+type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account';
 
 const MENU_ITEMS: { id: SettingsPage; icon: string; label: string; desc: string; color: string }[] = [
   { id: 'personal', icon: 'badge', label: 'Dados Pessoais', desc: 'Nome, nascimento, género, clube, foto', color: '#ff716c' },
@@ -19,6 +19,7 @@ const MENU_ITEMS: { id: SettingsPage; icon: string; label: string; desc: string;
   { id: 'zones', icon: 'show_chart', label: 'Zonas HR + Potência', desc: 'Zonas cardíacas e de potência editáveis', color: '#fbbf24' },
   { id: 'medical', icon: 'health_and_safety', label: 'Médico + Objectivos', desc: 'Condições, objectivos, perfil atleta', color: '#ff716c' },
   { id: 'bikefit', icon: 'straighten', label: 'Bike Fit', desc: '25 medidas, por bike, com histórico', color: '#6e9bff' },
+  { id: 'club', icon: 'groups', label: 'Clube', desc: 'Gerir clube, membros, rides em grupo', color: '#fbbf24' },
   { id: 'bike', icon: 'pedal_bike', label: 'Bicicleta', desc: 'Bateria, motor, consumo, hardware', color: '#3fff8b' },
   { id: 'kromi', icon: 'psychology', label: 'KROMI Intelligence', desc: 'Auto-assist, aprendizagem', color: '#e966ff' },
   { id: 'bluetooth', icon: 'bluetooth', label: 'Bluetooth', desc: 'Ligação, sensores, estado', color: '#6e9bff' },
@@ -60,6 +61,7 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
         {activePage === 'zones' && <ZonesPage />}
         {activePage === 'medical' && <MedicalPage />}
         {activePage === 'bikefit' && <BikeFitSection />}
+        {activePage === 'club' && <ClubPage />}
         {activePage === 'bike' && <BikePage />}
         {activePage === 'kromi' && <KromiPage />}
         {activePage === 'bluetooth' && <BluetoothPage />}
@@ -142,25 +144,10 @@ function PersonalPage() {
   const [riderName, setRiderName] = useState(profile.name ?? '');
   const [birthdate, setBirthdate] = useState(profile.birthdate ?? '');
   const [gender, setGender] = useState(profile.gender ?? '');
-  const [clubSearch, setClubSearch] = useState('');
-  const [clubs, setClubs] = useState<{ id: string; name: string; color: string; location: string; member_count: number }[]>([]);
-
-  const SB_URL = import.meta.env.VITE_SUPABASE_URL as string;
-  const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
   const save = () => {
     const age = birthdate ? Math.floor((Date.now() - new Date(birthdate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : profile.age;
     updateProfile({ name: riderName, birthdate, gender, age });
-  };
-
-  const searchClubs = async (q: string) => {
-    if (!SB_URL || q.length < 2) { setClubs([]); return; }
-    try { const r = await fetch(`${SB_URL}/rest/v1/clubs?name=ilike.*${encodeURIComponent(q)}*&select=id,name,color,location,member_count&limit=10`, { headers: { 'apikey': SB_KEY } }); if (r.ok) setClubs(await r.json()); } catch {}
-  };
-
-  const joinClub = (club: { id: string; name: string }) => {
-    updateProfile({ club_id: club.id, club_name: club.name });
-    setClubSearch(''); setClubs([]);
   };
 
   return (
@@ -182,26 +169,15 @@ function PersonalPage() {
         {birthdate && <ReadOnlyRow label="Idade" value={`${Math.floor((Date.now() - new Date(birthdate).getTime()) / (365.25 * 24 * 60 * 60 * 1000))} anos`} color="#3fff8b" />}
       </Card>
 
-      <SectionLabel>Clube</SectionLabel>
-      <Card>
-        {profile.club_name ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span className="font-headline font-bold" style={{ fontSize: '14px', color: 'white' }}>● {profile.club_name}</span>
-            <button onClick={() => updateProfile({ club_id: undefined, club_name: undefined })} style={{ fontSize: '10px', color: '#ff716c', background: 'none', border: 'none', cursor: 'pointer' }}>Sair</button>
+      {/* Club — just show current, full management in Club page */}
+      {profile.club_name && (
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#fbbf24' }}>groups</span>
+            <span className="font-headline font-bold" style={{ fontSize: '13px', color: 'white' }}>{profile.club_name}</span>
           </div>
-        ) : (
-          <>
-            <input type="text" value={clubSearch} onChange={(e) => { setClubSearch(e.target.value); searchClubs(e.target.value); }} placeholder="Procurar clube..." style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '10px', border: 'none', fontSize: '13px' }} />
-            {clubs.map((c) => (
-              <button key={c.id} onClick={() => joinClub(c)} style={{ width: '100%', padding: '8px', display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: 'none', borderBottom: '1px solid #262626', cursor: 'pointer', textAlign: 'left' }}>
-                <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: c.color }} />
-                <span style={{ fontSize: '12px', color: 'white' }}>{c.name}</span>
-                <span style={{ fontSize: '9px', color: '#777575' }}>{c.location} · {c.member_count} membros</span>
-              </button>
-            ))}
-          </>
-        )}
-      </Card>
+        </Card>
+      )}
 
       <SectionLabel>Foto de Perfil</SectionLabel>
       <Card>
@@ -337,6 +313,169 @@ function MedicalPage() {
 
       <SectionLabel>Perfil Atleta (análise automática)</SectionLabel>
       <ProfileInsightsWidget />
+    </div>
+  );
+}
+
+function ClubPage() {
+  const profile = useSettingsStore((s) => s.riderProfile);
+  const updateProfile = useSettingsStore((s) => s.updateRiderProfile);
+  const [clubSearch, setClubSearch] = useState('');
+  const [clubs, setClubs] = useState<{ id: string; name: string; color: string; location: string; member_count: number; website?: string; description?: string }[]>([]);
+  const [members, setMembers] = useState<{ display_name: string; role: string; joined_at: string }[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newLocation, setNewLocation] = useState('');
+  const [newColor, setNewColor] = useState('#3fff8b');
+  const [newWebsite, setNewWebsite] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [clubDetail, setClubDetail] = useState<{ name: string; color: string; location: string; website?: string; description?: string; member_count: number } | null>(null);
+
+  const SB_URL = import.meta.env.VITE_SUPABASE_URL as string;
+  const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+  const userId = useAuthStore.getState().getUserId();
+
+  // Load club details + members if user has a club
+  useEffect(() => {
+    if (!profile.club_id || !SB_URL) return;
+    fetch(`${SB_URL}/rest/v1/clubs?id=eq.${profile.club_id}&select=name,color,location,website,description,member_count&limit=1`, { headers: { 'apikey': SB_KEY } })
+      .then((r) => r.json()).then((d) => { if (d[0]) setClubDetail(d[0]); }).catch(() => {});
+    fetch(`${SB_URL}/rest/v1/club_members?club_id=eq.${profile.club_id}&select=display_name,role,joined_at&order=joined_at.asc`, { headers: { 'apikey': SB_KEY } })
+      .then((r) => r.json()).then((d) => { if (Array.isArray(d)) setMembers(d); }).catch(() => {});
+  }, [profile.club_id]);
+
+  const searchClubs = async (q: string) => {
+    if (!SB_URL || q.length < 2) { setClubs([]); return; }
+    try { const r = await fetch(`${SB_URL}/rest/v1/clubs?name=ilike.*${encodeURIComponent(q)}*&select=id,name,color,location,member_count,website,description&limit=10`, { headers: { 'apikey': SB_KEY } }); if (r.ok) setClubs(await r.json()); } catch {}
+  };
+
+  const joinClub = async (club: { id: string; name: string }) => {
+    updateProfile({ club_id: club.id, club_name: club.name });
+    if (SB_URL && userId) {
+      fetch(`${SB_URL}/rest/v1/club_members`, { method: 'POST', headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' }, body: JSON.stringify({ club_id: club.id, user_id: userId, display_name: profile.name ?? 'Rider' }) }).catch(() => {});
+    }
+    setClubSearch(''); setClubs([]);
+  };
+
+  const createClub = async () => {
+    if (!SB_URL || !newName.trim()) return;
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/clubs`, { method: 'POST', headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' }, body: JSON.stringify({ name: newName.trim(), location: newLocation, color: newColor, website: newWebsite, description: newDescription, created_by: userId }) });
+      if (r.ok) { const [c] = await r.json(); await joinClub(c); setCreating(false); setNewName(''); }
+    } catch {}
+  };
+
+  const leaveClub = () => {
+    if (profile.club_id && SB_URL && userId) {
+      fetch(`${SB_URL}/rest/v1/club_members?club_id=eq.${profile.club_id}&user_id=eq.${userId}`, { method: 'DELETE', headers: { 'apikey': SB_KEY } }).catch(() => {});
+    }
+    updateProfile({ club_id: undefined, club_name: undefined });
+    setClubDetail(null); setMembers([]);
+  };
+
+  // Has club — show club info
+  if (profile.club_id && clubDetail) {
+    return (
+      <div className="space-y-4">
+        {/* Club header */}
+        <div style={{ backgroundColor: '#1a1919', padding: '16px', borderLeft: `4px solid ${clubDetail.color}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div className="font-headline font-bold" style={{ fontSize: '20px', color: 'white' }}>{clubDetail.name}</div>
+              {clubDetail.location && <div style={{ fontSize: '11px', color: '#adaaaa', marginTop: '2px' }}>📍 {clubDetail.location}</div>}
+              {clubDetail.website && <div style={{ fontSize: '10px', color: '#6e9bff', marginTop: '2px' }}>{clubDetail.website}</div>}
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div className="font-headline font-bold" style={{ fontSize: '24px', color: clubDetail.color }}>{clubDetail.member_count}</div>
+              <div style={{ fontSize: '9px', color: '#777575' }}>membros</div>
+            </div>
+          </div>
+          {clubDetail.description && <div style={{ fontSize: '11px', color: '#777575', marginTop: '8px' }}>{clubDetail.description}</div>}
+        </div>
+
+        {/* Members */}
+        <SectionLabel>Membros ({members.length})</SectionLabel>
+        <Card>
+          {members.map((m, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '16px', color: m.role === 'admin' ? '#fbbf24' : m.role === 'captain' ? '#6e9bff' : '#777575' }}>person</span>
+                <span style={{ fontSize: '12px', color: 'white' }}>{m.display_name || 'Rider'}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '9px', padding: '1px 6px', backgroundColor: m.role === 'admin' ? '#fbbf24' : '#262626', color: m.role === 'admin' ? 'black' : '#777575' }}>{m.role}</span>
+                <span style={{ fontSize: '8px', color: '#494847' }}>{new Date(m.joined_at).toLocaleDateString()}</span>
+              </div>
+            </div>
+          ))}
+          {members.length === 0 && <div style={{ fontSize: '11px', color: '#777575', textAlign: 'center' }}>A carregar membros...</div>}
+        </Card>
+
+        {/* Rides em grupo — coming soon */}
+        <SectionLabel>Rides em Grupo</SectionLabel>
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '20px', color: '#e966ff' }}>group_work</span>
+            <div>
+              <div style={{ fontSize: '12px', color: '#adaaaa' }}>Em breve — rides em grupo com tracking em tempo real</div>
+              <div style={{ fontSize: '9px', color: '#494847', marginTop: '2px' }}>Planear rotas, ver membros no mapa, comparar performance</div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Leave */}
+        <button onClick={() => { if (confirm(`Sair de ${clubDetail.name}?`)) leaveClub(); }} style={{ width: '100%', padding: '10px', backgroundColor: '#262626', color: '#ff716c', border: '1px solid rgba(255,113,108,0.3)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
+          Sair do clube
+        </button>
+      </div>
+    );
+  }
+
+  // No club — search + create
+  return (
+    <div className="space-y-4">
+      <SectionLabel>Procurar Clube</SectionLabel>
+      <Card>
+        <input type="text" value={clubSearch} onChange={(e) => { setClubSearch(e.target.value); searchClubs(e.target.value); }} placeholder="Nome do clube..."
+          style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '10px', border: 'none', fontSize: '13px' }} />
+        {clubs.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+            {clubs.map((c) => (
+              <button key={c.id} onClick={() => joinClub(c)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#262626', border: 'none', borderLeft: `3px solid ${c.color}`, cursor: 'pointer', textAlign: 'left', width: '100%' }}>
+                <div style={{ flex: 1 }}>
+                  <div className="font-headline font-bold" style={{ fontSize: '13px', color: 'white' }}>{c.name}</div>
+                  <div style={{ fontSize: '9px', color: '#777575' }}>{c.location} · {c.member_count} membros</div>
+                  {c.description && <div style={{ fontSize: '9px', color: '#494847', marginTop: '2px' }}>{c.description}</div>}
+                </div>
+                <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#3fff8b' }}>add</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <SectionLabel>Criar Novo Clube</SectionLabel>
+      {creating ? (
+        <Card>
+          <TextField label="Nome" value={newName} onChange={setNewName} />
+          <TextField label="Localização" value={newLocation} onChange={setNewLocation} />
+          <TextField label="Website" value={newWebsite} onChange={setNewWebsite} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ color: '#adaaaa', fontSize: '13px' }}>Cor</span>
+            <input type="color" value={newColor} onChange={(e) => setNewColor(e.target.value)} style={{ width: '40px', height: '30px', border: 'none', cursor: 'pointer' }} />
+          </div>
+          <textarea value={newDescription} onChange={(e) => setNewDescription(e.target.value)} placeholder="Descrição do clube..." style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: 'none', fontSize: '12px', minHeight: '60px', resize: 'vertical' }} />
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button onClick={createClub} style={{ flex: 1, padding: '10px', backgroundColor: '#3fff8b', color: 'black', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>Criar Clube</button>
+            <button onClick={() => setCreating(false)} style={{ padding: '10px', backgroundColor: '#262626', color: '#adaaaa', border: 'none', cursor: 'pointer' }}>Cancelar</button>
+          </div>
+        </Card>
+      ) : (
+        <button onClick={() => setCreating(true)} style={{ width: '100%', padding: '12px', backgroundColor: '#1a1919', border: '1px dashed #494847', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#adaaaa', fontSize: '12px' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>add</span>
+          Criar novo clube
+        </button>
+      )}
     </div>
   );
 }
