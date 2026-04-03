@@ -40,7 +40,7 @@ const EMERGENCY_NUMBERS: Record<string, { label: string; numbers: { name: string
 export function MapView() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<google.maps.Map | null>(null);
-  const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+  const markerRef = useRef<google.maps.Marker | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [location, setLocation] = useState<LocationInfo | null>(null);
@@ -86,31 +86,45 @@ export function MapView() {
     if (!mapInstance.current || !lat || !lng) return;
     const position = { lat, lng };
     if (!markerRef.current) {
-      const pin = document.createElement('div');
-      pin.style.cssText = 'width:16px;height:16px;background:#3fff8b;border-radius:50%;border:2px solid white;box-shadow:0 0 8px rgba(63,255,139,0.5)';
-      markerRef.current = new google.maps.marker.AdvancedMarkerElement({ map: mapInstance.current, position, content: pin });
+      markerRef.current = new google.maps.Marker({
+        map: mapInstance.current,
+        position,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: '#3fff8b',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+        },
+      });
     } else {
-      markerRef.current.position = position;
+      markerRef.current.setPosition(position);
     }
     mapInstance.current.panTo(position);
   }, [lat, lng]);
 
-  // Reverse geocode for locality + country
+  // Reverse geocode for locality + country (throttled — max once per 10s)
+  const lastGeocodeRef = useRef(0);
   useEffect(() => {
     if (!lat || !lng || !ready) return;
-    const geocoder = new google.maps.Geocoder();
-    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-      if (status !== 'OK' || !results?.[0]) return;
-      const components = results[0].address_components;
-      const get = (type: string) => components?.find((c) => c.types.includes(type))?.long_name ?? '';
-      const getShort = (type: string) => components?.find((c) => c.types.includes(type))?.short_name ?? '';
-      setLocation({
-        locality: get('locality') || get('administrative_area_level_2') || get('administrative_area_level_1'),
-        address: results[0].formatted_address?.split(',').slice(0, 2).join(',') ?? '',
-        country: get('country'),
-        countryCode: getShort('country'),
+    if (Date.now() - lastGeocodeRef.current < 10000) return;
+    lastGeocodeRef.current = Date.now();
+    try {
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+        if (status !== 'OK' || !results?.[0]) return;
+        const components = results[0].address_components;
+        const get = (type: string) => components?.find((c) => c.types.includes(type))?.long_name ?? '';
+        const getShort = (type: string) => components?.find((c) => c.types.includes(type))?.short_name ?? '';
+        setLocation({
+          locality: get('locality') || get('administrative_area_level_2') || get('administrative_area_level_1'),
+          address: results[0].formatted_address?.split(',').slice(0, 2).join(',') ?? '',
+          country: get('country'),
+          countryCode: getShort('country'),
+        });
       });
-    });
+    } catch { /* geocoding not available */ }
   }, [lat, lng, ready]);
 
   const emergencyInfo = EMERGENCY_NUMBERS[location?.countryCode ?? ''] ?? EMERGENCY_NUMBERS['DEFAULT']!;
