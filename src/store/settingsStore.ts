@@ -96,6 +96,15 @@ export interface BikeConfig {
   saddle_model: string;
   saddle_width_mm: number;
 
+  // ── Optional accessories ──────────────────────────────────
+  has_power_meter: boolean;
+  power_meter_model: string;  // e.g., 'Quarq DZero', 'Shimano FC-R8100-P'
+  has_gps_computer: boolean;
+  gps_computer_model: string; // e.g., 'Garmin Edge 540', 'Wahoo ELEMNT'
+  has_lights: boolean;
+  has_mudguards: boolean;
+  has_rack: boolean;
+
   // ── E-Bike specific ───────────────────────────────────────
   main_battery_wh: number;
   has_range_extender: boolean;
@@ -195,6 +204,15 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   grips_tape: 'Giant Tactal',
   saddle_model: 'Giant Contact SL',
   saddle_width_mm: 145,
+
+  // Optional accessories
+  has_power_meter: false,
+  power_meter_model: '',
+  has_gps_computer: false,
+  gps_computer_model: '',
+  has_lights: false,
+  has_mudguards: false,
+  has_rack: false,
 
   // E-Bike
   main_battery_wh: 800,

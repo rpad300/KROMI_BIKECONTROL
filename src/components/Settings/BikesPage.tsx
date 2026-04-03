@@ -514,6 +514,28 @@ function BikeDetailPage({ bike, onBack }: { bike: BikeConfig; onBack: () => void
         <NumField label="Largura selim (mm)" value={bike.saddle_width_mm} onChange={(v) => update({ saddle_width_mm: v })} />
       </Card>
 
+      {/* ── Section: Accessories (optional toggles) ────── */}
+      <SectionHeader icon="backpack" color="#e966ff" label="Acessórios" />
+      <Card>
+        <ToggleChip label="Power Meter" active={bike.has_power_meter} onChange={(v) => update({ has_power_meter: v })} />
+        {bike.has_power_meter && (
+          <AutocompleteField category="power_meter" label="Modelo" value={bike.power_meter_model}
+            onChange={(v) => update({ power_meter_model: v })} placeholder="Quarq DZero, Stages, Shimano..." />
+        )}
+
+        <ToggleChip label="Computador GPS" active={bike.has_gps_computer} onChange={(v) => update({ has_gps_computer: v })} />
+        {bike.has_gps_computer && (
+          <InputField label="Modelo" value={bike.gps_computer_model}
+            onChange={(v) => update({ gps_computer_model: v })} placeholder="Garmin Edge 540, Wahoo ELEMNT..." />
+        )}
+
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <ToggleChip label="Luzes" active={bike.has_lights} onChange={(v) => update({ has_lights: v })} />
+          <ToggleChip label="Guarda-lamas" active={bike.has_mudguards} onChange={(v) => update({ has_mudguards: v })} />
+          <ToggleChip label="Porta-bagagens" active={bike.has_rack} onChange={(v) => update({ has_rack: v })} />
+        </div>
+      </Card>
+
       {/* ── Section: E-Bike (motor/battery) ──────────────── */}
       {isEBike && (
         <>
