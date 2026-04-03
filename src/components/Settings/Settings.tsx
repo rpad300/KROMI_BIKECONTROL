@@ -746,9 +746,15 @@ function EmergencyPage() {
   const [bloodType, setBloodType] = useState(profile.blood_type ?? '');
   const [allergies, setAllergies] = useState((profile.allergies ?? []).join(', '));
   const [medications, setMedications] = useState((profile.medications ?? []).join(', '));
+  const [conditions, setConditions] = useState((profile.medical_conditions ?? []).join(', '));
   const [healthInsurance, setHealthInsurance] = useState(profile.health_insurance ?? '');
   const [organDonor, setOrganDonor] = useState(profile.organ_donor ?? false);
   const [phone, setPhone] = useState(profile.phone ?? '');
+  const [nationality, setNationality] = useState(profile.nationality ?? '');
+  const [idNumber, setIdNumber] = useState(profile.id_number ?? '');
+  const [addressStr, setAddressStr] = useState(profile.address?.formatted ?? '');
+  const [city, setCity] = useState(profile.address?.city ?? '');
+  const [country, setCountry] = useState(profile.address?.country ?? '');
 
   // Emergency contacts
   const [contacts, setContacts] = useState(profile.emergency_contacts ?? []);
@@ -765,9 +771,13 @@ function EmergencyPage() {
       blood_type: bloodType || undefined,
       allergies: allergies ? allergies.split(',').map((s: string) => s.trim()).filter(Boolean) : undefined,
       medications: medications ? medications.split(',').map((s: string) => s.trim()).filter(Boolean) : undefined,
+      medical_conditions: conditions ? conditions.split(',').map((s: string) => s.trim()).filter(Boolean) : undefined,
       health_insurance: healthInsurance || undefined,
       organ_donor: organDonor,
       phone: phone || undefined,
+      nationality: nationality || undefined,
+      id_number: idNumber || undefined,
+      address: (addressStr || city || country) ? { formatted: addressStr, city, country } : undefined,
       emergency_contacts: contacts,
       emergency_qr_token: qrToken || undefined,
     };
@@ -806,7 +816,7 @@ function EmergencyPage() {
       blood_type: bloodType,
       allergies: allergies ? allergies.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
       medications: medications ? medications.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-      medical_conditions: profile.medical_conditions ?? [],
+      medical_conditions: conditions ? conditions.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
       medical_notes: profile.medical_notes,
       organ_donor: organDonor,
       health_insurance: healthInsurance,
@@ -852,10 +862,37 @@ function EmergencyPage() {
         </div>
       </Card>
 
+      {/* Personal identification */}
+      <SectionLabel>Identificacao</SectionLabel>
+      <Card>
+        <TextField label="Telefone pessoal" value={phone} onChange={(v) => { setPhone(v); save(); }} />
+        <TextField label="Nacionalidade" value={nationality} onChange={(v) => { setNationality(v); save(); }} />
+        <TextField label="Nr. CC / Passaporte" value={idNumber} onChange={(v) => { setIdNumber(v); save(); }} />
+      </Card>
+
+      {/* Address */}
+      <SectionLabel>Morada</SectionLabel>
+      <Card>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ color: '#adaaaa', fontSize: '13px' }}>Morada</span>
+          <input type="text" value={addressStr} onChange={(e) => { setAddressStr(e.target.value); save(); }}
+            placeholder="Rua, Nr..." style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', width: '180px', textAlign: 'right', fontSize: '12px' }} />
+        </div>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <div style={{ flex: 2 }}>
+            <input type="text" value={city} onChange={(e) => { setCity(e.target.value); save(); }}
+              placeholder="Cidade" style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', fontSize: '12px' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <input type="text" value={country} onChange={(e) => { setCountry(e.target.value); save(); }}
+              placeholder="Pais" style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', fontSize: '12px' }} />
+          </div>
+        </div>
+      </Card>
+
       {/* Medical alerts */}
       <SectionLabel>Alertas Medicos</SectionLabel>
       <Card>
-        <TextField label="Telefone pessoal" value={phone} onChange={(v) => { setPhone(v); save(); }} />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ color: '#adaaaa', fontSize: '13px' }}>Alergias</span>
           <input type="text" value={allergies} onChange={(e) => { setAllergies(e.target.value); save(); }}
@@ -865,6 +902,11 @@ function EmergencyPage() {
           <span style={{ color: '#adaaaa', fontSize: '13px' }}>Medicacao</span>
           <input type="text" value={medications} onChange={(e) => { setMedications(e.target.value); save(); }}
             placeholder="Aspirina, Metformina..." style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', width: '180px', textAlign: 'right', fontSize: '12px' }} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ color: '#adaaaa', fontSize: '13px' }}>Condicoes</span>
+          <input type="text" value={conditions} onChange={(e) => { setConditions(e.target.value); save(); }}
+            placeholder="Asma, Diabetes..." style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', width: '180px', textAlign: 'right', fontSize: '12px' }} />
         </div>
         <TextField label="Seguro saude" value={healthInsurance} onChange={(v) => { setHealthInsurance(v); save(); }} />
         <Toggle label="Dador de orgaos" value={organDonor} onChange={(v) => { setOrganDonor(v); save(); }} />
