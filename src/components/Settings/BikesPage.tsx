@@ -108,6 +108,9 @@ export function BikesPage() {
                 ))}
               </div>
 
+              {/* AI summary */}
+              <AiBikeSummary bike={safe} />
+
               {/* Specs row */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '6px', fontSize: '10px', color: '#777575' }}>
                 {safe.weight_kg > 0 && (
@@ -736,6 +739,83 @@ function EBikeSection({ bike, update }: { bike: BikeConfig; update: (p: Partial<
 // ═══════════════════════════════════════════════════════════
 // Shared UI components
 // ═══════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════
+// AI BIKE SUMMARY — generates a description from specs
+// ═══════════════════════════════════════════════════════════
+
+const summaryCache = new Map<string, string>();
+
+function AiBikeSummary({ bike }: { bike: BikeConfig }) {
+  const [summary, setSummary] = useState<string | null>(summaryCache.get(bike.id) ?? null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (summary || loading) return;
+    if (!bike.name || bike.name === 'default') return;
+
+    const GEMINI_KEY = (import.meta.env.VITE_GEMINI_API_KEY ?? import.meta.env.VITE_GOOGLE_MAPS_API_KEY) as string | undefined;
+    if (!GEMINI_KEY) return;
+
+    // Build a compact spec string
+    const specs: string[] = [];
+    specs.push(bike.name);
+    if (bike.category) specs.push(bikeCategoryLabel(bike.category));
+    if (bike.suspension !== 'rigid') specs.push(`${suspensionLabel(bike.suspension)} ${bike.fork_travel_mm}/${bike.rear_travel_mm}mm`);
+    if (bike.bike_type === 'ebike' && bike.motor_name) specs.push(`Motor: ${bike.motor_name} ${bike.main_battery_wh}Wh`);
+    if (bike.weight_kg > 0) specs.push(`${bike.weight_kg}kg`);
+    if (bike.wheel_size) specs.push(bike.wheel_size);
+    if (bike.groupset_model) specs.push(bike.groupset_model);
+    if (bike.brake_model) specs.push(`Brake: ${bike.brake_model}`);
+    if (bike.fork_model) specs.push(`Fork: ${bike.fork_model}`);
+    if (specs.length < 3) return;
+
+    setLoading(true);
+    const prompt = `Descreve esta bicicleta em 1-2 frases em português (Portugal). Foca na utilização ideal, pontos fortes e para que tipo de ciclista é indicada. Sê directo e informativo, sem marketing.
+
+Specs: ${specs.join(', ')}
+
+Responde APENAS com o texto, sem aspas nem explicação.`;
+
+    fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 150 },
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+        if (text) {
+          summaryCache.set(bike.id, text);
+          setSummary(text);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bike.id]);
+
+  if (!summary && !loading) return null;
+
+  return (
+    <div style={{ marginTop: '6px', padding: '6px 8px', backgroundColor: 'rgba(233,102,255,0.04)', borderRadius: '4px', borderLeft: '2px solid rgba(233,102,255,0.2)' }}>
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div className="w-3 h-3 border border-[#e966ff] border-t-transparent rounded-full animate-spin" />
+          <span style={{ fontSize: '9px', color: '#777575' }}>AI a analisar...</span>
+        </div>
+      ) : (
+        <div style={{ fontSize: '10px', color: '#adaaaa', lineHeight: '1.4' }}>
+          <span style={{ color: '#e966ff', fontWeight: 700, marginRight: '4px' }}>AI</span>
+          {summary}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════
 // BIKE MODEL PICKER — load full bike specs from DB
