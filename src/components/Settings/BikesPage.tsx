@@ -39,70 +39,126 @@ export function BikesPage() {
       <SectionHeader icon="pedal_bike" color="#3fff8b" label="As minhas bicicletas" count={bikes.length} />
 
       {/* Bike list */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {bikes.map((b) => {
           const safe = safeBikeConfig(b);
           const isActive = b.id === activeBikeId;
-          const catLabel = bikeCategoryLabel(safe.category);
-          const susLabel = safe.suspension !== 'rigid' ? ` · ${suspensionLabel(safe.suspension)}` : '';
-          const eLabel = safe.bike_type === 'ebike' ? ' · E-Bike' : '';
+          const isE = safe.bike_type === 'ebike';
+          const accent = isE ? '#3fff8b' : '#6e9bff';
+
+          // Build spec tags
+          const tags: string[] = [];
+          tags.push(bikeCategoryLabel(safe.category));
+          if (safe.suspension !== 'rigid') tags.push(suspensionLabel(safe.suspension));
+          if (isE) tags.push('E-Bike');
+          if (safe.wheel_size) tags.push(safe.wheel_size);
+          if (safe.frame_material) tags.push(safe.frame_material === 'carbon' ? 'Carbono' : safe.frame_material === 'aluminium' ? 'Alumínio' : safe.frame_material);
+
+          // Suspension summary
+          const susText = safe.suspension === 'full'
+            ? `${safe.fork_travel_mm}/${safe.rear_travel_mm}mm`
+            : safe.suspension === 'hardtail'
+              ? `${safe.fork_travel_mm}mm`
+              : '';
+
+          // Purchase date formatting
+          const purchaseText = safe.purchase_date
+            ? new Date(safe.purchase_date).toLocaleDateString('pt-PT', { month: 'short', year: 'numeric' })
+            : '';
 
           return (
-            <div
+            <button
               key={b.id}
+              onClick={() => setEditingId(b.id)}
               style={{
-                display: 'flex', alignItems: 'center', gap: '10px', padding: '12px',
-                backgroundColor: isActive ? 'rgba(63,255,139,0.05)' : '#131313',
-                borderLeft: `3px solid ${isActive ? '#3fff8b' : '#494847'}`,
-                borderRadius: '4px',
+                width: '100%', textAlign: 'left', padding: '14px', cursor: 'pointer',
+                backgroundColor: isActive ? 'rgba(63,255,139,0.04)' : '#131313',
+                borderLeft: `3px solid ${isActive ? accent : '#494847'}`,
+                borderRadius: '6px', border: 'none',
+                borderTop: isActive ? `1px solid ${accent}20` : '1px solid transparent',
+                borderRight: isActive ? `1px solid ${accent}10` : '1px solid transparent',
+                borderBottom: isActive ? `1px solid ${accent}10` : '1px solid transparent',
               }}
             >
-              {/* Bike info — click to edit */}
-              <button
-                onClick={() => setEditingId(b.id)}
-                style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: '28px', color: safe.bike_type === 'ebike' ? '#3fff8b' : '#6e9bff' }}>
-                  {safe.bike_type === 'ebike' ? 'electric_bike' : 'pedal_bike'}
+              {/* Top row: icon + name + active badge */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '32px', color: accent }}>
+                  {isE ? 'electric_bike' : 'pedal_bike'}
                 </span>
                 <div style={{ flex: 1 }}>
-                  <div className="font-headline font-bold" style={{ fontSize: '14px', color: 'white' }}>{safe.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span className="font-headline font-bold" style={{ fontSize: '14px', color: 'white' }}>{safe.name}</span>
+                    {isActive && (
+                      <span style={{ fontSize: '8px', padding: '2px 6px', backgroundColor: accent, color: 'black', fontWeight: 900, borderRadius: '2px' }}>ACTIVA</span>
+                    )}
+                  </div>
                   <div style={{ fontSize: '10px', color: '#777575', marginTop: '1px' }}>
-                    {catLabel}{susLabel}{eLabel}
+                    {safe.brand} {safe.model}
+                    {safe.size ? ` · ${safe.size}` : ''}
                     {safe.year > 0 ? ` · ${safe.year}` : ''}
                   </div>
-                  {safe.brand && (
-                    <div style={{ fontSize: '9px', color: '#494847', marginTop: '1px' }}>
-                      {safe.brand} {safe.model} {safe.size ? `· ${safe.size}` : ''}
-                    </div>
-                  )}
                 </div>
                 <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#494847' }}>chevron_right</span>
-              </button>
+              </div>
 
-              {/* Active toggle */}
-              <button
-                onClick={() => selectBike(b.id)}
-                style={{
-                  padding: '4px 10px', border: 'none', cursor: 'pointer', fontSize: '9px', fontWeight: 900,
-                  backgroundColor: isActive ? '#3fff8b' : 'rgba(73,72,71,0.2)',
-                  color: isActive ? 'black' : '#777575',
-                  borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.05em',
-                }}
-              >
-                {isActive ? 'Activa' : 'Activar'}
-              </button>
+              {/* Tags row */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
+                {tags.map((t) => (
+                  <span key={t} style={{ fontSize: '9px', padding: '2px 6px', backgroundColor: 'rgba(73,72,71,0.15)', color: '#adaaaa', borderRadius: '3px', fontWeight: 600 }}>{t}</span>
+                ))}
+              </div>
 
-              {/* Delete */}
-              {bikes.length > 1 && (
-                <button
-                  onClick={() => { if (confirm(`Apagar ${safe.name}?`)) removeBike(b.id); }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#ff716c' }}>delete</span>
-                </button>
-              )}
-            </div>
+              {/* Specs row */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '6px', fontSize: '10px', color: '#777575' }}>
+                {safe.weight_kg > 0 && (
+                  <span><span className="material-symbols-outlined" style={{ fontSize: '12px', verticalAlign: 'middle', marginRight: '2px' }}>monitor_weight</span>{safe.weight_kg.toFixed(1)}kg</span>
+                )}
+                {susText && (
+                  <span><span className="material-symbols-outlined" style={{ fontSize: '12px', verticalAlign: 'middle', marginRight: '2px' }}>swap_vert</span>{susText}</span>
+                )}
+                {isE && safe.motor_name && (
+                  <span><span className="material-symbols-outlined" style={{ fontSize: '12px', verticalAlign: 'middle', marginRight: '2px' }}>bolt</span>{safe.motor_name}</span>
+                )}
+                {isE && safe.main_battery_wh > 0 && (
+                  <span><span className="material-symbols-outlined" style={{ fontSize: '12px', verticalAlign: 'middle', marginRight: '2px' }}>battery_full</span>{safe.main_battery_wh + (safe.has_range_extender ? safe.sub_battery_wh : 0)}Wh</span>
+                )}
+                {safe.groupset_model && (
+                  <span><span className="material-symbols-outlined" style={{ fontSize: '12px', verticalAlign: 'middle', marginRight: '2px' }}>settings</span>{safe.groupset_model}</span>
+                )}
+                {safe.drivetrain_type && safe.cassette_speeds > 0 && (
+                  <span>{safe.drivetrain_type} {safe.cassette_speeds}v</span>
+                )}
+                {safe.brake_model && (
+                  <span><span className="material-symbols-outlined" style={{ fontSize: '12px', verticalAlign: 'middle', marginRight: '2px' }}>do_not_disturb_on</span>{safe.brake_model.split(' ').slice(0, 3).join(' ')}</span>
+                )}
+              </div>
+
+              {/* Bottom row: purchase date + actions */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
+                <div style={{ fontSize: '9px', color: '#494847' }}>
+                  {purchaseText && <span>Comprada: {purchaseText}</span>}
+                  {safe.fork_model && <span>{purchaseText ? ' · ' : ''}Fork: {safe.fork_model}</span>}
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  {!isActive && (
+                    <span
+                      onClick={(e) => { e.stopPropagation(); selectBike(b.id); }}
+                      style={{ fontSize: '9px', padding: '2px 8px', backgroundColor: 'rgba(73,72,71,0.2)', color: '#777575', borderRadius: '3px', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Activar
+                    </span>
+                  )}
+                  {bikes.length > 1 && (
+                    <span
+                      onClick={(e) => { e.stopPropagation(); if (confirm(`Apagar ${safe.name}?`)) removeBike(b.id); }}
+                      style={{ fontSize: '9px', padding: '2px 8px', backgroundColor: 'rgba(255,113,108,0.1)', color: '#ff716c', borderRadius: '3px', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Apagar
+                    </span>
+                  )}
+                </div>
+              </div>
+            </button>
           );
         })}
       </div>
@@ -248,6 +304,16 @@ function BikeDetailPage({ bikeId, onBack }: { bikeId: string; onBack: () => void
         </div>
         <NumField label="Peso (kg)" value={bike.weight_kg} onChange={(v) => update({ weight_kg: v })} step={0.1} />
         <InputField label="Cor" value={bike.color} onChange={(v) => update({ color: v })} />
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '10px', color: '#777575', marginBottom: '2px' }}>Data de compra</div>
+            <input type="date" value={bike.purchase_date} onChange={(e) => update({ purchase_date: e.target.value })}
+              style={{ width: '100%', padding: '8px 10px', backgroundColor: '#0e0e0e', border: '1px solid rgba(73,72,71,0.3)', borderRadius: '4px', color: 'white', fontSize: '12px', outline: 'none' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <InputField label="Nº de série" value={bike.serial_number} onChange={(v) => update({ serial_number: v })} placeholder="XXXXXX" />
+          </div>
+        </div>
 
         {/* Type */}
         <div style={{ marginTop: '4px' }}>

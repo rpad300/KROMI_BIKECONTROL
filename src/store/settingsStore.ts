@@ -32,6 +32,8 @@ export interface BikeConfig {
   color: string;
   weight_kg: number;
   photo_url: string;
+  purchase_date: string;  // ISO date 'YYYY-MM-DD' or ''
+  serial_number: string;  // frame serial
 
   // ── Frame ─────────────────────────────────────────────────
   frame_material: string;     // 'carbon' | 'aluminium' | 'steel' | 'titanium'
@@ -141,6 +143,8 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   color: '',
   weight_kg: 23.8,
   photo_url: '',
+  purchase_date: '',
+  serial_number: '',
 
   // Frame
   frame_material: 'aluminium',
