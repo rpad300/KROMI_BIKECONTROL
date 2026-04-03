@@ -1,0 +1,63 @@
+import { useEffect, useRef } from 'react';
+import { useBikeStore } from '../../../store/bikeStore';
+
+type MetricDef = {
+  icon: string;
+  iconColor: string;
+  label: string;
+  unit: string;
+  getValue: (s: ReturnType<typeof useBikeStore.getState>) => string;
+  getColor?: (s: ReturnType<typeof useBikeStore.getState>) => string;
+};
+
+/** Flexible n-column metric grid with DOM ref updates */
+export function MetricGrid({ metrics, cols }: { metrics: MetricDef[]; cols: number }) {
+  const refs = useRef<{ val: HTMLSpanElement | null; col: HTMLSpanElement | null }[]>([]);
+
+  useEffect(() => {
+    const update = (s: ReturnType<typeof useBikeStore.getState>) => {
+      metrics.forEach((m, i) => {
+        const r = refs.current[i];
+        if (r?.val) {
+          r.val.textContent = m.getValue(s);
+          if (m.getColor) r.val.style.color = m.getColor(s);
+        }
+      });
+    };
+    update(useBikeStore.getState());
+    return useBikeStore.subscribe(update);
+  }, [metrics]);
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, height: '100%', borderTop: '1px solid rgba(73,72,71,0.2)', borderBottom: '1px solid rgba(73,72,71,0.2)' }}>
+      {metrics.map((m, i) => (
+        <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: i % 2 === 0 ? '#131313' : '#1a1919', borderRight: i < metrics.length - 1 ? '1px solid rgba(73,72,71,0.1)' : 'none' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '16px', color: m.iconColor, marginBottom: '2px' }}>{m.icon}</span>
+          <span className="font-label" style={{ fontSize: '9px', color: '#adaaaa', textTransform: 'uppercase' }}>{m.label}</span>
+          <span
+            ref={(el) => { if (!refs.current[i]) refs.current[i] = { val: null, col: null }; refs.current[i]!.val = el; }}
+            className="font-headline font-bold tabular-nums"
+            style={{ fontSize: '18px', lineHeight: 1.1 }}
+          >--</span>
+          <span className="font-label" style={{ fontSize: '8px', color: '#777575' }}>{m.unit}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Pre-defined metric configs for reuse
+export const METRIC = {
+  speed: { icon: 'speed', iconColor: '#3fff8b', label: 'Speed', unit: 'km/h', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.speed_kmh > 0 ? s.speed_kmh.toFixed(1) : '0' },
+  power: { icon: 'bolt', iconColor: '#6e9bff', label: 'Power', unit: 'W', getValue: (s: ReturnType<typeof useBikeStore.getState>) => String(s.power_watts) },
+  battery: { icon: 'battery_5_bar', iconColor: '#3fff8b', label: 'Battery', unit: '%', getValue: (s: ReturnType<typeof useBikeStore.getState>) => String(s.battery_percent) },
+  cadence: { icon: 'speed', iconColor: '#e966ff', label: 'Cadence', unit: 'RPM', getValue: (s: ReturnType<typeof useBikeStore.getState>) => String(s.cadence_rpm) },
+  torque: { icon: 'electric_bolt', iconColor: '#fbbf24', label: 'Torque', unit: 'Nm', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.torque_nm > 0 ? s.torque_nm.toFixed(1) : '0' },
+  range: { icon: 'route', iconColor: '#3fff8b', label: 'Range', unit: 'km', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.range_km > 0 ? Math.round(s.range_km).toString() : '--' },
+  current: { icon: 'electric_bolt', iconColor: '#fbbf24', label: 'Current', unit: 'A', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.assist_current_a > 0 ? s.assist_current_a.toFixed(1) : '0' },
+  whkm: { icon: 'ev_station', iconColor: '#6e9bff', label: 'Wh/km', unit: '', getValue: () => '--' }, // placeholder, needs calibration data
+  hr: { icon: 'favorite', iconColor: '#ff716c', label: 'HR', unit: 'bpm', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.hr_bpm > 0 ? String(s.hr_bpm) : '--' },
+  gradient: { icon: 'trending_up', iconColor: '#e966ff', label: 'Grade', unit: '%', getValue: () => '0' }, // needs autoAssistStore
+  altitude: { icon: 'landscape', iconColor: '#6e9bff', label: 'Alt', unit: 'm', getValue: () => '--' }, // needs mapStore
+  gear: { icon: 'settings', iconColor: '#adaaaa', label: 'Gear', unit: '', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.rear_gear > 0 ? String(s.rear_gear) : '--' },
+} as const;

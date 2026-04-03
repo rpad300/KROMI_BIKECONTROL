@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Dashboard } from './components/Dashboard/Dashboard';
+import { DashboardController } from './components/DashboardSystem/DashboardController';
 import { MapView } from './components/Map/MapView';
 import { ClimbApproach } from './components/Climb/ClimbApproach';
 import { Connections } from './components/Connections/Connections';
@@ -66,7 +66,7 @@ function MobileApp() {
     <div className="h-full flex flex-col bg-[#0e0e0e] text-white">
       {/* Content — no scroll on dashboard, scroll on settings/history */}
       <div className={`flex-1 min-h-0 ${screen === 'settings' || screen === 'history' ? 'overflow-y-auto' : 'overflow-hidden'}`}>
-        {screen === 'dashboard' && <Dashboard />}
+        {screen === 'dashboard' && <DashboardController />}
         {screen === 'map' && <MapView />}
         {screen === 'climb' && <ClimbApproach />}
         {screen === 'connections' && <Connections />}
