@@ -32,11 +32,57 @@ export const useAthleteStore = create<AthleteState>()(
         // Try loading from Supabase first
         const remote = await loadProfile();
         if (remote) {
+          // Sync physiology from rider profile settings
+          const settings = (await import('./settingsStore')).useSettingsStore.getState();
+          const rp = settings.riderProfile;
+          remote.physiology.weight_kg = rp.weight_kg || weight;
+          remote.physiology.age = rp.age || age;
+          if (rp.hr_max > 0) {
+            remote.physiology.hr_max_theoretical = 220 - (rp.age || age);
+            // Only update observed if user manually set HR max different from formula
+            if (rp.zones_source === 'manual' && rp.hr_max !== remote.physiology.hr_max_observed) {
+              remote.physiology.hr_max_observed = rp.hr_max;
+              remote.physiology.hr_aerobic_threshold = Math.round(rp.hr_max * 0.7);
+              remote.physiology.hr_anaerobic_threshold = Math.round(rp.hr_max * 0.85);
+            }
+          }
           set({ profile: remote });
           return;
         }
-        // Create new default profile
-        set({ profile: createDefaultProfile(age, weight) });
+        // Create new default profile from rider settings
+        const settings = (await import('./settingsStore')).useSettingsStore.getState();
+        const rp = settings.riderProfile;
+        const p = createDefaultProfile(rp.age || age, rp.weight_kg || weight);
+        if (rp.hr_max > 0) {
+          p.physiology.hr_max_observed = rp.hr_max;
+          p.physiology.hr_max_theoretical = 220 - (rp.age || age);
+          p.physiology.hr_aerobic_threshold = Math.round(rp.hr_max * 0.7);
+          p.physiology.hr_anaerobic_threshold = Math.round(rp.hr_max * 0.85);
+        }
+        set({ profile: p });
+      },
+
+      /** Sync physiology from rider profile when user edits settings */
+      syncFromRiderProfile: () => {
+        const settings = (require('./settingsStore') as { useSettingsStore: typeof import('./settingsStore').useSettingsStore }).useSettingsStore.getState();
+        const rp = settings.riderProfile;
+        set((s) => ({
+          profile: {
+            ...s.profile,
+            physiology: {
+              ...s.profile.physiology,
+              weight_kg: rp.weight_kg,
+              age: rp.age,
+              hr_max_theoretical: 220 - rp.age,
+              ...(rp.zones_source === 'manual' ? {
+                hr_max_observed: rp.hr_max,
+                hr_aerobic_threshold: Math.round(rp.hr_max * 0.7),
+                hr_anaerobic_threshold: Math.round(rp.hr_max * 0.85),
+              } : {}),
+            },
+            updated_at: new Date().toISOString(),
+          },
+        }));
       },
 
       processRide: async (ride) => {
