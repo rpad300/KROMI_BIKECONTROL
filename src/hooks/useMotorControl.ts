@@ -40,13 +40,15 @@ export function useMotorControl() {
       const bike = useBikeStore.getState();
       const intelligence = useIntelligenceStore.getState();
 
-      // === Gate: KROMI only in SMART mode ===
-      if (bike.assist_mode !== AssistMode.SMART) {
+      // === Gate: KROMI only in POWER mode ===
+      // POWER mode = KROMI controls tuning (torque/support/launch)
+      // SMART mode = Giant's native auto-assist (for comparison)
+      if (bike.assist_mode !== AssistMode.POWER) {
         if (intelligence.active) {
           useIntelligenceStore.getState().setActive(false);
           useAutoAssistStore.getState().setLastDecision({
             action: 'none',
-            reason: 'KROMI activo apenas em SMART',
+            reason: 'Muda para POWER para activar KROMI',
             terrain: null,
           });
         }
