@@ -110,34 +110,44 @@ const DESKTOP_NAV: NavItem[] = [
     { id: 'range', label: 'Autonomia', icon: 'battery_charging_full' },
     { id: 'widgets', label: 'Widget Library', icon: 'widgets' },
   ]},
-  { screen: 'settings', label: 'Configuração', icon: 'settings', color: '#6e9bff', subs: [
+  { screen: 'settings', label: 'Perfil', icon: 'person', color: '#ff716c', subs: [
     { id: 'personal', label: 'Dados Pessoais', icon: 'badge' },
     { id: 'physical', label: 'Perfil Físico', icon: 'monitor_heart' },
-    { id: 'zones', label: 'Zonas HR + Potência', icon: 'show_chart' },
     { id: 'medical', label: 'Médico + Objectivos', icon: 'health_and_safety' },
-    { id: 'bikefit', label: 'Bike Fit', icon: 'straighten' },
-    { id: 'club', label: 'Clube', icon: 'groups' },
-    { id: 'bike', label: 'Bicicleta', icon: 'pedal_bike' },
+  ]},
+  { screen: 'settings', label: 'Treino', icon: 'show_chart', color: '#fbbf24', subs: [
+    { id: 'zones', label: 'Zonas HR + Potência', icon: 'show_chart' },
     { id: 'kromi', label: 'KROMI Intelligence', icon: 'psychology' },
-    { id: 'bluetooth', label: 'Bluetooth', icon: 'bluetooth' },
+  ]},
+  { screen: 'settings', label: 'Bicicletas', icon: 'pedal_bike', color: '#3fff8b', subs: [
+    { id: 'bike', label: 'As minhas bikes', icon: 'pedal_bike' },
+    { id: 'bikefit', label: 'Bike Fit', icon: 'straighten' },
+  ]},
+  { screen: 'settings', label: 'Clube', icon: 'groups', color: '#fbbf24', subs: [
+    { id: 'club', label: 'O meu clube', icon: 'groups' },
+  ]},
+  { screen: 'settings', label: 'Dispositivos', icon: 'bluetooth', color: '#6e9bff', subs: [
+    { id: 'bluetooth', label: 'BLE + Sensores', icon: 'bluetooth' },
+  ]},
+  { screen: 'history', label: 'Atividades', icon: 'timeline', color: '#e966ff' },
+  { screen: 'map', label: 'Mapa', icon: 'map', color: '#6e9bff' },
+  { screen: 'settings', label: 'Sistema', icon: 'settings', color: '#adaaaa', subs: [
     { id: 'routes', label: 'Rotas', icon: 'route' },
     { id: 'account', label: 'Conta', icon: 'account_circle' },
   ]},
-  { screen: 'history', label: 'Histórico', icon: 'history', color: '#fbbf24' },
-  { screen: 'map', label: 'Mapa', icon: 'map', color: '#e966ff' },
 ];
 
 function DesktopApp() {
   const [screen, setScreen] = useState<DesktopScreen>('live');
   const [sub, setSub] = useState<DesktopSub>('preview');
-  const [expanded, setExpanded] = useState<DesktopScreen | null>('live');
+  const [expanded, setExpanded] = useState<string | null>('Volta Live');
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
 
   const handleNav = (item: NavItem, subId?: string) => {
     setScreen(item.screen);
     if (item.subs) {
-      setExpanded(expanded === item.screen ? null : item.screen);
+      setExpanded(expanded === item.label ? null : item.label);
       if (subId) setSub(subId);
       else if (item.subs[0]) setSub(item.subs[0].id);
     } else {
@@ -158,10 +168,11 @@ function DesktopApp() {
         {/* Nav items with submenus */}
         <nav style={{ flex: 1, padding: '8px' }}>
           {DESKTOP_NAV.map((item) => {
-            const isActive = screen === item.screen;
-            const isExpanded = expanded === item.screen && item.subs;
+            const isExpanded = expanded === item.label && item.subs;
+            const hasActiveSub = item.subs?.some((s) => s.id === sub) && screen === item.screen;
+            const isActive = (!item.subs && screen === item.screen) || hasActiveSub;
             return (
-              <div key={item.screen}>
+              <div key={item.label}>
                 {/* Main nav item */}
                 <button
                   onClick={() => handleNav(item)}
