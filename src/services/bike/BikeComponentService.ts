@@ -15,6 +15,9 @@ export interface BikeComponent {
   model: string;
   specs: Record<string, unknown>;
   usage_count: number;
+  weight_g: number | null;
+  year_from: number | null;
+  compatibility: string | null;
 }
 
 // ── Local cache to avoid repeated queries ───────────────────

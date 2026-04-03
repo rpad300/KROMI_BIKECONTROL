@@ -1,288 +1,330 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  searchComponents, saveComponent, normalizeComponent, suggestSpecs,
+  getTopComponents, saveComponent,
+  normalizeComponent, suggestSpecs,
   type BikeComponent,
 } from '../../services/bike/BikeComponentService';
 
 interface AutocompleteFieldProps {
-  /** Component category for DB lookup */
   category: string;
-  /** Field label */
   label: string;
-  /** Current value (brand + model combined, or just model) */
   value: string;
-  /** Called when user selects or types a value */
   onChange: (value: string) => void;
-  /** Optional: called when a component is selected with its specs */
   onSpecsReceived?: (specs: Record<string, unknown>) => void;
-  /** Placeholder text */
   placeholder?: string;
-  /** Mode: 'full' = brand + model, 'brand' = brand only */
-  mode?: 'full' | 'brand';
 }
 
+/**
+ * ComponentPicker — Brand → Model dropdown flow
+ *
+ * 1. Load all brands for this category from DB
+ * 2. User picks brand → loads models for that brand
+ * 3. User picks model → auto-fills specs via onSpecsReceived
+ * 4. "Outro" option → free text input → AI normalizes → saves to DB
+ */
 export function AutocompleteField({
-  category, label, value, onChange, onSpecsReceived, placeholder, mode = 'full',
+  category, label, value, onChange, onSpecsReceived, placeholder,
 }: AutocompleteFieldProps) {
-  const [query, setQuery] = useState(value);
-  const [results, setResults] = useState<BikeComponent[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [aiStatus, setAiStatus] = useState<'idle' | 'loading' | 'corrected' | 'error'>('idle');
+  const [allComponents, setAllComponents] = useState<BikeComponent[]>([]);
+  const [brands, setBrands] = useState<string[]>([]);
+  const [models, setModels] = useState<BikeComponent[]>([]);
+  const [selectedBrand, setSelectedBrand] = useState('');
+  const [customMode, setCustomMode] = useState(false);
+  const [customText, setCustomText] = useState('');
+  const [aiStatus, setAiStatus] = useState<'idle' | 'loading' | 'done'>('idle');
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const [loaded, setLoaded] = useState(false);
 
-  // Sync external value changes
-  useEffect(() => { setQuery(value); }, [value]);
+  // ── Load components for this category ──────────────────────
+  const loadData = useCallback(async () => {
+    const data = await getTopComponents(category, 200);
+    setAllComponents(data);
 
-  // Search on query change (debounced)
-  const doSearch = useCallback(async (q: string) => {
-    if (q.length < 1) { setResults([]); return; }
-    const hits = await searchComponents(category, q);
-    setResults(hits);
-    if (hits.length > 0) setShowDropdown(true);
-  }, [category]);
+    // Extract unique brands sorted by total usage
+    const brandMap = new Map<string, number>();
+    data.forEach((c) => brandMap.set(c.brand, (brandMap.get(c.brand) ?? 0) + c.usage_count));
+    const sorted = [...brandMap.entries()].sort((a, b) => b[1] - a[1]).map(([b]) => b);
+    setBrands(sorted);
 
-  const handleInputChange = (text: string) => {
-    setQuery(text);
-    setAiSuggestion(null);
-    setAiStatus('idle');
-    onChange(text);
+    // Try to detect current brand from value
+    if (value) {
+      const match = data.find((c) => `${c.brand} ${c.model}`.trim().toLowerCase() === value.toLowerCase());
+      if (match) {
+        setSelectedBrand(match.brand);
+        setModels(data.filter((c) => c.brand === match.brand));
+      } else {
+        // Check if value starts with a known brand
+        const foundBrand = sorted.find((b) => value.toLowerCase().startsWith(b.toLowerCase()));
+        if (foundBrand) {
+          setSelectedBrand(foundBrand);
+          setModels(data.filter((c) => c.brand === foundBrand));
+        }
+      }
+    }
+    setLoaded(true);
+  }, [category, value]);
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => doSearch(text), 250);
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // ── Brand selected → filter models ─────────────────────────
+  const handleBrandChange = (brand: string) => {
+    if (brand === '__custom__') {
+      setCustomMode(true);
+      setCustomText(value);
+      setSelectedBrand('');
+      return;
+    }
+    setCustomMode(false);
+    setSelectedBrand(brand);
+    const filtered = allComponents.filter((c) => c.brand === brand);
+    setModels(filtered);
+
+    // If only one model, auto-select it
+    if (filtered.length === 1) {
+      handleModelSelect(filtered[0]!);
+    }
   };
 
-  // Select a component from dropdown
-  const handleSelect = (comp: BikeComponent) => {
-    const display = mode === 'brand' ? comp.brand : `${comp.brand} ${comp.model}`.trim();
-    setQuery(display);
+  // ── Model selected → fill specs ────────────────────────────
+  const handleModelSelect = (comp: BikeComponent) => {
+    const display = `${comp.brand} ${comp.model}`.trim();
     onChange(display);
-    setShowDropdown(false);
-    setAiSuggestion(null);
-
-    // Save usage
     saveComponent(category, comp.brand, comp.model, comp.specs as Record<string, unknown>);
-
-    // Pass specs to parent
-    if (onSpecsReceived && comp.specs) {
+    if (onSpecsReceived && comp.specs && Object.keys(comp.specs).length > 0) {
       onSpecsReceived(comp.specs as Record<string, unknown>);
     }
   };
 
-  // AI normalize on blur (if text doesn't match a known component)
-  const handleBlur = async () => {
-    // Delay to allow dropdown click
-    setTimeout(() => setShowDropdown(false), 200);
-
-    if (!query.trim() || query === value) return;
-
-    // Only normalize if the text doesn't exactly match a result
-    const isKnown = results.some(
-      (r) => `${r.brand} ${r.model}`.trim().toLowerCase() === query.toLowerCase()
-        || r.brand.toLowerCase() === query.toLowerCase(),
-    );
-
-    if (!isKnown && query.length >= 3) {
-      setAiStatus('loading');
-      const result = await normalizeComponent(category, query);
-      if (result && result.corrected && result.confidence > 0.7) {
-        const corrected = `${result.brand} ${result.model}`.trim();
-        setAiSuggestion(corrected);
-        setAiStatus('corrected');
-
-        // Auto-fetch specs for the corrected component
-        if (onSpecsReceived) {
-          const specs = await suggestSpecs(category, result.brand, result.model);
-          if (specs) {
-            // Save to DB for future autocomplete
-            saveComponent(category, result.brand, result.model, specs);
-          }
-        }
-      } else {
-        setAiStatus('idle');
-        // Save what user typed as new component
-        if (query.includes(' ')) {
-          const parts = query.split(' ');
-          const brand = parts[0]!;
-          const model = parts.slice(1).join(' ');
-          saveComponent(category, brand, model);
-        }
-      }
+  const handleModelChange = (modelName: string) => {
+    if (modelName === '__custom__') {
+      setCustomMode(true);
+      setCustomText(selectedBrand ? `${selectedBrand} ` : '');
+      return;
     }
+    const comp = models.find((c) => c.model === modelName);
+    if (comp) handleModelSelect(comp);
   };
 
-  // Accept AI suggestion
-  const acceptSuggestion = async () => {
-    if (!aiSuggestion) return;
-    setQuery(aiSuggestion);
-    onChange(aiSuggestion);
-    setAiStatus('idle');
-    setAiSuggestion(null);
+  // ── Custom text → AI normalize + save ──────────────────────
+  const handleCustomConfirm = async () => {
+    if (!customText.trim()) return;
 
-    // Fetch and apply specs
-    if (onSpecsReceived) {
-      const parts = aiSuggestion.split(' ');
-      const brand = parts[0]!;
-      const model = parts.slice(1).join(' ');
-      const specs = await suggestSpecs(category, brand, model);
+    const text = customText.trim();
+    onChange(text);
+    setAiStatus('loading');
+
+    const result = await normalizeComponent(category, text);
+    if (result && result.corrected && result.confidence > 0.7) {
+      const corrected = `${result.brand} ${result.model}`.trim();
+      setAiSuggestion(corrected);
+      setAiStatus('done');
+
+      // Fetch specs for normalized component
+      const specs = await suggestSpecs(category, result.brand, result.model);
       if (specs) {
-        onSpecsReceived(specs);
-        saveComponent(category, brand, model, specs);
+        saveComponent(category, result.brand, result.model, specs);
+        if (onSpecsReceived) onSpecsReceived(specs);
+      } else {
+        saveComponent(category, result.brand, result.model);
+      }
+    } else {
+      setAiStatus('idle');
+      // Save as-is
+      const parts = text.split(' ');
+      if (parts.length >= 2) {
+        const brand = parts[0]!;
+        const model = parts.slice(1).join(' ');
+        const specs = await suggestSpecs(category, brand, model);
+        saveComponent(category, brand, model, specs ?? {});
+        if (specs && onSpecsReceived) onSpecsReceived(specs);
       }
     }
+
+    // Reload data so new entry appears
+    setTimeout(loadData, 500);
   };
 
-  // Focus shows dropdown
-  const handleFocus = () => {
-    if (results.length > 0) setShowDropdown(true);
-    else doSearch(query || '');
+  const acceptAiSuggestion = () => {
+    if (!aiSuggestion) return;
+    setCustomText(aiSuggestion);
+    onChange(aiSuggestion);
+    setAiSuggestion(null);
+    setAiStatus('idle');
+    setCustomMode(false);
+    loadData();
   };
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (
-        dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
-        inputRef.current && !inputRef.current.contains(e.target as Node)
-      ) {
-        setShowDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  // ── Current model name (from value) ────────────────────────
+  const currentModelName = (() => {
+    if (!selectedBrand || !value) return '';
+    const prefix = selectedBrand.toLowerCase();
+    if (value.toLowerCase().startsWith(prefix)) {
+      return value.substring(selectedBrand.length).trim();
+    }
+    return value;
+  })();
 
-  return (
-    <div style={{ position: 'relative' }}>
-      <div style={{ fontSize: '10px', color: '#777575', marginBottom: '2px' }}>{label}</div>
+  if (!loaded) {
+    return (
+      <div>
+        <div style={{ fontSize: '10px', color: '#777575', marginBottom: '2px' }}>{label}</div>
+        <div style={{ padding: '8px 10px', backgroundColor: '#0e0e0e', border: '1px solid rgba(73,72,71,0.3)', borderRadius: '4px', color: '#494847', fontSize: '12px' }}>
+          A carregar...
+        </div>
+      </div>
+    );
+  }
 
-      {/* Input */}
-      <div style={{ position: 'relative' }}>
-        <input
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={(e) => handleInputChange(e.target.value)}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          placeholder={placeholder}
-          style={{
-            width: '100%', padding: '8px 10px', paddingRight: aiStatus === 'loading' ? '32px' : '10px',
-            backgroundColor: '#0e0e0e', border: '1px solid rgba(73,72,71,0.3)',
-            borderRadius: '4px', color: 'white', fontSize: '13px', outline: 'none',
-          }}
-          autoComplete="off"
-        />
-        {/* AI loading spinner */}
-        {aiStatus === 'loading' && (
-          <div style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)' }}>
-            <div className="w-4 h-4 border-2 border-[#e966ff] border-t-transparent rounded-full animate-spin" />
+  // ── Custom mode: free text input ───────────────────────────
+  if (customMode) {
+    return (
+      <div>
+        <div style={{ fontSize: '10px', color: '#777575', marginBottom: '2px' }}>{label}</div>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <input
+            type="text"
+            value={customText}
+            onChange={(e) => setCustomText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCustomConfirm(); }}
+            placeholder={placeholder ?? 'Marca Modelo...'}
+            autoFocus
+            style={{
+              flex: 1, padding: '8px 10px', backgroundColor: '#0e0e0e',
+              border: '1px solid rgba(233,102,255,0.3)', borderRadius: '4px',
+              color: 'white', fontSize: '13px', outline: 'none',
+            }}
+          />
+          <button onClick={handleCustomConfirm} style={{
+            padding: '0 12px', backgroundColor: '#e966ff', color: 'black',
+            border: 'none', borderRadius: '4px', fontWeight: 700, fontSize: '11px', cursor: 'pointer',
+          }}>
+            {aiStatus === 'loading' ? '...' : 'OK'}
+          </button>
+          <button onClick={() => { setCustomMode(false); setAiSuggestion(null); setAiStatus('idle'); }} style={{
+            padding: '0 8px', backgroundColor: 'rgba(73,72,71,0.2)', color: '#adaaaa',
+            border: 'none', borderRadius: '4px', fontSize: '11px', cursor: 'pointer',
+          }}>
+            ✕
+          </button>
+        </div>
+
+        {/* AI suggestion */}
+        {aiStatus === 'done' && aiSuggestion && (
+          <div style={{
+            marginTop: '4px', padding: '6px 10px', borderRadius: '4px',
+            backgroundColor: 'rgba(233,102,255,0.1)', border: '1px solid rgba(233,102,255,0.25)',
+            display: 'flex', alignItems: 'center', gap: '8px',
+          }}>
+            <div style={{ flex: 1 }}>
+              <span style={{ fontSize: '10px', color: '#e966ff', fontWeight: 700 }}>AI </span>
+              <span style={{ fontSize: '11px', color: '#adaaaa' }}>→ </span>
+              <span style={{ fontSize: '11px', color: 'white', fontWeight: 600 }}>{aiSuggestion}</span>
+            </div>
+            <button onClick={acceptAiSuggestion} style={{
+              padding: '3px 8px', fontSize: '10px', fontWeight: 700, borderRadius: '3px',
+              backgroundColor: '#e966ff', color: 'black', border: 'none', cursor: 'pointer',
+            }}>Usar</button>
           </div>
         )}
       </div>
+    );
+  }
 
-      {/* AI suggestion banner */}
-      {aiStatus === 'corrected' && aiSuggestion && (
-        <div
+  // ── Dropdown mode: Brand → Model ───────────────────────────
+  return (
+    <div>
+      <div style={{ fontSize: '10px', color: '#777575', marginBottom: '2px' }}>{label}</div>
+      <div style={{ display: 'flex', gap: '4px' }}>
+        {/* Brand dropdown */}
+        <select
+          value={selectedBrand}
+          onChange={(e) => handleBrandChange(e.target.value)}
           style={{
-            marginTop: '4px', padding: '6px 10px', borderRadius: '4px',
-            backgroundColor: 'rgba(233,102,255,0.1)', border: '1px solid rgba(233,102,255,0.25)',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+            flex: '0 0 45%', padding: '8px 6px', backgroundColor: '#0e0e0e',
+            border: '1px solid rgba(73,72,71,0.3)', borderRadius: '4px',
+            color: selectedBrand ? 'white' : '#777575', fontSize: '12px', outline: 'none',
+            appearance: 'none', backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath d=\'M3 5l3 3 3-3\' fill=\'none\' stroke=\'%23777575\' stroke-width=\'1.5\'/%3E%3C/svg%3E")',
+            backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', paddingRight: '24px',
           }}
         >
-          <div style={{ flex: 1 }}>
-            <span style={{ fontSize: '10px', color: '#e966ff', fontWeight: 700 }}>AI </span>
-            <span style={{ fontSize: '11px', color: '#adaaaa' }}>Queria dizer </span>
-            <span style={{ fontSize: '11px', color: 'white', fontWeight: 600 }}>{aiSuggestion}</span>
-            <span style={{ fontSize: '11px', color: '#adaaaa' }}>?</span>
-          </div>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <button
-              onClick={acceptSuggestion}
-              style={{
-                padding: '3px 8px', fontSize: '10px', fontWeight: 700, borderRadius: '3px',
-                backgroundColor: '#e966ff', color: 'black', border: 'none', cursor: 'pointer',
-              }}
-            >
-              Sim
-            </button>
-            <button
-              onClick={() => { setAiStatus('idle'); setAiSuggestion(null); }}
-              style={{
-                padding: '3px 8px', fontSize: '10px', fontWeight: 700, borderRadius: '3px',
-                backgroundColor: 'rgba(73,72,71,0.3)', color: '#adaaaa', border: 'none', cursor: 'pointer',
-              }}
-            >
-              Não
-            </button>
-          </div>
-        </div>
-      )}
+          <option value="" disabled>Marca</option>
+          {brands.map((b) => (
+            <option key={b} value={b}>{b}</option>
+          ))}
+          <option value="__custom__">+ Outro...</option>
+        </select>
 
-      {/* Dropdown */}
-      {showDropdown && results.length > 0 && (
-        <div
-          ref={dropdownRef}
+        {/* Model dropdown */}
+        <select
+          value={currentModelName}
+          onChange={(e) => handleModelChange(e.target.value)}
+          disabled={!selectedBrand}
           style={{
-            position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
-            marginTop: '2px', maxHeight: '200px', overflowY: 'auto',
-            backgroundColor: '#1a1a1a', border: '1px solid rgba(73,72,71,0.4)',
-            borderRadius: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+            flex: 1, padding: '8px 6px', backgroundColor: '#0e0e0e',
+            border: '1px solid rgba(73,72,71,0.3)', borderRadius: '4px',
+            color: currentModelName ? 'white' : '#777575', fontSize: '12px', outline: 'none',
+            opacity: selectedBrand ? 1 : 0.5,
+            appearance: 'none', backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath d=\'M3 5l3 3 3-3\' fill=\'none\' stroke=\'%23777575\' stroke-width=\'1.5\'/%3E%3C/svg%3E")',
+            backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', paddingRight: '24px',
           }}
         >
-          {results.map((comp) => {
-            const display = mode === 'brand' ? comp.brand : `${comp.brand} ${comp.model}`;
-            const isMatch = display.toLowerCase() === query.toLowerCase();
-            return (
-              <button
-                key={comp.id}
-                onMouseDown={(e) => { e.preventDefault(); handleSelect(comp); }}
-                style={{
-                  width: '100%', textAlign: 'left', padding: '8px 10px',
-                  backgroundColor: isMatch ? 'rgba(63,255,139,0.05)' : 'transparent',
-                  border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center',
-                  justifyContent: 'space-between', gap: '8px',
-                }}
-              >
-                <div>
-                  <span style={{ fontSize: '12px', color: '#3fff8b', fontWeight: 700 }}>{comp.brand}</span>
-                  {mode !== 'brand' && (
-                    <span style={{ fontSize: '12px', color: 'white', marginLeft: '4px' }}>{comp.model}</span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {/* Show key spec */}
-                  {comp.specs && Object.keys(comp.specs).length > 0 && (
-                    <span style={{ fontSize: '9px', color: '#777575' }}>
-                      {formatSpecPreview(comp.specs as Record<string, unknown>)}
-                    </span>
-                  )}
-                  <span style={{ fontSize: '8px', color: '#494847' }}>
-                    {comp.usage_count}x
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
+          <option value="" disabled>Modelo</option>
+          {models.map((c) => (
+            <option key={c.id} value={c.model}>
+              {c.model}{c.weight_g ? ` (${c.weight_g}g)` : ''}{formatSpecTag(c.specs as Record<string, unknown>)}
+            </option>
+          ))}
+          <option value="__custom__">+ Outro...</option>
+        </select>
+      </div>
+
+      {/* Selected component spec preview */}
+      {selectedBrand && currentModelName && (() => {
+        const sel = models.find((c) => c.model === currentModelName);
+        if (!sel || !sel.specs || Object.keys(sel.specs).length === 0) return null;
+        return (
+          <div style={{ marginTop: '3px', fontSize: '10px', color: '#494847', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+            {Object.entries(sel.specs as Record<string, unknown>)
+              .filter(([, v]) => v !== null && v !== '' && !Array.isArray(v))
+              .slice(0, 5)
+              .map(([k, v]) => (
+                <span key={k} style={{ padding: '1px 5px', backgroundColor: 'rgba(73,72,71,0.1)', borderRadius: '2px' }}>
+                  {formatSpecKey(k)}: {String(v)}
+                </span>
+              ))}
+            {sel.weight_g && (
+              <span style={{ padding: '1px 5px', backgroundColor: 'rgba(63,255,139,0.08)', borderRadius: '2px', color: '#3fff8b' }}>
+                {sel.weight_g}g
+              </span>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
 
-/** Format specs into a tiny preview string */
-function formatSpecPreview(specs: Record<string, unknown>): string {
+function formatSpecTag(specs: Record<string, unknown>): string {
+  if (!specs) return '';
   const parts: string[] = [];
   if (specs.travel_mm) parts.push(`${specs.travel_mm}mm`);
-  if (specs.torque_nm) parts.push(`${specs.torque_nm}Nm`);
-  if (specs.width_mm) parts.push(`${specs.width_mm}mm`);
-  if (specs.rim_width_mm) parts.push(`${specs.rim_width_mm}mm`);
-  if (specs.weight_g) parts.push(`${specs.weight_g}g`);
   if (specs.speeds) parts.push(`${specs.speeds}v`);
   if (specs.range) parts.push(`${specs.range}`);
+  if (specs.diameter_mm) parts.push(`${specs.diameter_mm}mm`);
   if (specs.pistons) parts.push(`${specs.pistons}p`);
-  if (specs.type && typeof specs.type === 'string') parts.push(specs.type);
-  return parts.slice(0, 3).join(' · ');
+  if (specs.torque_nm) parts.push(`${specs.torque_nm}Nm`);
+  const tag = parts.slice(0, 2).join(' ');
+  return tag ? ` — ${tag}` : '';
+}
+
+function formatSpecKey(key: string): string {
+  const map: Record<string, string> = {
+    travel_mm: 'Travel', stanchion_mm: 'Stanchion', axle: 'Axle', damper: 'Damper',
+    spring: 'Spring', type: 'Tipo', pistons: 'Pistões', speeds: 'Vel',
+    range: 'Range', diameter_mm: 'Ø', mount: 'Mount', torque_nm: 'Torque',
+    power_w: 'Potência', width_mm: 'Largura', tpi: 'TPI', compound: 'Composto',
+    master_cylinder_mm: 'MC', technology: 'Tech', electronic: 'Electrónico',
+    flight_attendant: 'Flight Attendant', dual_crown: 'Dupla coroa',
+  };
+  return map[key] ?? key;
 }
