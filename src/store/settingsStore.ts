@@ -11,6 +11,8 @@ export interface TuningLevelSpec {
 }
 
 export interface BikeConfig {
+  id: string;
+  bike_type: 'ebike' | 'mechanical';
   name: string;
   // Battery
   main_battery_wh: number;
@@ -38,6 +40,8 @@ export interface BikeConfig {
 }
 
 export const DEFAULT_BIKE_CONFIG: BikeConfig = {
+  id: 'default',
+  bike_type: 'ebike',
   name: 'Giant Trance X E+ 2 (2023)',
   main_battery_wh: 800,
   has_range_extender: true,
@@ -91,6 +95,8 @@ interface AutoAssistConfig {
 interface SettingsState {
   riderProfile: RiderProfile;
   bikeConfig: BikeConfig;
+  bikes: BikeConfig[];
+  activeBikeId: string;
   autoAssist: AutoAssistConfig;
   simulation_mode: boolean;
 
@@ -98,6 +104,9 @@ interface SettingsState {
   updateBikeConfig: (partial: Partial<BikeConfig>) => void;
   updateAutoAssist: (partial: Partial<AutoAssistConfig>) => void;
   setSimulationMode: (v: boolean) => void;
+  addBike: (config: Partial<BikeConfig> & { name: string; bike_type: BikeConfig['bike_type'] }) => void;
+  removeBike: (id: string) => void;
+  selectBike: (id: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -105,6 +114,8 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       riderProfile: DEFAULT_RIDER_PROFILE,
       bikeConfig: DEFAULT_BIKE_CONFIG,
+      bikes: [DEFAULT_BIKE_CONFIG],
+      activeBikeId: 'default',
 
       autoAssist: {
         enabled: false,
@@ -136,6 +147,25 @@ export const useSettingsStore = create<SettingsState>()(
         })),
 
       setSimulationMode: (v) => set({ simulation_mode: v }),
+
+      addBike: (config) => set((s) => {
+        const id = crypto.randomUUID();
+        const newBike: BikeConfig = { ...DEFAULT_BIKE_CONFIG, ...config, id };
+        return { bikes: [...s.bikes, newBike], activeBikeId: id, bikeConfig: newBike };
+      }),
+
+      removeBike: (id) => set((s) => {
+        const filtered = s.bikes.filter((b) => b.id !== id);
+        if (filtered.length === 0) filtered.push(DEFAULT_BIKE_CONFIG);
+        const activeId = s.activeBikeId === id ? filtered[0]!.id : s.activeBikeId;
+        return { bikes: filtered, activeBikeId: activeId, bikeConfig: filtered.find((b) => b.id === activeId) ?? filtered[0]! };
+      }),
+
+      selectBike: (id) => set((s) => {
+        const bike = s.bikes.find((b) => b.id === id);
+        if (!bike) return {};
+        return { activeBikeId: id, bikeConfig: bike };
+      }),
     }),
     {
       name: 'bikecontrol-settings',

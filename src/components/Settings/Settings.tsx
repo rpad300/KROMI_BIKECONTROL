@@ -150,54 +150,149 @@ function RiderPage() {
 
 function BikePage() {
   const bike = safeBikeConfig(useSettingsStore((s) => s.bikeConfig));
+  const bikes = useSettingsStore((s) => s.bikes);
+  const activeBikeId = useSettingsStore((s) => s.activeBikeId);
   const updateBike = useSettingsStore((s) => s.updateBikeConfig);
+  const addBike = useSettingsStore((s) => s.addBike);
+  const removeBike = useSettingsStore((s) => s.removeBike);
+  const selectBike = useSettingsStore((s) => s.selectBike);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newType, setNewType] = useState<'ebike' | 'mechanical'>('mechanical');
+
+  const isEBike = bike.bike_type === 'ebike';
 
   return (
     <div className="space-y-4">
+      {/* Bike selector */}
+      <SectionLabel>As minhas bicicletas</SectionLabel>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {bikes.map((b) => (
+          <div key={b.id} style={{
+            display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px',
+            backgroundColor: b.id === activeBikeId ? '#262626' : '#1a1919',
+            borderLeft: `3px solid ${b.bike_type === 'ebike' ? '#3fff8b' : '#6e9bff'}`,
+          }}>
+            <button onClick={() => selectBike(b.id)} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '20px', color: b.bike_type === 'ebike' ? '#3fff8b' : '#6e9bff' }}>
+                {b.bike_type === 'ebike' ? 'electric_bike' : 'pedal_bike'}
+              </span>
+              <div>
+                <div className="font-headline font-bold" style={{ fontSize: '13px', color: 'white' }}>{b.name}</div>
+                <div style={{ fontSize: '9px', color: '#777575', textTransform: 'uppercase' }}>{b.bike_type === 'ebike' ? 'Elétrica' : 'Mecânica'}</div>
+              </div>
+            </button>
+            {b.id === activeBikeId && <span style={{ fontSize: '8px', padding: '2px 6px', backgroundColor: '#3fff8b', color: 'black', fontWeight: 900 }}>ACTIVA</span>}
+            {bikes.length > 1 && (
+              <button onClick={() => { if (confirm(`Apagar ${b.name}?`)) removeBike(b.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#ff716c' }}>delete</span>
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Add bike */}
+      {showAdd ? (
+        <Card>
+          <span className="font-headline font-bold" style={{ fontSize: '13px', color: '#3fff8b' }}>Adicionar Bicicleta</span>
+          <TextField label="Nome" value={newName} onChange={setNewName} />
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button onClick={() => setNewType('ebike')} style={{
+              flex: 1, padding: '10px', border: 'none', cursor: 'pointer', textAlign: 'center',
+              backgroundColor: newType === 'ebike' ? '#3fff8b' : '#262626', color: newType === 'ebike' ? 'black' : '#adaaaa',
+              fontWeight: 700, fontSize: '12px',
+            }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '20px', display: 'block', marginBottom: '2px' }}>electric_bike</span>
+              Elétrica
+            </button>
+            <button onClick={() => setNewType('mechanical')} style={{
+              flex: 1, padding: '10px', border: 'none', cursor: 'pointer', textAlign: 'center',
+              backgroundColor: newType === 'mechanical' ? '#6e9bff' : '#262626', color: newType === 'mechanical' ? 'black' : '#adaaaa',
+              fontWeight: 700, fontSize: '12px',
+            }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '20px', display: 'block', marginBottom: '2px' }}>pedal_bike</span>
+              Mecânica
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button onClick={() => { if (newName.trim()) { addBike({ name: newName.trim(), bike_type: newType }); setShowAdd(false); setNewName(''); } }}
+              style={{ flex: 1, padding: '10px', backgroundColor: '#3fff8b', color: 'black', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
+              Adicionar
+            </button>
+            <button onClick={() => setShowAdd(false)}
+              style={{ padding: '10px', backgroundColor: '#262626', color: '#adaaaa', border: 'none', fontSize: '13px', cursor: 'pointer' }}>
+              Cancelar
+            </button>
+          </div>
+        </Card>
+      ) : (
+        <button onClick={() => setShowAdd(true)} style={{
+          width: '100%', padding: '10px', backgroundColor: '#1a1919', border: '1px dashed #494847', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#adaaaa', fontSize: '12px',
+        }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>add</span>
+          Adicionar bicicleta
+        </button>
+      )}
+
+      {/* Bike config — only show fields relevant to type */}
+      <SectionLabel>Configuração — {bike.name}</SectionLabel>
       <Card>
         <TextField label="Nome" value={bike.name} onChange={(v) => updateBike({ name: v })} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ color: '#adaaaa', fontSize: '13px' }}>Tipo</span>
+          <span className="font-headline font-bold" style={{ color: isEBike ? '#3fff8b' : '#6e9bff', fontSize: '13px' }}>
+            {isEBike ? '⚡ Elétrica' : '🚲 Mecânica'}
+          </span>
+        </div>
       </Card>
 
-      <SectionLabel>Bateria</SectionLabel>
-      <Card>
-        <NumberField label="Principal (Wh)" value={bike.main_battery_wh} onChange={(v) => updateBike({ main_battery_wh: v })} />
-        <Toggle label="Range Extender" value={bike.has_range_extender} onChange={(v) => updateBike({ has_range_extender: v })} />
-        {bike.has_range_extender && <NumberField label="Extender (Wh)" value={bike.sub_battery_wh} onChange={(v) => updateBike({ sub_battery_wh: v })} />}
-        <div style={{ fontSize: '10px', color: '#777575', textAlign: 'right' }}>Total: {bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0)}Wh</div>
-      </Card>
-
-      <SectionLabel>Motor</SectionLabel>
-      <Card>
-        <TextField label="Motor" value={bike.motor_name} onChange={(v) => updateBike({ motor_name: v })} />
-        <NumberField label="Torque max (Nm)" value={bike.max_torque_nm} onChange={(v) => updateBike({ max_torque_nm: v })} />
-        <NumberField label="Potência max (W)" value={bike.max_power_w} onChange={(v) => updateBike({ max_power_w: v })} />
-        <NumberField label="Limite vel. (km/h)" value={bike.speed_limit_kmh} onChange={(v) => updateBike({ speed_limit_kmh: v })} />
-      </Card>
-
-      <SectionLabel>Consumo estimado (Wh/km)</SectionLabel>
-      <Card>
-        <NumberField label="ECO" value={bike.consumption_eco} onChange={(v) => updateBike({ consumption_eco: v })} />
-        <NumberField label="TOUR" value={bike.consumption_tour} onChange={(v) => updateBike({ consumption_tour: v })} />
-        <NumberField label="ACTIVE" value={bike.consumption_active} onChange={(v) => updateBike({ consumption_active: v })} />
-        <NumberField label="SPORT" value={bike.consumption_sport} onChange={(v) => updateBike({ consumption_sport: v })} />
-        <NumberField label="POWER" value={bike.consumption_power} onChange={(v) => updateBike({ consumption_power: v })} />
-      </Card>
-
-      <SectionLabel>Tuning Levels (KROMI)</SectionLabel>
-      {(['tuning_max', 'tuning_mid', 'tuning_min'] as const).map((key) => {
-        const label = key === 'tuning_max' ? 'MAX (nível 1)' : key === 'tuning_mid' ? 'MID (nível 2)' : 'MIN (nível 3)';
-        const color = key === 'tuning_max' ? '#ff716c' : key === 'tuning_mid' ? '#fbbf24' : '#3fff8b';
-        const spec = bike[key];
-        return (
-          <Card key={key}>
-            <span className="font-headline font-bold" style={{ fontSize: '12px', color }}>{label}</span>
-            <NumberField label="Assist %" value={spec.assist_pct} onChange={(v) => updateBike({ [key]: { ...spec, assist_pct: v } })} />
-            <NumberField label="Torque (Nm)" value={spec.torque_nm} onChange={(v) => updateBike({ [key]: { ...spec, torque_nm: v } })} />
-            <NumberField label="Launch (1-10)" value={spec.launch} onChange={(v) => updateBike({ [key]: { ...spec, launch: v } })} />
+      {/* === E-BIKE ONLY SECTIONS === */}
+      {isEBike && (
+        <>
+          <SectionLabel>Bateria</SectionLabel>
+          <Card>
+            <NumberField label="Principal (Wh)" value={bike.main_battery_wh} onChange={(v) => updateBike({ main_battery_wh: v })} />
+            <Toggle label="Range Extender" value={bike.has_range_extender} onChange={(v) => updateBike({ has_range_extender: v })} />
+            {bike.has_range_extender && <NumberField label="Extender (Wh)" value={bike.sub_battery_wh} onChange={(v) => updateBike({ sub_battery_wh: v })} />}
+            <div style={{ fontSize: '10px', color: '#777575', textAlign: 'right' }}>Total: {bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0)}Wh</div>
           </Card>
-        );
-      })}
-      <TuningPreview />
+
+          <SectionLabel>Motor</SectionLabel>
+          <Card>
+            <TextField label="Motor" value={bike.motor_name} onChange={(v) => updateBike({ motor_name: v })} />
+            <NumberField label="Torque max (Nm)" value={bike.max_torque_nm} onChange={(v) => updateBike({ max_torque_nm: v })} />
+            <NumberField label="Potência max (W)" value={bike.max_power_w} onChange={(v) => updateBike({ max_power_w: v })} />
+            <NumberField label="Limite vel. (km/h)" value={bike.speed_limit_kmh} onChange={(v) => updateBike({ speed_limit_kmh: v })} />
+          </Card>
+
+          <SectionLabel>Consumo estimado (Wh/km)</SectionLabel>
+          <Card>
+            <NumberField label="ECO" value={bike.consumption_eco} onChange={(v) => updateBike({ consumption_eco: v })} />
+            <NumberField label="TOUR" value={bike.consumption_tour} onChange={(v) => updateBike({ consumption_tour: v })} />
+            <NumberField label="ACTIVE" value={bike.consumption_active} onChange={(v) => updateBike({ consumption_active: v })} />
+            <NumberField label="SPORT" value={bike.consumption_sport} onChange={(v) => updateBike({ consumption_sport: v })} />
+            <NumberField label="POWER" value={bike.consumption_power} onChange={(v) => updateBike({ consumption_power: v })} />
+          </Card>
+
+          <SectionLabel>Tuning Levels (KROMI)</SectionLabel>
+          {(['tuning_max', 'tuning_mid', 'tuning_min'] as const).map((key) => {
+            const label = key === 'tuning_max' ? 'MAX (nível 1)' : key === 'tuning_mid' ? 'MID (nível 2)' : 'MIN (nível 3)';
+            const color = key === 'tuning_max' ? '#ff716c' : key === 'tuning_mid' ? '#fbbf24' : '#3fff8b';
+            const spec = bike[key];
+            return (
+              <Card key={key}>
+                <span className="font-headline font-bold" style={{ fontSize: '12px', color }}>{label}</span>
+                <NumberField label="Assist %" value={spec.assist_pct} onChange={(v) => updateBike({ [key]: { ...spec, assist_pct: v } })} />
+                <NumberField label="Torque (Nm)" value={spec.torque_nm} onChange={(v) => updateBike({ [key]: { ...spec, torque_nm: v } })} />
+                <NumberField label="Launch (1-10)" value={spec.launch} onChange={(v) => updateBike({ [key]: { ...spec, launch: v } })} />
+              </Card>
+            );
+          })}
+          <TuningPreview />
+        </>
+      )}
 
       <SectionLabel>Bike Info</SectionLabel>
       <BikeInfoCard />
