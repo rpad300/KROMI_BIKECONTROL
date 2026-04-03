@@ -1070,7 +1070,7 @@ class BLEManager(private val context: Context) {
             0x38 -> {
                 if (data.size >= 12) {
                     val speed = ((data[4].toInt() and 0xFF) or ((data[5].toInt() and 0xFF) shl 8)) / 10.0
-                    val power = ((data[10].toInt() and 0xFF) or ((data[11].toInt() and 0xFF) shl 8))
+                    val power = ((data[10].toInt() and 0xFF) or ((data[11].toInt() and 0xFF) shl 8)) / 10.0
                     onDataReceived?.invoke(JSONObject()
                         .put("type", "gevRiding").put("speed", speed).put("power", power))
                 }

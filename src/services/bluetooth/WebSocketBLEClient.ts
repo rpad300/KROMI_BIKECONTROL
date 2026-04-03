@@ -373,10 +373,18 @@ class WebSocketBLEClient {
           if (msg.voltage) store.setBatteryVoltage(msg.voltage);
           break;
 
-        case 'gevRiding':
-          if (msg.speed) store.setSpeed(msg.speed);
-          if (msg.power) store.setPower(msg.power);
+        case 'gevRiding': {
+          // GEV cmd 0x38 encrypted riding data — power now correctly /10 in bridge
+          const gevSpd = msg.speed as number || 0;
+          const gevPwr = msg.power as number || 0;
+          if (gevSpd > 0.5) store.setSpeed(gevSpd);
+          // Only accept plausible motor power (SyncDrive Pro max ~600W)
+          if (gevPwr > 0 && gevPwr <= 700) {
+            store.setPower(Math.round(gevPwr));
+            batteryEstimationService.addSample(gevSpd, gevPwr, store.battery_percent);
+          }
           break;
+        }
 
         case 'services': {
           const svc = msg.data || msg;
@@ -443,9 +451,9 @@ class WebSocketBLEClient {
           const tDist = msg.tripDistKm as number || msg.odo as number || 0;
           const tTime = msg.tripTimeSec as number || 0;
 
-          // Motor power: SyncDrive Pro max is ~600W peak.
-          // Clamp to plausible range — values >600W indicate scale issue in bridge.
-          const motorPwr = rawPwr > 600 ? Math.round(rawPwr / 10) : Math.round(rawPwr);
+          // Motor power: SyncDrive Pro max ~600W peak.
+          // Bridge sends /10 scaled values. Reject implausible values (>700W = stale bug).
+          const motorPwr = rawPwr > 0 && rawPwr <= 700 ? Math.round(rawPwr) : 0;
 
           // Rider power from torque × cadence: P = τ × ω = Nm × (RPM × 2π/60)
           const riderPwr = (trq > 0 && cad > 2) ? Math.round(trq * cad * 2 * Math.PI / 60) : 0;
