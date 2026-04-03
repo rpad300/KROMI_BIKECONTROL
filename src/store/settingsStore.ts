@@ -10,21 +10,99 @@ export interface TuningLevelSpec {
   consumption_wh_km: number; // Typical Wh/km at this level
 }
 
+// ── Bike classification ─────────────────────────────────────
+export type BikeCategory = 'mtb' | 'road' | 'gravel' | 'urban' | 'tt' | 'cx' | 'other';
+export type SuspensionType = 'rigid' | 'hardtail' | 'full';
+export type BrakeType = 'disc_hydraulic' | 'disc_mechanical' | 'rim' | 'none';
+export type DrivetrainType = '1x' | '2x' | '3x';
+export type GroupsetBrand = 'shimano' | 'sram' | 'campagnolo' | 'other';
+
 export interface BikeConfig {
   id: string;
   bike_type: 'ebike' | 'mechanical';
   name: string;
-  // Battery
+
+  // ── Classification ────────────────────────────────────────
+  category: BikeCategory;
+  suspension: SuspensionType;
+  year: number;
+  brand: string;
+  model: string;
+  size: string;               // e.g., 'M', 'L', '54cm'
+  color: string;
+  weight_kg: number;
+  photo_url: string;
+
+  // ── Frame ─────────────────────────────────────────────────
+  frame_material: string;     // 'carbon' | 'aluminium' | 'steel' | 'titanium'
+  fork_travel_mm: number;     // 0 for rigid
+  rear_travel_mm: number;     // 0 for hardtail/rigid
+  fork_model: string;
+  rear_shock_model: string;
+  seatpost_type: string;      // 'rigid' | 'dropper'
+  seatpost_travel_mm: number; // dropper travel
+  seatpost_diameter_mm: number;
+  headtube_angle_deg: number;
+  seattube_angle_deg: number;
+  chainstay_mm: number;
+  reach_mm: number;
+  stack_mm: number;
+  wheelbase_mm: number;
+  bb_drop_mm: number;
+
+  // ── Drivetrain ────────────────────────────────────────────
+  drivetrain_type: DrivetrainType;
+  groupset_brand: GroupsetBrand;
+  groupset_model: string;     // e.g., 'Deore XT M8100', 'GX Eagle AXS'
+  electronic_shifting: boolean;
+  crank_length_mm: number;    // 165, 170, 175
+  chainring_teeth: string;    // e.g., '34T' or '50/34T'
+  cassette_range: string;     // e.g., '10-51T' or '11-34T'
+  cassette_speeds: number;    // 10, 11, 12, 13
+  chain_model: string;
+  pedals: string;
+
+  // ── Wheels & Tyres ────────────────────────────────────────
+  wheel_size: string;         // '29"', '27.5"', '700c', '650b'
+  wheel_circumference_mm: number;
+  rim_width_mm: number;
+  rim_model_front: string;
+  rim_model_rear: string;
+  hub_front: string;
+  hub_rear: string;
+  spokes: string;             // e.g., '32H J-bend'
+  tyre_model_front: string;
+  tyre_model_rear: string;
+  tyre_width_mm: number;
+  tyre_pressure_front_psi: number;
+  tyre_pressure_rear_psi: number;
+  tubeless: boolean;
+  tyre_insert: boolean;
+
+  // ── Brakes ────────────────────────────────────────────────
+  brake_type: BrakeType;
+  brake_model: string;        // e.g., 'Shimano XT M8120'
+  rotor_front_mm: number;     // 160, 180, 200, 203, 220
+  rotor_rear_mm: number;
+
+  // ── Cockpit ───────────────────────────────────────────────
+  handlebar_type: string;     // 'flat', 'riser', 'drop', 'aero'
+  handlebar_width_mm: number;
+  handlebar_rise_mm: number;
+  stem_length_mm: number;
+  stem_angle_deg: number;
+  grips_tape: string;
+  saddle_model: string;
+  saddle_width_mm: number;
+
+  // ── E-Bike specific ───────────────────────────────────────
   main_battery_wh: number;
   has_range_extender: boolean;
   sub_battery_wh: number;
-  // Motor
   motor_name: string;
   max_torque_nm: number;
   max_power_w: number;
   speed_limit_kmh: number;
-  // Wheels
-  wheel_circumference_mm: number;
   // Consumption defaults (Wh/km) per assist mode
   consumption_eco: number;
   consumption_tour: number;
@@ -32,10 +110,9 @@ export interface BikeConfig {
   consumption_sport: number;
   consumption_power: number;
   // Tuning level specs (what SET_TUNING levels do in POWER mode)
-  tuning_max: TuningLevelSpec;   // Level 1 = MAX
-  tuning_mid: TuningLevelSpec;   // Level 2 = MID
-  tuning_min: TuningLevelSpec;   // Level 3 = MIN
-  // Fixed baseline for comparison — what rider uses without KROMI
+  tuning_max: TuningLevelSpec;
+  tuning_mid: TuningLevelSpec;
+  tuning_min: TuningLevelSpec;
   fixed_baseline: TuningLevelSpec;
 }
 
@@ -43,6 +120,81 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   id: 'default',
   bike_type: 'ebike',
   name: 'Giant Trance X E+ 2 (2023)',
+
+  // Classification
+  category: 'mtb',
+  suspension: 'full',
+  year: 2023,
+  brand: 'Giant',
+  model: 'Trance X Advanced E+ 2',
+  size: 'M',
+  color: '',
+  weight_kg: 23.8,
+  photo_url: '',
+
+  // Frame
+  frame_material: 'aluminium',
+  fork_travel_mm: 150,
+  rear_travel_mm: 140,
+  fork_model: 'Fox 36 Rhythm',
+  rear_shock_model: 'Fox Float DPS',
+  seatpost_type: 'dropper',
+  seatpost_travel_mm: 150,
+  seatpost_diameter_mm: 30.9,
+  headtube_angle_deg: 65.5,
+  seattube_angle_deg: 76,
+  chainstay_mm: 455,
+  reach_mm: 455,
+  stack_mm: 625,
+  wheelbase_mm: 1235,
+  bb_drop_mm: 35,
+
+  // Drivetrain
+  drivetrain_type: '1x',
+  groupset_brand: 'shimano',
+  groupset_model: 'Deore XT M8100',
+  electronic_shifting: false,
+  crank_length_mm: 165,
+  chainring_teeth: '34T',
+  cassette_range: '10-51T',
+  cassette_speeds: 12,
+  chain_model: 'Shimano CN-M8100',
+  pedals: '',
+
+  // Wheels & Tyres
+  wheel_size: '29"',
+  wheel_circumference_mm: 2290,
+  rim_width_mm: 30,
+  rim_model_front: 'Giant AM 29',
+  rim_model_rear: 'Giant AM 29',
+  hub_front: 'Giant Tracker',
+  hub_rear: 'Giant Tracker',
+  spokes: '32H',
+  tyre_model_front: 'Maxxis Minion DHF 2.5',
+  tyre_model_rear: 'Maxxis Dissector 2.4',
+  tyre_width_mm: 63,
+  tyre_pressure_front_psi: 24,
+  tyre_pressure_rear_psi: 26,
+  tubeless: true,
+  tyre_insert: false,
+
+  // Brakes
+  brake_type: 'disc_hydraulic',
+  brake_model: 'Shimano Deore M6120 4-piston',
+  rotor_front_mm: 203,
+  rotor_rear_mm: 180,
+
+  // Cockpit
+  handlebar_type: 'riser',
+  handlebar_width_mm: 780,
+  handlebar_rise_mm: 20,
+  stem_length_mm: 50,
+  stem_angle_deg: 0,
+  grips_tape: 'Giant Tactal',
+  saddle_model: 'Giant Contact SL',
+  saddle_width_mm: 145,
+
+  // E-Bike
   main_battery_wh: 800,
   has_range_extender: true,
   sub_battery_wh: 250,
@@ -50,34 +202,48 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   max_torque_nm: 85,
   max_power_w: 600,
   speed_limit_kmh: 25,
-  wheel_circumference_mm: 2290,  // Default MTB 29er — overridden by bike_configs from DB
   consumption_eco: 6,
   consumption_tour: 15,
   consumption_active: 22,
   consumption_sport: 28,
   consumption_power: 35,
-  // SyncDrive Pro tuning levels in POWER mode (calibrated for 1050Wh total)
-  // MIN→~115km range, MID→~65km range, MAX→~40km range
   tuning_max: { assist_pct: 360, torque_nm: 85, launch: 9, consumption_wh_km: 26 },
   tuning_mid: { assist_pct: 240, torque_nm: 65, launch: 5, consumption_wh_km: 16 },
   tuning_min: { assist_pct: 140, torque_nm: 45, launch: 3, consumption_wh_km: 9 },
-  // Fixed comparison baseline — what the rider normally uses without KROMI
-  // 125% assist < MIN 140%, so consumption must be < MIN 9 Wh/km
   fixed_baseline: { assist_pct: 125, torque_nm: 40, launch: 3, consumption_wh_km: 7 },
 };
 
-/** Deep merge bikeConfig with defaults — handles missing nested objects from old DB/localStorage */
+/** Deep merge bikeConfig with defaults — handles missing fields from old DB/localStorage */
 export function safeBikeConfig(raw: Partial<BikeConfig> | undefined): BikeConfig {
   const d = DEFAULT_BIKE_CONFIG;
   if (!raw) return d;
   return {
     ...d,
     ...raw,
+    // Nested objects need explicit merge
     tuning_max: { ...d.tuning_max, ...(raw.tuning_max ?? {}) },
     tuning_mid: { ...d.tuning_mid, ...(raw.tuning_mid ?? {}) },
     tuning_min: { ...d.tuning_min, ...(raw.tuning_min ?? {}) },
     fixed_baseline: { ...d.fixed_baseline, ...(raw.fixed_baseline ?? {}) },
+    // Ensure new fields have defaults for old configs
+    category: raw.category ?? (raw.bike_type === 'ebike' ? 'mtb' : 'other'),
+    suspension: raw.suspension ?? 'rigid',
   };
+}
+
+/** Get display label for bike category */
+export function bikeCategoryLabel(cat: BikeCategory): string {
+  const labels: Record<BikeCategory, string> = {
+    mtb: 'Mountain Bike', road: 'Estrada', gravel: 'Gravel',
+    urban: 'Urbana', tt: 'Contra-relógio', cx: 'Ciclocross', other: 'Outra',
+  };
+  return labels[cat] ?? cat;
+}
+
+/** Get display label for suspension type */
+export function suspensionLabel(s: SuspensionType): string {
+  const labels: Record<SuspensionType, string> = { rigid: 'Rígida', hardtail: 'Hardtail', full: 'Full Suspension' };
+  return labels[s] ?? s;
 }
 
 interface AutoAssistConfig {

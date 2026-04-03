@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSettingsStore, safeBikeConfig, type BikeConfig } from '../../store/settingsStore';
+import { useSettingsStore } from '../../store/settingsStore';
 import { calculateZones, calculatePowerZones } from '../../types/athlete.types';
 import { useBikeStore } from '../../store/bikeStore';
 import { useAuthStore } from '../../store/authStore';
@@ -7,6 +7,7 @@ import { useLearningStore } from '../../store/learningStore';
 import { connectBike, disconnectBike } from '../../services/bluetooth/BLEBridge';
 import { ProfileInsightsWidget } from '../Dashboard/ProfileInsightsWidget';
 import { BikeFitPage } from './BikeFitPage';
+import { BikesPage } from './BikesPage';
 // TuningPreview removed — config is now read-only from motor telemetry
 import { importKomootRoute } from '../../services/maps/KomootService';
 
@@ -89,7 +90,7 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
         {activePage === 'medical' && <MedicalPage />}
         {activePage === 'bikefit' && <BikeFitSection />}
         {activePage === 'club' && <ClubPage />}
-        {activePage === 'bike' && <BikePage />}
+        {activePage === 'bike' && <BikesPage />}
         {activePage === 'kromi' && <KromiPage />}
         {activePage === 'bluetooth' && <BluetoothPage />}
         {activePage === 'routes' && <RoutesPage onNavigate={onNavigate} />}
@@ -570,114 +571,7 @@ function BikeFitSection() {
   );
 }
 
-function BikePage() {
-  const bike = safeBikeConfig(useSettingsStore((s) => s.bikeConfig));
-  const bikes = useSettingsStore((s) => s.bikes);
-  const activeBikeId = useSettingsStore((s) => s.activeBikeId);
-  const updateBike = useSettingsStore((s) => s.updateBikeConfig);
-  const addBike = useSettingsStore((s) => s.addBike);
-  const removeBike = useSettingsStore((s) => s.removeBike);
-  const selectBike = useSettingsStore((s) => s.selectBike);
-  const [showAdd, setShowAdd] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newType, setNewType] = useState<'ebike' | 'mechanical'>('mechanical');
-
-  const isEBike = bike.bike_type === 'ebike';
-
-  return (
-    <div className="space-y-4">
-      {/* Bike selector */}
-      <SectionLabel>As minhas bicicletas</SectionLabel>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        {bikes.map((b) => (
-          <div key={b.id} style={{
-            display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px',
-            backgroundColor: b.id === activeBikeId ? '#262626' : '#1a1919',
-            borderLeft: `3px solid ${b.bike_type === 'ebike' ? '#3fff8b' : '#6e9bff'}`,
-          }}>
-            <button onClick={() => selectBike(b.id)} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-              <span className="material-symbols-outlined" style={{ fontSize: '20px', color: b.bike_type === 'ebike' ? '#3fff8b' : '#6e9bff' }}>
-                {b.bike_type === 'ebike' ? 'electric_bike' : 'pedal_bike'}
-              </span>
-              <div>
-                <div className="font-headline font-bold" style={{ fontSize: '13px', color: 'white' }}>{b.name}</div>
-                <div style={{ fontSize: '9px', color: '#777575', textTransform: 'uppercase' }}>{b.bike_type === 'ebike' ? 'Elétrica' : 'Mecânica'}</div>
-              </div>
-            </button>
-            {b.id === activeBikeId && <span style={{ fontSize: '8px', padding: '2px 6px', backgroundColor: '#3fff8b', color: 'black', fontWeight: 900 }}>ACTIVA</span>}
-            {bikes.length > 1 && (
-              <button onClick={() => { if (confirm(`Apagar ${b.name}?`)) removeBike(b.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#ff716c' }}>delete</span>
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Add bike */}
-      {showAdd ? (
-        <Card>
-          <span className="font-headline font-bold" style={{ fontSize: '13px', color: '#3fff8b' }}>Adicionar Bicicleta</span>
-          <TextField label="Nome" value={newName} onChange={setNewName} />
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button onClick={() => setNewType('ebike')} style={{
-              flex: 1, padding: '10px', border: 'none', cursor: 'pointer', textAlign: 'center',
-              backgroundColor: newType === 'ebike' ? '#3fff8b' : '#262626', color: newType === 'ebike' ? 'black' : '#adaaaa',
-              fontWeight: 700, fontSize: '12px',
-            }}>
-              <span className="material-symbols-outlined" style={{ fontSize: '20px', display: 'block', marginBottom: '2px' }}>electric_bike</span>
-              Elétrica
-            </button>
-            <button onClick={() => setNewType('mechanical')} style={{
-              flex: 1, padding: '10px', border: 'none', cursor: 'pointer', textAlign: 'center',
-              backgroundColor: newType === 'mechanical' ? '#6e9bff' : '#262626', color: newType === 'mechanical' ? 'black' : '#adaaaa',
-              fontWeight: 700, fontSize: '12px',
-            }}>
-              <span className="material-symbols-outlined" style={{ fontSize: '20px', display: 'block', marginBottom: '2px' }}>pedal_bike</span>
-              Mecânica
-            </button>
-          </div>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button onClick={() => { if (newName.trim()) { addBike({ name: newName.trim(), bike_type: newType }); setShowAdd(false); setNewName(''); } }}
-              style={{ flex: 1, padding: '10px', backgroundColor: '#3fff8b', color: 'black', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
-              Adicionar
-            </button>
-            <button onClick={() => setShowAdd(false)}
-              style={{ padding: '10px', backgroundColor: '#262626', color: '#adaaaa', border: 'none', fontSize: '13px', cursor: 'pointer' }}>
-              Cancelar
-            </button>
-          </div>
-        </Card>
-      ) : (
-        <button onClick={() => setShowAdd(true)} style={{
-          width: '100%', padding: '10px', backgroundColor: '#1a1919', border: '1px dashed #494847', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#adaaaa', fontSize: '12px',
-        }}>
-          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>add</span>
-          Adicionar bicicleta
-        </button>
-      )}
-
-      {/* Bike config — only show fields relevant to type */}
-      <SectionLabel>Configuração — {bike.name}</SectionLabel>
-      <Card>
-        <TextField label="Nome" value={bike.name} onChange={(v) => updateBike({ name: v })} />
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ color: '#adaaaa', fontSize: '13px' }}>Tipo</span>
-          <span className="font-headline font-bold" style={{ color: isEBike ? '#3fff8b' : '#6e9bff', fontSize: '13px' }}>
-            {isEBike ? '⚡ Elétrica' : '🚲 Mecânica'}
-          </span>
-        </div>
-      </Card>
-
-      {/* === E-BIKE ONLY SECTIONS (read-only from motor telemetry) === */}
-      {isEBike && <EBikeReadOnlyInfo bike={bike} />}
-
-      <SectionLabel>Bike Info</SectionLabel>
-      <BikeInfoCard />
-    </div>
-  );
-}
+// Old BikePage removed — replaced by BikesPage component
 
 function KromiPage() {
   const autoAssist = useSettingsStore((s) => s.autoAssist);
@@ -826,76 +720,7 @@ function AccountPage() {
   );
 }
 
-/** E-Bike info — all values auto-detected from motor, read-only display */
-function EBikeReadOnlyInfo({ bike }: { bike: BikeConfig }) {
-  const bat1 = useBikeStore((s) => s.battery_main_pct);
-  const bat2 = useBikeStore((s) => s.battery_sub_pct);
-  const motorOdo = useBikeStore((s) => s.motor_odo_km);
-  const motorHours = useBikeStore((s) => s.motor_total_hours);
-  const rangePerMode = useBikeStore((s) => s.range_per_mode);
-  const fw = useBikeStore((s) => s.firmware_version);
-  const hw = useBikeStore((s) => s.hardware_version);
-  const sw = useBikeStore((s) => s.software_version);
-
-  const hasLive = bat1 > 0 || motorOdo > 0;
-
-  return (
-    <>
-      <SectionLabel>Bateria {hasLive ? '(live do motor)' : '(config manual)'}</SectionLabel>
-      <Card>
-        <ReadOnlyRow label="Principal" value={`${bike.main_battery_wh} Wh`} />
-        {bike.has_range_extender && <ReadOnlyRow label="Range Extender" value={`${bike.sub_battery_wh} Wh`} />}
-        <ReadOnlyRow label="Total" value={`${bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0)} Wh`} color="#3fff8b" />
-        {bat1 > 0 && (
-          <>
-            <div style={{ borderTop: '1px solid rgba(73,72,71,0.2)', marginTop: '4px', paddingTop: '8px' }} />
-            <ReadOnlyRow label="Main SOC" value={`${bat1}%`} color={bat1 > 30 ? '#3fff8b' : '#fbbf24'} />
-            {bat2 > 0 && <ReadOnlyRow label="Sub SOC" value={`${bat2}%`} color={bat2 > 30 ? '#3fff8b' : '#fbbf24'} />}
-          </>
-        )}
-      </Card>
-
-      <SectionLabel>Motor</SectionLabel>
-      <Card>
-        <ReadOnlyRow label="Modelo" value={bike.motor_name || 'Auto-detectado'} />
-        <ReadOnlyRow label="Torque max" value={`${bike.max_torque_nm} Nm`} />
-        <ReadOnlyRow label="Potência max" value={`${bike.max_power_w} W`} />
-        <ReadOnlyRow label="Limite velocidade" value={`${bike.speed_limit_kmh} km/h`} />
-        {motorOdo > 0 && <ReadOnlyRow label="Odómetro motor" value={`${motorOdo.toLocaleString()} km`} color="#6e9bff" />}
-        {motorHours > 0 && <ReadOnlyRow label="Horas motor" value={`${motorHours} h`} />}
-        {fw && <ReadOnlyRow label="Firmware" value={fw} />}
-        {hw && <ReadOnlyRow label="Hardware" value={hw} />}
-        {sw && <ReadOnlyRow label="Software" value={sw} />}
-      </Card>
-
-      {rangePerMode && (
-        <>
-          <SectionLabel>Autonomia por modo (do motor)</SectionLabel>
-          <Card>
-            {(['eco', 'tour', 'active', 'sport', 'power', 'smart'] as const).map((mode) => {
-              const range = (rangePerMode as Record<string, number>)[mode] ?? 0;
-              if (range <= 0) return null;
-              const modeColors: Record<string, string> = { eco: '#3fff8b', tour: '#6e9bff', active: '#fbbf24', sport: '#fbbf24', power: '#ff716c', smart: '#e966ff' };
-              return <ReadOnlyRow key={mode} label={mode.toUpperCase()} value={`${range} km`} color={modeColors[mode]} />;
-            })}
-          </Card>
-        </>
-      )}
-
-      <SectionLabel>Consumo calibrado (auto do motor)</SectionLabel>
-      <Card>
-        <ReadOnlyRow label="ECO" value={`${bike.consumption_eco} Wh/km`} />
-        <ReadOnlyRow label="TOUR" value={`${bike.consumption_tour} Wh/km`} />
-        <ReadOnlyRow label="ACTIVE" value={`${bike.consumption_active} Wh/km`} />
-        <ReadOnlyRow label="SPORT" value={`${bike.consumption_sport} Wh/km`} />
-        <ReadOnlyRow label="POWER" value={`${bike.consumption_power} Wh/km`} />
-        <div style={{ fontSize: '9px', color: '#494847', marginTop: '4px' }}>
-          Valores auto-calibrados a partir dos ranges do motor (cmd 17). Actualizam a cada 2 min durante a volta.
-        </div>
-      </Card>
-    </>
-  );
-}
+// EBikeReadOnlyInfo removed — now in BikesPage.tsx EBikeSection
 
 function PrivacyToggle({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   const opts = [
@@ -972,29 +797,4 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
   );
 }
 
-function BikeInfoCard() {
-  const fw = useBikeStore((s) => s.firmware_version);
-  const hw = useBikeStore((s) => s.hardware_version);
-  const sw = useBikeStore((s) => s.software_version);
-  const odo = useBikeStore((s) => s.motor_odo_km);
-  const hours = useBikeStore((s) => s.motor_total_hours);
-  if (!fw && !hw && !sw && !odo) return null;
-  return (
-    <Card>
-      {fw && <InfoRow label="Firmware" value={fw} />}
-      {hw && <InfoRow label="Hardware" value={hw} />}
-      {sw && <InfoRow label="Software" value={sw} />}
-      {odo > 0 && <InfoRow label="Motor ODO" value={`${odo.toLocaleString()} km`} />}
-      {hours > 0 && <InfoRow label="Motor Hours" value={`${hours} h`} />}
-    </Card>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-      <span style={{ color: '#adaaaa', fontSize: '12px' }}>{label}</span>
-      <span className="font-headline tabular-nums" style={{ color: 'white', fontSize: '12px' }}>{value}</span>
-    </div>
-  );
-}
+// BikeInfoCard / InfoRow removed — now in BikesPage.tsx
