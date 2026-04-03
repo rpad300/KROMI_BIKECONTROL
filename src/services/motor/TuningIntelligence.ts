@@ -17,6 +17,7 @@ import { useLearningStore } from '../../store/learningStore';
 import { getCachedTrail } from '../maps/TerrainService';
 import { getCachedWeather } from '../weather/WeatherService';
 import { useBikeStore } from '../../store/bikeStore';
+import { gearEfficiencyEngine } from '../di2/GearEfficiencyEngine';
 
 export interface TuningInput {
   gradient: number;
@@ -28,6 +29,8 @@ export interface TuningInput {
   altitude: number;
   upcomingGradient: number | null;
   distanceToChange: number | null;
+  /** Current gear position (1=easiest, 12=hardest). 0=unknown. */
+  currentGear: number;
 }
 
 export interface TuningFactor {
@@ -332,8 +335,33 @@ class TuningIntelligence {
       coldBatteryMod = Math.max(0.7, 1 - (5 - weather.temp_c) * 0.015);
     }
 
+    // ═══════════════════════════════════════════════
+    // LAYER 5: Gear Ratio Intelligence (-20 to +15)
+    // Uses real cassette sprockets + chainring from BikeConfig
+    // Assesses rider effort from gear position + cadence + HR
+    // ═══════════════════════════════════════════════
+    let gearAdj = 0;
+    if (input.currentGear > 0 && input.cadence > 0) {
+      const gearEffort = gearEfficiencyEngine.assessEffort(
+        input.currentGear,
+        input.cadence,
+        input.speed,
+        input.hr,
+        targetZone.max_bpm,
+        input.gradient,
+      );
+      gearAdj = gearEffort.assistAdjustment;
+      if (gearAdj !== 0) {
+        factors.push({
+          name: 'Gear',
+          value: gearAdj,
+          detail: gearEffort.reason,
+        });
+      }
+    }
+
     const rawIntensity = Math.max(0, Math.min(100,
-      hrTarget + anticipation + stoppedPenalty + altitudeBoost + learnedAdj + envAdj));
+      hrTarget + anticipation + stoppedPenalty + altitudeBoost + learnedAdj + envAdj + gearAdj));
     const overallIntensity = Math.round(rawIntensity * batteryConstraint * coldBatteryMod);
 
     // ═══════════════════════════════════════════════

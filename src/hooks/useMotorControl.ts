@@ -69,6 +69,7 @@ export function useMotorControl() {
         altitude: map.altitude ?? bike.barometric_altitude_m,
         upcomingGradient: null,
         distanceToChange: null,
+        currentGear: bike.gear,
       };
 
       // Terrain data (optional — needs GPS + auto-assist enabled)
