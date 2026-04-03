@@ -55,6 +55,7 @@ interface BikeState {
   // Heart rate (Phase 3)
   hr_bpm: number;
   hr_zone: number;
+  spo2_pct: number;  // Live SpO2 from sensor (0 = no data)
 
   // Gear (Phase 3 - Di2)
   gear: number;
@@ -169,6 +170,7 @@ export const useBikeStore = create<BikeState>((set) => ({
   speed_max: 0,
   hr_bpm: 0,
   hr_zone: 0,
+  spo2_pct: 0,
   gear: 0,
   is_shifting: false,
   firmware_version: '',
@@ -236,6 +238,7 @@ export const useBikeStore = create<BikeState>((set) => ({
   setErrorCode: (v) => set({ error_code: v }),
 
   setHR: (bpm, zone) => set({ hr_bpm: bpm, hr_zone: zone }),
+  setSpO2: (pct: number) => set({ spo2_pct: pct }),
 
   setGear: (gear) => set({ gear, is_shifting: false }),
 

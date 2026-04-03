@@ -65,6 +65,7 @@ interface SnapshotRow {
   trip_distance_km: number;
   trip_time_s: number;
   range_km: number;
+  spo2_pct: number;
 }
 
 export interface RideSessionState {
@@ -292,6 +293,7 @@ class RideSessionManager {
       trip_distance_km: bike.trip_distance_km,
       trip_time_s: bike.trip_time_s,
       range_km: bike.range_km,
+      spo2_pct: bike.spo2_pct,
     };
 
     this.snapshotBuffer.push(row);

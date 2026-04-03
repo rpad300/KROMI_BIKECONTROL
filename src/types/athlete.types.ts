@@ -38,6 +38,9 @@ export interface RiderProfile {
   age: number;
   weight_kg: number;
   height_cm: number;
+  spo2_rest?: number;       // Resting SpO2 % (typically 96-99%)
+  spo2_threshold_warning?: number;  // Alert threshold (default 93%)
+  spo2_threshold_danger?: number;   // Danger threshold (default 88%)
 
   // KROMI target
   target_zone: number;      // 1-5, which HR zone to maintain (default Z2)

@@ -297,6 +297,18 @@ function RiderPage() {
         <NumberField label="Altura (cm)" value={profile.height_cm ?? 175} onChange={(v) => updateProfile({ height_cm: v })} />
       </Card>
 
+      {/* SpO2 */}
+      <SectionLabel>SpO2 (Saturação de Oxigénio)</SectionLabel>
+      <Card>
+        <NumberField label="SpO2 repouso (%)" value={profile.spo2_rest ?? 97} onChange={(v) => updateProfile({ spo2_rest: v })} />
+        <NumberField label="Alerta (%)" value={profile.spo2_threshold_warning ?? 93} onChange={(v) => updateProfile({ spo2_threshold_warning: v })} />
+        <NumberField label="Perigo (%)" value={profile.spo2_threshold_danger ?? 88} onChange={(v) => updateProfile({ spo2_threshold_danger: v })} />
+        <div style={{ fontSize: '9px', color: '#494847', marginTop: '4px' }}>
+          Normal: 95-99% · Atenção: 90-95% · Perigo: &lt;90%. Em altitude o SpO2 baixa naturalmente.
+          O KROMI aumenta a assistência quando SpO2 desce abaixo do threshold de alerta.
+        </div>
+      </Card>
+
       <SectionLabel>Zonas Cardíacas</SectionLabel>
       <Card>
         {/* Source indicator */}
