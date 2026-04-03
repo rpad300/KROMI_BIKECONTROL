@@ -19,11 +19,23 @@ export interface CustomZone {
   max_bpm: number;
 }
 
+/** Power zone definition — FTP-based */
+export interface PowerZone {
+  name: string;
+  min_pct: number;  // % of FTP
+  max_pct: number;
+  min_watts: number;
+  max_watts: number;
+  color: string;
+  description: string;
+}
+
 export interface RiderProfile {
   // Personal
   name?: string;
   birthdate?: string;       // ISO date string
   gender?: string;          // M, F, Outro
+  avatar_url?: string;      // Profile photo URL
 
   // Club
   club_id?: string;
@@ -41,18 +53,51 @@ export interface RiderProfile {
   spo2_rest?: number;       // Resting SpO2 % (typically 96-99%)
   spo2_threshold_warning?: number;  // Alert threshold (default 93%)
   spo2_threshold_danger?: number;   // Danger threshold (default 88%)
+  vo2max?: number;          // ml/kg/min (from watch, test, or estimated)
+  ftp_watts?: number;       // Functional Threshold Power (manual or tested)
+
+  // Medical / conditions
+  medical_conditions?: string[];  // ['asthma', 'cardiac', 'diabetes', etc.]
+  medical_notes?: string;         // Free text for specific notes
+
+  // Goals
+  goal?: 'weight_loss' | 'endurance' | 'performance' | 'event_prep' | 'fun' | 'rehab';
+  goal_event_date?: string;       // ISO date for event preparation
+  goal_notes?: string;
+
+  // Bike fit
+  inseam_cm?: number;       // Leg length for saddle height
+  frame_size?: string;      // S, M, L, XL or cm
+  riding_position?: 'aggressive' | 'moderate' | 'upright';
 
   // KROMI target
   target_zone: number;      // 1-5, which HR zone to maintain (default Z2)
+  target_power_zone?: number; // 1-6, target power zone (optional)
   hr_weight_pct: number;    // 0-100, not used anymore (legacy)
 
   // Custom HR zones — user-defined bpm boundaries (overrides formula)
-  custom_zones?: CustomZone[];         // 5 zones with min/max bpm
-  zones_source?: 'formula' | 'manual' | 'learned';  // how zones were set
-  zones_updated_at?: string;           // ISO timestamp of last change
+  custom_zones?: CustomZone[];
+  zones_source?: 'formula' | 'manual' | 'learned';
+  zones_updated_at?: string;
+
+  // Custom Power zones — FTP-based (optional)
+  custom_power_zones?: { min_watts: number; max_watts: number }[];
 
   // Calculated zones (auto-generated from hr_max)
   zones: HRZone[];
+}
+
+/** Calculate Power zones from FTP */
+export function calculatePowerZones(ftp: number): PowerZone[] {
+  const z = (min: number, max: number) => ({ min_watts: Math.round(ftp * min / 100), max_watts: Math.round(ftp * max / 100) });
+  return [
+    { name: 'Z1 Recovery', min_pct: 0, max_pct: 55, ...z(0, 55), color: '#6b7280', description: 'Recuperação' },
+    { name: 'Z2 Endurance', min_pct: 55, max_pct: 75, ...z(55, 75), color: '#3b82f6', description: 'Resistência base' },
+    { name: 'Z3 Tempo', min_pct: 75, max_pct: 90, ...z(75, 90), color: '#22c55e', description: 'Ritmo sustentado' },
+    { name: 'Z4 Threshold', min_pct: 90, max_pct: 105, ...z(90, 105), color: '#f59e0b', description: 'Limiar funcional' },
+    { name: 'Z5 VO2max', min_pct: 105, max_pct: 120, ...z(105, 120), color: '#ef4444', description: 'Potência máxima aeróbica' },
+    { name: 'Z6 Anaerobic', min_pct: 120, max_pct: 200, ...z(120, 200), color: '#dc2626', description: 'Anaeróbico — sprints' },
+  ];
 }
 
 /** Zone metadata (names, colors, descriptions) */

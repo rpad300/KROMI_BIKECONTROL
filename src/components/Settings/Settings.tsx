@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSettingsStore, safeBikeConfig, type BikeConfig } from '../../store/settingsStore';
-import { calculateZones } from '../../types/athlete.types';
+import { calculateZones, calculatePowerZones } from '../../types/athlete.types';
 import { useBikeStore } from '../../store/bikeStore';
 import { useAuthStore } from '../../store/authStore';
 import { useLearningStore } from '../../store/learningStore';
@@ -407,7 +407,129 @@ function RiderPage() {
         </div>
       </Card>
 
-      <SectionLabel>Perfil Atleta</SectionLabel>
+      {/* VO2max + FTP */}
+      <SectionLabel>Performance</SectionLabel>
+      <Card>
+        <NumberField label="VO2max (ml/kg/min)" value={profile.vo2max ?? 0} onChange={(v) => updateProfile({ vo2max: v })} />
+        <div style={{ fontSize: '9px', color: '#494847' }}>Normalmente entre 30-80. Podes obter de um relógio (Garmin, Apple, etc.) ou teste de esforço.</div>
+        <NumberField label="FTP (watts)" value={profile.ftp_watts ?? 0} onChange={(v) => updateProfile({ ftp_watts: v })} />
+        <div style={{ fontSize: '9px', color: '#494847' }}>Potência que manténs durante 1h. Se não sabes, o KROMI estima após voltas com power meter.</div>
+      </Card>
+
+      {/* Power zones — only if FTP is set */}
+      {(profile.ftp_watts ?? 0) > 0 && (
+        <>
+          <SectionLabel>Zonas de Potência (FTP: {profile.ftp_watts}W)</SectionLabel>
+          <Card>
+            {calculatePowerZones(profile.ftp_watts!).map((zone) => (
+              <div key={zone.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: zone.color }} />
+                  <span style={{ fontSize: '11px', color: 'white', fontWeight: 600 }}>{zone.name}</span>
+                </div>
+                <span className="tabular-nums" style={{ fontSize: '11px', color: '#adaaaa' }}>{zone.min_watts}–{zone.max_watts}W</span>
+              </div>
+            ))}
+            <div style={{ fontSize: '9px', color: '#494847', marginTop: '4px' }}>Calculadas automaticamente do FTP. Ajustam quando o FTP muda.</div>
+          </Card>
+        </>
+      )}
+
+      {/* Medical conditions */}
+      <SectionLabel>Condições Médicas</SectionLabel>
+      <Card>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+          {['asma', 'cardíaco', 'diabetes', 'hipertensão', 'joelho', 'costas'].map((cond) => {
+            const active = (profile.medical_conditions ?? []).includes(cond);
+            return (
+              <button key={cond} onClick={() => {
+                const current = profile.medical_conditions ?? [];
+                const next = active ? current.filter((c) => c !== cond) : [...current, cond];
+                updateProfile({ medical_conditions: next });
+              }} style={{
+                padding: '4px 10px', fontSize: '10px', fontWeight: 600, border: 'none', cursor: 'pointer',
+                backgroundColor: active ? '#ff716c' : '#262626', color: active ? 'black' : '#adaaaa',
+              }}>{cond}</button>
+            );
+          })}
+        </div>
+        <textarea value={profile.medical_notes ?? ''} onChange={(e) => updateProfile({ medical_notes: e.target.value })} placeholder="Notas médicas adicionais..."
+          style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: 'none', fontSize: '12px', minHeight: '40px', resize: 'vertical', marginTop: '6px' }} />
+        <div style={{ fontSize: '9px', color: '#494847' }}>O KROMI ajusta thresholds de segurança se tiveres condições relevantes.</div>
+      </Card>
+
+      {/* Goals */}
+      <SectionLabel>Objectivos</SectionLabel>
+      <Card>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+          {([
+            { id: 'weight_loss', label: 'Perder peso', icon: '⚖️' },
+            { id: 'endurance', label: 'Endurance', icon: '🏔' },
+            { id: 'performance', label: 'Performance', icon: '🏆' },
+            { id: 'event_prep', label: 'Evento', icon: '📅' },
+            { id: 'fun', label: 'Diversão', icon: '🎉' },
+            { id: 'rehab', label: 'Reabilitação', icon: '🏥' },
+          ] as const).map(({ id, label, icon }) => (
+            <button key={id} onClick={() => updateProfile({ goal: id })} style={{
+              padding: '6px 10px', fontSize: '10px', fontWeight: 600, border: 'none', cursor: 'pointer',
+              backgroundColor: profile.goal === id ? '#3fff8b' : '#262626', color: profile.goal === id ? 'black' : '#adaaaa',
+            }}>{icon} {label}</button>
+          ))}
+        </div>
+        {profile.goal === 'event_prep' && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
+            <span style={{ color: '#adaaaa', fontSize: '12px' }}>Data do evento</span>
+            <input type="date" value={profile.goal_event_date ?? ''} onChange={(e) => updateProfile({ goal_event_date: e.target.value })}
+              style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', fontSize: '12px' }} />
+          </div>
+        )}
+        <textarea value={profile.goal_notes ?? ''} onChange={(e) => updateProfile({ goal_notes: e.target.value })} placeholder="Notas sobre objectivos..."
+          style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: 'none', fontSize: '12px', minHeight: '30px', resize: 'vertical', marginTop: '6px' }} />
+        <div style={{ fontSize: '9px', color: '#494847' }}>O KROMI ajusta a estratégia: perder peso → menos assist, performance → zonas mais altas, reabilitação → limites seguros.</div>
+      </Card>
+
+      {/* Bike fit */}
+      <SectionLabel>Bike Fit</SectionLabel>
+      <Card>
+        <NumberField label="Entrepernas (cm)" value={profile.inseam_cm ?? 0} onChange={(v) => updateProfile({ inseam_cm: v })} />
+        <TextField label="Tamanho quadro" value={profile.frame_size ?? ''} onChange={(v) => updateProfile({ frame_size: v })} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ color: '#adaaaa', fontSize: '13px' }}>Posição</span>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {([
+              { id: 'aggressive' as const, label: 'Agressiva' },
+              { id: 'moderate' as const, label: 'Moderada' },
+              { id: 'upright' as const, label: 'Relaxada' },
+            ]).map(({ id, label }) => (
+              <button key={id} onClick={() => updateProfile({ riding_position: id })} style={{
+                padding: '4px 10px', fontSize: '10px', fontWeight: 600, border: 'none', cursor: 'pointer',
+                backgroundColor: profile.riding_position === id ? '#3fff8b' : '#262626', color: profile.riding_position === id ? 'black' : '#adaaaa',
+              }}>{label}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{ fontSize: '9px', color: '#494847' }}>Posição agressiva = mais aerodinâmico, menos conforto. Afecta eficiência de pedalada nos cálculos do KROMI.</div>
+      </Card>
+
+      {/* Photo/Avatar */}
+      <SectionLabel>Foto de Perfil</SectionLabel>
+      <Card>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '60px', height: '60px', borderRadius: '50%', backgroundColor: '#262626', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+            {profile.avatar_url ? (
+              <img src={profile.avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <span className="material-symbols-outlined" style={{ fontSize: '28px', color: '#494847' }}>person</span>
+            )}
+          </div>
+          <div style={{ flex: 1 }}>
+            <TextField label="URL da foto" value={profile.avatar_url ?? ''} onChange={(v) => updateProfile({ avatar_url: v })} />
+            <div style={{ fontSize: '9px', color: '#494847', marginTop: '2px' }}>Cole um URL de imagem. Visível para membros do clube.</div>
+          </div>
+        </div>
+      </Card>
+
+      <SectionLabel>Perfil Atleta (análise automática)</SectionLabel>
       <ProfileInsightsWidget />
     </div>
   );
