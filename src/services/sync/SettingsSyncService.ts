@@ -53,6 +53,9 @@ interface DBSettings {
   rider_profile: RiderProfile;
   auto_assist: Record<string, unknown>;
   saved_device: SavedSensors | SavedDevice | null;
+  active_bike_id?: string;
+  dashboard_layouts?: Record<string, string[]>;
+  privacy_settings?: Record<string, string>;
 }
 
 /** Load settings from Supabase and merge into local stores */
@@ -63,7 +66,7 @@ export async function loadSettingsFromDB(): Promise<boolean> {
 
   try {
     const res = await supabaseFetch(
-      `/user_settings?user_id=eq.${userId}&select=bike_config,rider_profile,auto_assist,saved_device&limit=1`,
+      `/user_settings?user_id=eq.${userId}&select=bike_config,rider_profile,auto_assist,saved_device,active_bike_id,dashboard_layouts,privacy_settings&limit=1`,
       { headers: { 'Prefer': 'return=representation' } }
     );
     const data = await res.json();
@@ -120,6 +123,22 @@ export async function loadSettingsFromDB(): Promise<boolean> {
       }
     }
 
+    // Load dashboard layouts
+    if (row.dashboard_layouts && typeof row.dashboard_layouts === 'object') {
+      try {
+        const { useLayoutStore } = await import('../../store/layoutStore');
+        const layoutStore = useLayoutStore.getState();
+        for (const [dashId, widgetIds] of Object.entries(row.dashboard_layouts as Record<string, string[]>)) {
+          if (Array.isArray(widgetIds)) layoutStore.setLayout(dashId as 'cruise' | 'climb' | 'descent' | 'data' | 'map', widgetIds);
+        }
+      } catch { /* layoutStore may not be available */ }
+    }
+
+    // Load active bike selection
+    if (row.active_bike_id) {
+      settings.selectBike?.(row.active_bike_id);
+    }
+
     console.log('[Sync] Settings loaded from DB');
     return true;
   } catch (err) {
@@ -146,6 +165,10 @@ export async function saveSettingsToDB(): Promise<boolean> {
       if (sensor) savedDevices[type] = sensor;
     }
 
+    // Include multi-bike, active selection, layouts, and personal fields
+    const { useLayoutStore } = await import('../../store/layoutStore');
+    const layouts = useLayoutStore.getState().layouts;
+
     await supabaseFetch('/user_settings?on_conflict=user_id', {
       method: 'POST',
       headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
@@ -155,6 +178,13 @@ export async function saveSettingsToDB(): Promise<boolean> {
         rider_profile: settings.riderProfile,
         auto_assist: settings.autoAssist,
         saved_device: savedDevices,
+        active_bike_id: settings.activeBikeId,
+        rider_name: settings.riderProfile.name ?? null,
+        rider_birthdate: settings.riderProfile.birthdate ?? null,
+        rider_gender: settings.riderProfile.gender ?? null,
+        rider_club_id: settings.riderProfile.club_id ?? null,
+        privacy_settings: settings.riderProfile.privacy ?? {},
+        dashboard_layouts: Object.keys(layouts).length > 0 ? layouts : null,
         updated_at: new Date().toISOString(),
       }),
     });
