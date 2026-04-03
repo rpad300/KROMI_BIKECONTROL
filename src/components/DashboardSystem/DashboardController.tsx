@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
 import { useDashboardStore } from '../../store/dashboardStore';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
+import { useLayoutStore } from '../../store/layoutStore';
 import { PersistentBar } from './PersistentBar';
 import { DashboardDots } from './DashboardDots';
 import { DashboardSwipeContainer } from './DashboardSwipeContainer';
 import { TripControl } from './widgets/TripControl';
+import { CustomDashboard } from './CustomDashboard';
 import { CruiseDashboard } from './CruiseDashboard';
 import { ClimbDashboard } from './ClimbDashboard';
 import { DescentDashboard } from './DescentDashboard';
@@ -18,6 +20,7 @@ import { MapDashboard } from './MapDashboard';
  */
 export function DashboardController() {
   const active = useDashboardStore((s) => s.active);
+  const isCustomized = useLayoutStore((s) => s.isCustomized(active));
 
   // Wire terrain updates to dashboard store
   useEffect(() => {
@@ -43,11 +46,19 @@ export function DashboardController() {
       {/* Trip control — start/stop/autopause */}
       <div style={{ height: '40px', flexShrink: 0 }}><TripControl /></div>
       <DashboardSwipeContainer>
-        {active === 'cruise' && <CruiseDashboard />}
-        {active === 'climb' && <ClimbDashboard />}
-        {active === 'descent' && <DescentDashboard />}
-        {active === 'data' && <DataDashboard />}
-        {active === 'map' && <MapDashboard />}
+        {isCustomized ? (
+          /* User has a custom layout for this dashboard */
+          <CustomDashboard dashboardId={active} />
+        ) : (
+          /* Default built-in layouts */
+          <>
+            {active === 'cruise' && <CruiseDashboard />}
+            {active === 'climb' && <ClimbDashboard />}
+            {active === 'descent' && <DescentDashboard />}
+            {active === 'data' && <DataDashboard />}
+            {active === 'map' && <MapDashboard />}
+          </>
+        )}
       </DashboardSwipeContainer>
     </div>
   );

@@ -1,36 +1,58 @@
+import { useState } from 'react';
 import { DashboardPreview } from './DashboardPreview';
 import { WidgetLibrary } from './WidgetLibrary';
+import { DashboardBuilder } from './DashboardBuilder';
+
+type DesktopTab = 'preview' | 'builder' | 'widgets';
 
 /**
- * DesktopLiveView — main desktop screen replacing LiveRideView.
- * Shows phone dashboard preview + widget library catalog.
+ * DesktopLiveView — main desktop screen.
+ * Three tabs: Preview, Builder, Widget Library
  */
 export function DesktopLiveView() {
+  const [tab, setTab] = useState<DesktopTab>('preview');
+
   return (
     <div style={{ padding: '16px 24px', maxWidth: '1200px', margin: '0 auto' }}>
-      {/* Two-column layout: preview + library */}
-      <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
-        {/* Left: Phone preview (fixed width) */}
-        <div style={{ width: '320px', flexShrink: 0 }}>
-          <DashboardPreview />
-        </div>
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
+        {([
+          { id: 'preview' as const, label: 'Dashboard Preview', icon: 'phone_iphone' },
+          { id: 'builder' as const, label: 'Custom Builder', icon: 'construction' },
+          { id: 'widgets' as const, label: 'Widget Library', icon: 'widgets' },
+        ]).map(({ id, label, icon }) => (
+          <button key={id} onClick={() => setTab(id)} style={{
+            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+            padding: '10px', border: 'none', cursor: 'pointer',
+            backgroundColor: tab === id ? '#3fff8b' : '#1a1919',
+            color: tab === id ? 'black' : '#adaaaa',
+            fontFamily: "'Space Grotesk'", fontWeight: 700, fontSize: '12px', textTransform: 'uppercase',
+          }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>{icon}</span>
+            {label}
+          </button>
+        ))}
+      </div>
 
-        {/* Right: Widget library (flex) */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <WidgetLibrary />
-
-          {/* Coming soon: custom builder */}
-          <div style={{ marginTop: '24px', padding: '16px', backgroundColor: '#1a1919', borderLeft: '3px solid #e966ff' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span className="material-symbols-outlined" style={{ fontSize: '20px', color: '#e966ff' }}>construction</span>
-              <span className="font-headline font-bold" style={{ fontSize: '14px', color: '#e966ff' }}>Custom Dashboard Builder</span>
+      {/* Content */}
+      {tab === 'preview' && (
+        <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+          <div style={{ width: '320px', flexShrink: 0 }}><DashboardPreview /></div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ padding: '16px', backgroundColor: '#1a1919', borderLeft: '3px solid #3fff8b' }}>
+              <p className="font-headline font-bold" style={{ fontSize: '14px', color: '#3fff8b' }}>Phone Preview</p>
+              <p style={{ fontSize: '11px', color: '#777575', marginTop: '4px' }}>
+                Visualiza os 5 dashboards como aparecem no telemóvel. Clica nos tabs para trocar.
+                Se a bike estiver ligada via BLE Bridge, mostra dados em tempo real.
+              </p>
             </div>
-            <p style={{ fontSize: '11px', color: '#777575', marginTop: '6px' }}>
-              Em breve: arrasta widgets para criar dashboards personalizados. Os layouts são guardados no Supabase e sincronizados com o telemóvel.
-            </p>
           </div>
         </div>
-      </div>
+      )}
+
+      {tab === 'builder' && <DashboardBuilder />}
+
+      {tab === 'widgets' && <WidgetLibrary />}
     </div>
   );
 }
