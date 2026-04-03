@@ -132,6 +132,7 @@ const DESKTOP_NAV: NavItem[] = [
     { id: 'personal', label: 'Dados Pessoais', icon: 'badge' },
     { id: 'physical', label: 'Perfil Físico', icon: 'monitor_heart' },
     { id: 'medical', label: 'Médico + Objectivos', icon: 'health_and_safety' },
+    { id: 'emergency', label: 'Emergência + QR', icon: 'emergency' },
   ]},
   { screen: 'settings', label: 'Treino', icon: 'show_chart', color: '#fbbf24', subs: [
     { id: 'zones', label: 'Zonas HR + Potência', icon: 'show_chart' },
