@@ -245,6 +245,11 @@ export function ServiceDetailPage({ serviceId, onBack }: { serviceId: string; on
         </div>
       )}
 
+      {/* Rating (after completed) */}
+      {service.shop_id && (service.status === 'completed' || service.status === 'closed') && (
+        <RatingWidget serviceId={service.id} shopId={service.shop_id} userId={userId!} />
+      )}
+
       {/* Delete */}
       {(service.status === 'draft' || service.status === 'cancelled') && (
         <button onClick={handleDelete} style={{ width: '100%', padding: '10px', backgroundColor: 'rgba(255,113,108,0.1)', border: '1px solid rgba(255,113,108,0.2)', borderRadius: '4px', color: '#ff716c', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>
@@ -328,6 +333,75 @@ function QuickAddItem({ serviceId, onAdded }: { serviceId: string; onAdded: () =
           style={{ width: '60px', padding: '6px', backgroundColor: '#131313', border: '1px solid rgba(73,72,71,0.2)', borderRadius: '3px', color: '#ff9f43', fontSize: '11px', outline: 'none', textAlign: 'right' }} />
         <button onClick={save} style={{ padding: '0 10px', backgroundColor: '#ff9f43', color: 'black', border: 'none', borderRadius: '3px', fontWeight: 700, cursor: 'pointer' }}>+</button>
       </div>
+    </div>
+  );
+}
+
+// ── Rating Widget ───────────────────────────────────────────
+
+const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+function RatingWidget({ serviceId, shopId, userId }: { serviceId: string; shopId: string; userId: string }) {
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const [existing, setExisting] = useState(false);
+
+  useEffect(() => {
+    if (!SB_URL || !SB_KEY) return;
+    fetch(`${SB_URL}/rest/v1/shop_reviews?service_id=eq.${serviceId}&user_id=eq.${userId}`, {
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+    }).then((r) => r.json()).then((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        setRating(data[0].rating);
+        setComment(data[0].comment ?? '');
+        setExisting(true);
+      }
+    });
+  }, [serviceId, userId]);
+
+  const handleSubmit = async () => {
+    if (!SB_URL || !SB_KEY || rating === 0) return;
+    await fetch(`${SB_URL}/rest/v1/shop_reviews`, {
+      method: 'POST',
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify({ shop_id: shopId, service_id: serviceId, user_id: userId, rating, comment: comment || null }),
+    });
+    setSubmitted(true);
+  };
+
+  if (submitted || existing) {
+    return (
+      <div style={{ padding: '10px', backgroundColor: '#131313', borderRadius: '6px', textAlign: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '2px', marginBottom: '4px' }}>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <span key={n} className="material-symbols-outlined" style={{ fontSize: '18px', color: n <= rating ? '#fbbf24' : '#494847', fontVariationSettings: n <= rating ? "'FILL' 1" : undefined }}>star</span>
+          ))}
+        </div>
+        <div style={{ fontSize: '9px', color: '#777575' }}>{existing ? 'Avaliação guardada' : 'Obrigado pela avaliação!'}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '12px', backgroundColor: '#131313', borderRadius: '6px' }}>
+      <div style={{ fontSize: '10px', color: '#fbbf24', fontWeight: 700, marginBottom: '6px' }}>Avaliar oficina</div>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '4px', marginBottom: '8px' }}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button key={n} onClick={() => setRating(n)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '28px', color: n <= rating ? '#fbbf24' : '#494847', fontVariationSettings: n <= rating ? "'FILL' 1" : undefined }}>star</span>
+          </button>
+        ))}
+      </div>
+      <input type="text" value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Comentário (opcional)"
+        style={{ width: '100%', padding: '8px', backgroundColor: '#0e0e0e', border: '1px solid rgba(73,72,71,0.2)', borderRadius: '4px', color: 'white', fontSize: '11px', outline: 'none', marginBottom: '6px' }} />
+      <button onClick={handleSubmit} disabled={rating === 0} style={{
+        width: '100%', padding: '10px', backgroundColor: rating > 0 ? '#fbbf24' : 'rgba(73,72,71,0.2)',
+        color: rating > 0 ? 'black' : '#777575', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+      }}>
+        Enviar avaliação
+      </button>
     </div>
   );
 }

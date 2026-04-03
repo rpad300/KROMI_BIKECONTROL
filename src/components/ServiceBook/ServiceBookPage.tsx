@@ -8,13 +8,15 @@ import {
 import { NewServicePage } from './NewServicePage';
 import { ServiceDetailPage } from './ServiceDetailPage';
 import { MaintenancePage } from './MaintenancePage';
+import { ShopSearchPage } from './ShopSearchPage';
+import { BikeQRDisplay } from '../shared/BikeQRCode';
 import {
   SERVICE_STATUS_LABELS, SERVICE_STATUS_COLORS,
   SERVICE_TYPE_LABELS, URGENCY_COLORS,
   type ServiceRequest,
 } from '../../types/service.types';
 
-type SubPage = 'list' | 'new' | 'detail' | 'maintenance';
+type SubPage = 'list' | 'new' | 'detail' | 'maintenance' | 'shops' | 'qr';
 
 export function ServiceBookPage() {
   const userId = useAuthStore((s) => s.user?.id);
@@ -52,6 +54,22 @@ export function ServiceBookPage() {
   if (page === 'maintenance') {
     return <MaintenancePage bikeId={selectedBikeId} onBack={() => setPage('list')} />;
   }
+  if (page === 'shops') {
+    return <ShopSearchPage onSelectShop={() => setPage('new')} onBack={() => setPage('list')} />;
+  }
+  if (page === 'qr') {
+    return (
+      <div className="space-y-3">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button onClick={() => setPage('list')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '22px', color: '#adaaaa' }}>arrow_back</span>
+          </button>
+          <div className="font-headline font-bold" style={{ fontSize: '16px', color: '#ff9f43' }}>QR Code</div>
+        </div>
+        <BikeQRDisplay bikeId={selectedBikeId} />
+      </div>
+    );
+  }
 
   const bikeServices = services.filter((s) => s.bike_id === selectedBikeId);
 
@@ -63,14 +81,32 @@ export function ServiceBookPage() {
           <h2 className="font-headline font-bold text-lg" style={{ color: '#ff9f43' }}>Caderneta de Serviço</h2>
           <div style={{ fontSize: '10px', color: '#777575' }}>{bike.name}</div>
         </div>
-        <button onClick={() => setPage('maintenance')} style={{
-          display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 10px',
-          backgroundColor: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.2)',
-          borderRadius: '4px', color: '#ff9f43', fontSize: '10px', fontWeight: 700, cursor: 'pointer',
-        }}>
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>schedule</span>
-          Agenda
-        </button>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button onClick={() => setPage('maintenance')} style={{
+            display: 'flex', alignItems: 'center', gap: '3px', padding: '5px 8px',
+            backgroundColor: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.2)',
+            borderRadius: '4px', color: '#ff9f43', fontSize: '9px', fontWeight: 700, cursor: 'pointer',
+          }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>schedule</span>
+            Agenda
+          </button>
+          <button onClick={() => setPage('shops')} style={{
+            display: 'flex', alignItems: 'center', gap: '3px', padding: '5px 8px',
+            backgroundColor: 'rgba(110,155,255,0.1)', border: '1px solid rgba(110,155,255,0.2)',
+            borderRadius: '4px', color: '#6e9bff', fontSize: '9px', fontWeight: 700, cursor: 'pointer',
+          }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>store</span>
+            Oficinas
+          </button>
+          <button onClick={() => setPage('qr')} style={{
+            display: 'flex', alignItems: 'center', gap: '3px', padding: '5px 8px',
+            backgroundColor: 'rgba(233,102,255,0.1)', border: '1px solid rgba(233,102,255,0.2)',
+            borderRadius: '4px', color: '#e966ff', fontSize: '9px', fontWeight: 700, cursor: 'pointer',
+          }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>qr_code</span>
+            QR
+          </button>
+        </div>
       </div>
 
       {/* Bike selector */}
