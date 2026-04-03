@@ -135,6 +135,9 @@ const DESKTOP_NAV: NavItem[] = [
   ]},
   { screen: 'history', label: 'Atividades', icon: 'timeline', color: '#e966ff' },
   { screen: 'map', label: 'Mapa', icon: 'map', color: '#6e9bff' },
+  { screen: 'settings', label: 'Oficina', icon: 'store', color: '#ff9f43', subs: [
+    { id: 'shop', label: 'Gestão de Oficina', icon: 'store' },
+  ]},
   { screen: 'settings', label: 'Sistema', icon: 'settings', color: '#adaaaa', subs: [
     { id: 'routes', label: 'Rotas', icon: 'route' },
     { id: 'account', label: 'Conta', icon: 'account_circle' },
