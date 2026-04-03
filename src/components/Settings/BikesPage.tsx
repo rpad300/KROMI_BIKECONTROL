@@ -25,10 +25,12 @@ export function BikesPage() {
   const [newType, setNewType] = useState<'ebike' | 'mechanical'>('ebike');
   const [newCategory, setNewCategory] = useState<BikeCategory>('mtb');
 
-  // Edit a specific bike
-  const editBike = bikes.find((b) => b.id === editingId);
-  if (editBike) {
-    return <BikeDetailPage bike={safeBikeConfig(editBike)} onBack={() => setEditingId(null)} />;
+  // Edit a specific bike — select it first so store is in sync
+  if (editingId) {
+    const editBike = bikes.find((b) => b.id === editingId);
+    if (editBike) {
+      return <BikeDetailPage bikeId={editingId} onBack={() => setEditingId(null)} />;
+    }
   }
 
   return (
@@ -174,13 +176,16 @@ export function BikesPage() {
 // BIKE DETAIL — comprehensive config page
 // ═══════════════════════════════════════════════════════════
 
-function BikeDetailPage({ bike, onBack }: { bike: BikeConfig; onBack: () => void }) {
-  const updateBikeConfig = useSettingsStore((s) => s.updateBikeConfig);
+function BikeDetailPage({ bikeId, onBack }: { bikeId: string; onBack: () => void }) {
   const selectBike = useSettingsStore((s) => s.selectBike);
   const activeBikeId = useSettingsStore((s) => s.activeBikeId);
+  const updateBikeConfig = useSettingsStore((s) => s.updateBikeConfig);
 
-  // Ensure we're editing this bike
-  if (activeBikeId !== bike.id) selectBike(bike.id);
+  // Select this bike so bikeConfig is in sync
+  if (activeBikeId !== bikeId) selectBike(bikeId);
+
+  // Read reactively from store — re-renders on every update
+  const bike = safeBikeConfig(useSettingsStore((s) => s.bikeConfig));
 
   const update = (partial: Partial<BikeConfig>) => updateBikeConfig(partial);
   const isEBike = bike.bike_type === 'ebike';

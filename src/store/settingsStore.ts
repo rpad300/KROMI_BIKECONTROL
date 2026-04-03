@@ -324,9 +324,13 @@ export const useSettingsStore = create<SettingsState>()(
         })),
 
       updateBikeConfig: (partial) =>
-        set((state) => ({
-          bikeConfig: safeBikeConfig({ ...state.bikeConfig, ...partial }),
-        })),
+        set((state) => {
+          const updated = safeBikeConfig({ ...state.bikeConfig, ...partial });
+          return {
+            bikeConfig: updated,
+            bikes: state.bikes.map((b) => b.id === state.activeBikeId ? updated : b),
+          };
+        }),
 
       updateAutoAssist: (partial) =>
         set((state) => ({
