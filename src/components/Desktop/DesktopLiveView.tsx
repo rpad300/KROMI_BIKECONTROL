@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { DashboardPreview } from './DashboardPreview';
 import { WidgetLibrary } from './WidgetLibrary';
 import { DashboardBuilder } from './DashboardBuilder';
+import { HistoricalRangeWidget } from './HistoricalRangeWidget';
 
-type DesktopTab = 'preview' | 'builder' | 'widgets';
+type DesktopTab = 'preview' | 'builder' | 'widgets' | 'range';
 
 /**
  * DesktopLiveView — main desktop screen.
@@ -19,6 +20,7 @@ export function DesktopLiveView() {
         {([
           { id: 'preview' as const, label: 'Dashboard Preview', icon: 'phone_iphone' },
           { id: 'builder' as const, label: 'Custom Builder', icon: 'construction' },
+          { id: 'range' as const, label: 'Autonomia', icon: 'battery_charging_full' },
           { id: 'widgets' as const, label: 'Widget Library', icon: 'widgets' },
         ]).map(({ id, label, icon }) => (
           <button key={id} onClick={() => setTab(id)} style={{
@@ -51,6 +53,8 @@ export function DesktopLiveView() {
       )}
 
       {tab === 'builder' && <DashboardBuilder />}
+
+      {tab === 'range' && <HistoricalRangeWidget />}
 
       {tab === 'widgets' && <WidgetLibrary />}
     </div>
