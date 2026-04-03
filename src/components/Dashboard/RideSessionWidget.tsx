@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react';
 import { rideSessionManager } from '../../services/storage/RideHistory';
 import { useAthleteStore } from '../../store/athleteStore';
+import { useMapStore } from '../../store/mapStore';
 import { batteryEfficiencyTracker } from '../../services/learning/BatteryEfficiencyTracker';
+
 export function RideSessionWidget() {
   const rideActive = useAthleteStore((s) => s.rideActive);
+  const gpsActive = useMapStore((s) => s.gpsActive);
+  const hasGps = useMapStore((s) => s.latitude !== 0 && s.longitude !== 0);
   const [elapsed, setElapsed] = useState(0);
   const [confirmStop, setConfirmStop] = useState(false);
 
@@ -44,14 +48,26 @@ export function RideSessionWidget() {
   const { snapshotCount } = rideSessionManager.getState();
 
   if (!rideActive) {
+    const gpsReady = gpsActive && hasGps;
     return (
-      <button
-        onClick={handleStart}
-        className="w-full h-16 rounded-sm font-bold text-white text-xl bg-[#24f07e] active:scale-95 transition-transform flex items-center justify-center gap-3"
-      >
-        <span className="text-2xl">&#9654;</span>
-        INICIAR VOLTA
-      </button>
+      <div className="space-y-1">
+        <button
+          onClick={handleStart}
+          disabled={!gpsReady}
+          className={`w-full h-16 rounded-sm font-bold text-white text-xl active:scale-95 transition-transform flex items-center justify-center gap-3 ${
+            gpsReady ? 'bg-[#24f07e]' : 'bg-[#333333] opacity-60'
+          }`}
+        >
+          <span className="text-2xl">&#9654;</span>
+          {gpsReady ? 'INICIAR VOLTA' : 'A AGUARDAR GPS...'}
+        </button>
+        {!gpsReady && (
+          <div className="flex items-center justify-center gap-2 text-[10px] text-[#777575]">
+            <span className="w-2 h-2 rounded-full bg-[#fbbf24] animate-pulse" />
+            {!gpsActive ? 'GPS inactivo — verifica permissões' : 'A fixar posição...'}
+          </div>
+        )}
+      </div>
     );
   }
 

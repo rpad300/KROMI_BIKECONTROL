@@ -15,6 +15,15 @@ const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
+/** Detected platform/device that created the FIT file */
+export interface FitPlatform {
+  source: string;        // 'strava' | 'garmin' | 'wahoo' | 'igpsport' | 'hammerhead' | 'amazfit' | 'polar' | 'suunto' | 'coros' | 'bryton' | 'unknown'
+  manufacturer: string;  // raw manufacturer field
+  product: string;       // raw product/model
+  serial?: string;       // device serial number
+  software?: string;     // firmware/app version
+}
+
 export interface ImportedRide {
   id: string;
   sport: string;
@@ -34,6 +43,7 @@ export interface ImportedRide {
   temperature: number;
   records: ImportedRecord[];
   hrZones: HRZoneDistribution;
+  platform: FitPlatform;
 }
 
 export interface ImportedRecord {
@@ -57,8 +67,86 @@ export interface HRZoneDistribution {
   z5_pct: number;  // VO2max > 90%
 }
 
+/** Detect platform/device from FIT metadata */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function detectPlatform(data: any): FitPlatform {
+  const fileId = data.file_ids?.[0] ?? {};
+  const device = data.device_infos?.[0] ?? {};
+  const mfr = (fileId.manufacturer ?? device.manufacturer ?? '').toString().toLowerCase();
+  const prod = (fileId.product ?? device.product ?? '').toString();
+  const serial = (fileId.serial_number ?? device.serial_number ?? '').toString() || undefined;
+  const sw = device.software_version ? String(device.software_version) : undefined;
+
+  // Known platform signatures
+  const PLATFORMS: [string, (m: string, p: string) => boolean][] = [
+    ['strava',      (m, p) => m === 'development' && p === '1'],
+    ['garmin',      (m) => m === 'garmin' || m.startsWith('garmin')],
+    ['wahoo',       (m) => m === 'wahoo_fitness' || m === 'wahoo'],
+    ['igpsport',    (m) => m === 'igpsport'],
+    ['hammerhead',  (m) => m === 'hammerhead'],
+    ['stages',      (m) => m === 'stages_cycling'],
+    ['polar',       (m) => m === 'polar'],
+    ['suunto',      (m) => m === 'suunto'],
+    ['coros',       (m) => m === 'coros'],
+    ['bryton',      (m) => m === 'bryton'],
+    ['amazfit',     (m) => m === 'huami' || m === 'amazfit' || m === 'zepp'],
+    ['zwift',       (m) => m === 'zwift'],
+    ['trainerroad', (m) => m === 'trainerroad'],
+    ['sigma',       (m) => m === 'sigmasport' || m === 'sigma_sport'],
+    ['lezyne',      (m) => m === 'lezyne'],
+    ['giant',       (m) => m === 'giant_manufacturing'],
+    ['shimano',     (m) => m === 'shimano'],
+    ['sram',        (m) => m === 'sram'],
+  ];
+
+  for (const [name, test] of PLATFORMS) {
+    if (test(mfr, prod)) {
+      return { source: name, manufacturer: mfr, product: prod, serial, software: sw };
+    }
+  }
+
+  return { source: 'unknown', manufacturer: mfr || 'unknown', product: prod || 'unknown', serial, software: sw };
+}
+
+/** Estimate rider power from physics when FIT has no power data */
+function estimateRiderPower(records: ImportedRecord[], riderWeightKg: number, bikeWeightKg = 24.2): void {
+  const totalMass = riderWeightKg + bikeWeightKg;
+  const g = 9.81;
+  const CdA = 0.45; // MTB position
+  const Crr = 0.006; // mixed surface
+  const rho = 1.2;   // air density
+
+  for (let i = 1; i < records.length; i++) {
+    const r = records[i]!;
+    if (r.power_watts > 0) continue; // already has power
+    if (r.speed_kmh < 1) { r.power_watts = 0; continue; }
+
+    const v = r.speed_kmh / 3.6; // m/s
+
+    // Calculate gradient from altitude changes
+    let gradient = 0;
+    const prev = records[i - 1]!;
+    if (r.altitude_m !== null && prev.altitude_m !== null && r.distance_km > prev.distance_km) {
+      const dAlt = r.altitude_m - prev.altitude_m;
+      const dDist = (r.distance_km - prev.distance_km) * 1000;
+      if (dDist > 0) gradient = dAlt / dDist;
+    }
+
+    // Physics: P = F × v
+    const fGrade = totalMass * g * gradient;
+    const fRoll = totalMass * g * Crr;
+    const fAero = 0.5 * rho * CdA * v * v;
+    const totalForce = fGrade + fRoll + fAero;
+    const mechPower = Math.max(0, totalForce * v);
+
+    // On e-bike in SMART mode, rider provides ~40-60% of total power
+    // Without knowing exact assist level, estimate 50% rider contribution
+    r.power_watts = Math.round(mechPower * 0.5);
+  }
+}
+
 /** Parse a .FIT file buffer into ride data */
-export function parseFitFile(buffer: ArrayBuffer): Promise<ImportedRide> {
+export function parseFitFile(buffer: ArrayBuffer, riderWeightKg = 135): Promise<ImportedRide> {
   return new Promise((resolve, reject) => {
     const parser = new FitParser({
       force: true,
@@ -131,6 +219,16 @@ export function parseFitFile(buffer: ArrayBuffer): Promise<ImportedRide> {
         z5_pct: Math.round(hrCounts.z5 / hrWithData * 100),
       } : { z1_pct: 0, z2_pct: 0, z3_pct: 0, z4_pct: 0, z5_pct: 0 };
 
+      const platform = detectPlatform(data);
+      console.log(`[FIT] Platform: ${platform.source} (${platform.manufacturer}/${platform.product})`);
+
+      // Estimate rider power if FIT has no power data
+      const hasPower = records.some((r) => r.power_watts > 0);
+      if (!hasPower && records.length > 10) {
+        estimateRiderPower(records, riderWeightKg);
+        console.log('[FIT] Power estimated from physics model');
+      }
+
       resolve({
         id: crypto.randomUUID(),
         sport: (s.sport as string) ?? 'cycling',
@@ -150,6 +248,7 @@ export function parseFitFile(buffer: ArrayBuffer): Promise<ImportedRide> {
         temperature: (s.avg_temperature as number) ?? 0,
         records,
         hrZones,
+        platform,
       });
     });
   });
@@ -332,6 +431,7 @@ export async function saveImportedRide(ride: ImportedRide, sim?: SimulationSumma
         end_lng: ride.records[ride.records.length - 1]?.lng || null,
         devices_connected: {
           source: 'fit_import',
+          platform: ride.platform,
           sport: ride.sport,
           ...(sim ? {
             kromi_simulation: {
@@ -412,4 +512,155 @@ function getHRZone(hr: number, hrMax: number): number {
   if (pct < 0.8) return 3;
   if (pct < 0.9) return 4;
   return 5;
+}
+
+/**
+ * Find an existing live ride session that overlaps with the FIT file's time window.
+ * Returns the session ID if found, null otherwise.
+ */
+export async function findOverlappingSession(ride: ImportedRide): Promise<string | null> {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  const userId = useAuthStore.getState().user?.id;
+  if (!userId) return null;
+
+  const fitStart = new Date(ride.startedAt).toISOString();
+  const fitEnd = new Date(new Date(ride.startedAt).getTime() + ride.duration_s * 1000).toISOString();
+
+  try {
+    // Find sessions that overlap: session started before FIT ends AND ended after FIT starts
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/ride_sessions?user_id=eq.${userId}&started_at=lte.${fitEnd}&ended_at=gte.${fitStart}&select=id,started_at,ended_at,duration_s,total_km,devices_connected&limit=1`,
+      { headers: { 'apikey': SUPABASE_KEY!, 'Authorization': `Bearer ${SUPABASE_KEY}` } },
+    );
+    if (!res.ok) return null;
+    const sessions = await res.json();
+    if (sessions.length === 0) return null;
+
+    const existing = sessions[0];
+    // Only merge if NOT already a FIT import
+    const source = existing.devices_connected?.source;
+    if (source === 'fit_import' || source === 'fit_import+ble_bridge') return null;
+
+    console.log(`[FIT Merge] Found overlapping live session: ${existing.id}`);
+    return existing.id;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Merge FIT data (GPS, HR, altitude) into an existing live ride session's snapshots.
+ * The live session has motor data (power, battery, assist, torque, cadence).
+ * The FIT has GPS + HR that the live session may be missing.
+ */
+export async function mergeIntoSession(sessionId: string, ride: ImportedRide): Promise<boolean> {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return false;
+
+  try {
+    // 1. Fetch existing snapshots
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/ride_snapshots?session_id=eq.${sessionId}&select=id,elapsed_s,lat,lng,altitude_m,hr_bpm,hr_zone,speed_kmh,cadence_rpm,power_watts&order=elapsed_s`,
+      { headers: { 'apikey': SUPABASE_KEY!, 'Authorization': `Bearer ${SUPABASE_KEY}` } },
+    );
+    if (!res.ok) return false;
+    const existingSnaps = await res.json() as { id: number; elapsed_s: number; lat: number; lng: number; altitude_m: number | null; hr_bpm: number; speed_kmh: number; cadence_rpm: number; power_watts: number }[];
+
+    if (existingSnaps.length === 0) return false;
+
+    // 2. Build FIT record lookup by elapsed_s (offset by session start vs FIT start)
+    // The FIT may start earlier or later than the live session
+    const sessionRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/ride_sessions?id=eq.${sessionId}&select=started_at`,
+      { headers: { 'apikey': SUPABASE_KEY!, 'Authorization': `Bearer ${SUPABASE_KEY}` } },
+    );
+    const sessionData = await sessionRes.json();
+    const sessionStart = new Date(sessionData[0]?.started_at).getTime();
+    const fitStart = new Date(ride.startedAt).getTime();
+    const offsetS = Math.round((sessionStart - fitStart) / 1000); // FIT elapsed → session elapsed
+
+    // Map FIT records by adjusted elapsed_s for O(1) lookup
+    const fitByElapsed = new Map<number, ImportedRecord>();
+    for (const r of ride.records) {
+      const adjElapsed = r.elapsed_s - offsetS;
+      fitByElapsed.set(adjElapsed, r);
+      // Also set ±1s and ±2s for fuzzy matching
+      fitByElapsed.set(adjElapsed - 1, r);
+      fitByElapsed.set(adjElapsed + 1, r);
+      fitByElapsed.set(adjElapsed - 2, r);
+      fitByElapsed.set(adjElapsed + 2, r);
+    }
+
+    // 3. Merge: enrich live snapshots with FIT GPS + HR
+    let merged = 0;
+    const updates: { id: number; patch: Record<string, unknown> }[] = [];
+
+    for (const snap of existingSnaps) {
+      const fitRec = fitByElapsed.get(snap.elapsed_s);
+      if (!fitRec) continue;
+
+      const patch: Record<string, unknown> = {};
+      // GPS: use FIT if live has 0,0
+      if ((snap.lat === 0 || !snap.lat) && fitRec.lat !== 0) {
+        patch.lat = fitRec.lat;
+        patch.lng = fitRec.lng;
+      }
+      // Altitude: use FIT if live has none
+      if (snap.altitude_m === null && fitRec.altitude_m !== null) {
+        patch.altitude_m = fitRec.altitude_m;
+      }
+      // HR: use FIT if live has 0
+      if (snap.hr_bpm === 0 && fitRec.hr_bpm > 0) {
+        patch.hr_bpm = fitRec.hr_bpm;
+        patch.hr_zone = getHRZone(fitRec.hr_bpm, ride.max_hr);
+      }
+
+      if (Object.keys(patch).length > 0) {
+        updates.push({ id: snap.id, patch });
+        merged++;
+      }
+    }
+
+    // 4. Apply patches in batches
+    for (const { id, patch } of updates) {
+      await fetch(`${SUPABASE_URL}/rest/v1/ride_snapshots?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': SUPABASE_KEY!,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify(patch),
+      });
+    }
+
+    // 5. Update session with FIT data (HR, elevation, platform)
+    const updateSession: Record<string, unknown> = {};
+    if (ride.avg_hr > 0) { updateSession.avg_hr = ride.avg_hr; updateSession.max_hr = ride.max_hr; }
+    if (ride.ascent_m > 0) updateSession.total_elevation_m = Math.round(ride.ascent_m);
+    updateSession.devices_connected = {
+      source: 'live+fit_merge',
+      fit_platform: ride.platform,
+      fit_file: ride.platform.source,
+    };
+
+    if (Object.keys(updateSession).length > 0) {
+      await fetch(`${SUPABASE_URL}/rest/v1/ride_sessions?id=eq.${sessionId}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': SUPABASE_KEY!,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify(updateSession),
+      });
+    }
+
+    console.log(`[FIT Merge] Merged ${merged}/${existingSnaps.length} snapshots with FIT data (GPS+HR+altitude)`);
+    return true;
+  } catch (err) {
+    console.error('[FIT Merge] Failed:', err);
+    return false;
+  }
 }

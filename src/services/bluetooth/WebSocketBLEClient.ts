@@ -309,9 +309,14 @@ class WebSocketBLEClient {
           break;
 
         case 'power':
-          store.setPower(msg.value);
-          batteryEstimationService.addSample(store.speed_kmh, msg.value, store.battery_percent);
-          store.setRange(batteryEstimationService.getEstimatedRange(store.battery_percent));
+          // BLE Power Service (0x1818) — ignore on Giant e-bikes (no real power meter,
+          // reports garbage data). Motor power comes from sgRiding (FC23 cmd 0x40) instead.
+          if (!this._bikeConnected) {
+            // Only use 0x1818 power from standalone power meter sensors (not bike)
+            store.setPower(msg.value);
+            batteryEstimationService.addSample(store.speed_kmh, msg.value, store.battery_percent);
+            store.setRange(batteryEstimationService.getEstimatedRange(store.battery_percent));
+          }
           break;
 
         case 'assistMode':
@@ -431,22 +436,29 @@ class WebSocketBLEClient {
         case 'sgRiding': {
           // FC23 cmd 0x40 — full ride telemetry (from resolveTd23Data decompilation)
           const spd = msg.speed as number || 0;
-          const pwr = msg.powerW as number || msg.motorWatts as number || 0;
+          const rawPwr = msg.powerW as number || msg.motorWatts as number || 0;
           const trq = msg.torqueNm as number || 0;
           const cad = msg.cadenceRpm as number || 0;
           const cur = msg.assistCurrentA as number || 0;
           const tDist = msg.tripDistKm as number || msg.odo as number || 0;
           const tTime = msg.tripTimeSec as number || 0;
 
+          // Motor power: SyncDrive Pro max is ~600W peak.
+          // Clamp to plausible range — values >600W indicate scale issue in bridge.
+          const motorPwr = rawPwr > 600 ? Math.round(rawPwr / 10) : Math.round(rawPwr);
+
+          // Rider power from torque × cadence: P = τ × ω = Nm × (RPM × 2π/60)
+          const riderPwr = (trq > 0 && cad > 2) ? Math.round(trq * cad * 2 * Math.PI / 60) : 0;
+
           if (spd > 0.5) store.setSpeed(spd);
-          if (pwr > 0) store.setPower(Math.round(pwr));
+          if (motorPwr > 0 || riderPwr > 0) store.setPower(motorPwr > 0 ? motorPwr : riderPwr);
           if (cad > 0) store.setCadence(Math.round(cad));
           if (trq !== 0) store.setTorque(trq);
           if (cur > 0) store.setAssistCurrent(cur);
           if (tDist > 0) { store.setDistance(tDist); store.setTripDistance(tDist); }
           if (tTime > 0) store.setTripTime(tTime);
           if (tDist > 0) recordBikeData('total_odo_km', tDist);
-          batteryEstimationService.addSample(spd, pwr, store.battery_percent);
+          batteryEstimationService.addSample(spd, motorPwr, store.battery_percent);
           store.setRange(batteryEstimationService.getEstimatedRange(store.battery_percent));
           break;
         }

@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { parseFitFile, enrichWithElevation, saveImportedRide, type ImportedRide } from '../../services/import/FitImportService';
+import { parseFitFile, enrichWithElevation, saveImportedRide, findOverlappingSession, mergeIntoSession, type ImportedRide } from '../../services/import/FitImportService';
 import { updateStatsFromRide, type AthleteStats } from '../../services/import/AthleteProfileBuilder';
 import { simulateKromi, type SimulationSummary } from '../../services/simulation/KromiSimulator';
 import { enrichRouteWithTerrain } from '../../services/import/RouteTerrainService';
@@ -43,7 +43,17 @@ export function FitImport({ onImported }: { onImported?: () => void } = {}) {
           : null;
 
         const sim = simulateKromi(ride.records, terrain?.surfaces, weather ?? undefined);
-        const saved = await saveImportedRide(ride, sim);
+
+        // Auto-merge: check for existing live session in same time window
+        const existingSessionId = await findOverlappingSession(ride);
+        let saved: boolean;
+        if (existingSessionId) {
+          console.log(`[FIT Import] Merging into existing session: ${existingSessionId}`);
+          saved = await mergeIntoSession(existingSessionId, ride);
+        } else {
+          saved = await saveImportedRide(ride, sim);
+        }
+
         const updatedStats = await updateStatsFromRide(ride);
         newResults.push({ ride, saved, sim });
         setStats(updatedStats);
