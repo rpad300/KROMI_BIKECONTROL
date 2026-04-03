@@ -1,9 +1,10 @@
 import { useBikeStore } from '../../store/bikeStore';
-
+import { useAutoAssistStore } from '../../store/autoAssistStore';
 import { AssistMode } from '../../types/bike.types';
 import { SpeedHero } from './widgets/SpeedHero';
 import { MetricGrid, METRIC } from './widgets/MetricGrid';
 import { CompactIntelligence } from './widgets/CompactIntelligence';
+import { IntelligenceWidget } from '../Dashboard/IntelligenceWidget';
 import { MiniMap } from '../Dashboard/MiniMap';
 import { ElevationProfile } from '../Dashboard/ElevationProfile';
 
@@ -14,6 +15,7 @@ export function CruiseDashboard() {
   const rearGear = useBikeStore((s) => s.rear_gear);
   const temp = useBikeStore((s) => s.temperature_c);
   const tripTime = useBikeStore((s) => s.trip_time_s);
+  const kromiActive = useAutoAssistStore((s) => s.enabled);
 
   const formatTime = (s: number) => s > 0 ? `${Math.floor(s/3600)}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}` : '0:00';
 
@@ -76,9 +78,15 @@ export function CruiseDashboard() {
         })}
       </div>
 
-      {/* Map strip — remaining */}
-      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-        <MiniMap />
+      {/* Bottom section — KROMI intelligence when active, map when not */}
+      <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+        {kromiActive ? (
+          <div style={{ height: '100%', overflow: 'hidden' }}>
+            <IntelligenceWidget />
+          </div>
+        ) : (
+          <MiniMap />
+        )}
       </div>
     </div>
   );

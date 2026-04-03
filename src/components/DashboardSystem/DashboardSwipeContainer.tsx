@@ -1,7 +1,7 @@
 import { useRef, type ReactNode } from 'react';
 import { useDashboardStore, type DashboardId } from '../../store/dashboardStore';
 
-const SWIPE_ORDER: DashboardId[] = ['cruise', 'data', 'map'];
+const SWIPE_ORDER: DashboardId[] = ['cruise', 'climb', 'descent', 'data', 'map'];
 const SWIPE_THRESHOLD = 50; // px
 const SWIPE_MAX_TIME = 400; // ms
 
