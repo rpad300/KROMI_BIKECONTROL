@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import { useServiceStore } from '../../store/serviceStore';
-import { createService, addServiceItem } from '../../services/maintenance/MaintenanceService';
+import { createService, addServiceItem, getShops } from '../../services/maintenance/MaintenanceService';
+import { getShopServices, suggestAvailableDates, type ShopServiceTemplate } from '../../services/maintenance/ShopService';
 import {
   SERVICE_TYPE_LABELS, URGENCY_LABELS, URGENCY_COLORS,
-  type ServiceType, type ServiceUrgency,
+  type ServiceType, type ServiceUrgency, type Shop,
 } from '../../types/service.types';
 
 export function NewServicePage({ bikeId, onBack }: { bikeId: string; onBack: () => void }) {
@@ -20,10 +21,30 @@ export function NewServicePage({ bikeId, onBack }: { bikeId: string; onBack: () 
   const [preferredDate, setPreferredDate] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Shop selection
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [selectedShopId, setSelectedShopId] = useState<string | null>(null);
+  const [shopServices, setShopServices] = useState<ShopServiceTemplate[]>([]);
+  const [suggestedDates, setSuggestedDates] = useState<{ date: string; free_min: number; suggestion: string }[]>([]);
+
   // Quick items to add
   const [items, setItems] = useState<{ desc: string; type: 'part' | 'labor' | 'consumable'; cost: number }[]>([]);
   const [newItemDesc, setNewItemDesc] = useState('');
   const [newItemCost, setNewItemCost] = useState(0);
+
+  // Load shops
+  useEffect(() => { getShops().then(setShops); }, []);
+
+  // Load shop services + suggest dates when shop selected
+  useEffect(() => {
+    if (!selectedShopId) { setShopServices([]); setSuggestedDates([]); return; }
+    getShopServices(selectedShopId).then(setShopServices);
+    // Estimate duration from items or default 60min
+    const estMin = items.reduce((s) => s + 30, 0) || 60;
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    suggestAvailableDates(selectedShopId, estMin, tomorrow.toISOString().split('T')[0]!).then(setSuggestedDates);
+  }, [selectedShopId, items.length]);
 
   const handleSave = async () => {
     if (!title.trim() || !userId) return;
@@ -32,6 +53,7 @@ export function NewServicePage({ bikeId, onBack }: { bikeId: string; onBack: () 
     const svc = await createService({
       bike_id: bikeId,
       rider_id: userId,
+      shop_id: selectedShopId,
       bike_name: bike.name,
       bike_brand: bike.brand,
       bike_model: bike.model,
@@ -40,7 +62,7 @@ export function NewServicePage({ bikeId, onBack }: { bikeId: string; onBack: () 
       request_type: requestType,
       urgency,
       preferred_date: preferredDate || null,
-      status: 'draft',
+      status: selectedShopId ? 'requested' : 'draft',
     });
 
     if (svc) {
@@ -143,6 +165,60 @@ export function NewServicePage({ bikeId, onBack }: { bikeId: string; onBack: () 
           <input type="date" value={preferredDate} onChange={(e) => setPreferredDate(e.target.value)}
             style={{ width: '100%', padding: '8px 10px', backgroundColor: '#0e0e0e', border: '1px solid rgba(73,72,71,0.3)', borderRadius: '4px', color: 'white', fontSize: '12px', outline: 'none' }} />
         </div>
+      </div>
+
+      {/* Shop selection */}
+      <div style={{ backgroundColor: '#131313', padding: '12px', borderRadius: '6px' }}>
+        <div style={{ fontSize: '10px', color: '#777575', marginBottom: '4px' }}>Oficina (opcional)</div>
+        <select value={selectedShopId ?? ''} onChange={(e) => setSelectedShopId(e.target.value || null)} style={{
+          width: '100%', padding: '8px', backgroundColor: '#0e0e0e', border: '1px solid rgba(73,72,71,0.3)',
+          borderRadius: '4px', color: selectedShopId ? 'white' : '#777575', fontSize: '12px', outline: 'none',
+        }}>
+          <option value="">Self-service (sem oficina)</option>
+          {shops.map((s) => <option key={s.id} value={s.id}>{s.name}{s.city ? ` — ${s.city}` : ''}</option>)}
+        </select>
+
+        {/* Shop service catalog */}
+        {selectedShopId && shopServices.length > 0 && (
+          <div style={{ marginTop: '8px' }}>
+            <div style={{ fontSize: '9px', color: '#ff9f43', fontWeight: 700, marginBottom: '4px' }}>Serviços da oficina — toca para adicionar</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
+              {shopServices.filter((s) => s.active).slice(0, 20).map((svc) => {
+                const price = bike.bike_type === 'ebike' ? svc.price_ebike : bike.category === 'road' ? svc.price_road : bike.category === 'gravel' ? svc.price_gravel : svc.price_mtb;
+                return (
+                  <button key={svc.id} onClick={() => {
+                    setItems([...items, { desc: svc.name, type: 'labor', cost: price ?? svc.price_default ?? 0 }]);
+                    if (!title) setTitle(svc.name);
+                  }} style={{
+                    padding: '4px 8px', fontSize: '9px', fontWeight: 600, borderRadius: '3px', cursor: 'pointer',
+                    backgroundColor: 'rgba(255,159,67,0.08)', color: '#ff9f43', border: '1px solid rgba(255,159,67,0.15)',
+                  }}>
+                    {svc.name} {price ? `${price}€` : ''}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* AI suggested dates */}
+        {selectedShopId && suggestedDates.length > 0 && (
+          <div style={{ marginTop: '8px' }}>
+            <div style={{ fontSize: '9px', color: '#e966ff', fontWeight: 700, marginBottom: '4px' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '12px', verticalAlign: 'middle' }}>auto_awesome</span> Datas disponíveis
+            </div>
+            {suggestedDates.map((d) => (
+              <button key={d.date} onClick={() => setPreferredDate(d.date)} style={{
+                display: 'block', width: '100%', textAlign: 'left', padding: '6px 8px', marginBottom: '2px',
+                backgroundColor: preferredDate === d.date ? 'rgba(233,102,255,0.1)' : 'rgba(73,72,71,0.05)',
+                border: preferredDate === d.date ? '1px solid rgba(233,102,255,0.3)' : '1px solid transparent',
+                borderRadius: '3px', cursor: 'pointer', fontSize: '10px', color: '#adaaaa',
+              }}>
+                {d.suggestion}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Items */}
