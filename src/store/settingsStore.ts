@@ -59,6 +59,7 @@ export interface BikeConfig {
   chainring_teeth: string;    // e.g., '34T' or '50/34T'
   cassette_range: string;     // e.g., '10-51T' or '11-34T'
   cassette_speeds: number;    // 10, 11, 12, 13
+  cassette_sprockets: number[]; // individual teeth per sprocket, e.g., [10,12,14,16,18,21,24,28,32,36,42,51]
   chain_model: string;
   pedals: string;
 
@@ -158,6 +159,7 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   chainring_teeth: '34T',
   cassette_range: '10-51T',
   cassette_speeds: 12,
+  cassette_sprockets: [10, 12, 14, 16, 18, 21, 24, 28, 32, 36, 42, 51],
   chain_model: 'Shimano CN-M8100',
   pedals: '',
 
@@ -228,6 +230,7 @@ export function safeBikeConfig(raw: Partial<BikeConfig> | undefined): BikeConfig
     // Ensure new fields have defaults for old configs
     category: raw.category ?? (raw.bike_type === 'ebike' ? 'mtb' : 'other'),
     suspension: raw.suspension ?? 'rigid',
+    cassette_sprockets: raw.cassette_sprockets?.length ? raw.cassette_sprockets : [],
   };
 }
 

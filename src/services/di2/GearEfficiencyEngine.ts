@@ -59,7 +59,13 @@ class GearEfficiencyEngine {
   }
 
   private parseSprockets(bike: BikeConfig): number[] {
-    // Try cassette_range: "10-51T" → generate approximate sprockets
+    // Priority 1: exact sprocket teeth from config (best accuracy)
+    if (bike.cassette_sprockets?.length >= 2) {
+      // Sort descending (gear 1 = biggest sprocket = easiest)
+      return [...bike.cassette_sprockets].sort((a, b) => b - a);
+    }
+
+    // Priority 2: generate from cassette_range string
     const cr = bike.cassette_range;
     const speeds = bike.cassette_speeds || 12;
     if (cr) {
@@ -70,6 +76,8 @@ class GearEfficiencyEngine {
         return this.generateSprockets(smallest, largest, speeds);
       }
     }
+
+    // Priority 3: fallback defaults
     return DEFAULT_SPROCKETS.slice(0, speeds);
   }
 

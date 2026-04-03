@@ -362,8 +362,32 @@ function BikeDetailPage({ bike, onBack }: { bike: BikeConfig; onBack: () => void
           onSpecsReceived={(specs) => {
             if (specs.range) update({ cassette_range: specs.range as string });
             if (specs.speeds) update({ cassette_speeds: specs.speeds as number });
+            if (Array.isArray(specs.sprockets)) update({ cassette_sprockets: specs.sprockets as number[] });
           }}
         />
+        {/* Individual sprocket teeth — editable */}
+        <div>
+          <div style={{ fontSize: '10px', color: '#777575', marginBottom: '2px' }}>
+            Dentes da cassete ({bike.cassette_sprockets?.length || 0} pratos)
+          </div>
+          <input
+            type="text"
+            value={bike.cassette_sprockets?.join(', ') ?? ''}
+            onChange={(e) => {
+              const nums = e.target.value.split(/[,\s·]+/).map((s) => parseInt(s.trim())).filter((n) => !isNaN(n) && n > 0);
+              update({ cassette_sprockets: nums, cassette_speeds: nums.length || bike.cassette_speeds });
+            }}
+            placeholder="10, 12, 14, 16, 18, 21, 24, 28, 32, 36, 42, 51"
+            style={{
+              width: '100%', padding: '8px 10px', backgroundColor: '#0e0e0e',
+              border: '1px solid rgba(73,72,71,0.3)', borderRadius: '4px',
+              color: 'white', fontSize: '12px', outline: 'none', fontFamily: 'monospace',
+            }}
+          />
+          <div style={{ fontSize: '9px', color: '#494847', marginTop: '2px' }}>
+            Separa por vírgulas. Usado pelo KROMI Intelligence para calcular gear ratios e optimizar assist.
+          </div>
+        </div>
         <AutocompleteField category="chain" label="Corrente" value={bike.chain_model} onChange={(v) => update({ chain_model: v })} placeholder="Shimano CN-M8100" />
         <AutocompleteField category="pedal" label="Pedais" value={bike.pedals} onChange={(v) => update({ pedals: v })} placeholder="Shimano XT SPD, Crankbrothers..." />
       </Card>
