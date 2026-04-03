@@ -14,7 +14,7 @@ export async function initGoogleMaps(): Promise<void> {
   const loader = new Loader({
     apiKey,
     version: 'weekly',
-    libraries: ['geometry', 'places'],
+    libraries: ['geometry', 'places', 'visualization'],
     language: 'pt',
   });
 

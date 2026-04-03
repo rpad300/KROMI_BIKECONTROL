@@ -443,6 +443,149 @@ export function Connections() {
           />
         </div>
       </div>
+
+      {/* ── Section 6: Device Details ─────────────────────── */}
+      <DeviceDetails />
+    </div>
+  );
+}
+
+// ── Device Details panel ────────────────────────────────────
+function DeviceDetails() {
+  const fwVersion = useBikeStore((s) => s.firmware_version);
+  const hwVersion = useBikeStore((s) => s.hardware_version);
+  const swVersion = useBikeStore((s) => s.software_version);
+  const motorOdo = useBikeStore((s) => s.motor_odo_km);
+  const motorHours = useBikeStore((s) => s.motor_total_hours);
+  const bleStatus = useBikeStore((s) => s.ble_status);
+
+  const savedBike = BLE.getSavedDevice();
+  const savedHR = BLE.getSavedSensorDevice('hr');
+  const savedDi2 = BLE.getSavedSensorDevice('di2');
+  const savedSRAM = BLE.getSavedSensorDevice('sram');
+  const savedPower = BLE.getSavedSensorDevice('power');
+
+  const [phoneInfo, setPhoneInfo] = useState<{ userAgent: string; platform: string; language: string } | null>(null);
+  useEffect(() => {
+    setPhoneInfo({
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      language: navigator.language,
+    });
+  }, []);
+
+  // Connection log from localStorage
+  const [connLog, setConnLog] = useState<{ ts: string; event: string }[]>([]);
+  useEffect(() => {
+    const raw = localStorage.getItem('kromi_conn_log');
+    if (raw) try { setConnLog(JSON.parse(raw).slice(-20)); } catch { /* ignore */ }
+  }, []);
+
+  // Log connection state changes
+  useEffect(() => {
+    const entry = { ts: new Date().toISOString(), event: `BLE → ${bleStatus}` };
+    setConnLog((prev) => {
+      const updated = [...prev, entry].slice(-20);
+      localStorage.setItem('kromi_conn_log', JSON.stringify(updated));
+      return updated;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bleStatus]);
+
+  const allSaved = [
+    savedBike && { label: 'Giant Gateway', ...savedBike },
+    savedHR && { label: 'Heart Rate', ...savedHR },
+    savedDi2 && { label: 'Shimano Di2', ...savedDi2 },
+    savedSRAM && { label: 'SRAM AXS', ...savedSRAM },
+    savedPower && { label: 'Power Meter', ...savedPower },
+  ].filter(Boolean) as { label: string; name: string; address: string }[];
+
+  return (
+    <div className="space-y-3">
+      <div className="text-xs text-gray-500 uppercase tracking-wide px-1">Device Details</div>
+
+      {/* Firmware / Hardware / Software versions */}
+      {(fwVersion || hwVersion || swVersion) && (
+        <div className="bg-gray-800/60 rounded-xl p-3 space-y-2 border border-gray-700/50">
+          <div className="text-xs font-bold text-[#6e9bff]">Giant Smart Gateway</div>
+          <div className="grid grid-cols-3 gap-2">
+            {fwVersion && <InfoCell label="Firmware" value={fwVersion} />}
+            {hwVersion && <InfoCell label="Hardware" value={hwVersion} />}
+            {swVersion && <InfoCell label="Software" value={swVersion} />}
+          </div>
+          {motorOdo > 0 && (
+            <div className="flex gap-4 mt-1">
+              <InfoCell label="Motor ODO" value={`${motorOdo.toFixed(0)} km`} />
+              {motorHours > 0 && <InfoCell label="Motor Hours" value={`${motorHours.toFixed(0)}h`} />}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Saved devices with MAC addresses */}
+      {allSaved.length > 0 && (
+        <div className="bg-gray-800/60 rounded-xl p-3 space-y-2 border border-gray-700/50">
+          <div className="text-xs font-bold text-[#6e9bff]">Dispositivos guardados</div>
+          {allSaved.map((d) => (
+            <div key={d.address} className="flex items-center justify-between py-1">
+              <div>
+                <div className="text-xs text-white">{d.label}</div>
+                <div className="text-[10px] text-gray-500">{d.name}</div>
+              </div>
+              <div className="text-[10px] text-gray-500 font-mono">{d.address}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Phone info */}
+      {phoneInfo && (
+        <div className="bg-gray-800/60 rounded-xl p-3 space-y-2 border border-gray-700/50">
+          <div className="text-xs font-bold text-[#6e9bff]">Dispositivo (phone)</div>
+          <InfoCell label="Platform" value={phoneInfo.platform} />
+          <InfoCell label="Language" value={phoneInfo.language} />
+          <div>
+            <div className="text-[9px] text-gray-600">User Agent</div>
+            <div className="text-[10px] text-gray-400 break-all leading-tight mt-0.5">{phoneInfo.userAgent}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Connection log */}
+      {connLog.length > 0 && (
+        <div className="bg-gray-800/60 rounded-xl p-3 border border-gray-700/50">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-bold text-[#6e9bff]">Connection Log</div>
+            <button
+              onClick={() => { localStorage.removeItem('kromi_conn_log'); setConnLog([]); }}
+              className="text-[9px] text-gray-600 hover:text-gray-400"
+            >
+              Limpar
+            </button>
+          </div>
+          <div className="space-y-0.5 max-h-40 overflow-y-auto">
+            {connLog.slice().reverse().map((entry, i) => (
+              <div key={i} className="flex items-center gap-2 text-[10px]">
+                <span className="text-gray-600 font-mono tabular-nums">
+                  {new Date(entry.ts).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+                <span className={entry.event.includes('connected') && !entry.event.includes('disconnected') ? 'text-emerald-400' : 'text-gray-400'}>
+                  {entry.event}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[9px] text-gray-600">{label}</div>
+      <div className="text-xs text-white font-medium">{value}</div>
     </div>
   );
 }

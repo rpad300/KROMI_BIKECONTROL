@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { AreaChart, Area, LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts';
 import { useAuthStore } from '../../store/authStore';
 import { exportRideAsGPX, type TrackPoint } from '../../services/export/GPXExportService';
@@ -10,6 +10,43 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+
+// ── Filter types ────────────────────────────────────────────
+type PeriodFilter = 'all' | '7d' | '30d' | '90d' | 'year' | 'custom';
+type TypeFilter = 'all' | 'live' | 'fit';
+type SortField = 'date' | 'distance' | 'elevation' | 'duration';
+
+const PERIOD_OPTIONS: { value: PeriodFilter; label: string }[] = [
+  { value: 'all', label: 'Tudo' },
+  { value: '7d', label: '7 dias' },
+  { value: '30d', label: '30 dias' },
+  { value: '90d', label: '3 meses' },
+  { value: 'year', label: 'Este ano' },
+  { value: 'custom', label: 'Custom' },
+];
+
+const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
+  { value: 'all', label: 'Todas' },
+  { value: 'live', label: 'Live' },
+  { value: 'fit', label: 'FIT' },
+];
+
+const SORT_OPTIONS: { value: SortField; label: string; icon: string }[] = [
+  { value: 'date', label: 'Data', icon: 'calendar_today' },
+  { value: 'distance', label: 'Distância', icon: 'straighten' },
+  { value: 'elevation', label: 'Desnível', icon: 'terrain' },
+  { value: 'duration', label: 'Duração', icon: 'timer' },
+];
+
+function getPeriodCutoff(period: PeriodFilter): Date | null {
+  if (period === 'all') return null;
+  const now = new Date();
+  if (period === '7d') return new Date(now.getTime() - 7 * 86400000);
+  if (period === '30d') return new Date(now.getTime() - 30 * 86400000);
+  if (period === '90d') return new Date(now.getTime() - 90 * 86400000);
+  // 'year'
+  return new Date(now.getFullYear(), 0, 1);
+}
 
 interface RideSession {
   id: string;
@@ -57,15 +94,60 @@ export function RideHistory() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // ── Filters ──────────────────────────────────────────────
+  const [period, setPeriod] = useState<PeriodFilter>('all');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [sortBy, setSortBy] = useState<SortField>('date');
+  const [showFilters, setShowFilters] = useState(false);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
   const loadRides = useCallback(() => {
     if (!userId || !SUPABASE_URL || !SUPABASE_KEY) { setLoading(false); return; }
     setLoading(true);
-    fetchJSON(`/ride_sessions?user_id=eq.${userId}&status=eq.completed&select=*&order=started_at.desc&limit=50`)
+    fetchJSON(`/ride_sessions?user_id=eq.${userId}&status=eq.completed&select=*&order=started_at.desc&limit=200`)
       .then((data) => { if (Array.isArray(data)) setRides(data); })
       .finally(() => setLoading(false));
   }, [userId]);
 
   useEffect(() => { loadRides(); }, [loadRides]);
+
+  // ── Filtered + sorted rides ──────────────────────────────
+  const filtered = useMemo(() => {
+    let result = rides;
+
+    // Period filter
+    if (period === 'custom') {
+      if (dateFrom) result = result.filter((r) => new Date(r.started_at) >= new Date(dateFrom));
+      if (dateTo) result = result.filter((r) => new Date(r.started_at) <= new Date(dateTo + 'T23:59:59'));
+    } else {
+      const cutoff = getPeriodCutoff(period);
+      if (cutoff) result = result.filter((r) => new Date(r.started_at) >= cutoff);
+    }
+
+    // Type filter
+    if (typeFilter === 'live') result = result.filter((r) => (r.devices_connected as Record<string, unknown>)?.source !== 'fit_import');
+    if (typeFilter === 'fit') result = result.filter((r) => (r.devices_connected as Record<string, unknown>)?.source === 'fit_import');
+
+    // Sort
+    const sorted = [...result];
+    if (sortBy === 'date') sorted.sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
+    if (sortBy === 'distance') sorted.sort((a, b) => (b.total_km ?? 0) - (a.total_km ?? 0));
+    if (sortBy === 'elevation') sorted.sort((a, b) => (b.total_elevation_m ?? 0) - (a.total_elevation_m ?? 0));
+    if (sortBy === 'duration') sorted.sort((a, b) => (b.duration_s ?? 0) - (a.duration_s ?? 0));
+    return sorted;
+  }, [rides, period, typeFilter, sortBy, dateFrom, dateTo]);
+
+  // ── Summary stats (from filtered rides) ──────────────────
+  const stats = useMemo(() => {
+    const totalKm = filtered.reduce((s, r) => s + (r.total_km ?? 0), 0);
+    const totalElev = filtered.reduce((s, r) => s + (r.total_elevation_m ?? 0), 0);
+    const totalTime = filtered.reduce((s, r) => s + (r.duration_s ?? 0), 0);
+    const avgSpeed = filtered.length > 0
+      ? filtered.reduce((s, r) => s + (r.avg_speed_kmh ?? 0), 0) / filtered.length
+      : 0;
+    return { totalKm, totalElev, totalTime, avgSpeed, count: filtered.length };
+  }, [filtered]);
 
   const [simulation, setSimulation] = useState<SimulationSummary | null>(null);
 
@@ -78,7 +160,6 @@ export function RideHistory() {
     );
     if (Array.isArray(snaps)) {
       setSnapshots(snaps);
-      // Run KROMI simulation on this ride
       const records: ImportedRecord[] = snaps.map((s: Snapshot) => ({
         elapsed_s: s.elapsed_s, lat: s.lat, lng: s.lng, altitude_m: s.altitude_m,
         speed_kmh: s.speed_kmh, hr_bpm: s.hr_bpm, cadence_rpm: s.cadence_rpm,
@@ -120,7 +201,7 @@ export function RideHistory() {
   };
 
   if (loading) {
-    return <div className="flex justify-center py-20"><div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>;
+    return <div className="flex justify-center py-20"><div className="w-8 h-8 border-2 border-[#3fff8b] border-t-transparent rounded-full animate-spin" /></div>;
   }
 
   // Detail view
@@ -137,27 +218,176 @@ export function RideHistory() {
     );
   }
 
-  // List view
+  // ── List view ────────────────────────────────────────────
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-bold text-gray-300">Histórico ({rides.length} rides)</h2>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-headline font-bold text-lg" style={{ color: '#e966ff' }}>Atividades</h2>
+          <span className="text-[11px] text-[#777575]">{stats.count} rides · {stats.totalKm.toFixed(0)}km total</span>
+        </div>
+        <button
+          onClick={() => setShowFilters(!showFilters)}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold active:scale-95 transition-transform"
+          style={{
+            backgroundColor: showFilters ? 'rgba(233,102,255,0.15)' : 'rgba(73,72,71,0.2)',
+            color: showFilters ? '#e966ff' : '#adaaaa',
+          }}
+        >
+          <span className="material-symbols-outlined text-sm">filter_list</span>
+          Filtros
+          {(period !== 'all' || typeFilter !== 'all' || sortBy !== 'date') && (
+            <span className="w-1.5 h-1.5 rounded-full bg-[#e966ff]" />
+          )}
+        </button>
+      </div>
+
+      {/* Filters panel */}
+      {showFilters && (
+        <div className="rounded-xl p-3 space-y-3" style={{ backgroundColor: '#131313', border: '1px solid rgba(73,72,71,0.2)' }}>
+          {/* Period chips */}
+          <div>
+            <div className="text-[10px] text-[#777575] uppercase tracking-wider mb-1.5">Período</div>
+            <div className="flex gap-1.5 flex-wrap">
+              {PERIOD_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setPeriod(opt.value)}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-bold active:scale-95 transition-all"
+                  style={{
+                    backgroundColor: period === opt.value ? 'rgba(233,102,255,0.2)' : 'rgba(73,72,71,0.15)',
+                    color: period === opt.value ? '#e966ff' : '#adaaaa',
+                    border: period === opt.value ? '1px solid rgba(233,102,255,0.3)' : '1px solid transparent',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom date range */}
+          {period === 'custom' && (
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <div className="text-[10px] text-[#777575] mb-1">De</div>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg text-[11px] text-white bg-[#0e0e0e] border border-[#494847]/30 outline-none focus:border-[#e966ff]/50"
+                />
+              </div>
+              <div className="flex-1">
+                <div className="text-[10px] text-[#777575] mb-1">Até</div>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg text-[11px] text-white bg-[#0e0e0e] border border-[#494847]/30 outline-none focus:border-[#e966ff]/50"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Type chips */}
+          <div>
+            <div className="text-[10px] text-[#777575] uppercase tracking-wider mb-1.5">Tipo</div>
+            <div className="flex gap-1.5">
+              {TYPE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setTypeFilter(opt.value)}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-bold active:scale-95 transition-all"
+                  style={{
+                    backgroundColor: typeFilter === opt.value ? 'rgba(233,102,255,0.2)' : 'rgba(73,72,71,0.15)',
+                    color: typeFilter === opt.value ? '#e966ff' : '#adaaaa',
+                    border: typeFilter === opt.value ? '1px solid rgba(233,102,255,0.3)' : '1px solid transparent',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Sort chips */}
+          <div>
+            <div className="text-[10px] text-[#777575] uppercase tracking-wider mb-1.5">Ordenar por</div>
+            <div className="flex gap-1.5 flex-wrap">
+              {SORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSortBy(opt.value)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold active:scale-95 transition-all"
+                  style={{
+                    backgroundColor: sortBy === opt.value ? 'rgba(233,102,255,0.2)' : 'rgba(73,72,71,0.15)',
+                    color: sortBy === opt.value ? '#e966ff' : '#adaaaa',
+                    border: sortBy === opt.value ? '1px solid rgba(233,102,255,0.3)' : '1px solid transparent',
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>{opt.icon}</span>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Clear filters */}
+          {(period !== 'all' || typeFilter !== 'all' || sortBy !== 'date') && (
+            <button
+              onClick={() => { setPeriod('all'); setTypeFilter('all'); setSortBy('date'); setDateFrom(''); setDateTo(''); }}
+              className="text-[10px] text-[#777575] hover:text-white"
+            >
+              Limpar filtros
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Summary stats bar */}
+      <div className="grid grid-cols-4 gap-2">
+        <div className="rounded-lg p-2.5 text-center" style={{ backgroundColor: '#131313', border: '1px solid rgba(73,72,71,0.15)' }}>
+          <div className="text-white font-bold text-base tabular-nums">{stats.totalKm.toFixed(0)}<span className="text-[10px] text-[#777575] ml-0.5">km</span></div>
+          <div className="text-[9px] text-[#777575]">Distância</div>
+        </div>
+        <div className="rounded-lg p-2.5 text-center" style={{ backgroundColor: '#131313', border: '1px solid rgba(73,72,71,0.15)' }}>
+          <div className="text-white font-bold text-base tabular-nums">{(stats.totalElev / 1000).toFixed(1)}<span className="text-[10px] text-[#777575] ml-0.5">km</span></div>
+          <div className="text-[9px] text-[#777575]">Desnível</div>
+        </div>
+        <div className="rounded-lg p-2.5 text-center" style={{ backgroundColor: '#131313', border: '1px solid rgba(73,72,71,0.15)' }}>
+          <div className="text-white font-bold text-base tabular-nums">{formatDuration(stats.totalTime)}</div>
+          <div className="text-[9px] text-[#777575]">Tempo</div>
+        </div>
+        <div className="rounded-lg p-2.5 text-center" style={{ backgroundColor: '#131313', border: '1px solid rgba(73,72,71,0.15)' }}>
+          <div className="text-white font-bold text-base tabular-nums">{stats.avgSpeed.toFixed(1)}<span className="text-[10px] text-[#777575] ml-0.5">km/h</span></div>
+          <div className="text-[9px] text-[#777575]">Vel. média</div>
+        </div>
+      </div>
 
       {/* FIT Import */}
       <FitImport onImported={loadRides} />
 
-      {rides.length === 0 && (
-        <div className="bg-gray-800 rounded-xl p-8 text-center text-gray-600">
-          <span className="material-symbols-outlined text-3xl">history</span>
-          <p className="mt-2 text-sm">Sem rides. Importa ficheiros .FIT acima ou faz uma volta com o KROMI.</p>
+      {/* Ride list */}
+      {filtered.length === 0 && (
+        <div className="rounded-xl p-8 text-center" style={{ backgroundColor: '#131313', border: '1px solid rgba(73,72,71,0.15)' }}>
+          <span className="material-symbols-outlined text-3xl text-[#494847]">directions_bike</span>
+          <p className="mt-2 text-sm text-[#777575]">
+            {rides.length === 0
+              ? 'Sem atividades. Importa ficheiros .FIT ou faz uma volta com o KROMI.'
+              : 'Nenhuma atividade corresponde aos filtros.'}
+          </p>
         </div>
       )}
-      {rides.map((ride) => {
+      {filtered.map((ride) => {
         const isFitImport = (ride.devices_connected as Record<string, unknown>)?.source === 'fit_import';
         return (
           <button
             key={ride.id}
             onClick={() => handleSelect(ride)}
-            className="w-full bg-gray-800 rounded-xl p-4 text-left hover:bg-gray-750 active:scale-[0.99] transition-transform"
+            className="w-full rounded-xl p-4 text-left active:scale-[0.99] transition-transform"
+            style={{ backgroundColor: '#131313', border: '1px solid rgba(73,72,71,0.15)' }}
           >
             <div className="flex items-center justify-between">
               <div>
@@ -169,18 +399,18 @@ export function RideHistory() {
                   <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
                     isFitImport
                       ? 'bg-purple-900/50 text-purple-400'
-                      : 'bg-emerald-900/50 text-emerald-400'
+                      : 'bg-[#3fff8b]/10 text-[#3fff8b]'
                   }`}>
                     {isFitImport ? 'FIT' : 'LIVE'}
                   </span>
                 </div>
-                <div className="text-xs text-gray-500 mt-0.5">
+                <div className="text-xs mt-0.5" style={{ color: '#777575' }}>
                   {new Date(ride.started_at).toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' })}
                   {' · '}
                   {new Date(ride.started_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
                 </div>
               </div>
-              <div className="text-right text-xs text-gray-500">
+              <div className="text-right text-xs" style={{ color: '#777575' }}>
                 {ride.avg_speed_kmh?.toFixed(1)} km/h
                 {ride.avg_hr > 0 && <div>{ride.avg_hr} bpm</div>}
               </div>

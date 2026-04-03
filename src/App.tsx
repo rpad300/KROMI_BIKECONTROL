@@ -13,6 +13,7 @@ import { useMotorControl } from './hooks/useMotorControl';
 import { useAuthStore } from './store/authStore';
 import { usePlatform } from './hooks/usePlatform';
 import { DesktopLiveView } from './components/Desktop/DesktopLiveView';
+import { GlobalMapView } from './components/Map/GlobalMapView';
 import { startSettingsSync } from './services/sync/SettingsSyncService';
 import { trackLogin } from './services/sync/LoginTracker';
 
@@ -230,12 +231,15 @@ function DesktopApp() {
 
       {/* Main content */}
       <main className="flex-1 min-h-0 overflow-y-auto">
-        <div className="py-4 px-6">
-          {screen === 'live' && <DesktopLiveView activeTab={sub} />}
-          {screen === 'settings' && <Settings initialPage={sub as 'rider' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account'} />}
-          {screen === 'history' && <RideHistory />}
-          {screen === 'map' && <MapView />}
-        </div>
+        {screen === 'map' ? (
+          <GlobalMapView />
+        ) : (
+          <div className="py-4 px-6">
+            {screen === 'live' && <DesktopLiveView activeTab={sub} />}
+            {screen === 'settings' && <Settings initialPage={sub as 'rider' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account'} />}
+            {screen === 'history' && <RideHistory />}
+          </div>
+        )}
       </main>
     </div>
   );

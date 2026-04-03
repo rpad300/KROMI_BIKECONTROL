@@ -13,19 +13,46 @@ import { importKomootRoute } from '../../services/maps/KomootService';
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
 type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account';
 
-const MENU_ITEMS: { id: SettingsPage; icon: string; label: string; desc: string; color: string }[] = [
-  { id: 'personal', icon: 'badge', label: 'Dados Pessoais', desc: 'Nome, nascimento, género, clube, foto', color: '#ff716c' },
-  { id: 'physical', icon: 'monitor_heart', label: 'Perfil Físico', desc: 'Peso, altura, VO2max, FTP, SpO2', color: '#e966ff' },
-  { id: 'zones', icon: 'show_chart', label: 'Zonas HR + Potência', desc: 'Zonas cardíacas e de potência editáveis', color: '#fbbf24' },
-  { id: 'medical', icon: 'health_and_safety', label: 'Médico + Objectivos', desc: 'Condições, objectivos, perfil atleta', color: '#ff716c' },
-  { id: 'bikefit', icon: 'straighten', label: 'Bike Fit', desc: '25 medidas, por bike, com histórico', color: '#6e9bff' },
-  { id: 'club', icon: 'groups', label: 'Clube', desc: 'Gerir clube, membros, rides em grupo', color: '#fbbf24' },
-  { id: 'bike', icon: 'pedal_bike', label: 'Bicicleta', desc: 'Bateria, motor, consumo, hardware', color: '#3fff8b' },
-  { id: 'kromi', icon: 'psychology', label: 'KROMI Intelligence', desc: 'Auto-assist, aprendizagem', color: '#e966ff' },
-  { id: 'bluetooth', icon: 'bluetooth', label: 'Bluetooth', desc: 'Ligação, sensores, estado', color: '#6e9bff' },
-  { id: 'routes', icon: 'route', label: 'Rotas', desc: 'Import Komoot, histórico', color: '#fbbf24' },
-  { id: 'account', icon: 'account_circle', label: 'Conta', desc: 'Email, sessão, versão', color: '#adaaaa' },
+// ── Grouped menu matching desktop 9-category sidebar ────────
+interface MenuCategory {
+  label: string;
+  icon: string;
+  color: string;
+  items: { id: SettingsPage; icon: string; label: string; desc: string }[];
+  /** Navigate to a different screen instead of opening sub-items */
+  navigateTo?: Screen;
+}
+
+const MENU_CATEGORIES: MenuCategory[] = [
+  { label: 'Perfil', icon: 'person', color: '#ff716c', items: [
+    { id: 'personal', icon: 'badge', label: 'Dados Pessoais', desc: 'Nome, nascimento, género, clube, foto' },
+    { id: 'physical', icon: 'monitor_heart', label: 'Perfil Físico', desc: 'Peso, altura, VO2max, FTP, SpO2' },
+    { id: 'medical', icon: 'health_and_safety', label: 'Médico + Objectivos', desc: 'Condições, objectivos, perfil atleta' },
+  ]},
+  { label: 'Treino', icon: 'show_chart', color: '#fbbf24', items: [
+    { id: 'zones', icon: 'show_chart', label: 'Zonas HR + Potência', desc: 'Zonas cardíacas e de potência editáveis' },
+    { id: 'kromi', icon: 'psychology', label: 'KROMI Intelligence', desc: 'Auto-assist, aprendizagem' },
+  ]},
+  { label: 'Bicicletas', icon: 'pedal_bike', color: '#3fff8b', items: [
+    { id: 'bike', icon: 'pedal_bike', label: 'As minhas bikes', desc: 'Bateria, motor, consumo, hardware' },
+    { id: 'bikefit', icon: 'straighten', label: 'Bike Fit', desc: '25 medidas, por bike, com histórico' },
+  ]},
+  { label: 'Clube', icon: 'groups', color: '#fbbf24', items: [
+    { id: 'club', icon: 'groups', label: 'O meu clube', desc: 'Gerir clube, membros, rides em grupo' },
+  ]},
+  { label: 'Dispositivos', icon: 'bluetooth', color: '#6e9bff', items: [
+    { id: 'bluetooth', icon: 'bluetooth', label: 'BLE + Sensores', desc: 'Ligação, sensores, estado' },
+  ]},
+  { label: 'Atividades', icon: 'timeline', color: '#e966ff', items: [], navigateTo: 'history' },
+  { label: 'Mapa', icon: 'map', color: '#6e9bff', items: [], navigateTo: 'map' },
+  { label: 'Sistema', icon: 'settings', color: '#adaaaa', items: [
+    { id: 'routes', icon: 'route', label: 'Rotas', desc: 'Import Komoot, histórico' },
+    { id: 'account', icon: 'account_circle', label: 'Conta', desc: 'Email, sessão, versão' },
+  ]},
 ];
+
+// Flat lookup for back-header label
+const ALL_MENU_ITEMS = MENU_CATEGORIES.flatMap((c) => c.items);
 
 export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Screen) => void; initialPage?: SettingsPage }) {
   const [page, setPage] = useState<SettingsPage>(initialPage ?? 'menu');
@@ -49,7 +76,7 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
             <span className="material-symbols-outlined" style={{ fontSize: '24px', color: '#adaaaa' }}>arrow_back</span>
           </button>
           <span className="font-headline font-bold" style={{ fontSize: '16px', color: '#3fff8b' }}>
-            {MENU_ITEMS.find((m) => m.id === activePage)?.label ?? 'Settings'}
+            {ALL_MENU_ITEMS.find((m) => m.id === activePage)?.label ?? 'Settings'}
           </span>
         </div>
       )}
@@ -73,47 +100,102 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
 }
 
 function SettingsMenu({ onSelect, onNavigate }: { onSelect: (p: SettingsPage) => void; onNavigate?: (s: Screen) => void }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+
   return (
     <div style={{ padding: '12px', backgroundColor: '#0e0e0e', minHeight: '100%' }}>
       <h1 className="font-headline font-bold" style={{ fontSize: '22px', color: '#3fff8b', marginBottom: '16px', paddingLeft: '4px' }}>Setup</h1>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        {MENU_ITEMS.map(({ id, icon, label, desc, color }) => (
-          <button
-            key={id}
-            onClick={() => onSelect(id)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 12px',
-              backgroundColor: '#1a1919', border: 'none', cursor: 'pointer', textAlign: 'left',
-              borderLeft: `3px solid ${color}`, width: '100%',
-            }}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '22px', color, flexShrink: 0 }}>{icon}</span>
-            <div style={{ flex: 1 }}>
-              <div className="font-headline font-bold" style={{ fontSize: '14px', color: 'white' }}>{label}</div>
-              <div style={{ fontSize: '10px', color: '#777575', marginTop: '1px' }}>{desc}</div>
-            </div>
-            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#494847' }}>chevron_right</span>
-          </button>
-        ))}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {MENU_CATEGORIES.map((cat) => {
+          // Direct navigation (Atividades, Mapa) — no sub-items
+          if (cat.navigateTo && onNavigate) {
+            return (
+              <button
+                key={cat.label}
+                onClick={() => onNavigate(cat.navigateTo!)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 12px',
+                  backgroundColor: '#131313', border: 'none', cursor: 'pointer', textAlign: 'left',
+                  borderLeft: `3px solid ${cat.color}`, width: '100%',
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px', color: cat.color }}>{cat.icon}</span>
+                <span className="font-headline font-bold" style={{ fontSize: '14px', color: 'white', flex: 1 }}>{cat.label}</span>
+                <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#494847' }}>chevron_right</span>
+              </button>
+            );
+          }
 
-        {/* History link */}
-        {onNavigate && (
-          <button
-            onClick={() => onNavigate('history')}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 12px',
-              backgroundColor: '#1a1919', border: 'none', cursor: 'pointer', textAlign: 'left',
-              borderLeft: '3px solid #3fff8b', width: '100%', marginTop: '8px',
-            }}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '22px', color: '#3fff8b' }}>history</span>
-            <div style={{ flex: 1 }}>
-              <div className="font-headline font-bold" style={{ fontSize: '14px', color: 'white' }}>Histórico de Rides</div>
-              <div style={{ fontSize: '10px', color: '#777575' }}>Sessões anteriores</div>
+          // Single sub-item → go direct (no expand)
+          if (cat.items.length === 1) {
+            const item = cat.items[0]!;
+            return (
+              <button
+                key={cat.label}
+                onClick={() => onSelect(item.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 12px',
+                  backgroundColor: '#131313', border: 'none', cursor: 'pointer', textAlign: 'left',
+                  borderLeft: `3px solid ${cat.color}`, width: '100%',
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px', color: cat.color }}>{cat.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div className="font-headline font-bold" style={{ fontSize: '14px', color: 'white' }}>{cat.label}</div>
+                  <div style={{ fontSize: '10px', color: '#777575', marginTop: '1px' }}>{item.desc}</div>
+                </div>
+                <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#494847' }}>chevron_right</span>
+              </button>
+            );
+          }
+
+          // Multi sub-items → expandable
+          const isExpanded = expanded === cat.label;
+          return (
+            <div key={cat.label}>
+              <button
+                onClick={() => setExpanded(isExpanded ? null : cat.label)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 12px',
+                  backgroundColor: isExpanded ? 'rgba(63,255,139,0.04)' : '#131313',
+                  border: 'none', cursor: 'pointer', textAlign: 'left',
+                  borderLeft: `3px solid ${cat.color}`, width: '100%',
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px', color: cat.color }}>{cat.icon}</span>
+                <span className="font-headline font-bold" style={{ fontSize: '14px', color: 'white', flex: 1 }}>{cat.label}</span>
+                <span className="material-symbols-outlined" style={{
+                  fontSize: '18px', color: '#494847',
+                  transform: isExpanded ? 'rotate(180deg)' : 'none',
+                  transition: 'transform 0.2s',
+                }}>expand_more</span>
+              </button>
+
+              {isExpanded && (
+                <div style={{ marginLeft: '16px', borderLeft: `1px solid ${cat.color}20` }}>
+                  {cat.items.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => onSelect(item.id)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '10px', padding: '12px',
+                        backgroundColor: 'transparent', border: 'none', cursor: 'pointer',
+                        textAlign: 'left', width: '100%',
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#777575' }}>{item.icon}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '13px', color: 'white', fontWeight: 600 }}>{item.label}</div>
+                        <div style={{ fontSize: '10px', color: '#777575', marginTop: '1px' }}>{item.desc}</div>
+                      </div>
+                      <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#494847' }}>chevron_right</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#494847' }}>chevron_right</span>
-          </button>
-        )}
+          );
+        })}
       </div>
       <div style={{ textAlign: 'center', marginTop: '24px', fontSize: '10px', color: '#494847' }}>KROMI BikeControl v0.9.5</div>
     </div>
