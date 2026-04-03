@@ -108,26 +108,30 @@ export async function saveComponent(
   if (!SUPABASE_URL || !SUPABASE_KEY || !brand.trim() || !model.trim()) return;
 
   try {
-    // Try insert first
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/bike_components`, {
-      method: 'POST',
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/json',
-        Prefer: 'resolution=merge-duplicates',
+    // Try insert with on_conflict handling
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/bike_components?on_conflict=category,brand,model`,
+      {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify({
+          category,
+          brand: brand.trim(),
+          model: model.trim(),
+          specs,
+          usage_count: 1,
+          updated_at: new Date().toISOString(),
+        }),
       },
-      body: JSON.stringify({
-        category,
-        brand: brand.trim(),
-        model: model.trim(),
-        specs,
-        usage_count: 1,
-      }),
-    });
+    );
 
-    if (res.status === 409 || res.status === 200) {
-      // Already exists — increment usage
+    if (res.status === 409) {
+      // Fallback: just increment usage via RPC
       await fetch(
         `${SUPABASE_URL}/rest/v1/rpc/increment_component_usage`,
         {
