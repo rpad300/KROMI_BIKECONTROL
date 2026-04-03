@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import {
-  getServiceById, getServiceItems, getComments,
+  getServiceById, getServiceItems, getComments, getPhotos,
   updateService, updateServiceStatus, addComment, addServiceItem,
   approveItem, rejectItem, deleteServiceItem, deleteService,
 } from '../../services/maintenance/MaintenanceService';
+import { PhotoUploader, PhotoGrid } from '../shared/PhotoUploader';
 import {
   SERVICE_STATUS_LABELS, SERVICE_STATUS_COLORS, SERVICE_TYPE_LABELS,
   URGENCY_LABELS, URGENCY_COLORS,
@@ -16,19 +17,23 @@ export function ServiceDetailPage({ serviceId, onBack }: { serviceId: string; on
   const [service, setService] = useState<ServiceRequest | null>(null);
   const [items, setItems] = useState<ServiceItem[]>([]);
   const [comments, setComments] = useState<ServiceComment[]>([]);
+  const [photos, setPhotos] = useState<{ id: string; storage_path: string; caption: string | null; photo_type: string; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState('');
   const [showAddItem, setShowAddItem] = useState(false);
+  const [showPhotoUpload, setShowPhotoUpload] = useState(false);
   const [editNote, setEditNote] = useState(false);
   const [noteText, setNoteText] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [svc, its, cmts] = await Promise.all([
+    const [svc, its, cmts, phs] = await Promise.all([
       getServiceById(serviceId),
       getServiceItems(serviceId),
       getComments(serviceId),
+      getPhotos(serviceId),
     ]);
+    setPhotos(phs);
     setService(svc);
     setItems(its);
     setComments(cmts);
@@ -160,6 +165,18 @@ export function ServiceDetailPage({ serviceId, onBack }: { serviceId: string; on
           ))}
         </div>
       )}
+
+      {/* Photos */}
+      <div style={{ backgroundColor: '#131313', padding: '12px', borderRadius: '6px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+          <span style={{ fontSize: '10px', color: '#777575' }}>Fotos ({photos.length})</span>
+          <button onClick={() => setShowPhotoUpload(!showPhotoUpload)} style={{ fontSize: '9px', color: '#ff9f43', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
+            {showPhotoUpload ? 'Fechar' : '+ Foto'}
+          </button>
+        </div>
+        <PhotoGrid photos={photos} />
+        {showPhotoUpload && <PhotoUploader serviceId={serviceId} onUploaded={() => { setShowPhotoUpload(false); load(); }} />}
+      </div>
 
       {/* Service note */}
       <div style={{ backgroundColor: '#131313', padding: '12px', borderRadius: '6px' }}>

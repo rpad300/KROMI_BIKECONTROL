@@ -6,8 +6,8 @@ import {
   getUserShopMembership, getServicesForShop,
 } from '../../services/maintenance/MaintenanceService';
 import {
-  getShopServices, seedShopDefaults,
-  getCalendarSlots,
+  getShopServices, seedShopDefaults, updateShopService,
+  getCalendarSlots, createCalendarSlot,
   getShopAvailability, createCalendarShare, getCalendarShares,
   type ShopServiceTemplate,
 } from '../../services/maintenance/ShopService';
@@ -198,32 +198,11 @@ function ShopServicesTab({ shopId }: { shopId: string }) {
             {catLabels[cat] ?? cat}
           </div>
           {services.filter((s) => s.category === cat).map((svc) => (
-            <div key={svc.id} style={{ padding: '8px', backgroundColor: '#131313', borderRadius: '4px', marginBottom: '3px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '11px', color: 'white', fontWeight: 600 }}>{svc.name}</div>
-                  {svc.description && <div style={{ fontSize: '9px', color: '#494847' }}>{svc.description}</div>}
-                </div>
-                <div style={{ textAlign: 'right', fontSize: '10px' }}>
-                  {svc.pricing_type === 'hourly' ? (
-                    <span style={{ color: '#e966ff' }}>Preço/hora</span>
-                  ) : svc.pricing_type === 'quote' ? (
-                    <span style={{ color: '#777575' }}>Orçamento</span>
-                  ) : (
-                    <div>
-                      {svc.price_mtb && <div><span style={{ color: '#777575' }}>MTB</span> <span style={{ color: '#ff9f43' }}>{svc.price_mtb}€</span></div>}
-                      {svc.price_ebike && <div><span style={{ color: '#777575' }}>E-Bike</span> <span style={{ color: '#3fff8b' }}>{svc.price_ebike}€</span></div>}
-                      {svc.price_road && <div><span style={{ color: '#777575' }}>Road</span> <span style={{ color: '#6e9bff' }}>{svc.price_road}€</span></div>}
-                    </div>
-                  )}
-                </div>
-              </div>
-              {svc.estimated_minutes && (
-                <div style={{ fontSize: '8px', color: '#494847', marginTop: '2px' }}>
-                  ⏱ ~{svc.estimated_minutes}min
-                </div>
-              )}
-            </div>
+            <EditableServiceRow key={svc.id} svc={svc} onUpdate={async (partial) => {
+              await updateShopService(svc.id, partial);
+              const data = await getShopServices(shopId);
+              setServices(data);
+            }} />
           ))}
         </div>
       ))}
@@ -280,6 +259,12 @@ function ShopCalendarTab({ shopId }: { shopId: string }) {
           </div>
         </div>
       )}
+
+      {/* Add slot form */}
+      <AddSlotForm shopId={shopId} date={date} onAdded={async () => {
+        const [s, a] = await Promise.all([getCalendarSlots(shopId, date), getShopAvailability(shopId, date)]);
+        setSlots(s); setAvail(a);
+      }} />
 
       {loading ? (
         <div className="flex justify-center py-8"><div className="w-4 h-4 border-2 border-[#ff9f43] border-t-transparent rounded-full animate-spin" /></div>
@@ -465,6 +450,134 @@ function ShopShareTab({ shopId }: { shopId: string }) {
           Criar link
         </button>
       </div>
+    </div>
+  );
+}
+
+// ── Add Calendar Slot ───────────────────────────────────────
+
+function AddSlotForm({ shopId, date, onAdded }: { shopId: string; date: string; onAdded: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState('');
+  const [startTime, setStartTime] = useState('09:00');
+  const [duration, setDuration] = useState(60);
+  const [riderName, setRiderName] = useState('');
+  const [bikeName, setBikeName] = useState('');
+
+  const handleAdd = async () => {
+    if (!title.trim()) return;
+    const [h, m] = startTime.split(':').map(Number);
+    const endH = Math.floor(((h ?? 0) * 60 + (m ?? 0) + duration) / 60);
+    const endM = ((h ?? 0) * 60 + (m ?? 0) + duration) % 60;
+    const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+
+    await createCalendarSlot({
+      shop_id: shopId, slot_date: date, start_time: startTime, end_time: endTime,
+      duration_min: duration, title: title.trim(), rider_name: riderName || null,
+      bike_name: bikeName || null, status: 'scheduled',
+    });
+    setTitle(''); setRiderName(''); setBikeName('');
+    setOpen(false);
+    onAdded();
+  };
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} style={{
+        width: '100%', padding: '8px', backgroundColor: 'rgba(255,159,67,0.08)', border: '1px dashed rgba(255,159,67,0.2)',
+        borderRadius: '4px', color: '#ff9f43', fontSize: '10px', fontWeight: 700, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
+      }}>
+        <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>add</span>
+        Adicionar marcação
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ padding: '10px', backgroundColor: '#131313', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <Field label="Título *" value={title} onChange={setTitle} placeholder="Ex: Revisão completa" />
+      <div style={{ display: 'flex', gap: '6px' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: '9px', color: '#777575', marginBottom: '2px' }}>Hora início</div>
+          <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)}
+            style={{ width: '100%', padding: '6px', backgroundColor: '#0e0e0e', border: '1px solid rgba(73,72,71,0.3)', borderRadius: '3px', color: 'white', fontSize: '11px', outline: 'none' }} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: '9px', color: '#777575', marginBottom: '2px' }}>Duração (min)</div>
+          <input type="number" value={duration} onChange={(e) => setDuration(parseInt(e.target.value) || 30)}
+            style={{ width: '100%', padding: '6px', backgroundColor: '#0e0e0e', border: '1px solid rgba(73,72,71,0.3)', borderRadius: '3px', color: 'white', fontSize: '11px', outline: 'none' }} />
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: '6px' }}>
+        <div style={{ flex: 1 }}><Field label="Cliente" value={riderName} onChange={setRiderName} placeholder="Nome" /></div>
+        <div style={{ flex: 1 }}><Field label="Bike" value={bikeName} onChange={setBikeName} placeholder="Modelo" /></div>
+      </div>
+      <div style={{ display: 'flex', gap: '4px' }}>
+        <button onClick={handleAdd} disabled={!title.trim()} style={{ flex: 1, padding: '8px', backgroundColor: '#ff9f43', color: 'black', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Adicionar</button>
+        <button onClick={() => setOpen(false)} style={{ padding: '8px 12px', backgroundColor: 'rgba(73,72,71,0.2)', color: '#adaaaa', border: 'none', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Editable Service Row ────────────────────────────────────
+
+function EditableServiceRow({ svc, onUpdate }: { svc: ShopServiceTemplate; onUpdate: (partial: Partial<ShopServiceTemplate>) => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [pRoad, setPRoad] = useState(svc.price_road ?? 0);
+  const [pMtb, setPMtb] = useState(svc.price_mtb ?? 0);
+  const [pEbike, setPEbike] = useState(svc.price_ebike ?? 0);
+  const [pGravel, setPGravel] = useState(svc.price_gravel ?? 0);
+  const [estMin, setEstMin] = useState(svc.estimated_minutes ?? 0);
+
+  const save = async () => {
+    await onUpdate({ price_road: pRoad || null, price_mtb: pMtb || null, price_ebike: pEbike || null, price_gravel: pGravel || null, estimated_minutes: estMin || null } as Partial<ShopServiceTemplate>);
+    setEditing(false);
+  };
+
+  return (
+    <div style={{ padding: '8px', backgroundColor: '#131313', borderRadius: '4px', marginBottom: '3px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: '11px', color: 'white', fontWeight: 600 }}>{svc.name}</div>
+          {svc.description && <div style={{ fontSize: '9px', color: '#494847' }}>{svc.description}</div>}
+        </div>
+        <button onClick={() => editing ? save() : setEditing(true)} style={{ fontSize: '9px', color: '#ff9f43', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
+          {editing ? 'Guardar' : 'Editar'}
+        </button>
+      </div>
+
+      {editing ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '3px', marginTop: '4px' }}>
+          <PriceInput label="Road" value={pRoad} onChange={setPRoad} color="#6e9bff" />
+          <PriceInput label="Gravel" value={pGravel} onChange={setPGravel} color="#adaaaa" />
+          <PriceInput label="MTB" value={pMtb} onChange={setPMtb} color="#fbbf24" />
+          <PriceInput label="E-Bike" value={pEbike} onChange={setPEbike} color="#3fff8b" />
+          <PriceInput label="Min" value={estMin} onChange={setEstMin} color="#e966ff" />
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: '6px', marginTop: '2px', fontSize: '9px' }}>
+          {svc.pricing_type === 'hourly' ? <span style={{ color: '#e966ff' }}>Preço/hora</span> : svc.pricing_type === 'quote' ? <span style={{ color: '#777575' }}>Orçamento</span> : (
+            <>
+              {svc.price_road != null && <span><span style={{ color: '#777575' }}>Road</span> <span style={{ color: '#6e9bff' }}>{svc.price_road}€</span></span>}
+              {svc.price_mtb != null && <span><span style={{ color: '#777575' }}>MTB</span> <span style={{ color: '#fbbf24' }}>{svc.price_mtb}€</span></span>}
+              {svc.price_ebike != null && <span><span style={{ color: '#777575' }}>E-Bike</span> <span style={{ color: '#3fff8b' }}>{svc.price_ebike}€</span></span>}
+            </>
+          )}
+          {svc.estimated_minutes && <span style={{ color: '#494847' }}>⏱{svc.estimated_minutes}min</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PriceInput({ label, value, onChange, color }: { label: string; value: number; onChange: (v: number) => void; color: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: '7px', color, fontWeight: 700, textAlign: 'center' }}>{label}</div>
+      <input type="number" value={value || ''} onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+        style={{ width: '100%', padding: '3px', backgroundColor: '#0e0e0e', border: '1px solid rgba(73,72,71,0.2)', borderRadius: '2px', color: 'white', fontSize: '10px', outline: 'none', textAlign: 'center' }} />
     </div>
   );
 }

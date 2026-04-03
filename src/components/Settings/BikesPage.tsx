@@ -6,8 +6,10 @@ import {
   type DrivetrainType, type GroupsetBrand,
 } from '../../store/settingsStore';
 import { useBikeStore } from '../../store/bikeStore';
+import { useAuthStore } from '../../store/authStore';
 import { AutocompleteField } from '../shared/AutocompleteField';
 import { getTopComponents, type BikeComponent } from '../../services/bike/BikeComponentService';
+import { getBikeServiceStats, type BikeServiceStats } from '../../services/maintenance/MaintenanceService';
 
 // ═══════════════════════════════════════════════════════════
 // BIKE LIST — shows all bikes, active toggle, add, click→detail
@@ -135,6 +137,9 @@ export function BikesPage() {
                   <span><span className="material-symbols-outlined" style={{ fontSize: '12px', verticalAlign: 'middle', marginRight: '2px' }}>do_not_disturb_on</span>{safe.brake_model.split(' ').slice(0, 3).join(' ')}</span>
                 )}
               </div>
+
+              {/* Maintenance cost line */}
+              <BikeMaintenanceCost bikeId={b.id} />
 
               {/* Bottom row: purchase date + actions */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
@@ -723,6 +728,33 @@ function EBikeSection({ bike, update }: { bike: BikeConfig; update: (p: Partial<
 // ═══════════════════════════════════════════════════════════
 // Shared UI components
 // ═══════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════
+// BIKE MAINTENANCE COST — lazy loaded per bike card
+// ═══════════════════════════════════════════════════════════
+
+function BikeMaintenanceCost({ bikeId }: { bikeId: string }) {
+  const userId = useAuthStore((s) => s.user?.id);
+  const [stats, setStats] = useState<BikeServiceStats | null>(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    getBikeServiceStats(bikeId, userId).then((s) => { if (s.total_services > 0) setStats(s); });
+  }, [bikeId, userId]);
+
+  if (!stats) return null;
+
+  return (
+    <div style={{ display: 'flex', gap: '8px', marginTop: '6px', fontSize: '9px', color: '#777575', alignItems: 'center' }}>
+      <span className="material-symbols-outlined" style={{ fontSize: '12px', color: '#ff9f43' }}>build</span>
+      <span>{stats.total_services} serviços</span>
+      <span style={{ color: '#ff9f43' }}>{stats.total_cost.toFixed(0)}€ total</span>
+      {stats.last_service_date && (
+        <span>Último: {new Date(stats.last_service_date).toLocaleDateString('pt-PT', { month: 'short', year: 'numeric' })}</span>
+      )}
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════
 // SPROCKET EDITOR — individual field per sprocket tooth
