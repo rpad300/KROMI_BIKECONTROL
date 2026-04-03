@@ -52,10 +52,11 @@ class BLEBridgeService : Service() {
             sendBroadcast(intent)
         }
 
-        // Start WebSocket server
-        wsServer = BridgeWebSocketServer(WS_PORT) { command ->
+        // Start WebSocket server — pass app version for PWA compatibility check
+        val appVer = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "?" } catch (_: Exception) { "?" }
+        wsServer = BridgeWebSocketServer(WS_PORT, { command ->
             handleCommand(command)
-        }
+        }, appVer)
         wsServer?.start()
         Log.i(TAG, "WebSocket server started on port $WS_PORT")
 

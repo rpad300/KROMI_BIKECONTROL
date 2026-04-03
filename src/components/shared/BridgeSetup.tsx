@@ -1,23 +1,25 @@
 import { useState, useEffect } from 'react';
-import { wsClient } from '../../services/bluetooth/WebSocketBLEClient';
+import { wsClient, WebSocketBLEClient } from '../../services/bluetooth/WebSocketBLEClient';
 import { bleMode } from '../../services/bluetooth/BLEBridge';
 
 /**
- * BridgeSetup — auto-launches the BLE Bridge middleware and shows install prompt.
+ * BridgeSetup — auto-launches the BLE Bridge middleware and shows install/update prompt.
  *
  * Flow:
  * 1. PWA opens → checks if bridge is running (WebSocket)
  * 2. If not running → tries to launch via intent:// deep link
  * 3. If launch fails → shows install banner with APK download
- * 4. If bridge connects → banner disappears, normal app flow
+ * 4. If bridge connects → checks version → shows update banner if outdated
+ * 5. If bridge ok → banner disappears, normal app flow
  */
 
 const BRIDGE_INTENT_URL = 'intent://start#Intent;scheme=kromi-bridge;package=online.kromi.blebridge;end';
 const APK_DOWNLOAD_URL = 'https://github.com/rpad300/KROMI_BIKECONTROL/releases/latest';
 
 export function BridgeSetup() {
-  const [state, setState] = useState<'checking' | 'launching' | 'install' | 'connected' | 'hidden'>('checking');
+  const [state, setState] = useState<'checking' | 'launching' | 'install' | 'update' | 'connected' | 'hidden'>('checking');
   const [dismissed, setDismissed] = useState(false);
+  const [bridgeVer, setBridgeVer] = useState('');
 
   useEffect(() => {
     // Only relevant on Android Chrome (not Capacitor native)
@@ -29,11 +31,24 @@ export function BridgeSetup() {
     checkBridge();
   }, []);
 
+  function checkVersion() {
+    // Wait a bit for bridgeInfo to arrive, then check
+    setTimeout(() => {
+      const ver = wsClient.bridgeVersion;
+      setBridgeVer(ver);
+      if (wsClient.isBridgeOutdated) {
+        setState('update');
+      } else {
+        setState('connected');
+        setTimeout(() => setState('hidden'), 2000);
+      }
+    }, 1500);
+  }
+
   async function checkBridge() {
     // Already connected?
     if (wsClient.isConnected) {
-      setState('connected');
-      setTimeout(() => setState('hidden'), 2000);
+      checkVersion();
       return;
     }
 
@@ -42,8 +57,7 @@ export function BridgeSetup() {
     await wait(2000);
 
     if (wsClient.isConnected) {
-      setState('connected');
-      setTimeout(() => setState('hidden'), 2000);
+      checkVersion();
       return;
     }
 
@@ -57,8 +71,7 @@ export function BridgeSetup() {
     await wait(2000);
 
     if (wsClient.isConnected) {
-      setState('connected');
-      setTimeout(() => setState('hidden'), 2000);
+      checkVersion();
       return;
     }
 
@@ -70,8 +83,7 @@ export function BridgeSetup() {
       wsClient.connect();
       setTimeout(() => {
         if (wsClient.isConnected) {
-          setState('connected');
-          setTimeout(() => setState('hidden'), 2000);
+          checkVersion();
           clearInterval(interval);
         }
       }, 1500);
@@ -108,8 +120,43 @@ export function BridgeSetup() {
   }
 
   if (state === 'connected') {
-    // Don't show banner — ConnectionStatus handles the status display
     return null;
+  }
+
+  // Bridge outdated — show update prompt
+  if (state === 'update') {
+    return (
+      <div className="fixed top-0 left-0 right-0 px-4 py-4 z-50 border-b" style={{ backgroundColor: 'rgba(26,25,25,0.95)', borderColor: '#494847' }}>
+        <div className="flex items-start gap-3">
+          <span className="material-symbols-outlined text-xl mt-0.5" style={{ color: '#ff9933' }}>update</span>
+          <div className="flex-1">
+            <p className="text-sm text-white font-bold font-headline">Actualizar BLE Bridge</p>
+            <p className="text-xs mt-1" style={{ color: '#adaaaa' }}>
+              Versao instalada: <b>v{bridgeVer}</b> — necessaria: <b>v{WebSocketBLEClient.REQUIRED_VERSION}+</b>
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: '#ff9933' }}>
+              Correcoes: power do motor, labels assist, estabilidade
+            </p>
+            <div className="flex gap-2 mt-3">
+              <a
+                href={APK_DOWNLOAD_URL}
+                className="text-sm font-bold font-headline px-4 py-2 active:scale-95 transition-transform"
+                style={{ backgroundColor: '#ff9933', color: 'black' }}
+              >
+                Descarregar v{WebSocketBLEClient.REQUIRED_VERSION}
+              </a>
+              <button
+                onClick={() => setDismissed(true)}
+                className="text-sm px-2"
+                style={{ color: '#777575' }}
+              >
+                Depois
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // state === 'install'

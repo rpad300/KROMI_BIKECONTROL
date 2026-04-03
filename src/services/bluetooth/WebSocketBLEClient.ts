@@ -30,12 +30,16 @@ export interface ScanResultDevice {
 type ScanListener = (device: ScanResultDevice) => void;
 type ScanDoneListener = () => void;
 
-class WebSocketBLEClient {
+export class WebSocketBLEClient {
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setInterval> | null = null;
   private _connected = false;
   private _bridgeAvailable = false;
   private _bikeConnected = false;
+  private _bridgeVersion = '';
+
+  /** Minimum required bridge version for correct data */
+  static readonly REQUIRED_VERSION = '0.9.6';
 
   // Scan event listeners
   private scanListeners: ScanListener[] = [];
@@ -107,6 +111,17 @@ class WebSocketBLEClient {
   /** Whether the bridge has ever been detected in this session */
   get bridgeAvailable(): boolean {
     return this._bridgeAvailable;
+  }
+
+  /** Bridge app version (e.g., "0.9.6") — empty if not yet received */
+  get bridgeVersion(): string {
+    return this._bridgeVersion;
+  }
+
+  /** Whether bridge version meets minimum requirement */
+  get isBridgeOutdated(): boolean {
+    if (!this._bridgeVersion) return false; // unknown = don't nag
+    return compareVersions(this._bridgeVersion, WebSocketBLEClient.REQUIRED_VERSION) < 0;
   }
 
   /** Send a command to the bridge */
@@ -264,6 +279,14 @@ class WebSocketBLEClient {
       const store = useBikeStore.getState();
 
       switch (msg.type) {
+        case 'bridgeInfo':
+          this._bridgeVersion = (msg.version as string) || '';
+          console.log(`[WSClient] Bridge v${this._bridgeVersion}`);
+          if (this.isBridgeOutdated) {
+            console.warn(`[WSClient] Bridge outdated! v${this._bridgeVersion} < required v${WebSocketBLEClient.REQUIRED_VERSION}`);
+          }
+          break;
+
         case 'connected':
           this._bikeConnected = true;
           store.setBLEStatus('connected');
@@ -766,6 +789,19 @@ class WebSocketBLEClient {
       this.reconnectTimer = null;
     }
   }
+}
+
+/** Compare semver strings: returns -1 if a < b, 0 if equal, 1 if a > b */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const va = pa[i] ?? 0;
+    const vb = pb[i] ?? 0;
+    if (va < vb) return -1;
+    if (va > vb) return 1;
+  }
+  return 0;
 }
 
 export const wsClient = new WebSocketBLEClient();

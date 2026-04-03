@@ -9,7 +9,8 @@ import java.net.InetSocketAddress
 
 class BridgeWebSocketServer(
     port: Int = 8765,
-    private val onCommand: (JSONObject) -> Unit
+    private val onCommand: (JSONObject) -> Unit,
+    var appVersion: String = "unknown"
 ) : WebSocketServer(InetSocketAddress("0.0.0.0", port)) {
 
     companion object {
@@ -18,6 +19,14 @@ class BridgeWebSocketServer(
 
     override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
         Log.i(TAG, "Client connected: ${conn.remoteSocketAddress}")
+        // Send bridge info on connect so PWA can verify version
+        try {
+            conn.send(JSONObject()
+                .put("type", "bridgeInfo")
+                .put("version", appVersion)
+                .put("package", "online.kromi.blebridge")
+                .toString())
+        } catch (_: Exception) {}
     }
 
     override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
