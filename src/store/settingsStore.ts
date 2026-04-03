@@ -34,6 +34,8 @@ export interface BikeConfig {
   photo_url: string;
   purchase_date: string;  // ISO date 'YYYY-MM-DD' or ''
   serial_number: string;  // frame serial
+  ai_summary: string;     // AI-generated description, persisted
+  ai_summary_hash: string; // hash of specs used to generate summary — triggers regen on change
 
   // ── Frame ─────────────────────────────────────────────────
   frame_material: string;     // 'carbon' | 'aluminium' | 'steel' | 'titanium'
@@ -145,6 +147,8 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   photo_url: '',
   purchase_date: '',
   serial_number: '',
+  ai_summary: '',
+  ai_summary_hash: '',
 
   // Frame
   frame_material: 'aluminium',

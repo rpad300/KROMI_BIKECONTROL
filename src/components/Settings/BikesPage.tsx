@@ -741,78 +741,123 @@ function EBikeSection({ bike, update }: { bike: BikeConfig; update: (p: Partial<
 // ═══════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════
-// AI BIKE SUMMARY — generates a description from specs
+// AI BIKE SUMMARY — persisted, regenerates on spec changes
 // ═══════════════════════════════════════════════════════════
 
-const summaryCache = new Map<string, string>();
+/** Build a hash string from the key specs that affect the summary */
+function bikeSpecsHash(bike: BikeConfig): string {
+  return [
+    bike.name, bike.bike_type, bike.category, bike.suspension,
+    bike.frame_material, bike.fork_travel_mm, bike.rear_travel_mm,
+    bike.wheel_size, bike.motor_name, bike.main_battery_wh,
+    bike.weight_kg, bike.groupset_model, bike.brake_model,
+    bike.fork_model, bike.rear_shock_model, bike.cassette_speeds,
+    bike.drivetrain_type, bike.has_range_extender ? bike.sub_battery_wh : 0,
+  ].join('|');
+}
+
+/** Build the spec string for the AI prompt */
+function bikeSpecsText(bike: BikeConfig): string {
+  const s: string[] = [];
+  s.push(bike.name);
+  if (bike.category) s.push(bikeCategoryLabel(bike.category));
+  if (bike.suspension !== 'rigid') s.push(`${suspensionLabel(bike.suspension)} ${bike.fork_travel_mm}/${bike.rear_travel_mm}mm`);
+  if (bike.bike_type === 'ebike' && bike.motor_name) s.push(`Motor: ${bike.motor_name} ${bike.main_battery_wh}${bike.has_range_extender ? `+${bike.sub_battery_wh}` : ''}Wh`);
+  if (bike.weight_kg > 0) s.push(`${bike.weight_kg}kg`);
+  if (bike.wheel_size) s.push(bike.wheel_size);
+  if (bike.frame_material) s.push(bike.frame_material);
+  if (bike.groupset_model) s.push(bike.groupset_model);
+  if (bike.drivetrain_type) s.push(`${bike.drivetrain_type} ${bike.cassette_speeds}v`);
+  if (bike.brake_model) s.push(`Travões: ${bike.brake_model}`);
+  if (bike.fork_model) s.push(`Fork: ${bike.fork_model}`);
+  if (bike.rear_shock_model) s.push(`Shock: ${bike.rear_shock_model}`);
+  return s.join(', ');
+}
 
 function AiBikeSummary({ bike }: { bike: BikeConfig }) {
-  const [summary, setSummary] = useState<string | null>(summaryCache.get(bike.id) ?? null);
+  const updateBikeConfig = useSettingsStore((s) => s.updateBikeConfig);
+  const selectBike = useSettingsStore((s) => s.selectBike);
+  const activeBikeId = useSettingsStore((s) => s.activeBikeId);
   const [loading, setLoading] = useState(false);
 
+  const currentHash = bikeSpecsHash(bike);
+  const needsRegen = bike.ai_summary_hash !== currentHash;
+  const hasSummary = bike.ai_summary && bike.ai_summary.length > 10;
+  const previousSummary = hasSummary ? bike.ai_summary : '';
+
   useEffect(() => {
-    if (summary || loading) return;
+    if (!needsRegen || loading) return;
     if (!bike.name || bike.name === 'default') return;
 
     const GEMINI_KEY = (import.meta.env.VITE_GEMINI_API_KEY ?? import.meta.env.VITE_GOOGLE_MAPS_API_KEY) as string | undefined;
     if (!GEMINI_KEY) return;
 
-    // Build a compact spec string
-    const specs: string[] = [];
-    specs.push(bike.name);
-    if (bike.category) specs.push(bikeCategoryLabel(bike.category));
-    if (bike.suspension !== 'rigid') specs.push(`${suspensionLabel(bike.suspension)} ${bike.fork_travel_mm}/${bike.rear_travel_mm}mm`);
-    if (bike.bike_type === 'ebike' && bike.motor_name) specs.push(`Motor: ${bike.motor_name} ${bike.main_battery_wh}Wh`);
-    if (bike.weight_kg > 0) specs.push(`${bike.weight_kg}kg`);
-    if (bike.wheel_size) specs.push(bike.wheel_size);
-    if (bike.groupset_model) specs.push(bike.groupset_model);
-    if (bike.brake_model) specs.push(`Brake: ${bike.brake_model}`);
-    if (bike.fork_model) specs.push(`Fork: ${bike.fork_model}`);
-    if (specs.length < 3) return;
+    const specsText = bikeSpecsText(bike);
+    if (specsText.split(',').length < 3) return;
+
+    // Build prompt — include previous summary for evolution tracking
+    let prompt: string;
+    if (previousSummary) {
+      prompt = `Actualiza a descrição desta bicicleta em português (Portugal). A descrição anterior era:
+"${previousSummary}"
+
+As specs actuais são: ${specsText}
+
+Escreve 2-3 frases: primeiro a descrição actual da bike (utilização ideal, pontos fortes, tipo de ciclista), depois se houve alguma mudança relevante face à descrição anterior, menciona a evolução (ex: "Upgrade de fork para Fox 38" ou "Mudou de grupo Deore para XT"). Se não houve mudanças significativas, não menciones evolução.
+
+Responde APENAS com o texto, sem aspas.`;
+    } else {
+      prompt = `Descreve esta bicicleta em 2-3 frases em português (Portugal). Foca na utilização ideal, pontos fortes e para que tipo de ciclista é indicada. Sê directo e informativo.
+
+Specs: ${specsText}
+
+Responde APENAS com o texto, sem aspas.`;
+    }
 
     setLoading(true);
-    const prompt = `Descreve esta bicicleta em 1-2 frases em português (Portugal). Foca na utilização ideal, pontos fortes e para que tipo de ciclista é indicada. Sê directo e informativo, sem marketing.
 
-Specs: ${specs.join(', ')}
-
-Responde APENAS com o texto, sem aspas nem explicação.`;
+    // Need to select this bike before updating
+    const wasActive = activeBikeId;
 
     fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: 150 },
+        generationConfig: { temperature: 0.3, maxOutputTokens: 250 },
       }),
     })
       .then((r) => r.json())
       .then((data) => {
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
         if (text) {
-          summaryCache.set(bike.id, text);
-          setSummary(text);
+          // Save to this bike's config
+          if (activeBikeId !== bike.id) selectBike(bike.id);
+          updateBikeConfig({ ai_summary: text, ai_summary_hash: currentHash });
+          // Restore active bike if different
+          if (wasActive !== bike.id) setTimeout(() => selectBike(wasActive), 50);
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bike.id]);
+  }, [bike.id, needsRegen]);
 
-  if (!summary && !loading) return null;
+  if (!hasSummary && !loading && !needsRegen) return null;
 
   return (
     <div style={{ marginTop: '6px', padding: '6px 8px', backgroundColor: 'rgba(233,102,255,0.04)', borderRadius: '4px', borderLeft: '2px solid rgba(233,102,255,0.2)' }}>
       {loading ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <div className="w-3 h-3 border border-[#e966ff] border-t-transparent rounded-full animate-spin" />
-          <span style={{ fontSize: '9px', color: '#777575' }}>AI a analisar...</span>
+          <span style={{ fontSize: '9px', color: '#777575' }}>{previousSummary ? 'AI a actualizar...' : 'AI a analisar...'}</span>
         </div>
-      ) : (
+      ) : hasSummary ? (
         <div style={{ fontSize: '10px', color: '#adaaaa', lineHeight: '1.4' }}>
           <span style={{ color: '#e966ff', fontWeight: 700, marginRight: '4px' }}>AI</span>
-          {summary}
+          {bike.ai_summary}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
