@@ -14,6 +14,18 @@ export interface HRZone {
 }
 
 export interface RiderProfile {
+  // Personal
+  name?: string;
+  birthdate?: string;       // ISO date string
+  gender?: string;          // M, F, Outro
+
+  // Club
+  club_id?: string;
+  club_name?: string;
+
+  // Privacy (per-field: 'public' | 'club' | 'private')
+  privacy?: { name?: string; stats?: string; rides?: string };
+
   // Physiology
   hr_max: number;           // Observed max (from FIT imports or manual)
   hr_rest: number;          // Resting HR
