@@ -14,7 +14,7 @@ export function DesktopLiveView() {
   const [tab, setTab] = useState<DesktopTab>('preview');
 
   return (
-    <div style={{ padding: '16px 24px', maxWidth: '1200px', margin: '0 auto' }}>
+    <div style={{ padding: '16px 24px' }}>
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
         {([
