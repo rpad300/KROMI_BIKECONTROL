@@ -1,42 +1,18 @@
-import { useState } from 'react';
 import { DashboardPreview } from './DashboardPreview';
 import { WidgetLibrary } from './WidgetLibrary';
 import { DashboardBuilder } from './DashboardBuilder';
 import { HistoricalRangeWidget } from './HistoricalRangeWidget';
 
-type DesktopTab = 'preview' | 'builder' | 'widgets' | 'range';
-
 /**
  * DesktopLiveView — main desktop screen.
- * Three tabs: Preview, Builder, Widget Library
+ * Tab controlled by sidebar submenu.
  */
-export function DesktopLiveView() {
-  const [tab, setTab] = useState<DesktopTab>('preview');
+export function DesktopLiveView({ activeTab }: { activeTab?: string }) {
+  const tab = activeTab ?? 'preview';
 
   return (
-    <div style={{ padding: '16px 24px' }}>
-      {/* Tab bar */}
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
-        {([
-          { id: 'preview' as const, label: 'Dashboard Preview', icon: 'phone_iphone' },
-          { id: 'builder' as const, label: 'Custom Builder', icon: 'construction' },
-          { id: 'range' as const, label: 'Autonomia', icon: 'battery_charging_full' },
-          { id: 'widgets' as const, label: 'Widget Library', icon: 'widgets' },
-        ]).map(({ id, label, icon }) => (
-          <button key={id} onClick={() => setTab(id)} style={{
-            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-            padding: '10px', border: 'none', cursor: 'pointer',
-            backgroundColor: tab === id ? '#3fff8b' : '#1a1919',
-            color: tab === id ? 'black' : '#adaaaa',
-            fontFamily: "'Space Grotesk'", fontWeight: 700, fontSize: '12px', textTransform: 'uppercase',
-          }}>
-            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>{icon}</span>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Content */}
+    <div>
+      {/* Content — tab selected from sidebar */}
       {tab === 'preview' && (
         <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
           <div style={{ width: '320px', flexShrink: 0 }}><DashboardPreview /></div>

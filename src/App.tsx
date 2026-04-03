@@ -93,63 +93,120 @@ function MobileApp() {
 // DESKTOP — config, history, map review (no BLE needed)
 // ═══════════════════════════════════════════════════
 
-const DESKTOP_NAV: { screen: DesktopScreen; label: string; icon: string }[] = [
-  { screen: 'live', label: 'Volta Live', icon: 'directions_bike' },
-  { screen: 'settings', label: 'Configuração', icon: 'settings' },
-  { screen: 'history', label: 'Histórico', icon: 'history' },
-  { screen: 'map', label: 'Mapa', icon: 'map' },
+type DesktopSub = string; // e.g., 'live:preview', 'settings:rider', etc.
+
+interface NavItem {
+  screen: DesktopScreen;
+  label: string;
+  icon: string;
+  color?: string;
+  subs?: { id: string; label: string; icon: string }[];
+}
+
+const DESKTOP_NAV: NavItem[] = [
+  { screen: 'live', label: 'Volta Live', icon: 'directions_bike', color: '#3fff8b', subs: [
+    { id: 'preview', label: 'Dashboard Preview', icon: 'phone_iphone' },
+    { id: 'builder', label: 'Custom Builder', icon: 'construction' },
+    { id: 'range', label: 'Autonomia', icon: 'battery_charging_full' },
+    { id: 'widgets', label: 'Widget Library', icon: 'widgets' },
+  ]},
+  { screen: 'settings', label: 'Configuração', icon: 'settings', color: '#6e9bff', subs: [
+    { id: 'rider', label: 'Perfil Ciclista', icon: 'person' },
+    { id: 'bike', label: 'Bicicleta', icon: 'pedal_bike' },
+    { id: 'kromi', label: 'KROMI Intelligence', icon: 'psychology' },
+    { id: 'bluetooth', label: 'Bluetooth', icon: 'bluetooth' },
+    { id: 'routes', label: 'Rotas', icon: 'route' },
+    { id: 'account', label: 'Conta', icon: 'account_circle' },
+  ]},
+  { screen: 'history', label: 'Histórico', icon: 'history', color: '#fbbf24' },
+  { screen: 'map', label: 'Mapa', icon: 'map', color: '#e966ff' },
 ];
 
 function DesktopApp() {
   const [screen, setScreen] = useState<DesktopScreen>('live');
+  const [sub, setSub] = useState<DesktopSub>('preview');
+  const [expanded, setExpanded] = useState<DesktopScreen | null>('live');
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
 
+  const handleNav = (item: NavItem, subId?: string) => {
+    setScreen(item.screen);
+    if (item.subs) {
+      setExpanded(expanded === item.screen ? null : item.screen);
+      if (subId) setSub(subId);
+      else if (item.subs[0]) setSub(item.subs[0].id);
+    } else {
+      setExpanded(null);
+    }
+  };
+
   return (
     <div className="h-full flex bg-[#0e0e0e] text-white">
-      {/* Sidebar */}
-      <aside className="w-64 flex-none flex flex-col border-r border-[#494847]/20 bg-[#131313]">
+      {/* Sidebar with expandable submenus */}
+      <aside style={{ width: '240px', flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(73,72,71,0.2)', backgroundColor: '#131313', overflow: 'auto' }}>
         {/* Logo */}
-        <div className="p-6 border-b border-[#494847]/20">
-          <h1 className="text-xl font-headline font-bold text-[#3fff8b] tracking-tight">STEALTH-EV</h1>
-          <p className="text-xs text-[#adaaaa] mt-1 font-label uppercase tracking-widest">BikeControl</p>
+        <div style={{ padding: '20px 16px', borderBottom: '1px solid rgba(73,72,71,0.2)' }}>
+          <h1 className="font-headline font-bold" style={{ fontSize: '18px', color: '#3fff8b', letterSpacing: '-0.02em' }}>STEALTH-EV</h1>
+          <p className="font-label" style={{ fontSize: '9px', color: '#777575', textTransform: 'uppercase', letterSpacing: '0.15em', marginTop: '2px' }}>BikeControl Desktop</p>
         </div>
 
-        {/* Nav items */}
-        <nav className="flex-1 p-3 space-y-1">
-          {DESKTOP_NAV.map((item) => (
-            <button
-              key={item.screen}
-              onClick={() => setScreen(item.screen)}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
-                screen === item.screen
-                  ? 'bg-[#3fff8b]/10 text-[#3fff8b] border-l-2 border-[#3fff8b]'
-                  : 'text-[#adaaaa] hover:bg-[#201f1f] hover:text-white'
-              }`}
-            >
-              <span className="material-symbols-outlined text-xl">{item.icon}</span>
-              <span className="font-label">{item.label}</span>
-            </button>
-          ))}
+        {/* Nav items with submenus */}
+        <nav style={{ flex: 1, padding: '8px' }}>
+          {DESKTOP_NAV.map((item) => {
+            const isActive = screen === item.screen;
+            const isExpanded = expanded === item.screen && item.subs;
+            return (
+              <div key={item.screen}>
+                {/* Main nav item */}
+                <button
+                  onClick={() => handleNav(item)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '10px 12px', border: 'none', cursor: 'pointer', textAlign: 'left',
+                    backgroundColor: isActive ? 'rgba(63,255,139,0.08)' : 'transparent',
+                    borderLeft: isActive ? `2px solid ${item.color ?? '#3fff8b'}` : '2px solid transparent',
+                    marginBottom: '2px',
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '18px', color: isActive ? (item.color ?? '#3fff8b') : '#adaaaa' }}>{item.icon}</span>
+                  <span className="font-label" style={{ fontSize: '12px', color: isActive ? 'white' : '#adaaaa', fontWeight: isActive ? 700 : 400, flex: 1 }}>{item.label}</span>
+                  {item.subs && (
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#494847', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>expand_more</span>
+                  )}
+                </button>
+
+                {/* Submenu */}
+                {isExpanded && item.subs && (
+                  <div style={{ marginLeft: '20px', marginBottom: '4px' }}>
+                    {item.subs.map((s) => {
+                      const isSubActive = isActive && sub === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => { setScreen(item.screen); setSub(s.id); }}
+                          style={{
+                            width: '100%', display: 'flex', alignItems: 'center', gap: '8px',
+                            padding: '7px 10px', border: 'none', cursor: 'pointer', textAlign: 'left',
+                            backgroundColor: isSubActive ? 'rgba(63,255,139,0.05)' : 'transparent',
+                            borderLeft: isSubActive ? `2px solid ${item.color ?? '#3fff8b'}` : '2px solid transparent',
+                          }}
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: '14px', color: isSubActive ? (item.color ?? '#3fff8b') : '#777575' }}>{s.icon}</span>
+                          <span style={{ fontSize: '11px', color: isSubActive ? 'white' : '#777575', fontWeight: isSubActive ? 600 : 400 }}>{s.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
-        {/* Desktop info banner */}
-        <div className="p-4 m-3 bg-[#1a1919]">
-          <p className="text-xs text-[#adaaaa]">
-            Modo desktop — configuração e histórico.
-          </p>
-          <p className="text-xs text-[#777575] mt-1">
-            Para dashboard live, abre no Android.
-          </p>
-        </div>
-
         {/* User + logout */}
-        <div className="p-4 border-t border-[#494847]/20">
-          <div className="text-xs text-[#777575] truncate">{user?.email}</div>
-          <button
-            onClick={logout}
-            className="mt-2 text-xs text-[#ff716c] hover:text-[#d7383b]"
-          >
+        <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(73,72,71,0.2)' }}>
+          <div style={{ fontSize: '10px', color: '#777575' }}>{user?.email}</div>
+          <button onClick={logout} style={{ marginTop: '6px', fontSize: '10px', color: '#ff716c', background: 'none', border: 'none', cursor: 'pointer' }}>
             Terminar sessão
           </button>
         </div>
@@ -158,8 +215,8 @@ function DesktopApp() {
       {/* Main content */}
       <main className="flex-1 min-h-0 overflow-y-auto">
         <div className="py-4 px-6">
-          {screen === 'live' && <DesktopLiveView />}
-          {screen === 'settings' && <Settings />}
+          {screen === 'live' && <DesktopLiveView activeTab={sub} />}
+          {screen === 'settings' && <Settings initialPage={sub as 'rider' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account'} />}
           {screen === 'history' && <RideHistory />}
           {screen === 'map' && <MapView />}
         </div>

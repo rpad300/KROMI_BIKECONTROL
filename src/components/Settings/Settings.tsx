@@ -21,30 +21,40 @@ const MENU_ITEMS: { id: SettingsPage; icon: string; label: string; desc: string;
   { id: 'account', icon: 'account_circle', label: 'Conta', desc: 'Email, sessão, versão', color: '#adaaaa' },
 ];
 
-export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void }) {
-  const [page, setPage] = useState<SettingsPage>('menu');
+export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Screen) => void; initialPage?: SettingsPage }) {
+  const [page, setPage] = useState<SettingsPage>(initialPage ?? 'menu');
 
-  if (page === 'menu') return <SettingsMenu onSelect={setPage} onNavigate={onNavigate} />;
+  // Sync with external initialPage changes (desktop sidebar navigation)
+  const prevInitial = useState(initialPage)[0];
+  if (initialPage && initialPage !== 'menu' && initialPage !== prevInitial) {
+    // Direct to sub-page without showing menu
+  }
+
+  if (page === 'menu' && !initialPage) return <SettingsMenu onSelect={setPage} onNavigate={onNavigate} />;
+
+  const activePage = (initialPage && initialPage !== 'menu') ? initialPage : page;
 
   return (
     <div className="h-full flex flex-col" style={{ backgroundColor: '#0e0e0e' }}>
-      {/* Back header */}
-      <div style={{ height: '48px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', backgroundColor: '#131313', borderBottom: '1px solid rgba(73,72,71,0.2)' }}>
-        <button onClick={() => setPage('menu')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: '24px', color: '#adaaaa' }}>arrow_back</span>
-        </button>
-        <span className="font-headline font-bold" style={{ fontSize: '16px', color: '#3fff8b' }}>
-          {MENU_ITEMS.find((m) => m.id === page)?.label ?? 'Settings'}
-        </span>
-      </div>
+      {/* Back header — only on mobile (when no initialPage from desktop sidebar) */}
+      {!initialPage && (
+        <div style={{ height: '48px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', backgroundColor: '#131313', borderBottom: '1px solid rgba(73,72,71,0.2)' }}>
+          <button onClick={() => setPage('menu')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '24px', color: '#adaaaa' }}>arrow_back</span>
+          </button>
+          <span className="font-headline font-bold" style={{ fontSize: '16px', color: '#3fff8b' }}>
+            {MENU_ITEMS.find((m) => m.id === activePage)?.label ?? 'Settings'}
+          </span>
+        </div>
+      )}
       {/* Content */}
       <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
-        {page === 'rider' && <RiderPage />}
-        {page === 'bike' && <BikePage />}
-        {page === 'kromi' && <KromiPage />}
-        {page === 'bluetooth' && <BluetoothPage />}
-        {page === 'routes' && <RoutesPage onNavigate={onNavigate} />}
-        {page === 'account' && <AccountPage />}
+        {activePage === 'rider' && <RiderPage />}
+        {activePage === 'bike' && <BikePage />}
+        {activePage === 'kromi' && <KromiPage />}
+        {activePage === 'bluetooth' && <BluetoothPage />}
+        {activePage === 'routes' && <RoutesPage onNavigate={onNavigate} />}
+        {activePage === 'account' && <AccountPage />}
       </div>
     </div>
   );
