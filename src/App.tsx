@@ -124,6 +124,9 @@ const DESKTOP_NAV: NavItem[] = [
     { id: 'bike', label: 'As minhas bikes', icon: 'pedal_bike' },
     { id: 'bikefit', label: 'Bike Fit', icon: 'straighten' },
   ]},
+  { screen: 'settings', label: 'Manutenção', icon: 'build', color: '#ff9f43', subs: [
+    { id: 'service-book', label: 'Caderneta de Serviço', icon: 'menu_book' },
+  ]},
   { screen: 'settings', label: 'Clube', icon: 'groups', color: '#fbbf24', subs: [
     { id: 'club', label: 'O meu clube', icon: 'groups' },
   ]},

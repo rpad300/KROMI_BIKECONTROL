@@ -8,11 +8,12 @@ import { connectBike, disconnectBike } from '../../services/bluetooth/BLEBridge'
 import { ProfileInsightsWidget } from '../Dashboard/ProfileInsightsWidget';
 import { BikeFitPage } from './BikeFitPage';
 import { BikesPage } from './BikesPage';
+import { ServiceBookPage } from '../ServiceBook/ServiceBookPage';
 // TuningPreview removed — config is now read-only from motor telemetry
 import { importKomootRoute } from '../../services/maps/KomootService';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
-type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account';
+type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account' | 'service-book';
 
 // ── Grouped menu matching desktop 9-category sidebar ────────
 interface MenuCategory {
@@ -37,6 +38,9 @@ const MENU_CATEGORIES: MenuCategory[] = [
   { label: 'Bicicletas', icon: 'pedal_bike', color: '#3fff8b', items: [
     { id: 'bike', icon: 'pedal_bike', label: 'As minhas bikes', desc: 'Bateria, motor, consumo, hardware' },
     { id: 'bikefit', icon: 'straighten', label: 'Bike Fit', desc: '25 medidas, por bike, com histórico' },
+  ]},
+  { label: 'Manutenção', icon: 'build', color: '#ff9f43', items: [
+    { id: 'service-book', icon: 'menu_book', label: 'Caderneta de Serviço', desc: 'Histórico, custos, manutenção programada' },
   ]},
   { label: 'Clube', icon: 'groups', color: '#fbbf24', items: [
     { id: 'club', icon: 'groups', label: 'O meu clube', desc: 'Gerir clube, membros, rides em grupo' },
@@ -91,6 +95,7 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
         {activePage === 'bikefit' && <BikeFitSection />}
         {activePage === 'club' && <ClubPage />}
         {activePage === 'bike' && <BikesPage />}
+        {activePage === 'service-book' && <ServiceBookPage />}
         {activePage === 'kromi' && <KromiPage />}
         {activePage === 'bluetooth' && <BluetoothPage />}
         {activePage === 'routes' && <RoutesPage onNavigate={onNavigate} />}
