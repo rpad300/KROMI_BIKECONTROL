@@ -100,13 +100,28 @@ async function load() {
       // If we don't have session_id, use user_settings HR zones
     }
 
-    render(p, lastRide);
+    // Fetch nearby riders for community rescue
+    let nearbyRiders = [];
+    const victimLat = lastRide?.end_lat || lastRide?.start_lat || p.last_location_lat;
+    const victimLng = lastRide?.end_lng || lastRide?.start_lng || p.last_location_lng;
+    if (victimLat && victimLng) {
+      try {
+        const nearbyRes = await fetch(`${SB_URL}/rest/v1/rpc/nearby_riders`, {
+          method: 'POST',
+          headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_lat: victimLat, p_lng: victimLng, p_radius_km: 5, p_exclude_user: p.user_id }),
+        });
+        nearbyRiders = await nearbyRes.json();
+      } catch {}
+    }
+
+    render(p, lastRide, nearbyRiders);
   } catch (err) {
     showNotFound();
   }
 }
 
-function render(p, lastRide) {
+function render(p, lastRide, nearbyRiders) {
   const age = p.birthdate ? Math.floor((Date.now() - new Date(p.birthdate).getTime()) / (365.25*24*60*60*1000)) : null;
   const contacts = p.emergency_contacts || [];
 
@@ -206,6 +221,29 @@ function render(p, lastRide) {
     html += `</div>`;
   }
 
+  // Community rescue — privacy-first: show count only, reveal after acceptance
+  const victimLat2 = lastRide?.end_lat || lastRide?.start_lat || p.last_location_lat;
+  const victimLng2 = lastRide?.end_lng || lastRide?.start_lng || p.last_location_lng;
+
+  html += `<div class="card" id="rescue-section">`;
+  html += `<div class="card-title" style="color:#3fff8b">Rede de Ajuda KROMI</div>`;
+
+  if (nearbyRiders && nearbyRiders.length > 0) {
+    html += `<div style="text-align:center;padding:12px 0">`;
+    html += `<div style="font-size:48px;font-weight:900;color:#3fff8b">${nearbyRiders.length}</div>`;
+    html += `<div style="font-size:13px;color:#adaaaa">ciclista${nearbyRiders.length > 1 ? 's' : ''} disponive${nearbyRiders.length > 1 ? 'is' : 'l'} num raio de 5km</div>`;
+    html += `</div>`;
+    html += `<button onclick="sendSOS('${p.token}', '${p.name || 'Ciclista'}', ${victimLat2 || 0}, ${victimLng2 || 0})" class="call-btn" style="background:#ff3333;color:white;font-size:18px;height:60px" id="sos-btn">PEDIR AJUDA SOS</button>`;
+    html += `<div style="font-size:10px;color:#888;text-align:center;margin-top:6px">Envia um alerta sonoro aos ciclistas proximos. Os seus dados so aparecem se aceitarem ajudar.</div>`;
+  } else {
+    html += `<div style="text-align:center;padding:12px 0;color:#888;font-size:13px">Nenhum ciclista KROMI detectado num raio de 5km neste momento.</div>`;
+  }
+  html += `<div id="responders"></div>`;
+  html += `</div>`;
+
+  // Poll for responders if SOS was sent
+  if (window._sosRequestId) pollResponders(window._sosRequestId);
+
   // Footer
   html += `<div class="footer">Esta pagina foi gerada automaticamente pelo KROMI BikeControl.<br>Os dados sao actualizados a cada sessao de treino.<br>Em caso de emergencia, ligue 112.</div>`;
 
@@ -214,6 +252,73 @@ function render(p, lastRide) {
 
 function showNotFound() {
   document.getElementById('content').innerHTML = `<div class="not-found"><div style="font-size:48px;margin-bottom:16px">&#128722;</div><div>Perfil nao encontrado ou inactivo.</div></div>`;
+}
+
+// SOS flow
+async function sendSOS(token, name, lat, lng) {
+  const btn = document.getElementById('sos-btn');
+  btn.textContent = 'A ENVIAR SOS...';
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+
+  try {
+    // Create rescue request
+    const res = await fetch(`${SB_URL}/rest/v1/rescue_requests`, {
+      method: 'POST',
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+      body: JSON.stringify({ emergency_token: token, victim_name: name, victim_lat: lat, victim_lng: lng, status: 'active' }),
+    });
+    const created = await res.json();
+    const requestId = created[0]?.id;
+
+    if (requestId) {
+      window._sosRequestId = requestId;
+      btn.textContent = 'SOS ENVIADO — A AGUARDAR RESPOSTA';
+      btn.style.background = '#ff9933';
+
+      // Start polling for responders
+      pollResponders(requestId);
+    }
+  } catch {
+    btn.textContent = 'ERRO — TENTE NOVAMENTE';
+    btn.disabled = false;
+    btn.style.opacity = '1';
+  }
+}
+
+function pollResponders(requestId) {
+  const container = document.getElementById('responders');
+  const interval = setInterval(async () => {
+    try {
+      const res = await fetch(`${SB_URL}/rest/v1/rescue_responses?request_id=eq.${requestId}&select=*&order=created_at.asc`, {
+        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+      });
+      const responders = await res.json();
+
+      if (responders.length > 0) {
+        let html = '<div style="margin-top:16px;border-top:1px solid #262626;padding-top:12px">';
+        html += '<div style="font-size:12px;font-weight:700;color:#3fff8b;margin-bottom:8px">AJUDA A CAMINHO!</div>';
+
+        responders.forEach(r => {
+          html += '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #262626">';
+          html += `<div style="width:40px;height:40px;border-radius:50%;background:#1a3a2a;display:flex;align-items:center;justify-content:center;font-size:18px;color:#3fff8b;font-weight:700">${(r.responder_name || '?')[0]}</div>`;
+          html += '<div style="flex:1">';
+          html += `<div style="font-size:14px;font-weight:700;color:white">${r.responder_name || 'Ciclista'}</div>`;
+          if (r.distance_km) html += `<div style="font-size:11px;color:#888">${r.distance_km}km de distancia</div>`;
+          html += '</div>';
+          if (r.responder_phone) {
+            html += `<a href="tel:${r.responder_phone}" style="padding:10px 16px;background:#3fff8b;color:#000;font-weight:700;font-size:14px;border-radius:4px;text-decoration:none">LIGAR</a>`;
+          }
+          html += '</div>';
+        });
+        html += '</div>';
+        container.innerHTML = html;
+      }
+    } catch {}
+  }, 3000); // Poll every 3s
+
+  // Stop polling after 2h
+  setTimeout(() => clearInterval(interval), 2 * 60 * 60 * 1000);
 }
 
 load();

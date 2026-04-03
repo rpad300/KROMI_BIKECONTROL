@@ -18,6 +18,7 @@ import { startSettingsSync } from './services/sync/SettingsSyncService';
 import { trackLogin } from './services/sync/LoginTracker';
 import { useGlanceStore } from './store/glanceStore';
 import { AmbientGlance } from './components/DashboardSystem/AmbientGlance';
+import { RescueAlert } from './components/shared/RescueAlert';
 
 type MobileScreen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
 type DesktopScreen = 'live' | 'settings' | 'history' | 'map';
@@ -101,6 +102,7 @@ function MobileApp() {
       <ConnectionStatus />
       <BridgeSetup />
       <AmbientGlance />
+      <RescueAlert />
     </div>
   );
 }

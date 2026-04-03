@@ -105,6 +105,9 @@ export interface RiderProfile {
   frame_size?: string;      // S, M, L, XL or cm
   riding_position?: 'aggressive' | 'moderate' | 'upright';
 
+  // Community rescue — opt-in to be visible as helper for nearby emergencies
+  rescue_available?: boolean;
+
   // KROMI target
   target_zone: number;      // 1-5, which HR zone to maintain (default Z2)
   target_power_zone?: number; // 1-6, target power zone (optional)

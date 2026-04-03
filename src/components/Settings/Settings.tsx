@@ -901,6 +901,15 @@ function EmergencyPage() {
         </div>
       </Card>
 
+      {/* Community rescue opt-in */}
+      <SectionLabel>Rede de Ajuda Comunitaria</SectionLabel>
+      <Card>
+        <div style={{ fontSize: '11px', color: '#adaaaa', marginBottom: '8px' }}>
+          Activa para ficares visivel como prestador de ajuda para ciclistas proximos em emergencia. A tua localizacao so e partilhada enquanto tens uma sessao activa.
+        </div>
+        <Toggle label="Disponivel para ajuda" value={profile.rescue_available ?? false} onChange={(v) => updateProfile({ rescue_available: v })} />
+      </Card>
+
       {/* QR Code generation */}
       <SectionLabel>QR de Emergencia</SectionLabel>
       <Card>

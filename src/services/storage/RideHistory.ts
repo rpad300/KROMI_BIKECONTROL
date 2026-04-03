@@ -93,10 +93,14 @@ interface PersistedMetrics {
   battery_start: number;
 }
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
 class RideSessionManager {
   private static instance: RideSessionManager;
   private sessionId: string | null = null;
   private startedAt = 0;
+  private presenceIntervalId: ReturnType<typeof setInterval> | null = null;
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private flushIntervalId: ReturnType<typeof setInterval> | null = null;
   private snapshotBuffer: SnapshotRow[] = [];
@@ -319,6 +323,9 @@ class RideSessionManager {
     this.intervalId = setInterval(() => this.captureSnapshot(), CAPTURE_INTERVAL);
     this.flushIntervalId = setInterval(() => this.flushSnapshots(), FLUSH_INTERVAL);
 
+    // Start community rescue presence sync (every 60s)
+    this.startPresenceSync();
+
     useAthleteStore.getState().setRideActive(true);
     this.persist();
     this.persistMetrics();
@@ -331,6 +338,7 @@ class RideSessionManager {
 
     if (this.intervalId) { clearInterval(this.intervalId); this.intervalId = null; }
     if (this.flushIntervalId) { clearInterval(this.flushIntervalId); this.flushIntervalId = null; }
+    this.stopPresenceSync();
 
     // Final flush
     await this.flushSnapshots();
@@ -540,6 +548,57 @@ class RideSessionManager {
   }
 
   // ── State ──
+
+  // ── Community rescue presence sync ──
+
+  private startPresenceSync(): void {
+    const settings = import('../../store/settingsStore').then(m => m.useSettingsStore.getState());
+    settings.then(s => {
+      if (!s.riderProfile.rescue_available) return;
+      this.updatePresence(true);
+      this.presenceIntervalId = setInterval(() => this.updatePresence(true), 60000);
+    });
+  }
+
+  private stopPresenceSync(): void {
+    if (this.presenceIntervalId) { clearInterval(this.presenceIntervalId); this.presenceIntervalId = null; }
+    this.updatePresence(false);
+  }
+
+  private async updatePresence(riding: boolean): Promise<void> {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return;
+    const userId = useAuthStore.getState().getUserId();
+    if (!userId) return;
+    const map = useMapStore.getState();
+    if (!map.latitude || !map.longitude) return;
+
+    try {
+      const settingsMod = await import('../../store/settingsStore');
+      const profile = settingsMod.useSettingsStore.getState().riderProfile;
+
+      await fetch(`${SUPABASE_URL}/rest/v1/rider_presence?user_id=eq.${userId}`, {
+        method: 'DELETE',
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      });
+
+      if (riding && profile.rescue_available) {
+        await fetch(`${SUPABASE_URL}/rest/v1/rider_presence`, {
+          method: 'POST',
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({
+            user_id: userId,
+            name: profile.name || 'Ciclista',
+            phone: profile.phone || null,
+            avatar_url: profile.avatar_url || null,
+            lat: map.latitude,
+            lng: map.longitude,
+            available: true,
+            riding: true,
+          }),
+        });
+      }
+    } catch { /* best-effort */ }
+  }
 
   getState(): RideSessionState {
     return {
