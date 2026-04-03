@@ -12,7 +12,7 @@ import { useGeolocation } from './hooks/useGeolocation';
 import { useMotorControl } from './hooks/useMotorControl';
 import { useAuthStore } from './store/authStore';
 import { usePlatform } from './hooks/usePlatform';
-import { LiveRideView } from './components/LiveRide/LiveRideView';
+import { DesktopLiveView } from './components/Desktop/DesktopLiveView';
 import { startSettingsSync } from './services/sync/SettingsSyncService';
 import { trackLogin } from './services/sync/LoginTracker';
 
@@ -158,7 +158,7 @@ function DesktopApp() {
       {/* Main content */}
       <main className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-3xl mx-auto py-6">
-          {screen === 'live' && <LiveRideView />}
+          {screen === 'live' && <DesktopLiveView />}
           {screen === 'settings' && <Settings />}
           {screen === 'history' && <RideHistory />}
           {screen === 'map' && <MapView />}
