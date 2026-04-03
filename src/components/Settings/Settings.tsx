@@ -11,12 +11,16 @@ import { BikeFitPage } from './BikeFitPage';
 import { importKomootRoute } from '../../services/maps/KomootService';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
-type SettingsPage = 'menu' | 'rider' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account';
+type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'bikefit' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account';
 
 const MENU_ITEMS: { id: SettingsPage; icon: string; label: string; desc: string; color: string }[] = [
-  { id: 'rider', icon: 'person', label: 'Perfil Ciclista', desc: 'Idade, peso, HR, zonas cardíacas', color: '#ff716c' },
-  { id: 'bike', icon: 'pedal_bike', label: 'Bicicleta', desc: 'Bateria, motor, consumo, tuning', color: '#3fff8b' },
-  { id: 'kromi', icon: 'psychology', label: 'KROMI Intelligence', desc: 'Auto-assist, aprendizagem, atleta', color: '#e966ff' },
+  { id: 'personal', icon: 'badge', label: 'Dados Pessoais', desc: 'Nome, nascimento, género, clube, foto', color: '#ff716c' },
+  { id: 'physical', icon: 'monitor_heart', label: 'Perfil Físico', desc: 'Peso, altura, VO2max, FTP, SpO2', color: '#e966ff' },
+  { id: 'zones', icon: 'show_chart', label: 'Zonas HR + Potência', desc: 'Zonas cardíacas e de potência editáveis', color: '#fbbf24' },
+  { id: 'medical', icon: 'health_and_safety', label: 'Médico + Objectivos', desc: 'Condições, objectivos, perfil atleta', color: '#ff716c' },
+  { id: 'bikefit', icon: 'straighten', label: 'Bike Fit', desc: '25 medidas, por bike, com histórico', color: '#6e9bff' },
+  { id: 'bike', icon: 'pedal_bike', label: 'Bicicleta', desc: 'Bateria, motor, consumo, hardware', color: '#3fff8b' },
+  { id: 'kromi', icon: 'psychology', label: 'KROMI Intelligence', desc: 'Auto-assist, aprendizagem', color: '#e966ff' },
   { id: 'bluetooth', icon: 'bluetooth', label: 'Bluetooth', desc: 'Ligação, sensores, estado', color: '#6e9bff' },
   { id: 'routes', icon: 'route', label: 'Rotas', desc: 'Import Komoot, histórico', color: '#fbbf24' },
   { id: 'account', icon: 'account_circle', label: 'Conta', desc: 'Email, sessão, versão', color: '#adaaaa' },
@@ -51,6 +55,11 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
       {/* Content */}
       <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
         {activePage === 'rider' && <RiderPage />}
+        {activePage === 'personal' && <PersonalPage />}
+        {activePage === 'physical' && <PhysicalPage />}
+        {activePage === 'zones' && <ZonesPage />}
+        {activePage === 'medical' && <MedicalPage />}
+        {activePage === 'bikefit' && <BikeFitSection />}
         {activePage === 'bike' && <BikePage />}
         {activePage === 'kromi' && <KromiPage />}
         {activePage === 'bluetooth' && <BluetoothPage />}
@@ -111,7 +120,23 @@ function SettingsMenu({ onSelect, onNavigate }: { onSelect: (p: SettingsPage) =>
 
 // === SUB-PAGES ===
 
+/** Legacy RiderPage — redirects to split pages on mobile */
 function RiderPage() {
+  return (
+    <div className="space-y-6">
+      <PersonalPage />
+      <PhysicalPage />
+      <ZonesPage />
+      <MedicalPage />
+      <BikeFitSection />
+    </div>
+  );
+}
+
+/** OLD RiderPage code removed — replaced by PersonalPage, PhysicalPage, ZonesPage, MedicalPage, BikeFitSection */
+// === SPLIT PAGES (extracted from RiderPage for better organization) ===
+
+function PersonalPage() {
   const profile = useSettingsStore((s) => s.riderProfile);
   const updateProfile = useSettingsStore((s) => s.updateRiderProfile);
   const [riderName, setRiderName] = useState(profile.name ?? '');
@@ -119,305 +144,144 @@ function RiderPage() {
   const [gender, setGender] = useState(profile.gender ?? '');
   const [clubSearch, setClubSearch] = useState('');
   const [clubs, setClubs] = useState<{ id: string; name: string; color: string; location: string; member_count: number }[]>([]);
-  const [showClubCreate, setShowClubCreate] = useState(false);
-  const [newClubName, setNewClubName] = useState('');
-  const [newClubLocation, setNewClubLocation] = useState('');
-  const [newClubColor, setNewClubColor] = useState('#3fff8b');
-  const [privacyName, setPrivacyName] = useState<string>(profile.privacy?.name ?? 'club');
-  const [privacyStats, setPrivacyStats] = useState<string>(profile.privacy?.stats ?? 'club');
 
-  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-  const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+  const SB_URL = import.meta.env.VITE_SUPABASE_URL as string;
+  const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-  // Search clubs
-  const searchClubs = async (q: string) => {
-    if (!SUPABASE_URL || q.length < 2) { setClubs([]); return; }
-    try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/clubs?name=ilike.*${encodeURIComponent(q)}*&select=id,name,color,location,member_count&limit=10`, {
-        headers: { 'apikey': SUPABASE_KEY },
-      });
-      if (res.ok) setClubs(await res.json());
-    } catch { /* ignore */ }
-  };
-
-  // Create club
-  const createClub = async () => {
-    if (!SUPABASE_URL || !newClubName.trim()) return;
-    const userId = useAuthStore.getState().getUserId();
-    try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/clubs`, {
-        method: 'POST',
-        headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
-        body: JSON.stringify({ name: newClubName.trim(), location: newClubLocation, color: newClubColor, created_by: userId }),
-      });
-      if (res.ok) {
-        const [club] = await res.json();
-        updateProfile({ club_id: club.id, club_name: club.name });
-        // Add as member
-        await fetch(`${SUPABASE_URL}/rest/v1/club_members`, {
-          method: 'POST',
-          headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ club_id: club.id, user_id: userId, role: 'admin', display_name: riderName }),
-        });
-        setShowClubCreate(false);
-        setNewClubName('');
-      }
-    } catch { /* ignore */ }
-  };
-
-  // Join club
-  const joinClub = async (club: { id: string; name: string }) => {
-    updateProfile({ club_id: club.id, club_name: club.name });
-    const userId = useAuthStore.getState().getUserId();
-    if (SUPABASE_URL && userId) {
-      fetch(`${SUPABASE_URL}/rest/v1/club_members`, {
-        method: 'POST',
-        headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' },
-        body: JSON.stringify({ club_id: club.id, user_id: userId, display_name: riderName }),
-      }).catch(() => {});
-    }
-    setClubSearch('');
-    setClubs([]);
-  };
-
-  // Save personal fields + auto-calculate age from birthdate
-  const savePersonal = () => {
+  const save = () => {
     const age = birthdate ? Math.floor((Date.now() - new Date(birthdate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : profile.age;
-    const autoHrMax = profile.hr_max === 0 || profile.hr_max === (220 - profile.age) ? 220 - age : profile.hr_max;
-    updateProfile({
-      name: riderName, birthdate, gender, age,
-      hr_max: autoHrMax,
-      privacy: { name: privacyName, stats: privacyStats },
-    });
+    updateProfile({ name: riderName, birthdate, gender, age });
+  };
+
+  const searchClubs = async (q: string) => {
+    if (!SB_URL || q.length < 2) { setClubs([]); return; }
+    try { const r = await fetch(`${SB_URL}/rest/v1/clubs?name=ilike.*${encodeURIComponent(q)}*&select=id,name,color,location,member_count&limit=10`, { headers: { 'apikey': SB_KEY } }); if (r.ok) setClubs(await r.json()); } catch {}
+  };
+
+  const joinClub = (club: { id: string; name: string }) => {
+    updateProfile({ club_id: club.id, club_name: club.name });
+    setClubSearch(''); setClubs([]);
   };
 
   return (
     <div className="space-y-4">
-      {/* Personal info */}
-      <SectionLabel>Dados Pessoais</SectionLabel>
       <Card>
-        <TextField label="Nome" value={riderName} onChange={(v) => { setRiderName(v); savePersonal(); }} />
+        <TextField label="Nome" value={riderName} onChange={(v) => { setRiderName(v); save(); }} />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ color: '#adaaaa', fontSize: '13px' }}>Data nascimento</span>
-          <input type="date" value={birthdate} onChange={(e) => { setBirthdate(e.target.value); savePersonal(); }}
-            style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', fontSize: '13px' }} />
+          <input type="date" value={birthdate} onChange={(e) => { setBirthdate(e.target.value); save(); }} style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', fontSize: '13px' }} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ color: '#adaaaa', fontSize: '13px' }}>Género</span>
           <div style={{ display: 'flex', gap: '4px' }}>
             {['M', 'F', 'Outro'].map((g) => (
-              <button key={g} onClick={() => { setGender(g); savePersonal(); }} style={{
-                padding: '4px 12px', fontSize: '11px', fontWeight: 700, border: 'none', cursor: 'pointer',
-                backgroundColor: gender === g ? '#3fff8b' : '#262626', color: gender === g ? 'black' : '#adaaaa',
-              }}>{g}</button>
+              <button key={g} onClick={() => { setGender(g); save(); }} style={{ padding: '4px 12px', fontSize: '11px', fontWeight: 700, border: 'none', cursor: 'pointer', backgroundColor: gender === g ? '#3fff8b' : '#262626', color: gender === g ? 'black' : '#adaaaa' }}>{g}</button>
             ))}
           </div>
         </div>
+        {birthdate && <ReadOnlyRow label="Idade" value={`${Math.floor((Date.now() - new Date(birthdate).getTime()) / (365.25 * 24 * 60 * 60 * 1000))} anos`} color="#3fff8b" />}
       </Card>
 
-      {/* Club */}
       <SectionLabel>Clube</SectionLabel>
       <Card>
         {profile.club_name ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#3fff8b' }} />
-              <span className="font-headline font-bold" style={{ fontSize: '14px', color: 'white' }}>{profile.club_name}</span>
-            </div>
+            <span className="font-headline font-bold" style={{ fontSize: '14px', color: 'white' }}>● {profile.club_name}</span>
             <button onClick={() => updateProfile({ club_id: undefined, club_name: undefined })} style={{ fontSize: '10px', color: '#ff716c', background: 'none', border: 'none', cursor: 'pointer' }}>Sair</button>
           </div>
         ) : (
           <>
-            <div style={{ position: 'relative' }}>
-              <input type="text" value={clubSearch} onChange={(e) => { setClubSearch(e.target.value); searchClubs(e.target.value); }} placeholder="Procurar clube..."
-                style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '10px', border: 'none', fontSize: '13px' }} />
-              {clubs.length > 0 && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, backgroundColor: '#1a1919', border: '1px solid #494847', maxHeight: '150px', overflow: 'auto' }}>
-                  {clubs.map((c) => (
-                    <button key={c.id} onClick={() => joinClub(c)} style={{
-                      width: '100%', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: 'none', borderBottom: '1px solid #262626', cursor: 'pointer', textAlign: 'left',
-                    }}>
-                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: c.color }} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '12px', color: 'white', fontWeight: 600 }}>{c.name}</div>
-                        <div style={{ fontSize: '9px', color: '#777575' }}>{c.location} · {c.member_count} membros</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <button onClick={() => setShowClubCreate(true)} style={{
-              width: '100%', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-              backgroundColor: '#262626', border: '1px dashed #494847', cursor: 'pointer', color: '#adaaaa', fontSize: '11px',
-            }}>
-              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>add</span>
-              Criar novo clube
-            </button>
+            <input type="text" value={clubSearch} onChange={(e) => { setClubSearch(e.target.value); searchClubs(e.target.value); }} placeholder="Procurar clube..." style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '10px', border: 'none', fontSize: '13px' }} />
+            {clubs.map((c) => (
+              <button key={c.id} onClick={() => joinClub(c)} style={{ width: '100%', padding: '8px', display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: 'none', borderBottom: '1px solid #262626', cursor: 'pointer', textAlign: 'left' }}>
+                <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: c.color }} />
+                <span style={{ fontSize: '12px', color: 'white' }}>{c.name}</span>
+                <span style={{ fontSize: '9px', color: '#777575' }}>{c.location} · {c.member_count} membros</span>
+              </button>
+            ))}
           </>
         )}
       </Card>
 
-      {/* Create club dialog */}
-      {showClubCreate && (
-        <Card>
-          <span className="font-headline font-bold" style={{ fontSize: '13px', color: '#3fff8b' }}>Novo Clube</span>
-          <TextField label="Nome" value={newClubName} onChange={setNewClubName} />
-          <TextField label="Localização" value={newClubLocation} onChange={setNewClubLocation} />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ color: '#adaaaa', fontSize: '13px' }}>Cor</span>
-            <input type="color" value={newClubColor} onChange={(e) => setNewClubColor(e.target.value)} style={{ width: '40px', height: '30px', border: 'none', cursor: 'pointer' }} />
-          </div>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button onClick={createClub} style={{ flex: 1, padding: '10px', backgroundColor: '#3fff8b', color: 'black', border: 'none', fontWeight: 700, cursor: 'pointer' }}>Criar</button>
-            <button onClick={() => setShowClubCreate(false)} style={{ padding: '10px', backgroundColor: '#262626', color: '#adaaaa', border: 'none', cursor: 'pointer' }}>Cancelar</button>
-          </div>
-        </Card>
-      )}
-
-      {/* Privacy settings */}
-      <SectionLabel>Privacidade</SectionLabel>
+      <SectionLabel>Foto de Perfil</SectionLabel>
       <Card>
-        <PrivacyToggle label="Nome" value={privacyName} onChange={(v) => { setPrivacyName(v); savePersonal(); }} />
-        <PrivacyToggle label="Estatísticas" value={privacyStats} onChange={(v) => { setPrivacyStats(v); savePersonal(); }} />
-        <div style={{ fontSize: '9px', color: '#494847', marginTop: '4px' }}>
-          Público: todos vêem · Clube: só membros do clube · Privado: só tu
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '60px', height: '60px', borderRadius: '50%', backgroundColor: '#262626', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+            {profile.avatar_url ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span className="material-symbols-outlined" style={{ fontSize: '28px', color: '#494847' }}>person</span>}
+          </div>
+          <TextField label="URL" value={profile.avatar_url ?? ''} onChange={(v) => updateProfile({ avatar_url: v })} />
         </div>
       </Card>
 
-      {/* Physical profile */}
-      <SectionLabel>Perfil Físico</SectionLabel>
+      <SectionLabel>Privacidade</SectionLabel>
       <Card>
-        {/* Age auto-calculated from birthdate */}
-        {birthdate ? (
-          <ReadOnlyRow label="Idade" value={`${Math.floor((Date.now() - new Date(birthdate).getTime()) / (365.25 * 24 * 60 * 60 * 1000))} anos`} color="#3fff8b" />
-        ) : (
-          <div style={{ fontSize: '10px', color: '#fbbf24' }}>⚠ Preenche a data de nascimento para calcular a idade</div>
-        )}
+        <PrivacyToggle label="Nome" value={profile.privacy?.name ?? 'club'} onChange={(v) => updateProfile({ privacy: { ...profile.privacy, name: v } })} />
+        <PrivacyToggle label="Estatísticas" value={profile.privacy?.stats ?? 'club'} onChange={(v) => updateProfile({ privacy: { ...profile.privacy, stats: v } })} />
+      </Card>
+    </div>
+  );
+}
+
+function PhysicalPage() {
+  const profile = useSettingsStore((s) => s.riderProfile);
+  const updateProfile = useSettingsStore((s) => s.updateRiderProfile);
+  return (
+    <div className="space-y-4">
+      <Card>
+        {profile.birthdate && <ReadOnlyRow label="Idade" value={`${Math.floor((Date.now() - new Date(profile.birthdate).getTime()) / (365.25 * 24 * 60 * 60 * 1000))} anos`} color="#3fff8b" />}
         <NumberField label="Peso (kg)" value={profile.weight_kg} onChange={(v) => updateProfile({ weight_kg: v })} />
         <NumberField label="Altura (cm)" value={profile.height_cm ?? 175} onChange={(v) => updateProfile({ height_cm: v })} />
       </Card>
-
-      {/* SpO2 */}
-      <SectionLabel>SpO2 (Saturação de Oxigénio)</SectionLabel>
+      <SectionLabel>SpO2</SectionLabel>
       <Card>
         <NumberField label="SpO2 repouso (%)" value={profile.spo2_rest ?? 97} onChange={(v) => updateProfile({ spo2_rest: v })} />
         <NumberField label="Alerta (%)" value={profile.spo2_threshold_warning ?? 93} onChange={(v) => updateProfile({ spo2_threshold_warning: v })} />
         <NumberField label="Perigo (%)" value={profile.spo2_threshold_danger ?? 88} onChange={(v) => updateProfile({ spo2_threshold_danger: v })} />
-        <div style={{ fontSize: '9px', color: '#494847', marginTop: '4px' }}>
-          Normal: 95-99% · Atenção: 90-95% · Perigo: &lt;90%. Em altitude o SpO2 baixa naturalmente.
-          O KROMI aumenta a assistência quando SpO2 desce abaixo do threshold de alerta.
-        </div>
       </Card>
+      <SectionLabel>Performance</SectionLabel>
+      <Card>
+        <NumberField label="VO2max (ml/kg/min)" value={profile.vo2max ?? 0} onChange={(v) => updateProfile({ vo2max: v })} />
+        <NumberField label="FTP (watts)" value={profile.ftp_watts ?? 0} onChange={(v) => updateProfile({ ftp_watts: v })} />
+      </Card>
+    </div>
+  );
+}
 
+function ZonesPage() {
+  const profile = useSettingsStore((s) => s.riderProfile);
+  const updateProfile = useSettingsStore((s) => s.updateRiderProfile);
+  return (
+    <div className="space-y-4">
       <SectionLabel>Zonas Cardíacas</SectionLabel>
       <Card>
-        {/* Source indicator */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span className="material-symbols-outlined" style={{ fontSize: '14px', color: profile.zones_source === 'manual' ? '#3fff8b' : profile.zones_source === 'learned' ? '#e966ff' : '#fbbf24' }}>
-              {profile.zones_source === 'manual' ? 'edit' : profile.zones_source === 'learned' ? 'psychology' : 'calculate'}
-            </span>
-            <span style={{ fontSize: '10px', color: '#adaaaa' }}>
-              {profile.zones_source === 'manual' ? 'Zonas definidas manualmente' :
-               profile.zones_source === 'learned' ? 'Zonas ajustadas pelo KROMI' :
-               'Zonas calculadas (220-idade)'}
-            </span>
-          </div>
-          {profile.zones_updated_at && (
-            <span style={{ fontSize: '8px', color: '#494847' }}>
-              {new Date(profile.zones_updated_at).toLocaleDateString()}
-            </span>
-          )}
-        </div>
-
-        {/* HR Max + Rest */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ color: '#adaaaa', fontSize: '13px' }}>FC Máxima (bpm)</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <input type="number" value={profile.hr_max} onChange={(e) => updateProfile({ hr_max: Number(e.target.value) })}
-              style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', width: '70px', textAlign: 'center', fontSize: '15px' }} className="tabular-nums" />
-            {birthdate && (() => {
-              const age = Math.floor((Date.now() - new Date(birthdate).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-              const estimated = 220 - age;
-              return profile.hr_max !== estimated ? (
-                <button onClick={() => updateProfile({ hr_max: estimated, age })} style={{ fontSize: '9px', color: '#6e9bff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
-                  Est: {estimated}
-                </button>
-              ) : null;
-            })()}
-          </div>
+          <input type="number" value={profile.hr_max} onChange={(e) => updateProfile({ hr_max: Number(e.target.value) })} style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', width: '70px', textAlign: 'center', fontSize: '15px' }} className="tabular-nums" />
         </div>
         <NumberField label="FC Repouso (bpm)" value={profile.hr_rest} onChange={(v) => updateProfile({ hr_rest: v })} />
-
-        {/* Editable zones */}
-        <div style={{ borderTop: '1px solid rgba(73,72,71,0.2)', marginTop: '8px', paddingTop: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-            <span style={{ fontSize: '10px', color: '#adaaaa' }}>Define os limites de cada zona (bpm). Tap na zona para a selecionar como alvo.</span>
-            {profile.custom_zones && (
-              <button onClick={() => updateProfile({ custom_zones: undefined, zones_source: 'formula', zones_updated_at: new Date().toISOString() })}
-                style={{ fontSize: '9px', color: '#6e9bff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
-                Reset fórmula
-              </button>
-            )}
-          </div>
-        </div>
+        {profile.custom_zones && (
+          <button onClick={() => updateProfile({ custom_zones: undefined, zones_source: 'formula', zones_updated_at: new Date().toISOString() })} style={{ fontSize: '9px', color: '#6e9bff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Reset fórmula</button>
+        )}
         <div className="space-y-1.5">
           {calculateZones(profile.hr_max, profile.custom_zones).map((zone, i) => {
             const isTarget = (profile.target_zone ?? 2) === i + 1;
             return (
-              <div key={zone.name} style={{
-                display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 8px',
-                backgroundColor: isTarget ? 'rgba(63,255,139,0.1)' : '#262626',
-                border: isTarget ? '1px solid rgba(63,255,139,0.3)' : '1px solid transparent',
-              }}>
-                {/* Color dot + name — tap to set as target */}
-                <button onClick={() => updateProfile({ target_zone: i + 1 })} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', cursor: 'pointer', minWidth: '100px' }}>
-                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: zone.color, flexShrink: 0 }} />
+              <div key={zone.name} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 8px', backgroundColor: isTarget ? 'rgba(63,255,139,0.1)' : '#262626', border: isTarget ? '1px solid rgba(63,255,139,0.3)' : '1px solid transparent' }}>
+                <button onClick={() => updateProfile({ target_zone: i + 1 })} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', cursor: 'pointer', minWidth: '80px' }}>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: zone.color }} />
                   <span style={{ fontSize: '11px', color: 'white', fontWeight: 700 }}>{zone.name.split(' ')[0]}</span>
                 </button>
-
-                {/* Editable min-max bpm */}
-                <input type="number" value={zone.min_bpm}
-                  onChange={(e) => {
-                    const customs = profile.custom_zones ? [...profile.custom_zones] : calculateZones(profile.hr_max).map((z) => ({ min_bpm: z.min_bpm, max_bpm: z.max_bpm }));
-                    customs[i] = { ...customs[i]!, min_bpm: Number(e.target.value) };
-                    updateProfile({ custom_zones: customs, zones_source: 'manual', zones_updated_at: new Date().toISOString() });
-                  }}
-                  style={{ width: '50px', backgroundColor: '#1a1919', color: 'white', padding: '4px', border: '1px solid #494847', textAlign: 'center', fontSize: '12px' }} className="tabular-nums" />
+                <input type="number" value={zone.min_bpm} onChange={(e) => { const c = profile.custom_zones ? [...profile.custom_zones] : calculateZones(profile.hr_max).map(z => ({ min_bpm: z.min_bpm, max_bpm: z.max_bpm })); c[i] = { ...c[i]!, min_bpm: Number(e.target.value) }; updateProfile({ custom_zones: c, zones_source: 'manual', zones_updated_at: new Date().toISOString() }); }} style={{ width: '50px', backgroundColor: '#1a1919', color: 'white', padding: '4px', border: '1px solid #494847', textAlign: 'center', fontSize: '12px' }} className="tabular-nums" />
                 <span style={{ fontSize: '10px', color: '#494847' }}>—</span>
-                <input type="number" value={zone.max_bpm}
-                  onChange={(e) => {
-                    const customs = profile.custom_zones ? [...profile.custom_zones] : calculateZones(profile.hr_max).map((z) => ({ min_bpm: z.min_bpm, max_bpm: z.max_bpm }));
-                    customs[i] = { ...customs[i]!, max_bpm: Number(e.target.value) };
-                    updateProfile({ custom_zones: customs, zones_source: 'manual', zones_updated_at: new Date().toISOString() });
-                  }}
-                  style={{ width: '50px', backgroundColor: '#1a1919', color: 'white', padding: '4px', border: '1px solid #494847', textAlign: 'center', fontSize: '12px' }} className="tabular-nums" />
+                <input type="number" value={zone.max_bpm} onChange={(e) => { const c = profile.custom_zones ? [...profile.custom_zones] : calculateZones(profile.hr_max).map(z => ({ min_bpm: z.min_bpm, max_bpm: z.max_bpm })); c[i] = { ...c[i]!, max_bpm: Number(e.target.value) }; updateProfile({ custom_zones: c, zones_source: 'manual', zones_updated_at: new Date().toISOString() }); }} style={{ width: '50px', backgroundColor: '#1a1919', color: 'white', padding: '4px', border: '1px solid #494847', textAlign: 'center', fontSize: '12px' }} className="tabular-nums" />
                 <span style={{ fontSize: '9px', color: '#777575', flex: 1, textAlign: 'right' }}>bpm</span>
-
-                {/* Target badge */}
-                {isTarget && <span style={{ fontSize: '7px', padding: '2px 4px', backgroundColor: '#3fff8b', color: 'black', fontWeight: 900, flexShrink: 0 }}>ALVO</span>}
+                {isTarget && <span style={{ fontSize: '7px', padding: '2px 4px', backgroundColor: '#3fff8b', color: 'black', fontWeight: 900 }}>ALVO</span>}
               </div>
             );
           })}
         </div>
-        <div style={{ fontSize: '9px', color: '#494847', marginTop: '8px' }}>
-          {profile.zones_source === 'manual'
-            ? 'Zonas definidas por ti. O KROMI usa estes valores. Pode sugerir ajustes após análise de voltas.'
-            : 'Define os teus valores conhecidos. Sem dados, usa 220-idade como base. O KROMI ajusta com dados reais.'}
-        </div>
       </Card>
 
-      {/* VO2max + FTP */}
-      <SectionLabel>Performance</SectionLabel>
-      <Card>
-        <NumberField label="VO2max (ml/kg/min)" value={profile.vo2max ?? 0} onChange={(v) => updateProfile({ vo2max: v })} />
-        <div style={{ fontSize: '9px', color: '#494847' }}>Normalmente entre 30-80. Podes obter de um relógio (Garmin, Apple, etc.) ou teste de esforço.</div>
-        <NumberField label="FTP (watts)" value={profile.ftp_watts ?? 0} onChange={(v) => updateProfile({ ftp_watts: v })} />
-        <div style={{ fontSize: '9px', color: '#494847' }}>Potência que manténs durante 1h. Se não sabes, o KROMI estima após voltas com power meter.</div>
-      </Card>
-
-      {/* Power zones — only if FTP is set */}
       {(profile.ftp_watts ?? 0) > 0 && (
         <>
           <SectionLabel>Zonas de Potência (FTP: {profile.ftp_watts}W)</SectionLabel>
@@ -431,88 +295,56 @@ function RiderPage() {
                 <span className="tabular-nums" style={{ fontSize: '11px', color: '#adaaaa' }}>{zone.min_watts}–{zone.max_watts}W</span>
               </div>
             ))}
-            <div style={{ fontSize: '9px', color: '#494847', marginTop: '4px' }}>Calculadas automaticamente do FTP. Ajustam quando o FTP muda.</div>
           </Card>
         </>
       )}
+    </div>
+  );
+}
 
-      {/* Medical conditions */}
+function MedicalPage() {
+  const profile = useSettingsStore((s) => s.riderProfile);
+  const updateProfile = useSettingsStore((s) => s.updateRiderProfile);
+  return (
+    <div className="space-y-4">
       <SectionLabel>Condições Médicas</SectionLabel>
       <Card>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
           {['asma', 'cardíaco', 'diabetes', 'hipertensão', 'joelho', 'costas'].map((cond) => {
             const active = (profile.medical_conditions ?? []).includes(cond);
             return (
-              <button key={cond} onClick={() => {
-                const current = profile.medical_conditions ?? [];
-                const next = active ? current.filter((c) => c !== cond) : [...current, cond];
-                updateProfile({ medical_conditions: next });
-              }} style={{
-                padding: '4px 10px', fontSize: '10px', fontWeight: 600, border: 'none', cursor: 'pointer',
-                backgroundColor: active ? '#ff716c' : '#262626', color: active ? 'black' : '#adaaaa',
-              }}>{cond}</button>
+              <button key={cond} onClick={() => { const c = profile.medical_conditions ?? []; updateProfile({ medical_conditions: active ? c.filter(x => x !== cond) : [...c, cond] }); }} style={{ padding: '4px 10px', fontSize: '10px', fontWeight: 600, border: 'none', cursor: 'pointer', backgroundColor: active ? '#ff716c' : '#262626', color: active ? 'black' : '#adaaaa' }}>{cond}</button>
             );
           })}
         </div>
-        <textarea value={profile.medical_notes ?? ''} onChange={(e) => updateProfile({ medical_notes: e.target.value })} placeholder="Notas médicas adicionais..."
-          style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: 'none', fontSize: '12px', minHeight: '40px', resize: 'vertical', marginTop: '6px' }} />
-        <div style={{ fontSize: '9px', color: '#494847' }}>O KROMI ajusta thresholds de segurança se tiveres condições relevantes.</div>
+        <textarea value={profile.medical_notes ?? ''} onChange={(e) => updateProfile({ medical_notes: e.target.value })} placeholder="Notas médicas..." style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: 'none', fontSize: '12px', minHeight: '40px', resize: 'vertical' }} />
       </Card>
 
-      {/* Goals */}
       <SectionLabel>Objectivos</SectionLabel>
       <Card>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-          {([
-            { id: 'weight_loss', label: 'Perder peso', icon: '⚖️' },
-            { id: 'endurance', label: 'Endurance', icon: '🏔' },
-            { id: 'performance', label: 'Performance', icon: '🏆' },
-            { id: 'event_prep', label: 'Evento', icon: '📅' },
-            { id: 'fun', label: 'Diversão', icon: '🎉' },
-            { id: 'rehab', label: 'Reabilitação', icon: '🏥' },
-          ] as const).map(({ id, label, icon }) => (
-            <button key={id} onClick={() => updateProfile({ goal: id })} style={{
-              padding: '6px 10px', fontSize: '10px', fontWeight: 600, border: 'none', cursor: 'pointer',
-              backgroundColor: profile.goal === id ? '#3fff8b' : '#262626', color: profile.goal === id ? 'black' : '#adaaaa',
-            }}>{icon} {label}</button>
+          {([{ id: 'weight_loss', l: '⚖️ Peso' }, { id: 'endurance', l: '🏔 Endurance' }, { id: 'performance', l: '🏆 Performance' }, { id: 'event_prep', l: '📅 Evento' }, { id: 'fun', l: '🎉 Diversão' }, { id: 'rehab', l: '🏥 Reabilitação' }] as const).map(({ id, l }) => (
+            <button key={id} onClick={() => updateProfile({ goal: id })} style={{ padding: '6px 10px', fontSize: '10px', fontWeight: 600, border: 'none', cursor: 'pointer', backgroundColor: profile.goal === id ? '#3fff8b' : '#262626', color: profile.goal === id ? 'black' : '#adaaaa' }}>{l}</button>
           ))}
         </div>
         {profile.goal === 'event_prep' && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
             <span style={{ color: '#adaaaa', fontSize: '12px' }}>Data do evento</span>
-            <input type="date" value={profile.goal_event_date ?? ''} onChange={(e) => updateProfile({ goal_event_date: e.target.value })}
-              style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', fontSize: '12px' }} />
+            <input type="date" value={profile.goal_event_date ?? ''} onChange={(e) => updateProfile({ goal_event_date: e.target.value })} style={{ backgroundColor: '#262626', color: 'white', padding: '6px', border: 'none', fontSize: '12px' }} />
           </div>
         )}
-        <textarea value={profile.goal_notes ?? ''} onChange={(e) => updateProfile({ goal_notes: e.target.value })} placeholder="Notas sobre objectivos..."
-          style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: 'none', fontSize: '12px', minHeight: '30px', resize: 'vertical', marginTop: '6px' }} />
-        <div style={{ fontSize: '9px', color: '#494847' }}>O KROMI ajusta a estratégia: perder peso → menos assist, performance → zonas mais altas, reabilitação → limites seguros.</div>
-      </Card>
-
-      {/* Bike Fit — full page with bike selector */}
-      <SectionLabel>Bike Fit</SectionLabel>
-      <BikeFitPage />
-
-      {/* Photo/Avatar */}
-      <SectionLabel>Foto de Perfil</SectionLabel>
-      <Card>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ width: '60px', height: '60px', borderRadius: '50%', backgroundColor: '#262626', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
-            {profile.avatar_url ? (
-              <img src={profile.avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <span className="material-symbols-outlined" style={{ fontSize: '28px', color: '#494847' }}>person</span>
-            )}
-          </div>
-          <div style={{ flex: 1 }}>
-            <TextField label="URL da foto" value={profile.avatar_url ?? ''} onChange={(v) => updateProfile({ avatar_url: v })} />
-            <div style={{ fontSize: '9px', color: '#494847', marginTop: '2px' }}>Cole um URL de imagem. Visível para membros do clube.</div>
-          </div>
-        </div>
       </Card>
 
       <SectionLabel>Perfil Atleta (análise automática)</SectionLabel>
       <ProfileInsightsWidget />
+    </div>
+  );
+}
+
+function BikeFitSection() {
+  return (
+    <div className="space-y-4">
+      <BikeFitPage />
     </div>
   );
 }

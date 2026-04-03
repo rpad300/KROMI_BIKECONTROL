@@ -111,7 +111,11 @@ const DESKTOP_NAV: NavItem[] = [
     { id: 'widgets', label: 'Widget Library', icon: 'widgets' },
   ]},
   { screen: 'settings', label: 'Configuração', icon: 'settings', color: '#6e9bff', subs: [
-    { id: 'rider', label: 'Perfil Ciclista', icon: 'person' },
+    { id: 'personal', label: 'Dados Pessoais', icon: 'badge' },
+    { id: 'physical', label: 'Perfil Físico', icon: 'monitor_heart' },
+    { id: 'zones', label: 'Zonas HR + Potência', icon: 'show_chart' },
+    { id: 'medical', label: 'Médico + Objectivos', icon: 'health_and_safety' },
+    { id: 'bikefit', label: 'Bike Fit', icon: 'straighten' },
     { id: 'bike', label: 'Bicicleta', icon: 'pedal_bike' },
     { id: 'kromi', label: 'KROMI Intelligence', icon: 'psychology' },
     { id: 'bluetooth', label: 'Bluetooth', icon: 'bluetooth' },
