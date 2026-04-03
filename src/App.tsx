@@ -16,6 +16,8 @@ import { DesktopLiveView } from './components/Desktop/DesktopLiveView';
 import { GlobalMapView } from './components/Map/GlobalMapView';
 import { startSettingsSync } from './services/sync/SettingsSyncService';
 import { trackLogin } from './services/sync/LoginTracker';
+import { useGlanceStore } from './store/glanceStore';
+import { AmbientGlance } from './components/DashboardSystem/AmbientGlance';
 
 type MobileScreen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
 type DesktopScreen = 'live' | 'settings' | 'history' | 'map';
@@ -63,10 +65,22 @@ function MobileApp() {
   useGeolocation();
   useMotorControl();
 
+  // Glance mode — tick idle counter every 1s
+  useEffect(() => {
+    const id = setInterval(() => useGlanceStore.getState().tick(), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Reset glance idle on any touch
+  const resetGlance = () => useGlanceStore.getState().resetIdle();
+
   return (
     <div className="h-full flex flex-col bg-[#0e0e0e] text-white">
       {/* Content — no scroll on dashboard, scroll on settings/history */}
-      <div className={`flex-1 min-h-0 ${screen === 'settings' || screen === 'history' ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+      <div
+        className={`flex-1 min-h-0 ${screen === 'settings' || screen === 'history' ? 'overflow-y-auto' : 'overflow-hidden'}`}
+        onTouchStart={resetGlance}
+      >
         {screen === 'dashboard' && <DashboardController />}
         {screen === 'map' && <MapView />}
         {screen === 'climb' && <ClimbApproach />}
@@ -86,6 +100,7 @@ function MobileApp() {
 
       <ConnectionStatus />
       <BridgeSetup />
+      <AmbientGlance />
     </div>
   );
 }
