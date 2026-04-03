@@ -10,486 +10,416 @@ import { TuningPreview } from './TuningPreview';
 import { importKomootRoute } from '../../services/maps/KomootService';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
+type SettingsPage = 'menu' | 'rider' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account';
+
+const MENU_ITEMS: { id: SettingsPage; icon: string; label: string; desc: string; color: string }[] = [
+  { id: 'rider', icon: 'person', label: 'Perfil Ciclista', desc: 'Idade, peso, HR, zonas cardíacas', color: '#ff716c' },
+  { id: 'bike', icon: 'pedal_bike', label: 'Bicicleta', desc: 'Bateria, motor, consumo, tuning', color: '#3fff8b' },
+  { id: 'kromi', icon: 'psychology', label: 'KROMI Intelligence', desc: 'Auto-assist, aprendizagem, atleta', color: '#e966ff' },
+  { id: 'bluetooth', icon: 'bluetooth', label: 'Bluetooth', desc: 'Ligação, sensores, estado', color: '#6e9bff' },
+  { id: 'routes', icon: 'route', label: 'Rotas', desc: 'Import Komoot, histórico', color: '#fbbf24' },
+  { id: 'account', icon: 'account_circle', label: 'Conta', desc: 'Email, sessão, versão', color: '#adaaaa' },
+];
 
 export function Settings({ onNavigate }: { onNavigate?: (screen: Screen) => void }) {
-  const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
-  const bleStatus = useBikeStore((s) => s.ble_status);
-  const services = useBikeStore((s) => s.ble_services);
-  const profile = useSettingsStore((s) => s.riderProfile);
-  const bike = safeBikeConfig(useSettingsStore((s) => s.bikeConfig));
-  const autoAssist = useSettingsStore((s) => s.autoAssist);
-  const updateProfile = useSettingsStore((s) => s.updateRiderProfile);
-  const updateBike = useSettingsStore((s) => s.updateBikeConfig);
-  const updateAutoAssist = useSettingsStore((s) => s.updateAutoAssist);
+  const [page, setPage] = useState<SettingsPage>('menu');
 
-  const learning = useLearningStore();
-
-  const [komootUrl, setKomootUrl] = useState('');
-  const [komootLoading, setKomootLoading] = useState(false);
-  const [komootResult, setKomootResult] = useState<string | null>(null);
-
-  const handleKomootImport = async () => {
-    if (!komootUrl.trim()) return;
-    setKomootLoading(true);
-    setKomootResult(null);
-    try {
-      const points = await importKomootRoute(komootUrl);
-      setKomootResult(`Importados ${points.length} pontos`);
-      // Store in sessionStorage for use by map/elevation components
-      sessionStorage.setItem('komoot_route', JSON.stringify(points));
-    } catch (err) {
-      setKomootResult(err instanceof Error ? err.message : 'Import failed');
-    } finally {
-      setKomootLoading(false);
-    }
-  };
-
-  const handleConnect = async () => {
-    try {
-      await connectBike();
-    } catch (err) {
-      console.error('Connection failed:', err);
-    }
-  };
-
-  const handleDisconnect = () => {
-    disconnectBike();
-  };
+  if (page === 'menu') return <SettingsMenu onSelect={setPage} onNavigate={onNavigate} />;
 
   return (
-    <div className="space-y-6 p-4">
-      <h1 className="text-xl font-bold">Configuracao</h1>
-
-      {/* Bluetooth Section */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-300">Bluetooth</h2>
-        <div className="bg-gray-800 rounded-xl p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-gray-400">Estado</span>
-            <span className={`font-bold ${bleStatus === 'connected' ? 'text-green-400' : 'text-red-400'}`}>
-              {bleStatus === 'connected' ? 'Ligado' : 'Desligado'}
-            </span>
-          </div>
-          {bleStatus === 'connected' && (
-            <div className="text-xs text-gray-500 flex flex-wrap gap-2">
-              {services.battery && <span className="bg-gray-700 px-2 py-1 rounded">Bateria</span>}
-              {services.csc && <span className="bg-gray-700 px-2 py-1 rounded">Vel/Cad</span>}
-              {services.power && <span className="bg-gray-700 px-2 py-1 rounded">Potencia</span>}
-              {services.gev && <span className="bg-gray-700 px-2 py-1 rounded">Motor GEV</span>}
-            </div>
-          )}
-          <button
-            onClick={bleStatus === 'connected' ? handleDisconnect : handleConnect}
-            className={`w-full h-14 rounded-xl font-bold text-white text-lg active:scale-95 transition-transform ${
-              bleStatus === 'connected' ? 'bg-red-600' : 'bg-blue-600'
-            }`}
-          >
-            {bleStatus === 'connected' ? 'Desligar' : 'Ligar Giant GBHA25704'}
-          </button>
-        </div>
-      </section>
-
-      {/* Rider Profile */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-300">Perfil do Ciclista</h2>
-        <div className="bg-gray-800 rounded-xl p-4 space-y-4">
-          <NumberField label="Idade" value={profile.age} onChange={(v) => updateProfile({ age: v })} />
-          <NumberField label="Peso (kg)" value={profile.weight_kg} onChange={(v) => updateProfile({ weight_kg: v })} />
-          <NumberField label="FC Maxima (bpm)" value={profile.hr_max} onChange={(v) => updateProfile({ hr_max: v })} />
-          <div className="text-xs text-gray-500">
-            Calculada: 220 - {profile.age} = {220 - profile.age} bpm
-            <button
-              onClick={() => updateProfile({ hr_max: 220 - profile.age })}
-              className="ml-2 text-blue-400 underline"
-            >
-              Usar
-            </button>
-          </div>
-          <NumberField label="Altura (cm)" value={profile.height_cm ?? 175} onChange={(v) => updateProfile({ height_cm: v })} />
-          <NumberField label="FC Repouso (bpm)" value={profile.hr_rest} onChange={(v) => updateProfile({ hr_rest: v })} />
-
-          {/* HR Zones + Target Selection */}
-          <div className="border-t border-gray-700 pt-3">
-            <span className="text-xs text-gray-500 uppercase">Zonas cardíacas (baseadas na FC Max {profile.hr_max}bpm)</span>
-          </div>
-          <div className="space-y-1.5">
-            {calculateZones(profile.hr_max).map((zone, i) => {
-              const isTarget = (profile.target_zone ?? 2) === i + 1;
-              return (
-                <button
-                  key={zone.name}
-                  onClick={() => updateProfile({ target_zone: i + 1 })}
-                  className={`w-full flex items-center justify-between p-2 rounded-lg transition-colors ${
-                    isTarget ? 'bg-emerald-900/30 ring-1 ring-emerald-500' : 'bg-gray-900 hover:bg-gray-800'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: zone.color }} />
-                    <span className="text-xs text-white font-bold">{zone.name}</span>
-                    <span className="text-xs text-gray-500">{zone.min_bpm}-{zone.max_bpm}bpm</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-gray-600">{zone.description}</span>
-                    {isTarget && <span className="text-[9px] px-1.5 py-0.5 bg-emerald-600 text-white rounded font-bold">ALVO</span>}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          <div className="text-[10px] text-gray-600">
-            O KROMI ajusta o motor para te manter na zona alvo.
-            Escolhe Z2 para treino de base, Z3 para ritmo, Z4 para limiar.
-          </div>
-        </div>
-      </section>
-
-      {/* Bike Profile */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-300">Perfil da Bicicleta</h2>
-        <div className="bg-gray-800 rounded-xl p-4 space-y-4">
-          <TextField label="Nome" value={bike.name} onChange={(v) => updateBike({ name: v })} />
-
-          <div className="border-t border-gray-700 pt-3">
-            <span className="text-xs text-gray-500 uppercase">Bateria</span>
-          </div>
-          <NumberField label="Bateria principal (Wh)" value={bike.main_battery_wh} onChange={(v) => updateBike({ main_battery_wh: v })} />
-          <div className="flex items-center justify-between">
-            <span className="text-gray-400 text-sm">Range Extender</span>
-            <button
-              onClick={() => updateBike({ has_range_extender: !bike.has_range_extender })}
-              className={`w-14 h-8 rounded-full transition-colors ${
-                bike.has_range_extender ? 'bg-blue-600' : 'bg-gray-600'
-              }`}
-            >
-              <div className={`w-6 h-6 rounded-full bg-white transition-transform mx-1 ${
-                bike.has_range_extender ? 'translate-x-6' : ''
-              }`} />
-            </button>
-          </div>
-          {bike.has_range_extender && (
-            <NumberField label="Range extender (Wh)" value={bike.sub_battery_wh} onChange={(v) => updateBike({ sub_battery_wh: v })} />
-          )}
-          <div className="text-xs text-gray-600 text-right">
-            Total: {bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0)}Wh
-          </div>
-
-          <div className="border-t border-gray-700 pt-3">
-            <span className="text-xs text-gray-500 uppercase">Motor</span>
-          </div>
-          <TextField label="Motor" value={bike.motor_name} onChange={(v) => updateBike({ motor_name: v })} />
-          <NumberField label="Torque max (Nm)" value={bike.max_torque_nm} onChange={(v) => updateBike({ max_torque_nm: v })} />
-          <NumberField label="Potencia max (W)" value={bike.max_power_w} onChange={(v) => updateBike({ max_power_w: v })} />
-          <NumberField label="Limite velocidade (km/h)" value={bike.speed_limit_kmh} onChange={(v) => updateBike({ speed_limit_kmh: v })} />
-
-          <div className="border-t border-gray-700 pt-3">
-            <span className="text-xs text-gray-500 uppercase">Consumo estimado (Wh/km)</span>
-          </div>
-          <NumberField label="ECO" value={bike.consumption_eco} onChange={(v) => updateBike({ consumption_eco: v })} />
-          <NumberField label="TOUR" value={bike.consumption_tour} onChange={(v) => updateBike({ consumption_tour: v })} />
-          <NumberField label="ACTIVE" value={bike.consumption_active} onChange={(v) => updateBike({ consumption_active: v })} />
-          <NumberField label="SPORT" value={bike.consumption_sport} onChange={(v) => updateBike({ consumption_sport: v })} />
-          <NumberField label="POWER" value={bike.consumption_power} onChange={(v) => updateBike({ consumption_power: v })} />
-          <div className="text-[10px] text-gray-600">
-            Valores usados para estimar range quando nao ha dados live.
-            Ajusta com base na tua experiencia de conduzir.
-          </div>
-
-          <div className="border-t border-gray-700 pt-3">
-            <span className="text-xs text-gray-500 uppercase">Tuning Levels (POWER mode — KROMI controla)</span>
-          </div>
-          <div className="text-[10px] text-gray-600 mb-2">
-            Características de cada nível que o SET_TUNING configura no motor.
-          </div>
-          {(['tuning_max', 'tuning_mid', 'tuning_min'] as const).map((key) => {
-            const label = key === 'tuning_max' ? 'MAX (nível 1)' : key === 'tuning_mid' ? 'MID (nível 2)' : 'MIN (nível 3)';
-            const color = key === 'tuning_max' ? 'text-red-400' : key === 'tuning_mid' ? 'text-yellow-400' : 'text-green-400';
-            const spec = bike[key];
-            return (
-              <div key={key} className="bg-gray-900 rounded-lg p-3 space-y-2">
-                <span className={`text-xs font-bold ${color}`}>{label}</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <NumberField label="Assist %" value={spec.assist_pct} onChange={(v) => updateBike({ [key]: { ...spec, assist_pct: v } })} />
-                  <NumberField label="Torque (Nm)" value={spec.torque_nm} onChange={(v) => updateBike({ [key]: { ...spec, torque_nm: v } })} />
-                  <NumberField label="Launch (1-10)" value={spec.launch} onChange={(v) => updateBike({ [key]: { ...spec, launch: v } })} />
-                </div>
-              </div>
-            );
-          })}
-
-          <div className="border-t border-gray-700 pt-3">
-            <span className="text-xs text-gray-500 uppercase">Configuração fixa (para comparação)</span>
-          </div>
-          <div className="text-[10px] text-gray-600 mb-2">
-            A tua config normal sem KROMI. Usada para comparar poupança de bateria na simulação.
-          </div>
-          <div className="bg-gray-900 rounded-lg p-3 space-y-2">
-            <span className="text-xs font-bold text-orange-400">A tua config fixa</span>
-            <div className="grid grid-cols-2 gap-2">
-              <NumberField label="Support %" value={bike.fixed_baseline.assist_pct} onChange={(v) => updateBike({ fixed_baseline: { ...bike.fixed_baseline, assist_pct: v } })} />
-              <NumberField label="Torque (Nm)" value={bike.fixed_baseline.torque_nm} onChange={(v) => updateBike({ fixed_baseline: { ...bike.fixed_baseline, torque_nm: v } })} />
-              <NumberField label="Launch (1-10)" value={bike.fixed_baseline.launch} onChange={(v) => updateBike({ fixed_baseline: { ...bike.fixed_baseline, launch: v } })} />
-            </div>
-          </div>
-
-          {/* Live preview of tuning impact */}
-          <TuningPreview />
-        </div>
-      </section>
-
-      {/* Adaptive Learning */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-300">Aprendizagem Adaptativa</h2>
-        <div className="bg-gray-800 rounded-xl p-4 space-y-3">
-          <div className="text-xs text-gray-500">
-            O KROMI aprende com os teus overrides. Quando mudas o modo manualmente, ele ajusta o algoritmo para esse contexto (terreno + zona HR).
-          </div>
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div>
-              <div className="text-lg font-bold text-blue-400">{learning.total_rides_learned}</div>
-              <div className="text-[9px] text-gray-500">Rides</div>
-            </div>
-            <div>
-              <div className="text-lg font-bold text-amber-400">{learning.total_overrides}</div>
-              <div className="text-[9px] text-gray-500">Overrides</div>
-            </div>
-            <div>
-              <div className="text-lg font-bold text-emerald-400">{Object.keys(learning.adjustments).length}</div>
-              <div className="text-[9px] text-gray-500">Contextos</div>
-            </div>
-          </div>
-          {Object.keys(learning.adjustments).length > 0 && (
-            <div className="space-y-1">
-              <div className="text-[10px] text-gray-500 uppercase">Ajustes aprendidos</div>
-              {Object.entries(learning.adjustments)
-                .sort((a, b) => Math.abs(b[1].score_delta) - Math.abs(a[1].score_delta))
-                .slice(0, 6)
-                .map(([key, adj]) => (
-                  <div key={key} className="flex justify-between text-xs">
-                    <span className="text-gray-400">{key}</span>
-                    <span className={adj.score_delta > 0 ? 'text-emerald-400' : 'text-orange-400'}>
-                      {adj.score_delta > 0 ? '+' : ''}{adj.score_delta} ({adj.sample_count} samples)
-                    </span>
-                  </div>
-                ))}
-            </div>
-          )}
-          {learning.total_overrides > 0 && (
-            <button
-              onClick={() => { if (confirm('Apagar toda a aprendizagem?')) learning.resetLearning(); }}
-              className="w-full text-xs text-red-400 border border-red-800 rounded p-1.5"
-            >
-              Reset Aprendizagem
-            </button>
-          )}
-        </div>
-      </section>
-
-      {/* Auto-Assist */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-300">Auto-Assist</h2>
-        <div className="bg-gray-800 rounded-xl p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-gray-400">Activado</span>
-            <button
-              onClick={() => updateAutoAssist({ enabled: !autoAssist.enabled })}
-              className={`w-14 h-8 rounded-full transition-colors ${
-                autoAssist.enabled ? 'bg-blue-600' : 'bg-gray-600'
-              }`}
-            >
-              <div
-                className={`w-6 h-6 rounded-full bg-white transition-transform mx-1 ${
-                  autoAssist.enabled ? 'translate-x-6' : ''
-                }`}
-              />
-            </button>
-          </div>
-          <NumberField
-            label="Lookahead (m)"
-            value={autoAssist.lookahead_m}
-            onChange={(v) => updateAutoAssist({ lookahead_m: v })}
-          />
-          <NumberField
-            label="Pre-activacao (m)"
-            value={autoAssist.preempt_distance_m}
-            onChange={(v) => updateAutoAssist({ preempt_distance_m: v })}
-          />
-          <NumberField
-            label="Override timeout (s)"
-            value={autoAssist.override_duration_s}
-            onChange={(v) => updateAutoAssist({ override_duration_s: v })}
-          />
-        </div>
-      </section>
-
-      {/* Athlete Profile Insights */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-300">Perfil Atleta</h2>
-        <ProfileInsightsWidget />
-      </section>
-
-      {/* Komoot Import */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-300">Import Komoot Route</h2>
-        <div className="bg-gray-800 rounded-xl p-4 space-y-3">
-          <input
-            type="text"
-            value={komootUrl}
-            onChange={(e) => setKomootUrl(e.target.value)}
-            placeholder="Komoot tour URL or ID"
-            className="w-full bg-gray-700 text-white rounded-lg p-3 text-sm placeholder-gray-500"
-          />
-          <button
-            onClick={handleKomootImport}
-            disabled={komootLoading || !komootUrl.trim()}
-            className={`w-full h-12 rounded-xl font-bold text-sm active:scale-95 transition-transform ${
-              komootLoading || !komootUrl.trim()
-                ? 'bg-gray-700 text-gray-500'
-                : 'bg-emerald-500/20 text-emerald-400'
-            }`}
-          >
-            {komootLoading ? 'Importing...' : 'Import'}
-          </button>
-          {komootResult && (
-            <div className={`text-xs ${komootResult.startsWith('Importados') ? 'text-emerald-400' : 'text-red-400'}`}>
-              {komootResult}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Account */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-300">Conta</h2>
-        <div className="bg-gray-800 rounded-xl p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-gray-400 text-sm">Email</span>
-            <span className="text-white text-sm">{user?.email}</span>
-          </div>
-          <button
-            onClick={logout}
-            className="w-full h-12 rounded-xl font-bold text-red-400 text-sm bg-gray-700 active:scale-95 transition-transform"
-          >
-            Terminar sessao
-          </button>
-        </div>
-      </section>
-
-      {/* Ride History link */}
-      {onNavigate && (
-        <section>
-          <button
-            onClick={() => onNavigate('history')}
-            className="w-full bg-gray-800 rounded-xl p-4 flex items-center justify-between active:bg-gray-700 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <span className="material-symbols-outlined text-emerald-400">history</span>
-              <span className="text-gray-300 font-medium">Historico de Rides</span>
-            </div>
-            <span className="material-symbols-outlined text-gray-600">chevron_right</span>
-          </button>
-        </section>
-      )}
-
-      {/* Bike Info */}
-      <BikeInfoSection />
-
-      {/* Version */}
-      <div className="text-center text-xs text-gray-600 pb-4">
-        KROMI BikeControl v0.6.0
+    <div className="h-full flex flex-col" style={{ backgroundColor: '#0e0e0e' }}>
+      {/* Back header */}
+      <div style={{ height: '48px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', backgroundColor: '#131313', borderBottom: '1px solid rgba(73,72,71,0.2)' }}>
+        <button onClick={() => setPage('menu')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '24px', color: '#adaaaa' }}>arrow_back</span>
+        </button>
+        <span className="font-headline font-bold" style={{ fontSize: '16px', color: '#3fff8b' }}>
+          {MENU_ITEMS.find((m) => m.id === page)?.label ?? 'Settings'}
+        </span>
+      </div>
+      {/* Content */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
+        {page === 'rider' && <RiderPage />}
+        {page === 'bike' && <BikePage />}
+        {page === 'kromi' && <KromiPage />}
+        {page === 'bluetooth' && <BluetoothPage />}
+        {page === 'routes' && <RoutesPage onNavigate={onNavigate} />}
+        {page === 'account' && <AccountPage />}
       </div>
     </div>
   );
 }
 
-function BikeInfoSection() {
+function SettingsMenu({ onSelect, onNavigate }: { onSelect: (p: SettingsPage) => void; onNavigate?: (s: Screen) => void }) {
+  return (
+    <div style={{ padding: '12px', backgroundColor: '#0e0e0e', minHeight: '100%' }}>
+      <h1 className="font-headline font-bold" style={{ fontSize: '22px', color: '#3fff8b', marginBottom: '16px', paddingLeft: '4px' }}>Setup</h1>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {MENU_ITEMS.map(({ id, icon, label, desc, color }) => (
+          <button
+            key={id}
+            onClick={() => onSelect(id)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 12px',
+              backgroundColor: '#1a1919', border: 'none', cursor: 'pointer', textAlign: 'left',
+              borderLeft: `3px solid ${color}`, width: '100%',
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '22px', color, flexShrink: 0 }}>{icon}</span>
+            <div style={{ flex: 1 }}>
+              <div className="font-headline font-bold" style={{ fontSize: '14px', color: 'white' }}>{label}</div>
+              <div style={{ fontSize: '10px', color: '#777575', marginTop: '1px' }}>{desc}</div>
+            </div>
+            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#494847' }}>chevron_right</span>
+          </button>
+        ))}
+
+        {/* History link */}
+        {onNavigate && (
+          <button
+            onClick={() => onNavigate('history')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 12px',
+              backgroundColor: '#1a1919', border: 'none', cursor: 'pointer', textAlign: 'left',
+              borderLeft: '3px solid #3fff8b', width: '100%', marginTop: '8px',
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '22px', color: '#3fff8b' }}>history</span>
+            <div style={{ flex: 1 }}>
+              <div className="font-headline font-bold" style={{ fontSize: '14px', color: 'white' }}>Histórico de Rides</div>
+              <div style={{ fontSize: '10px', color: '#777575' }}>Sessões anteriores</div>
+            </div>
+            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#494847' }}>chevron_right</span>
+          </button>
+        )}
+      </div>
+      <div style={{ textAlign: 'center', marginTop: '24px', fontSize: '10px', color: '#494847' }}>KROMI BikeControl v0.9.5</div>
+    </div>
+  );
+}
+
+// === SUB-PAGES ===
+
+function RiderPage() {
+  const profile = useSettingsStore((s) => s.riderProfile);
+  const updateProfile = useSettingsStore((s) => s.updateRiderProfile);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <NumberField label="Idade" value={profile.age} onChange={(v) => updateProfile({ age: v })} />
+        <NumberField label="Peso (kg)" value={profile.weight_kg} onChange={(v) => updateProfile({ weight_kg: v })} />
+        <NumberField label="Altura (cm)" value={profile.height_cm ?? 175} onChange={(v) => updateProfile({ height_cm: v })} />
+        <NumberField label="FC Máxima (bpm)" value={profile.hr_max} onChange={(v) => updateProfile({ hr_max: v })} />
+        <div style={{ fontSize: '10px', color: '#777575' }}>
+          Calculada: 220 - {profile.age} = {220 - profile.age} bpm
+          <button onClick={() => updateProfile({ hr_max: 220 - profile.age })} style={{ marginLeft: '8px', color: '#6e9bff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontSize: '10px' }}>Usar</button>
+        </div>
+        <NumberField label="FC Repouso (bpm)" value={profile.hr_rest} onChange={(v) => updateProfile({ hr_rest: v })} />
+      </Card>
+
+      <SectionLabel>Zonas Cardíacas (FC Max {profile.hr_max}bpm)</SectionLabel>
+      <Card>
+        <div className="space-y-1.5">
+          {calculateZones(profile.hr_max).map((zone, i) => {
+            const isTarget = (profile.target_zone ?? 2) === i + 1;
+            return (
+              <button key={zone.name} onClick={() => updateProfile({ target_zone: i + 1 })}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px', backgroundColor: isTarget ? 'rgba(63,255,139,0.1)' : '#262626', border: isTarget ? '1px solid rgba(63,255,139,0.3)' : '1px solid transparent', cursor: 'pointer', textAlign: 'left' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: zone.color }} />
+                  <span style={{ fontSize: '12px', color: 'white', fontWeight: 700 }}>{zone.name}</span>
+                  <span style={{ fontSize: '10px', color: '#777575' }}>{zone.min_bpm}-{zone.max_bpm}bpm</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '9px', color: '#494847' }}>{zone.description}</span>
+                  {isTarget && <span style={{ fontSize: '8px', padding: '2px 6px', backgroundColor: '#3fff8b', color: 'black', fontWeight: 900 }}>ALVO</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: '9px', color: '#494847', marginTop: '8px' }}>O KROMI ajusta o motor para te manter na zona alvo.</div>
+      </Card>
+
+      <SectionLabel>Perfil Atleta</SectionLabel>
+      <ProfileInsightsWidget />
+    </div>
+  );
+}
+
+function BikePage() {
+  const bike = safeBikeConfig(useSettingsStore((s) => s.bikeConfig));
+  const updateBike = useSettingsStore((s) => s.updateBikeConfig);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <TextField label="Nome" value={bike.name} onChange={(v) => updateBike({ name: v })} />
+      </Card>
+
+      <SectionLabel>Bateria</SectionLabel>
+      <Card>
+        <NumberField label="Principal (Wh)" value={bike.main_battery_wh} onChange={(v) => updateBike({ main_battery_wh: v })} />
+        <Toggle label="Range Extender" value={bike.has_range_extender} onChange={(v) => updateBike({ has_range_extender: v })} />
+        {bike.has_range_extender && <NumberField label="Extender (Wh)" value={bike.sub_battery_wh} onChange={(v) => updateBike({ sub_battery_wh: v })} />}
+        <div style={{ fontSize: '10px', color: '#777575', textAlign: 'right' }}>Total: {bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0)}Wh</div>
+      </Card>
+
+      <SectionLabel>Motor</SectionLabel>
+      <Card>
+        <TextField label="Motor" value={bike.motor_name} onChange={(v) => updateBike({ motor_name: v })} />
+        <NumberField label="Torque max (Nm)" value={bike.max_torque_nm} onChange={(v) => updateBike({ max_torque_nm: v })} />
+        <NumberField label="Potência max (W)" value={bike.max_power_w} onChange={(v) => updateBike({ max_power_w: v })} />
+        <NumberField label="Limite vel. (km/h)" value={bike.speed_limit_kmh} onChange={(v) => updateBike({ speed_limit_kmh: v })} />
+      </Card>
+
+      <SectionLabel>Consumo estimado (Wh/km)</SectionLabel>
+      <Card>
+        <NumberField label="ECO" value={bike.consumption_eco} onChange={(v) => updateBike({ consumption_eco: v })} />
+        <NumberField label="TOUR" value={bike.consumption_tour} onChange={(v) => updateBike({ consumption_tour: v })} />
+        <NumberField label="ACTIVE" value={bike.consumption_active} onChange={(v) => updateBike({ consumption_active: v })} />
+        <NumberField label="SPORT" value={bike.consumption_sport} onChange={(v) => updateBike({ consumption_sport: v })} />
+        <NumberField label="POWER" value={bike.consumption_power} onChange={(v) => updateBike({ consumption_power: v })} />
+      </Card>
+
+      <SectionLabel>Tuning Levels (KROMI)</SectionLabel>
+      {(['tuning_max', 'tuning_mid', 'tuning_min'] as const).map((key) => {
+        const label = key === 'tuning_max' ? 'MAX (nível 1)' : key === 'tuning_mid' ? 'MID (nível 2)' : 'MIN (nível 3)';
+        const color = key === 'tuning_max' ? '#ff716c' : key === 'tuning_mid' ? '#fbbf24' : '#3fff8b';
+        const spec = bike[key];
+        return (
+          <Card key={key}>
+            <span className="font-headline font-bold" style={{ fontSize: '12px', color }}>{label}</span>
+            <NumberField label="Assist %" value={spec.assist_pct} onChange={(v) => updateBike({ [key]: { ...spec, assist_pct: v } })} />
+            <NumberField label="Torque (Nm)" value={spec.torque_nm} onChange={(v) => updateBike({ [key]: { ...spec, torque_nm: v } })} />
+            <NumberField label="Launch (1-10)" value={spec.launch} onChange={(v) => updateBike({ [key]: { ...spec, launch: v } })} />
+          </Card>
+        );
+      })}
+      <TuningPreview />
+
+      <SectionLabel>Bike Info</SectionLabel>
+      <BikeInfoCard />
+    </div>
+  );
+}
+
+function KromiPage() {
+  const autoAssist = useSettingsStore((s) => s.autoAssist);
+  const updateAutoAssist = useSettingsStore((s) => s.updateAutoAssist);
+  const learning = useLearningStore();
+
+  return (
+    <div className="space-y-4">
+      <SectionLabel>Auto-Assist</SectionLabel>
+      <Card>
+        <Toggle label="Activado" value={autoAssist.enabled} onChange={(v) => updateAutoAssist({ enabled: v })} />
+        <NumberField label="Lookahead (m)" value={autoAssist.lookahead_m} onChange={(v) => updateAutoAssist({ lookahead_m: v })} />
+        <NumberField label="Pre-activação (m)" value={autoAssist.preempt_distance_m} onChange={(v) => updateAutoAssist({ preempt_distance_m: v })} />
+        <NumberField label="Override timeout (s)" value={autoAssist.override_duration_s} onChange={(v) => updateAutoAssist({ override_duration_s: v })} />
+      </Card>
+
+      <SectionLabel>Aprendizagem Adaptativa</SectionLabel>
+      <Card>
+        <div style={{ fontSize: '10px', color: '#777575' }}>O KROMI aprende com os teus overrides e ajusta o algoritmo.</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', textAlign: 'center', marginTop: '8px' }}>
+          <div><div className="font-headline font-bold" style={{ fontSize: '18px', color: '#6e9bff' }}>{learning.total_rides_learned}</div><div style={{ fontSize: '8px', color: '#777575' }}>Rides</div></div>
+          <div><div className="font-headline font-bold" style={{ fontSize: '18px', color: '#fbbf24' }}>{learning.total_overrides}</div><div style={{ fontSize: '8px', color: '#777575' }}>Overrides</div></div>
+          <div><div className="font-headline font-bold" style={{ fontSize: '18px', color: '#3fff8b' }}>{Object.keys(learning.adjustments).length}</div><div style={{ fontSize: '8px', color: '#777575' }}>Contextos</div></div>
+        </div>
+        {Object.keys(learning.adjustments).length > 0 && (
+          <div className="space-y-1" style={{ marginTop: '8px' }}>
+            {Object.entries(learning.adjustments).sort((a, b) => Math.abs(b[1].score_delta) - Math.abs(a[1].score_delta)).slice(0, 6).map(([key, adj]) => (
+              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                <span style={{ color: '#adaaaa' }}>{key}</span>
+                <span style={{ color: adj.score_delta > 0 ? '#3fff8b' : '#fbbf24' }}>{adj.score_delta > 0 ? '+' : ''}{adj.score_delta} ({adj.sample_count})</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {learning.total_overrides > 0 && (
+          <button onClick={() => { if (confirm('Apagar toda a aprendizagem?')) learning.resetLearning(); }}
+            style={{ width: '100%', marginTop: '8px', padding: '8px', fontSize: '11px', color: '#ff716c', backgroundColor: '#262626', border: '1px solid rgba(255,113,108,0.3)', cursor: 'pointer' }}>
+            Reset Aprendizagem
+          </button>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function BluetoothPage() {
+  const bleStatus = useBikeStore((s) => s.ble_status);
+  const services = useBikeStore((s) => s.ble_services);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ color: '#adaaaa', fontSize: '13px' }}>Estado</span>
+          <span className="font-headline font-bold" style={{ color: bleStatus === 'connected' ? '#3fff8b' : '#ff716c' }}>
+            {bleStatus === 'connected' ? 'Ligado' : 'Desligado'}
+          </span>
+        </div>
+        {bleStatus === 'connected' && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
+            {services.battery && <Tag>Bateria</Tag>}
+            {services.csc && <Tag>Vel/Cad</Tag>}
+            {services.power && <Tag>Potência</Tag>}
+            {services.gev && <Tag>Motor GEV</Tag>}
+            {services.heartRate && <Tag color="#ff716c">HR</Tag>}
+            {services.di2 && <Tag color="#6e9bff">Di2</Tag>}
+            {services.sram && <Tag color="#e966ff">SRAM</Tag>}
+          </div>
+        )}
+        <button
+          onClick={() => bleStatus === 'connected' ? disconnectBike() : connectBike()}
+          style={{
+            width: '100%', height: '48px', marginTop: '12px', border: 'none', cursor: 'pointer',
+            fontFamily: "'Space Grotesk'", fontWeight: 700, fontSize: '14px', textTransform: 'uppercase',
+            backgroundColor: bleStatus === 'connected' ? '#ff716c' : '#3fff8b',
+            color: 'black',
+          }}
+        >
+          {bleStatus === 'connected' ? 'Desligar' : 'Ligar'}
+        </button>
+      </Card>
+    </div>
+  );
+}
+
+function RoutesPage({ onNavigate }: { onNavigate?: (s: Screen) => void }) {
+  const [komootUrl, setKomootUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  const handleImport = async () => {
+    if (!komootUrl.trim()) return;
+    setLoading(true); setResult(null);
+    try {
+      const pts = await importKomootRoute(komootUrl);
+      setResult(`Importados ${pts.length} pontos`);
+      sessionStorage.setItem('komoot_route', JSON.stringify(pts));
+    } catch (err) { setResult(err instanceof Error ? err.message : 'Import failed'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <SectionLabel>Import Komoot Route</SectionLabel>
+      <Card>
+        <input type="text" value={komootUrl} onChange={(e) => setKomootUrl(e.target.value)} placeholder="Komoot tour URL or ID"
+          style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '10px', border: 'none', fontSize: '13px' }} />
+        <button onClick={handleImport} disabled={loading || !komootUrl.trim()}
+          style={{ width: '100%', height: '40px', marginTop: '8px', backgroundColor: loading ? '#262626' : '#3fff8b', color: 'black', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
+          {loading ? 'A importar...' : 'Import'}
+        </button>
+        {result && <div style={{ fontSize: '11px', color: result.startsWith('Importados') ? '#3fff8b' : '#ff716c', marginTop: '4px' }}>{result}</div>}
+      </Card>
+      {onNavigate && (
+        <>
+          <SectionLabel>Histórico</SectionLabel>
+          <button onClick={() => onNavigate('history')}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', backgroundColor: '#1a1919', border: 'none', cursor: 'pointer', borderLeft: '3px solid #3fff8b' }}>
+            <span className="material-symbols-outlined" style={{ color: '#3fff8b' }}>history</span>
+            <span style={{ color: 'white', fontWeight: 600 }}>Histórico de Rides</span>
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AccountPage() {
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ color: '#adaaaa', fontSize: '13px' }}>Email</span>
+          <span style={{ color: 'white', fontSize: '13px' }}>{user?.email}</span>
+        </div>
+      </Card>
+      <button onClick={logout}
+        style={{ width: '100%', height: '48px', backgroundColor: '#262626', color: '#ff716c', border: '1px solid rgba(255,113,108,0.3)', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}>
+        Terminar Sessão
+      </button>
+      <div style={{ textAlign: 'center', fontSize: '10px', color: '#494847', marginTop: '16px' }}>KROMI BikeControl v0.9.5</div>
+    </div>
+  );
+}
+
+// === SHARED COMPONENTS ===
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <div style={{ backgroundColor: '#1a1919', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>{children}</div>;
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <div className="font-label" style={{ fontSize: '9px', color: '#777575', textTransform: 'uppercase', letterSpacing: '0.12em', paddingLeft: '4px' }}>{children}</div>;
+}
+
+function Tag({ children, color }: { children: React.ReactNode; color?: string }) {
+  return <span style={{ fontSize: '10px', padding: '3px 8px', backgroundColor: '#262626', color: color ?? '#adaaaa' }}>{children}</span>;
+}
+
+function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <span style={{ color: '#adaaaa', fontSize: '13px' }}>{label}</span>
+      <button onClick={() => onChange(!value)} style={{ width: '48px', height: '28px', borderRadius: '14px', backgroundColor: value ? '#3fff8b' : '#494847', border: 'none', cursor: 'pointer', position: 'relative' }}>
+        <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'white', position: 'absolute', top: '3px', left: value ? '23px' : '3px', transition: 'left 0.2s' }} />
+      </button>
+    </div>
+  );
+}
+
+function TextField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <span style={{ color: '#adaaaa', fontSize: '13px' }}>{label}</span>
+      <input type="text" value={value} onChange={(e) => onChange(e.target.value)}
+        style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', width: '140px', textAlign: 'right', fontSize: '13px' }} />
+    </div>
+  );
+}
+
+function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <span style={{ color: '#adaaaa', fontSize: '13px' }}>{label}</span>
+      <input type="number" value={value} onChange={(e) => onChange(Number(e.target.value))}
+        style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', width: '80px', textAlign: 'center', fontSize: '15px' }} className="tabular-nums" />
+    </div>
+  );
+}
+
+function BikeInfoCard() {
   const fw = useBikeStore((s) => s.firmware_version);
   const hw = useBikeStore((s) => s.hardware_version);
   const sw = useBikeStore((s) => s.software_version);
-  const tpmsF = useBikeStore((s) => s.tpms_front_psi);
-  const tpmsR = useBikeStore((s) => s.tpms_rear_psi);
-
-  if (!fw && !hw && !sw && !tpmsF && !tpmsR) return null;
-
+  const odo = useBikeStore((s) => s.motor_odo_km);
+  const hours = useBikeStore((s) => s.motor_total_hours);
+  if (!fw && !hw && !sw && !odo) return null;
   return (
-    <section className="space-y-3">
-      <h2 className="text-lg font-semibold text-gray-300">Bike Info</h2>
-      <div className="bg-gray-800 rounded-xl p-4 space-y-2">
-        {fw && (
-          <div className="flex justify-between">
-            <span className="text-gray-400 text-sm">Firmware</span>
-            <span className="text-white text-sm font-mono">{fw}</span>
-          </div>
-        )}
-        {hw && (
-          <div className="flex justify-between">
-            <span className="text-gray-400 text-sm">Hardware</span>
-            <span className="text-white text-sm font-mono">{hw}</span>
-          </div>
-        )}
-        {sw && (
-          <div className="flex justify-between">
-            <span className="text-gray-400 text-sm">Software</span>
-            <span className="text-white text-sm font-mono">{sw}</span>
-          </div>
-        )}
-        {tpmsF > 0 && (
-          <div className="flex justify-between">
-            <span className="text-gray-400 text-sm">TPMS Front</span>
-            <span className="text-white text-sm">{tpmsF.toFixed(1)} PSI</span>
-          </div>
-        )}
-        {tpmsR > 0 && (
-          <div className="flex justify-between">
-            <span className="text-gray-400 text-sm">TPMS Rear</span>
-            <span className="text-white text-sm">{tpmsR.toFixed(1)} PSI</span>
-          </div>
-        )}
-      </div>
-    </section>
+    <Card>
+      {fw && <InfoRow label="Firmware" value={fw} />}
+      {hw && <InfoRow label="Hardware" value={hw} />}
+      {sw && <InfoRow label="Software" value={sw} />}
+      {odo > 0 && <InfoRow label="Motor ODO" value={`${odo.toLocaleString()} km`} />}
+      {hours > 0 && <InfoRow label="Motor Hours" value={`${hours} h`} />}
+    </Card>
   );
 }
 
-function TextField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
+function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-gray-400 text-sm">{label}</span>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="bg-gray-700 text-white rounded-lg p-2 w-40 text-right text-sm"
-      />
-    </div>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-gray-400 text-sm">{label}</span>
-      <input
-        type="number"
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="bg-gray-700 text-white rounded-lg p-2 w-20 text-center text-lg tabular-nums"
-      />
+    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <span style={{ color: '#adaaaa', fontSize: '12px' }}>{label}</span>
+      <span className="font-headline tabular-nums" style={{ color: 'white', fontSize: '12px' }}>{value}</span>
     </div>
   );
 }
