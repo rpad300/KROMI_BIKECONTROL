@@ -40,13 +40,13 @@ export function useMotorControl() {
       const bike = useBikeStore.getState();
       const intelligence = useIntelligenceStore.getState();
 
-      // === Gate: KROMI only in POWER mode ===
-      if (bike.assist_mode !== AssistMode.POWER) {
+      // === Gate: KROMI only in SMART mode ===
+      if (bike.assist_mode !== AssistMode.SMART) {
         if (intelligence.active) {
           useIntelligenceStore.getState().setActive(false);
           useAutoAssistStore.getState().setLastDecision({
             action: 'none',
-            reason: 'KROMI activo apenas em PWR',
+            reason: 'KROMI activo apenas em SMART',
             terrain: null,
           });
         }

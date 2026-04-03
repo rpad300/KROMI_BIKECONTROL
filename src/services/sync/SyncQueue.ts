@@ -1,26 +1,22 @@
 /**
  * SyncQueue — offline-first data persistence with auto-sync to Supabase.
  *
- * All writes go to IndexedDB first (never lost), then attempt Supabase.
- * If offline/error → queued as pending → auto-flushed when back online.
- *
- * Usage:
- *   await syncQueue.push('ride_snapshots', snapshotData);
- *   // Data saved locally immediately, synced to Supabase when possible
+ * Strategy: direct Supabase sync when online, IndexedDB fallback when offline.
+ * On reconnect, pending IndexedDB items are flushed automatically.
  */
 
 const DB_NAME = 'kromi_sync';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_QUEUE = 'sync_queue';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 interface QueueItem {
-  id?: number;           // auto-incremented by IndexedDB
-  table: string;         // Supabase table name
+  id?: number;
+  table: string;
   method: 'POST' | 'PATCH';
-  path: string;          // REST path (e.g., /ride_snapshots)
+  path: string;
   data: Record<string, unknown>;
   status: 'pending' | 'synced' | 'failed';
   attempts: number;
@@ -52,13 +48,19 @@ class SyncQueue {
       req.onsuccess = () => {
         this.db = req.result;
 
-        // Auto-flush when back online
+        // Safety: if DB exists but store is missing, recreate
+        if (!this.db.objectStoreNames.contains(STORE_QUEUE)) {
+          this.db.close();
+          this.db = null;
+          const delReq = indexedDB.deleteDatabase(DB_NAME);
+          delReq.onsuccess = () => { this.init().then(resolve).catch(reject); };
+          delReq.onerror = () => reject(new Error('Failed to delete corrupt DB'));
+          return;
+        }
+
         this.onlineHandler = () => this.flush();
         window.addEventListener('online', this.onlineHandler);
-
-        // Flush any pending items from previous session
         this.flush();
-
         resolve();
       };
 
@@ -66,58 +68,78 @@ class SyncQueue {
     });
   }
 
-  /**
-   * Push data to be synced. Saved locally immediately.
-   * If online, tries Supabase right away. If not, queued.
-   */
+  /** Push data — direct Supabase when online, IndexedDB fallback when offline */
   async push(table: string, data: Record<string, unknown>, method: 'POST' | 'PATCH' = 'POST', path?: string): Promise<void> {
-    await this.init();
+    const restPath = path ?? `/${table}`;
 
-    const item: Omit<QueueItem, 'id'> = {
-      table,
-      method,
-      path: path ?? `/${table}`,
-      data,
-      status: 'pending',
-      attempts: 0,
-      created_at: Date.now(),
-      synced_at: null,
-      error: null,
-    };
-
-    // Save to IndexedDB first (never lost)
-    await this.addToStore(item);
-
-    // Try immediate sync if online
-    if (navigator.onLine) {
-      this.flush();
+    if (navigator.onLine && SUPABASE_URL && SUPABASE_KEY) {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1${restPath}`, {
+          method,
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify(data),
+        });
+        if (res.ok) return;
+        console.error(`[SyncQueue] ${method} ${restPath} failed (${res.status}):`, await res.text());
+      } catch (err) {
+        console.warn('[SyncQueue] Direct send failed, queueing:', err);
+      }
     }
-  }
 
-  /**
-   * Push a batch of items (e.g., snapshot buffer).
-   */
-  async pushBatch(table: string, items: Record<string, unknown>[]): Promise<void> {
-    await this.init();
-    for (const data of items) {
+    // Fallback: queue to IndexedDB
+    try {
+      await this.init();
       await this.addToStore({
-        table,
-        method: 'POST',
-        path: `/${table}`,
-        data,
-        status: 'pending',
-        attempts: 0,
-        created_at: Date.now(),
-        synced_at: null,
-        error: null,
+        table, method, path: restPath, data,
+        status: 'pending', attempts: 0, created_at: Date.now(),
+        synced_at: null, error: null,
       });
+    } catch (err) {
+      console.error('[SyncQueue] IndexedDB queue failed:', err);
     }
-    if (navigator.onLine) this.flush();
   }
 
-  /**
-   * Flush all pending items to Supabase.
-   */
+  /** Push a batch of items (e.g., snapshot buffer) */
+  async pushBatch(table: string, items: Record<string, unknown>[]): Promise<void> {
+    if (navigator.onLine && SUPABASE_URL && SUPABASE_KEY) {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify(items),
+        });
+        if (res.ok) return;
+        console.error(`[SyncQueue] Batch /${table} failed (${res.status}):`, await res.text());
+      } catch (err) {
+        console.warn('[SyncQueue] Direct batch failed, queueing:', err);
+      }
+    }
+
+    try {
+      await this.init();
+      for (const data of items) {
+        await this.addToStore({
+          table, method: 'POST', path: `/${table}`, data,
+          status: 'pending', attempts: 0, created_at: Date.now(),
+          synced_at: null, error: null,
+        });
+      }
+    } catch (err) {
+      console.error('[SyncQueue] IndexedDB batch queue failed:', err);
+    }
+  }
+
+  /** Flush all pending IndexedDB items to Supabase */
   async flush(): Promise<number> {
     if (this.flushing || !this.db || !SUPABASE_URL || !SUPABASE_KEY) return 0;
     this.flushing = true;
@@ -127,7 +149,6 @@ class SyncQueue {
       const pending = await this.getPending();
       if (pending.length === 0) { this.flushing = false; return 0; }
 
-      // Group by table for batch insert
       const groups = new Map<string, QueueItem[]>();
       for (const item of pending) {
         const key = `${item.method}:${item.path}`;
@@ -137,11 +158,8 @@ class SyncQueue {
 
       for (const [, items] of groups) {
         const first = items[0]!;
-
         try {
-          // Batch POST: send array of data
           if (first.method === 'POST' && items.length > 1) {
-            const body = items.map((i) => i.data);
             const res = await fetch(`${SUPABASE_URL}/rest/v1${first.path}`, {
               method: 'POST',
               headers: {
@@ -150,22 +168,15 @@ class SyncQueue {
                 'Content-Type': 'application/json',
                 'Prefer': 'return=minimal',
               },
-              body: JSON.stringify(body),
+              body: JSON.stringify(items.map((i) => i.data)),
             });
-
             if (res.ok) {
-              for (const item of items) {
-                await this.markSynced(item.id!);
-                synced++;
-              }
+              for (const item of items) { await this.markSynced(item.id!); synced++; }
             } else {
               const err = await res.text();
-              for (const item of items) {
-                await this.markFailed(item.id!, err);
-              }
+              for (const item of items) { await this.markFailed(item.id!, err); }
             }
           } else {
-            // Single item
             for (const item of items) {
               try {
                 const res = await fetch(`${SUPABASE_URL}/rest/v1${item.path}`, {
@@ -174,30 +185,23 @@ class SyncQueue {
                     'apikey': SUPABASE_KEY!,
                     'Authorization': `Bearer ${SUPABASE_KEY}`,
                     'Content-Type': 'application/json',
-                    'Prefer': item.method === 'PATCH' ? 'return=minimal' : 'return=minimal',
+                    'Prefer': 'return=minimal',
                   },
                   body: JSON.stringify(item.data),
                 });
-
-                if (res.ok) {
-                  await this.markSynced(item.id!);
-                  synced++;
-                } else {
-                  await this.markFailed(item.id!, await res.text());
-                }
+                if (res.ok) { await this.markSynced(item.id!); synced++; }
+                else { await this.markFailed(item.id!, await res.text()); }
               } catch (err) {
                 await this.markFailed(item.id!, String(err));
               }
             }
           }
         } catch (err) {
-          console.warn('[SyncQueue] Batch flush failed:', err);
+          console.warn('[SyncQueue] Flush group failed:', err);
         }
       }
 
-      if (synced > 0) {
-        console.log(`[SyncQueue] Flushed ${synced}/${pending.length} items`);
-      }
+      if (synced > 0) console.log(`[SyncQueue] Flushed ${synced}/${pending.length} items`);
     } finally {
       this.flushing = false;
     }
@@ -205,40 +209,31 @@ class SyncQueue {
     return synced;
   }
 
-  /** Get count of pending items */
   async getPendingCount(): Promise<number> {
     const pending = await this.getPending();
     return pending.length;
   }
 
-  /** Clean up synced items older than 24h */
   async cleanup(): Promise<void> {
     if (!this.db) return;
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     const tx = this.db.transaction(STORE_QUEUE, 'readwrite');
     const store = tx.objectStore(STORE_QUEUE);
-    const index = store.index('status');
-    const req = index.openCursor(IDBKeyRange.only('synced'));
-
+    const req = store.index('status').openCursor(IDBKeyRange.only('synced'));
     req.onsuccess = () => {
       const cursor = req.result;
       if (cursor) {
         const item = cursor.value as QueueItem;
-        if (item.synced_at && item.synced_at < cutoff) {
-          cursor.delete();
-        }
+        if (item.synced_at && item.synced_at < cutoff) cursor.delete();
         cursor.continue();
       }
     };
   }
 
-  // ── IndexedDB helpers ────────────────────────
-
   private addToStore(item: Omit<QueueItem, 'id'>): Promise<void> {
     return new Promise((resolve, reject) => {
       const tx = this.db!.transaction(STORE_QUEUE, 'readwrite');
-      const store = tx.objectStore(STORE_QUEUE);
-      const req = store.add(item);
+      const req = tx.objectStore(STORE_QUEUE).add(item);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
@@ -247,9 +242,7 @@ class SyncQueue {
   private getPending(): Promise<QueueItem[]> {
     return new Promise((resolve, reject) => {
       const tx = this.db!.transaction(STORE_QUEUE, 'readonly');
-      const store = tx.objectStore(STORE_QUEUE);
-      const index = store.index('status');
-      const req = index.getAll(IDBKeyRange.only('pending'));
+      const req = tx.objectStore(STORE_QUEUE).index('status').getAll(IDBKeyRange.only('pending'));
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
@@ -260,14 +253,13 @@ class SyncQueue {
   }
 
   private markFailed(id: number, error: string): Promise<void> {
-    return this.updateStatus(id, 'pending', null, error); // stays pending for retry
+    return this.updateStatus(id, 'pending', null, error);
   }
 
   private updateStatus(id: number, status: string, synced_at: number | null, error?: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const tx = this.db!.transaction(STORE_QUEUE, 'readwrite');
-      const store = tx.objectStore(STORE_QUEUE);
-      const req = store.get(id);
+      const req = tx.objectStore(STORE_QUEUE).get(id);
       req.onsuccess = () => {
         const item = req.result as QueueItem;
         if (!item) { resolve(); return; }
@@ -275,9 +267,8 @@ class SyncQueue {
         item.synced_at = synced_at;
         item.attempts++;
         if (error) item.error = error;
-        // Give up after 10 attempts
         if (item.attempts >= 10) item.status = 'failed';
-        store.put(item);
+        tx.objectStore(STORE_QUEUE).put(item);
         resolve();
       };
       req.onerror = () => reject(req.error);

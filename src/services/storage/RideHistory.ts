@@ -76,6 +76,15 @@ export interface RideSessionState {
   snapshotCount: number;
 }
 
+const PERSIST_KEY = 'bikecontrol-ride-session';
+
+interface PersistedSession {
+  sessionId: string;
+  startedAt: number;
+  snapshotCount: number;
+  overrideCount: number;
+}
+
 class RideSessionManager {
   private static instance: RideSessionManager;
   private sessionId: string | null = null;
@@ -89,8 +98,60 @@ class RideSessionManager {
   static getInstance(): RideSessionManager {
     if (!RideSessionManager.instance) {
       RideSessionManager.instance = new RideSessionManager();
+      RideSessionManager.instance.tryResume();
     }
     return RideSessionManager.instance;
+  }
+
+  /** Persist active session to localStorage */
+  private persist(): void {
+    if (!this.sessionId) {
+      localStorage.removeItem(PERSIST_KEY);
+      return;
+    }
+    const data: PersistedSession = {
+      sessionId: this.sessionId,
+      startedAt: this.startedAt,
+      snapshotCount: this.snapshotCount,
+      overrideCount: this.overrideCount,
+    };
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(data));
+  }
+
+  /** Resume session after page refresh */
+  private tryResume(): void {
+    const raw = localStorage.getItem(PERSIST_KEY);
+    if (!raw) return;
+
+    try {
+      const saved: PersistedSession = JSON.parse(raw);
+      if (!saved.sessionId || !saved.startedAt) return;
+
+      // Don't resume sessions older than 12h (stale)
+      if (Date.now() - saved.startedAt > 12 * 60 * 60 * 1000) {
+        console.log('[RideSession] ⏰ Stale session discarded (>12h)');
+        localStorage.removeItem(PERSIST_KEY);
+        return;
+      }
+
+      this.sessionId = saved.sessionId;
+      this.startedAt = saved.startedAt;
+      this.snapshotCount = saved.snapshotCount || 0;
+      this.overrideCount = saved.overrideCount || 0;
+      this.snapshotBuffer = [];
+
+      // Restart capture intervals
+      this.intervalId = setInterval(() => this.captureSnapshot(), 5000);
+      this.flushIntervalId = setInterval(() => this.flushSnapshots(), 30000);
+
+      // Restore rideActive in athlete store
+      useAthleteStore.getState().setRideActive(true);
+
+      const elapsedMin = Math.round((Date.now() - this.startedAt) / 60000);
+      console.log(`[RideSession] 🔄 RESUMED session ${this.sessionId} (${elapsedMin}min elapsed, ${this.snapshotCount} snapshots before refresh)`);
+    } catch {
+      localStorage.removeItem(PERSIST_KEY);
+    }
   }
 
   async startSession(): Promise<string | null> {
@@ -98,7 +159,6 @@ class RideSessionManager {
 
     const bike = useBikeStore.getState();
     const map = useMapStore.getState();
-    const athleteProfile = useAthleteStore.getState().profile;
 
     this.sessionId = crypto.randomUUID();
     this.startedAt = Date.now();
@@ -108,26 +168,31 @@ class RideSessionManager {
 
     batteryEfficiencyTracker.reset();
 
-    // Persist to Supabase (via SyncQueue — offline resilient)
-    await syncQueue.push('ride_sessions', {
-      id: this.sessionId,
-      athlete_id: athleteProfile.id,
-      user_id: useAuthStore.getState().getUserId(),
-      status: 'active',
-      battery_start: bike.battery_percent,
-      start_lat: map.latitude || null,
-      start_lng: map.longitude || null,
-      devices_connected: {
-        ble: bike.ble_status === 'connected',
-        battery: bike.ble_services.battery,
-        csc: bike.ble_services.csc,
-        power: bike.ble_services.power,
-        gev: bike.ble_services.gev,
-        heartRate: bike.ble_services.heartRate,
-        di2: bike.ble_services.di2,
-        gps: map.gpsActive,
-      },
-    });
+    // Persist to Supabase (via SyncQueue — direct sync when online)
+    const userId = useAuthStore.getState().getUserId();
+    try {
+      await syncQueue.push('ride_sessions', {
+        id: this.sessionId,
+        athlete_id: null,
+        user_id: userId,
+        status: 'active',
+        battery_start: bike.battery_percent,
+        start_lat: map.latitude || null,
+        start_lng: map.longitude || null,
+        devices_connected: {
+          ble: bike.ble_status === 'connected',
+          battery: bike.ble_services.battery,
+          csc: bike.ble_services.csc,
+          power: bike.ble_services.power,
+          gev: bike.ble_services.gev,
+          heartRate: bike.ble_services.heartRate,
+          di2: bike.ble_services.di2,
+          gps: map.gpsActive,
+        },
+      });
+    } catch (err) {
+      console.error('[RideSession] Failed to push session:', err);
+    }
 
     // Start capture every 5s
     this.intervalId = setInterval(() => this.captureSnapshot(), 5000);
@@ -136,6 +201,8 @@ class RideSessionManager {
     this.flushIntervalId = setInterval(() => this.flushSnapshots(), 30000);
 
     useAthleteStore.getState().setRideActive(true);
+    this.persist();
+    console.log('[RideSession] Started:', this.sessionId);
     return this.sessionId;
   }
 
@@ -201,8 +268,10 @@ class RideSessionManager {
     this.sessionId = null;
     this.startedAt = 0;
     this.snapshotCount = 0;
+    this.persist(); // clears localStorage
     useAthleteStore.getState().setRideActive(false);
     bike.resetSession();
+    console.log('[RideSession] ⏹ Session STOPPED and cleared');
   }
 
   /** Record an override event with full context */
@@ -297,6 +366,9 @@ class RideSessionManager {
     };
 
     this.snapshotBuffer.push(row);
+
+    // Persist count every 12 snapshots (1 min)
+    if (this.snapshotCount % 12 === 0) this.persist();
   }
 
   private async flushSnapshots(): Promise<void> {
@@ -305,9 +377,11 @@ class RideSessionManager {
     const batch = [...this.snapshotBuffer];
     this.snapshotBuffer = [];
 
-    // Push to SyncQueue — saved locally (IndexedDB) immediately,
-    // synced to Supabase when online. Never lost.
-    await syncQueue.pushBatch('ride_snapshots', batch as unknown as Record<string, unknown>[]);
+    try {
+      await syncQueue.pushBatch('ride_snapshots', batch as unknown as Record<string, unknown>[]);
+    } catch (err) {
+      console.error('[RideSession] Flush failed:', err);
+    }
   }
 
   getState(): RideSessionState {

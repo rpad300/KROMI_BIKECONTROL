@@ -9,7 +9,7 @@ const ROW2 = [AssistMode.SPORT, AssistMode.POWER, AssistMode.OFF] as const;
 export function AssistModeWidget() {
   const assistMode = useBikeStore((s) => s.assist_mode);
   const bleConnected = useBikeStore((s) => s.ble_status === 'connected');
-  const kromiActive = assistMode === AssistMode.POWER;
+  const kromiActive = assistMode === AssistMode.SMART;
 
   return (
     <div className="space-y-1.5">
@@ -28,7 +28,7 @@ export function AssistModeWidget() {
           ? 'Liga a bike para ver o modo'
           : kromiActive
             ? 'KROMI activo — assist inteligente'
-            : 'Muda para PWR no RideControl para activar KROMI'}
+            : 'Muda para SMART no RideControl para activar KROMI'}
       </div>
     </div>
   );
