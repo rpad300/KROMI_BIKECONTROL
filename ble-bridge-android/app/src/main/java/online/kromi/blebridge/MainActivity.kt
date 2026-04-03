@@ -42,7 +42,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var wsClientsText: TextView
 
     private val logLines = mutableListOf<String>()
-    private val maxLogLines = 500  // display limit only — full log kept for Copy
+    private val maxLogLines = 500  // display limit in ScrollView
+    private val maxTotalLogLines = 10000  // memory safety cap — trim oldest on overflow
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
     private val handler = Handler(Looper.getMainLooper())
 
@@ -281,10 +282,12 @@ class MainActivity : AppCompatActivity() {
             "sgRiding" -> {
                 val spd = json.optDouble("speed", 0.0)
                 val soc = json.optInt("batterySoc", 0)
-                val mW = json.optDouble("motorWatts", 0.0)
-                val mv = json.optInt("motorVal", 0)
+                val pwr = json.optDouble("powerW", 0.0)
+                val trq = json.optDouble("torqueNm", 0.0)
+                val cad = json.optDouble("cadenceRpm", 0.0)
+                val cur = json.optDouble("assistCurrentA", 0.0)
                 val odo = json.optDouble("odo", 0.0)
-                appendLog("MOT", "spd=%.1f mW=%.0fW soc=%d%% mv=%d odo=%.1f".format(spd, mW, soc, mv, odo))
+                appendLog("MOT", "spd=%.1f pwr=%.0fW trq=%.1fNm cad=%.0frpm cur=%.2fA soc=%d%% odo=%.1f".format(spd, pwr, trq, cad, cur, soc, odo))
             }
             "sgBatteryHealth" -> {
                 appendLog("BAT", "★ b1=%d%% b2=%d%% soc=%d%%".format(
@@ -293,8 +296,8 @@ class MainActivity : AppCompatActivity() {
             "fc23cmd41" -> {
                 val mode = json.optInt("wireMode", -1)
                 val modeName = when (mode) {
-                    0 -> "OFF"; 1 -> "TOUR"; 2 -> "ACTIVE"; 3 -> "ECO"
-                    4 -> "SPORT"; 5 -> "POWER"; 6 -> "PWR?"; else -> "?$mode"
+                    0 -> "OFF"; 1 -> "ECO"; 2 -> "TOUR"; 3 -> "ACTIVE"
+                    4 -> "SPORT"; 5 -> "POWER"; 6 -> "SMART"; else -> "?$mode"
                 }
                 appendLog("C41", "mode=$mode($modeName) b5=%02X b14=%d".format(json.optInt("b5"), json.optInt("b14")))
             }
@@ -623,7 +626,12 @@ class MainActivity : AppCompatActivity() {
         val time = timeFormat.format(Date())
         val line = "[$time] $tag: $message"
         logLines.add(line)
-        // Display only last N lines (UI performance) but keep ALL for Copy Log
+        // Memory safety: trim oldest entries if exceeding cap
+        if (logLines.size > maxTotalLogLines) {
+            val excess = logLines.size - maxTotalLogLines
+            logLines.subList(0, excess).clear()
+        }
+        // Display only last N lines (UI performance)
         val displayLines = if (logLines.size > maxLogLines)
             logLines.subList(logLines.size - maxLogLines, logLines.size)
         else logLines
