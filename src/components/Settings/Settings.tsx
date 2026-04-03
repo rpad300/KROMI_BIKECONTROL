@@ -179,10 +179,13 @@ function RiderPage() {
     setClubs([]);
   };
 
-  // Save personal fields
+  // Save personal fields + auto-calculate age from birthdate
   const savePersonal = () => {
+    const age = birthdate ? Math.floor((Date.now() - new Date(birthdate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : profile.age;
+    const autoHrMax = profile.hr_max === 0 || profile.hr_max === (220 - profile.age) ? 220 - age : profile.hr_max;
     updateProfile({
-      name: riderName, birthdate, gender,
+      name: riderName, birthdate, gender, age,
+      hr_max: autoHrMax,
       privacy: { name: privacyName, stats: privacyStats },
     });
   };
@@ -284,19 +287,55 @@ function RiderPage() {
       {/* Physical profile */}
       <SectionLabel>Perfil Físico</SectionLabel>
       <Card>
-        <NumberField label="Idade" value={profile.age} onChange={(v) => updateProfile({ age: v })} />
+        {/* Age auto-calculated from birthdate */}
+        {birthdate ? (
+          <ReadOnlyRow label="Idade" value={`${Math.floor((Date.now() - new Date(birthdate).getTime()) / (365.25 * 24 * 60 * 60 * 1000))} anos`} color="#3fff8b" />
+        ) : (
+          <div style={{ fontSize: '10px', color: '#fbbf24' }}>⚠ Preenche a data de nascimento para calcular a idade</div>
+        )}
         <NumberField label="Peso (kg)" value={profile.weight_kg} onChange={(v) => updateProfile({ weight_kg: v })} />
         <NumberField label="Altura (cm)" value={profile.height_cm ?? 175} onChange={(v) => updateProfile({ height_cm: v })} />
-        <NumberField label="FC Máxima (bpm)" value={profile.hr_max} onChange={(v) => updateProfile({ hr_max: v })} />
-        <div style={{ fontSize: '10px', color: '#777575' }}>
-          Calculada: 220 - {profile.age} = {220 - profile.age} bpm
-          <button onClick={() => updateProfile({ hr_max: 220 - profile.age })} style={{ marginLeft: '8px', color: '#6e9bff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontSize: '10px' }}>Usar</button>
-        </div>
-        <NumberField label="FC Repouso (bpm)" value={profile.hr_rest} onChange={(v) => updateProfile({ hr_rest: v })} />
       </Card>
 
-      <SectionLabel>Zonas Cardíacas (FC Max {profile.hr_max}bpm)</SectionLabel>
+      <SectionLabel>Zonas Cardíacas</SectionLabel>
       <Card>
+        {/* FC source indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '14px', color: profile.hr_max > 180 ? '#3fff8b' : '#fbbf24' }}>
+            {profile.hr_max > 180 ? 'verified' : 'info'}
+          </span>
+          <span style={{ fontSize: '10px', color: '#adaaaa' }}>
+            {profile.hr_max > 0 && profile.hr_max !== (220 - (profile.age || 30))
+              ? 'FC Máxima configurada manualmente ou detectada'
+              : 'FC Máxima estimada pela idade (220-idade) — será ajustada com dados reais'}
+          </span>
+        </div>
+
+        {/* HR Max — editable with estimate helper */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ color: '#adaaaa', fontSize: '13px' }}>FC Máxima (bpm)</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <input type="number" value={profile.hr_max} onChange={(e) => updateProfile({ hr_max: Number(e.target.value) })}
+              style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', width: '70px', textAlign: 'center', fontSize: '15px' }} className="tabular-nums" />
+            {birthdate && (() => {
+              const age = Math.floor((Date.now() - new Date(birthdate).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+              const estimated = 220 - age;
+              return profile.hr_max !== estimated ? (
+                <button onClick={() => updateProfile({ hr_max: estimated, age })} style={{ fontSize: '9px', color: '#6e9bff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                  Est: {estimated}
+                </button>
+              ) : null;
+            })()}
+          </div>
+        </div>
+        <NumberField label="FC Repouso (bpm)" value={profile.hr_rest} onChange={(v) => updateProfile({ hr_rest: v })} />
+
+        {/* Zone visualization + target selector */}
+        <div style={{ borderTop: '1px solid rgba(73,72,71,0.2)', marginTop: '8px', paddingTop: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <span style={{ fontSize: '10px', color: '#adaaaa' }}>Seleciona a zona alvo para o KROMI</span>
+          </div>
+        </div>
         <div className="space-y-1.5">
           {calculateZones(profile.hr_max).map((zone, i) => {
             const isTarget = (profile.target_zone ?? 2) === i + 1;
@@ -316,7 +355,9 @@ function RiderPage() {
             );
           })}
         </div>
-        <div style={{ fontSize: '9px', color: '#494847', marginTop: '8px' }}>O KROMI ajusta o motor para te manter na zona alvo.</div>
+        <div style={{ fontSize: '9px', color: '#494847', marginTop: '8px' }}>
+          Valores iniciais baseados na fórmula 220-idade. O KROMI ajusta automaticamente com dados das tuas voltas (FC max observada, tempo em zona, padrões de esforço).
+        </div>
       </Card>
 
       <SectionLabel>Perfil Atleta</SectionLabel>
