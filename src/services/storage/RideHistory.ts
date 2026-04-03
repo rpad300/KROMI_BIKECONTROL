@@ -292,10 +292,10 @@ class RideSessionManager {
     batteryEfficiencyTracker.reset();
 
     const userId = useAuthStore.getState().getUserId();
+    // athlete_id is resolved server-side via user_id — local store ID doesn't match Supabase
     try {
       await syncQueue.push('ride_sessions', {
         id: this.sessionId,
-        athlete_id: null,
         user_id: userId,
         status: 'active',
         battery_start: bike.battery_percent,
