@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useLearningStore } from '../../store/learningStore';
 import { connectBike, disconnectBike } from '../../services/bluetooth/BLEBridge';
 import { ProfileInsightsWidget } from '../Dashboard/ProfileInsightsWidget';
+import { BikeFitPage } from './BikeFitPage';
 // TuningPreview removed — config is now read-only from motor telemetry
 import { importKomootRoute } from '../../services/maps/KomootService';
 
@@ -488,28 +489,9 @@ function RiderPage() {
         <div style={{ fontSize: '9px', color: '#494847' }}>O KROMI ajusta a estratégia: perder peso → menos assist, performance → zonas mais altas, reabilitação → limites seguros.</div>
       </Card>
 
-      {/* Bike fit */}
+      {/* Bike Fit — full page with bike selector */}
       <SectionLabel>Bike Fit</SectionLabel>
-      <Card>
-        <NumberField label="Entrepernas (cm)" value={profile.inseam_cm ?? 0} onChange={(v) => updateProfile({ inseam_cm: v })} />
-        <TextField label="Tamanho quadro" value={profile.frame_size ?? ''} onChange={(v) => updateProfile({ frame_size: v })} />
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ color: '#adaaaa', fontSize: '13px' }}>Posição</span>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            {([
-              { id: 'aggressive' as const, label: 'Agressiva' },
-              { id: 'moderate' as const, label: 'Moderada' },
-              { id: 'upright' as const, label: 'Relaxada' },
-            ]).map(({ id, label }) => (
-              <button key={id} onClick={() => updateProfile({ riding_position: id })} style={{
-                padding: '4px 10px', fontSize: '10px', fontWeight: 600, border: 'none', cursor: 'pointer',
-                backgroundColor: profile.riding_position === id ? '#3fff8b' : '#262626', color: profile.riding_position === id ? 'black' : '#adaaaa',
-              }}>{label}</button>
-            ))}
-          </div>
-        </div>
-        <div style={{ fontSize: '9px', color: '#494847' }}>Posição agressiva = mais aerodinâmico, menos conforto. Afecta eficiência de pedalada nos cálculos do KROMI.</div>
-      </Card>
+      <BikeFitPage />
 
       {/* Photo/Avatar */}
       <SectionLabel>Foto de Perfil</SectionLabel>
