@@ -101,9 +101,7 @@ export function BikeFitPage() {
     saveFit(newFit, key, oldVal, String(value));
   };
 
-  if (!loaded) return <div style={{ padding: '20px', textAlign: 'center', color: '#777575' }}>A carregar bike fit...</div>;
-
-  // Reset fit when bike changes
+  // Reset fit when bike changes — MUST be before any conditional returns (React hooks rule)
   useEffect(() => {
     setFit({ id: '' });
     setHistory([]);
@@ -115,7 +113,9 @@ export function BikeFitPage() {
       if (Array.isArray(data) && data.length > 0) setFit(data[0]);
       setLoaded(true);
     }).catch(() => setLoaded(true));
-  }, [selectedBikeId]);
+  }, [selectedBikeId, userId, bike.name]);
+
+  if (!loaded) return <div style={{ padding: '20px', textAlign: 'center', color: '#777575' }}>A carregar bike fit...</div>;
 
   const filledCount = FIT_FIELD_GROUPS.flatMap((g) => g.fields).filter((f) => {
     const v = (fit as unknown as Record<string, unknown>)[f.key];
