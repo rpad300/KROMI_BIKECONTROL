@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
+import { useSettingsStore, safeBikeConfig, type BikeConfig } from '../../store/settingsStore';
 import { calculateZones } from '../../types/athlete.types';
 import { useBikeStore } from '../../store/bikeStore';
 import { useAuthStore } from '../../store/authStore';
 import { useLearningStore } from '../../store/learningStore';
 import { connectBike, disconnectBike } from '../../services/bluetooth/BLEBridge';
 import { ProfileInsightsWidget } from '../Dashboard/ProfileInsightsWidget';
-import { TuningPreview } from './TuningPreview';
+// TuningPreview removed — config is now read-only from motor telemetry
 import { importKomootRoute } from '../../services/maps/KomootService';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
@@ -248,51 +248,8 @@ function BikePage() {
         </div>
       </Card>
 
-      {/* === E-BIKE ONLY SECTIONS === */}
-      {isEBike && (
-        <>
-          <SectionLabel>Bateria</SectionLabel>
-          <Card>
-            <NumberField label="Principal (Wh)" value={bike.main_battery_wh} onChange={(v) => updateBike({ main_battery_wh: v })} />
-            <Toggle label="Range Extender" value={bike.has_range_extender} onChange={(v) => updateBike({ has_range_extender: v })} />
-            {bike.has_range_extender && <NumberField label="Extender (Wh)" value={bike.sub_battery_wh} onChange={(v) => updateBike({ sub_battery_wh: v })} />}
-            <div style={{ fontSize: '10px', color: '#777575', textAlign: 'right' }}>Total: {bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0)}Wh</div>
-          </Card>
-
-          <SectionLabel>Motor</SectionLabel>
-          <Card>
-            <TextField label="Motor" value={bike.motor_name} onChange={(v) => updateBike({ motor_name: v })} />
-            <NumberField label="Torque max (Nm)" value={bike.max_torque_nm} onChange={(v) => updateBike({ max_torque_nm: v })} />
-            <NumberField label="Potência max (W)" value={bike.max_power_w} onChange={(v) => updateBike({ max_power_w: v })} />
-            <NumberField label="Limite vel. (km/h)" value={bike.speed_limit_kmh} onChange={(v) => updateBike({ speed_limit_kmh: v })} />
-          </Card>
-
-          <SectionLabel>Consumo estimado (Wh/km)</SectionLabel>
-          <Card>
-            <NumberField label="ECO" value={bike.consumption_eco} onChange={(v) => updateBike({ consumption_eco: v })} />
-            <NumberField label="TOUR" value={bike.consumption_tour} onChange={(v) => updateBike({ consumption_tour: v })} />
-            <NumberField label="ACTIVE" value={bike.consumption_active} onChange={(v) => updateBike({ consumption_active: v })} />
-            <NumberField label="SPORT" value={bike.consumption_sport} onChange={(v) => updateBike({ consumption_sport: v })} />
-            <NumberField label="POWER" value={bike.consumption_power} onChange={(v) => updateBike({ consumption_power: v })} />
-          </Card>
-
-          <SectionLabel>Tuning Levels (KROMI)</SectionLabel>
-          {(['tuning_max', 'tuning_mid', 'tuning_min'] as const).map((key) => {
-            const label = key === 'tuning_max' ? 'MAX (nível 1)' : key === 'tuning_mid' ? 'MID (nível 2)' : 'MIN (nível 3)';
-            const color = key === 'tuning_max' ? '#ff716c' : key === 'tuning_mid' ? '#fbbf24' : '#3fff8b';
-            const spec = bike[key];
-            return (
-              <Card key={key}>
-                <span className="font-headline font-bold" style={{ fontSize: '12px', color }}>{label}</span>
-                <NumberField label="Assist %" value={spec.assist_pct} onChange={(v) => updateBike({ [key]: { ...spec, assist_pct: v } })} />
-                <NumberField label="Torque (Nm)" value={spec.torque_nm} onChange={(v) => updateBike({ [key]: { ...spec, torque_nm: v } })} />
-                <NumberField label="Launch (1-10)" value={spec.launch} onChange={(v) => updateBike({ [key]: { ...spec, launch: v } })} />
-              </Card>
-            );
-          })}
-          <TuningPreview />
-        </>
-      )}
+      {/* === E-BIKE ONLY SECTIONS (read-only from motor telemetry) === */}
+      {isEBike && <EBikeReadOnlyInfo bike={bike} />}
 
       <SectionLabel>Bike Info</SectionLabel>
       <BikeInfoCard />
@@ -443,6 +400,86 @@ function AccountPage() {
         Terminar Sessão
       </button>
       <div style={{ textAlign: 'center', fontSize: '10px', color: '#494847', marginTop: '16px' }}>KROMI BikeControl v0.9.5</div>
+    </div>
+  );
+}
+
+/** E-Bike info — all values auto-detected from motor, read-only display */
+function EBikeReadOnlyInfo({ bike }: { bike: BikeConfig }) {
+  const bat1 = useBikeStore((s) => s.battery_main_pct);
+  const bat2 = useBikeStore((s) => s.battery_sub_pct);
+  const motorOdo = useBikeStore((s) => s.motor_odo_km);
+  const motorHours = useBikeStore((s) => s.motor_total_hours);
+  const rangePerMode = useBikeStore((s) => s.range_per_mode);
+  const fw = useBikeStore((s) => s.firmware_version);
+  const hw = useBikeStore((s) => s.hardware_version);
+  const sw = useBikeStore((s) => s.software_version);
+
+  const hasLive = bat1 > 0 || motorOdo > 0;
+
+  return (
+    <>
+      <SectionLabel>Bateria {hasLive ? '(live do motor)' : '(config manual)'}</SectionLabel>
+      <Card>
+        <ReadOnlyRow label="Principal" value={`${bike.main_battery_wh} Wh`} />
+        {bike.has_range_extender && <ReadOnlyRow label="Range Extender" value={`${bike.sub_battery_wh} Wh`} />}
+        <ReadOnlyRow label="Total" value={`${bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0)} Wh`} color="#3fff8b" />
+        {bat1 > 0 && (
+          <>
+            <div style={{ borderTop: '1px solid rgba(73,72,71,0.2)', marginTop: '4px', paddingTop: '8px' }} />
+            <ReadOnlyRow label="Main SOC" value={`${bat1}%`} color={bat1 > 30 ? '#3fff8b' : '#fbbf24'} />
+            {bat2 > 0 && <ReadOnlyRow label="Sub SOC" value={`${bat2}%`} color={bat2 > 30 ? '#3fff8b' : '#fbbf24'} />}
+          </>
+        )}
+      </Card>
+
+      <SectionLabel>Motor</SectionLabel>
+      <Card>
+        <ReadOnlyRow label="Modelo" value={bike.motor_name || 'Auto-detectado'} />
+        <ReadOnlyRow label="Torque max" value={`${bike.max_torque_nm} Nm`} />
+        <ReadOnlyRow label="Potência max" value={`${bike.max_power_w} W`} />
+        <ReadOnlyRow label="Limite velocidade" value={`${bike.speed_limit_kmh} km/h`} />
+        {motorOdo > 0 && <ReadOnlyRow label="Odómetro motor" value={`${motorOdo.toLocaleString()} km`} color="#6e9bff" />}
+        {motorHours > 0 && <ReadOnlyRow label="Horas motor" value={`${motorHours} h`} />}
+        {fw && <ReadOnlyRow label="Firmware" value={fw} />}
+        {hw && <ReadOnlyRow label="Hardware" value={hw} />}
+        {sw && <ReadOnlyRow label="Software" value={sw} />}
+      </Card>
+
+      {rangePerMode && (
+        <>
+          <SectionLabel>Autonomia por modo (do motor)</SectionLabel>
+          <Card>
+            {(['eco', 'tour', 'active', 'sport', 'power', 'smart'] as const).map((mode) => {
+              const range = (rangePerMode as Record<string, number>)[mode] ?? 0;
+              if (range <= 0) return null;
+              const modeColors: Record<string, string> = { eco: '#3fff8b', tour: '#6e9bff', active: '#fbbf24', sport: '#fbbf24', power: '#ff716c', smart: '#e966ff' };
+              return <ReadOnlyRow key={mode} label={mode.toUpperCase()} value={`${range} km`} color={modeColors[mode]} />;
+            })}
+          </Card>
+        </>
+      )}
+
+      <SectionLabel>Consumo calibrado (auto do motor)</SectionLabel>
+      <Card>
+        <ReadOnlyRow label="ECO" value={`${bike.consumption_eco} Wh/km`} />
+        <ReadOnlyRow label="TOUR" value={`${bike.consumption_tour} Wh/km`} />
+        <ReadOnlyRow label="ACTIVE" value={`${bike.consumption_active} Wh/km`} />
+        <ReadOnlyRow label="SPORT" value={`${bike.consumption_sport} Wh/km`} />
+        <ReadOnlyRow label="POWER" value={`${bike.consumption_power} Wh/km`} />
+        <div style={{ fontSize: '9px', color: '#494847', marginTop: '4px' }}>
+          Valores auto-calibrados a partir dos ranges do motor (cmd 17). Actualizam a cada 2 min durante a volta.
+        </div>
+      </Card>
+    </>
+  );
+}
+
+function ReadOnlyRow({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <span style={{ color: '#adaaaa', fontSize: '13px' }}>{label}</span>
+      <span className="font-headline font-bold tabular-nums" style={{ fontSize: '13px', color: color ?? 'white' }}>{value}</span>
     </div>
   );
 }
