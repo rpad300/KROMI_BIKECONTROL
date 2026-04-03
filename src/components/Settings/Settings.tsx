@@ -234,6 +234,7 @@ function RiderPage() {
 function PersonalPage() {
   const profile = useSettingsStore((s) => s.riderProfile);
   const updateProfile = useSettingsStore((s) => s.updateRiderProfile);
+  const user = useAuthStore((s) => s.user);
   const [riderName, setRiderName] = useState(profile.name ?? '');
   const [birthdate, setBirthdate] = useState(profile.birthdate ?? '');
   const [gender, setGender] = useState(profile.gender ?? '');
@@ -241,10 +242,32 @@ function PersonalPage() {
   const save = () => {
     const age = birthdate ? Math.floor((Date.now() - new Date(birthdate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : profile.age;
     updateProfile({ name: riderName, birthdate, gender, age });
+    // Sync name to app_users
+    if (riderName) {
+      const SB = import.meta.env.VITE_SUPABASE_URL;
+      const SK = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (SB && SK && user?.id) {
+        fetch(`${SB}/rest/v1/app_users?id=eq.${user.id}`, {
+          method: 'PATCH',
+          headers: { 'apikey': SK, 'Authorization': `Bearer ${SK}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ name: riderName }),
+        }).catch(() => {});
+      }
+    }
   };
 
   return (
     <div className="space-y-4">
+      {/* Account association */}
+      {user?.email && (
+        <Card>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#adaaaa', fontSize: '13px' }}>Conta</span>
+            <span style={{ color: '#3fff8b', fontSize: '13px' }}>{user.email}</span>
+          </div>
+        </Card>
+      )}
+
       <Card>
         <TextField label="Nome" value={riderName} onChange={(v) => { setRiderName(v); save(); }} />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
