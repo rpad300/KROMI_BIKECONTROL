@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useBikeStore } from '../../../store/bikeStore';
+import { useTripStore } from '../../../store/tripStore';
 
 /** Giant speed display — DOM ref based, zero flicker */
 export function SpeedHero({ dangerThreshold }: { dangerThreshold?: number }) {
@@ -13,7 +14,8 @@ export function SpeedHero({ dangerThreshold }: { dangerThreshold?: number }) {
         spdRef.current.style.color = (dangerThreshold && s.speed_kmh > dangerThreshold) ? '#ff716c' : '#ffffff';
       }
       if (distRef.current) {
-        const dist = s.trip_distance_km || s.distance_km;
+        const trip = useTripStore.getState();
+        const dist = trip.state === 'running' ? trip.tripKm : (s.trip_distance_km || s.distance_km);
         distRef.current.textContent = `${dist.toFixed(1)} KM`;
       }
     };

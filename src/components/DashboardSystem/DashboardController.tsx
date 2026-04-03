@@ -4,6 +4,7 @@ import { useAutoAssistStore } from '../../store/autoAssistStore';
 import { PersistentBar } from './PersistentBar';
 import { DashboardDots } from './DashboardDots';
 import { DashboardSwipeContainer } from './DashboardSwipeContainer';
+import { TripControl } from './widgets/TripControl';
 import { CruiseDashboard } from './CruiseDashboard';
 import { ClimbDashboard } from './ClimbDashboard';
 import { DescentDashboard } from './DescentDashboard';
@@ -39,6 +40,8 @@ export function DashboardController() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', backgroundColor: '#0e0e0e' }}>
       <PersistentBar />
       <DashboardDots />
+      {/* Trip control — start/stop/autopause */}
+      <div style={{ height: '40px', flexShrink: 0 }}><TripControl /></div>
       <DashboardSwipeContainer>
         {active === 'cruise' && <CruiseDashboard />}
         {active === 'climb' && <ClimbDashboard />}

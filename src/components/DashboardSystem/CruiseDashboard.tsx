@@ -1,5 +1,4 @@
 import { useBikeStore } from '../../store/bikeStore';
-import { useAutoAssistStore } from '../../store/autoAssistStore';
 import { AssistMode } from '../../types/bike.types';
 import { SpeedHero } from './widgets/SpeedHero';
 import { MetricGrid, METRIC } from './widgets/MetricGrid';
@@ -15,7 +14,10 @@ export function CruiseDashboard() {
   const rearGear = useBikeStore((s) => s.rear_gear);
   const temp = useBikeStore((s) => s.temperature_c);
   const tripTime = useBikeStore((s) => s.trip_time_s);
-  const kromiActive = useAutoAssistStore((s) => s.enabled);
+  // Show KROMI intelligence whenever bike is connected and motor is in an active mode
+  const bleConnected = useBikeStore((s) => s.ble_status === 'connected');
+  const motorActive = assistMode >= 1 && assistMode <= 6; // any mode except OFF
+  const showIntelligence = bleConnected && motorActive;
 
   const formatTime = (s: number) => s > 0 ? `${Math.floor(s/3600)}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}` : '0:00';
 
@@ -78,9 +80,9 @@ export function CruiseDashboard() {
         })}
       </div>
 
-      {/* Bottom section — KROMI intelligence when active, map when not */}
+      {/* Bottom section — KROMI intelligence when motor active, map when disconnected */}
       <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-        {kromiActive ? (
+        {showIntelligence ? (
           <div style={{ height: '100%', overflow: 'hidden' }}>
             <IntelligenceWidget />
           </div>
