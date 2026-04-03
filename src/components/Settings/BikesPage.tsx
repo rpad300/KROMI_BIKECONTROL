@@ -466,29 +466,13 @@ function BikeDetailPage({ bikeId, onBack }: { bikeId: string; onBack: () => void
             if (Array.isArray(specs.sprockets)) update({ cassette_sprockets: specs.sprockets as number[] });
           }}
         />
-        {/* Individual sprocket teeth — editable */}
-        <div>
-          <div style={{ fontSize: '10px', color: '#777575', marginBottom: '2px' }}>
-            Dentes da cassete ({bike.cassette_sprockets?.length || 0} pratos)
-          </div>
-          <input
-            type="text"
-            value={bike.cassette_sprockets?.join(', ') ?? ''}
-            onChange={(e) => {
-              const nums = e.target.value.split(/[,\s·]+/).map((s) => parseInt(s.trim())).filter((n) => !isNaN(n) && n > 0);
-              update({ cassette_sprockets: nums, cassette_speeds: nums.length || bike.cassette_speeds });
-            }}
-            placeholder="10, 12, 14, 16, 18, 21, 24, 28, 32, 36, 42, 51"
-            style={{
-              width: '100%', padding: '8px 10px', backgroundColor: '#0e0e0e',
-              border: '1px solid rgba(73,72,71,0.3)', borderRadius: '4px',
-              color: 'white', fontSize: '12px', outline: 'none', fontFamily: 'monospace',
-            }}
-          />
-          <div style={{ fontSize: '9px', color: '#494847', marginTop: '2px' }}>
-            Separa por vírgulas. Usado pelo KROMI Intelligence para calcular gear ratios e optimizar assist.
-          </div>
-        </div>
+        {/* Individual sprocket teeth — one field per sprocket */}
+        <SprocketEditor
+          sprockets={bike.cassette_sprockets ?? []}
+          speeds={bike.cassette_speeds}
+          chainring={bike.chainring_teeth}
+          onChange={(sprockets) => update({ cassette_sprockets: sprockets, cassette_speeds: sprockets.length || bike.cassette_speeds })}
+        />
         <AutocompleteField category="chain" label="Corrente" value={bike.chain_model} onChange={(v) => update({ chain_model: v })} placeholder="Shimano CN-M8100" />
         <AutocompleteField category="pedal" label="Pedais" value={bike.pedals} onChange={(v) => update({ pedals: v })} placeholder="Shimano XT SPD, Crankbrothers..." />
       </Card>
@@ -739,6 +723,96 @@ function EBikeSection({ bike, update }: { bike: BikeConfig; update: (p: Partial<
 // ═══════════════════════════════════════════════════════════
 // Shared UI components
 // ═══════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════
+// SPROCKET EDITOR — individual field per sprocket tooth
+// ═══════════════════════════════════════════════════════════
+
+function SprocketEditor({ sprockets, speeds, chainring, onChange }: {
+  sprockets: number[];
+  speeds: number;
+  chainring: string;
+  onChange: (sprockets: number[]) => void;
+}) {
+  // Ensure array has correct length
+  const count = sprockets.length || speeds || 12;
+  const teeth = [...sprockets];
+  while (teeth.length < count) teeth.push(0);
+
+  // Parse chainring for gear ratio display
+  const cr = parseInt(chainring?.match(/(\d+)T?$/i)?.[1] ?? '34');
+
+  const updateTooth = (idx: number, value: number) => {
+    const updated = [...teeth];
+    updated[idx] = value;
+    // Sort descending (gear 1 = biggest = easiest)
+    updated.sort((a, b) => b - a);
+    onChange(updated.filter((n) => n > 0));
+  };
+
+  const addSprocket = () => {
+    onChange([...teeth.filter((n) => n > 0), 0].sort((a, b) => b - a));
+  };
+
+  const removeSprocket = (idx: number) => {
+    const updated = [...teeth];
+    updated.splice(idx, 1);
+    onChange(updated.filter((n) => n > 0));
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+        <div style={{ fontSize: '10px', color: '#777575' }}>
+          Dentes da cassete ({teeth.filter((n) => n > 0).length} pratos)
+        </div>
+        <button onClick={addSprocket} style={{ fontSize: '9px', color: '#3fff8b', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
+          + Prato
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
+        {teeth.map((t, idx) => {
+          const ratio = t > 0 ? (cr / t).toFixed(2) : '';
+          const gearNum = idx + 1;
+          return (
+            <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px' }}>
+              {/* Gear number label */}
+              <div style={{ fontSize: '7px', color: '#494847', fontWeight: 700 }}>{gearNum}</div>
+              {/* Tooth input */}
+              <input
+                type="number"
+                value={t || ''}
+                onChange={(e) => updateTooth(idx, parseInt(e.target.value) || 0)}
+                placeholder="—"
+                style={{
+                  width: '36px', padding: '4px 2px', backgroundColor: '#0e0e0e',
+                  border: '1px solid rgba(73,72,71,0.25)', borderRadius: '3px',
+                  color: t > 0 ? 'white' : '#494847', fontSize: '11px', outline: 'none',
+                  textAlign: 'center', fontFamily: 'monospace',
+                }}
+              />
+              {/* Gear ratio */}
+              {t > 0 && (
+                <div style={{ fontSize: '7px', color: parseFloat(ratio) < 1 ? '#3fff8b' : '#fbbf24', fontFamily: 'monospace' }}>
+                  {ratio}
+                </div>
+              )}
+              {/* Remove button */}
+              {teeth.length > 1 && (
+                <button onClick={() => removeSprocket(idx)} style={{ fontSize: '8px', color: '#494847', background: 'none', border: 'none', cursor: 'pointer', padding: '0', lineHeight: 1 }}>✕</button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ fontSize: '8px', color: '#494847', marginTop: '4px' }}>
+        Chainring {cr}T · Ratio {'<'}1 = leve (verde) · {'>'}1 = pesado (amarelo) · Usado pelo KROMI Intelligence
+      </div>
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════
 // AI BIKE SUMMARY — persisted, regenerates on spec changes
