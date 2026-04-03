@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KROMI Emergency Profile</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0e0e0e; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 0; min-height: 100vh; }
+
+  .emergency-header { background: linear-gradient(135deg, #ff3333 0%, #cc0000 100%); padding: 20px 16px; text-align: center; }
+  .emergency-header h1 { font-size: 20px; font-weight: 900; letter-spacing: 2px; }
+  .emergency-header .subtitle { font-size: 11px; opacity: 0.8; margin-top: 4px; }
+
+  .container { padding: 16px; max-width: 480px; margin: 0 auto; }
+  .card { background: #1a1919; border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid #262626; }
+  .card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+
+  .field { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #262626; }
+  .field:last-child { border-bottom: none; }
+  .field-label { color: #888; font-size: 13px; }
+  .field-value { font-size: 14px; font-weight: 600; }
+
+  .blood-type { font-size: 48px; font-weight: 900; color: #ff3333; text-align: center; line-height: 1.1; }
+  .blood-type-label { font-size: 11px; color: #888; text-align: center; }
+
+  .call-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; margin-bottom: 8px; text-decoration: none; }
+  .call-primary { background: #3fff8b; color: #000; }
+  .call-secondary { background: #262626; color: #fff; border: 1px solid #333; }
+  .call-emergency { background: #ff3333; color: #fff; font-size: 18px; }
+
+  .alert-tag { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; margin: 2px; }
+  .tag-red { background: rgba(255,51,51,0.2); color: #ff5555; border: 1px solid rgba(255,51,51,0.3); }
+  .tag-amber { background: rgba(255,204,0,0.2); color: #ffcc00; border: 1px solid rgba(255,204,0,0.3); }
+  .tag-blue { background: rgba(110,155,255,0.2); color: #6e9bff; border: 1px solid rgba(110,155,255,0.3); }
+
+  .hr-bar { display: flex; height: 24px; border-radius: 4px; overflow: hidden; margin: 4px 0; }
+  .hr-bar div { display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; }
+  .z1 { background: #6b7280; } .z2 { background: #3b82f6; } .z3 { background: #22c55e; }
+  .z4 { background: #f59e0b; } .z5 { background: #ef4444; }
+
+  .ride-stat { text-align: center; }
+  .ride-stat .val { font-size: 28px; font-weight: 900; font-family: 'Space Grotesk', monospace; }
+  .ride-stat .lbl { font-size: 10px; color: #888; }
+
+  .loading { text-align: center; padding: 60px 20px; }
+  .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: #ff3333; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .not-found { text-align: center; padding: 60px 20px; color: #888; }
+  .donor-badge { display: inline-block; padding: 4px 10px; background: rgba(63,255,139,0.15); color: #3fff8b; border: 1px solid rgba(63,255,139,0.3); border-radius: 4px; font-size: 11px; font-weight: 700; }
+  .footer { text-align: center; padding: 20px; font-size: 9px; color: #494847; }
+</style>
+</head>
+<body>
+  <div class="emergency-header">
+    <h1>PERFIL DE EMERGENCIA</h1>
+    <div class="subtitle">KROMI BikeControl</div>
+  </div>
+
+  <div id="content" class="container">
+    <div class="loading">
+      <div class="spinner"></div>
+      <div>A carregar perfil...</div>
+    </div>
+  </div>
+
+<script>
+const SB_URL = 'https://ctsuupvmmyjlrtjnxagv.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0c3V1cHZtbXlqbHJ0am54YWd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Njg3MTgsImV4cCI6MjA5MDU0NDcxOH0.VgpKrjxYirb9Gc7OZX-aHGJmGJ3QdDM5I7iXaWDmBXQ';
+
+async function load() {
+  const token = window.location.pathname.split('/').pop() || new URLSearchParams(window.location.search).get('t');
+  if (!token) { showNotFound(); return; }
+
+  try {
+    // Fetch emergency profile
+    const res = await fetch(`${SB_URL}/rest/v1/emergency_profiles?token=eq.${token}&active=eq.true&select=*&limit=1`, {
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+    });
+    const profiles = await res.json();
+    if (!profiles.length) { showNotFound(); return; }
+    const p = profiles[0];
+
+    // Fetch last ride (24h)
+    let lastRide = null;
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const rideRes = await fetch(`${SB_URL}/rest/v1/ride_sessions?user_id=eq.${p.user_id}&started_at=gte.${since}&status=eq.completed&select=duration_s,total_km,avg_hr,max_hr,avg_speed_kmh,max_speed_kmh,avg_power_w,started_at,ended_at,start_lat,start_lng,end_lat,end_lng&order=started_at.desc&limit=1`, {
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+    });
+    const rides = await rideRes.json();
+    if (rides.length) lastRide = rides[0];
+
+    // Fetch HR zone distribution from last ride snapshots
+    let hrZones = null;
+    if (lastRide) {
+      const snapRes = await fetch(`${SB_URL}/rest/v1/ride_snapshots?session_id=eq.${rides[0].id || ''}&hr_bpm=gt.0&select=hr_bpm,hr_zone&limit=2000`, {
+        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+      });
+      // If we don't have session_id, use user_settings HR zones
+    }
+
+    render(p, lastRide);
+  } catch (err) {
+    showNotFound();
+  }
+}
+
+function render(p, lastRide) {
+  const age = p.birthdate ? Math.floor((Date.now() - new Date(p.birthdate).getTime()) / (365.25*24*60*60*1000)) : null;
+  const contacts = p.emergency_contacts || [];
+
+  let html = '';
+
+  // Emergency call buttons
+  html += `<a href="tel:112" class="call-btn call-emergency">112 — Emergencia</a>`;
+
+  // Contact de emergencia
+  contacts.forEach(c => {
+    html += `<a href="tel:${c.phone}" class="call-btn call-primary">${c.name} (${c.relation}) — ${c.phone}</a>`;
+  });
+  if (p.phone) {
+    html += `<a href="tel:${p.phone}" class="call-btn call-secondary">Vitima: ${p.phone}</a>`;
+  }
+
+  // ID card
+  html += `<div class="card">`;
+  html += `<div class="card-title" style="color:#ff3333">Identificacao</div>`;
+  if (p.avatar_url) html += `<div style="text-align:center;margin-bottom:12px"><img src="${p.avatar_url}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #ff3333" /></div>`;
+  html += `<div class="field"><span class="field-label">Nome</span><span class="field-value">${p.name || '—'}</span></div>`;
+  if (age) html += `<div class="field"><span class="field-label">Idade</span><span class="field-value">${age} anos</span></div>`;
+  if (p.gender) html += `<div class="field"><span class="field-label">Genero</span><span class="field-value">${p.gender}</span></div>`;
+  if (p.weight_kg) html += `<div class="field"><span class="field-label">Peso</span><span class="field-value">${p.weight_kg} kg</span></div>`;
+  if (p.height_cm) html += `<div class="field"><span class="field-label">Altura</span><span class="field-value">${p.height_cm} cm</span></div>`;
+  if (p.address_city) html += `<div class="field"><span class="field-label">Localidade</span><span class="field-value">${p.address_city}${p.address_country ? ', ' + p.address_country : ''}</span></div>`;
+  html += `</div>`;
+
+  // Blood type + Medical
+  html += `<div class="card">`;
+  html += `<div class="card-title" style="color:#ff3333">Informacao Medica</div>`;
+  if (p.blood_type) {
+    html += `<div style="padding:12px 0;text-align:center"><div class="blood-type">${p.blood_type}</div><div class="blood-type-label">Tipo Sanguineo</div></div>`;
+  }
+  if (p.organ_donor) html += `<div style="text-align:center;margin-bottom:8px"><span class="donor-badge">Dador de Orgaos</span></div>`;
+  if (p.health_insurance) html += `<div class="field"><span class="field-label">Seguro Saude</span><span class="field-value">${p.health_insurance}</span></div>`;
+  html += `</div>`;
+
+  // Allergies / Medications / Conditions
+  if ((p.allergies?.length) || (p.medications?.length) || (p.medical_conditions?.length) || p.medical_notes) {
+    html += `<div class="card">`;
+    html += `<div class="card-title" style="color:#fbbf24">Alertas Medicos</div>`;
+    if (p.allergies?.length) {
+      html += `<div style="margin-bottom:8px"><div class="field-label" style="margin-bottom:4px">Alergias</div>`;
+      p.allergies.forEach(a => { html += `<span class="alert-tag tag-red">${a}</span>`; });
+      html += `</div>`;
+    }
+    if (p.medications?.length) {
+      html += `<div style="margin-bottom:8px"><div class="field-label" style="margin-bottom:4px">Medicacao</div>`;
+      p.medications.forEach(m => { html += `<span class="alert-tag tag-amber">${m}</span>`; });
+      html += `</div>`;
+    }
+    if (p.medical_conditions?.length) {
+      html += `<div style="margin-bottom:8px"><div class="field-label" style="margin-bottom:4px">Condicoes</div>`;
+      p.medical_conditions.forEach(c => { html += `<span class="alert-tag tag-blue">${c}</span>`; });
+      html += `</div>`;
+    }
+    if (p.medical_notes) {
+      html += `<div class="field-label" style="margin-bottom:4px">Notas</div><div style="font-size:13px;color:#adaaaa">${p.medical_notes}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Last 24h ride data — cardiac profile for doctors
+  if (lastRide) {
+    html += `<div class="card">`;
+    html += `<div class="card-title" style="color:#6e9bff">Ultima Actividade (24h)</div>`;
+
+    const dur = lastRide.duration_s;
+    const h = Math.floor(dur / 3600);
+    const m = Math.floor((dur % 3600) / 60);
+    const timeStr = h > 0 ? `${h}h ${m}min` : `${m}min`;
+    const when = new Date(lastRide.started_at);
+    const timeAgo = Math.round((Date.now() - when.getTime()) / 3600000);
+
+    html += `<div style="text-align:center;font-size:11px;color:#888;margin-bottom:12px">Há ${timeAgo}h — ${when.toLocaleString('pt-PT', {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</div>`;
+
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">`;
+    html += `<div class="ride-stat"><div class="val" style="color:#3fff8b">${lastRide.avg_hr || '—'}</div><div class="lbl">HR Media</div></div>`;
+    html += `<div class="ride-stat"><div class="val" style="color:#ff3333">${lastRide.max_hr || '—'}</div><div class="lbl">HR Max</div></div>`;
+    html += `<div class="ride-stat"><div class="val" style="color:#fbbf24">${timeStr}</div><div class="lbl">Duracao</div></div>`;
+    html += `</div>`;
+
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">`;
+    html += `<div class="ride-stat"><div class="val" style="color:#fff;font-size:22px">${(lastRide.total_km || 0).toFixed(1)}</div><div class="lbl">km</div></div>`;
+    html += `<div class="ride-stat"><div class="val" style="color:#fff;font-size:22px">${lastRide.avg_speed_kmh || '—'}</div><div class="lbl">km/h med</div></div>`;
+    html += `<div class="ride-stat"><div class="val" style="color:#fff;font-size:22px">${lastRide.avg_power_w || '—'}</div><div class="lbl">watts med</div></div>`;
+    html += `</div>`;
+
+    // Last known location
+    const lat = lastRide.end_lat || lastRide.start_lat;
+    const lng = lastRide.end_lng || lastRide.start_lng;
+    if (lat && lng) {
+      html += `<div style="margin-top:12px;text-align:center"><a href="https://maps.google.com/?q=${lat},${lng}" target="_blank" class="call-btn call-secondary" style="display:inline-flex;width:auto;padding:10px 20px;font-size:13px">Ver ultima localizacao no mapa</a></div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  // Footer
+  html += `<div class="footer">Esta pagina foi gerada automaticamente pelo KROMI BikeControl.<br>Os dados sao actualizados a cada sessao de treino.<br>Em caso de emergencia, ligue 112.</div>`;
+
+  document.getElementById('content').innerHTML = html;
+}
+
+function showNotFound() {
+  document.getElementById('content').innerHTML = `<div class="not-found"><div style="font-size:48px;margin-bottom:16px">&#128722;</div><div>Perfil nao encontrado ou inactivo.</div></div>`;
+}
+
+load();
+</script>
+</body>
+</html>

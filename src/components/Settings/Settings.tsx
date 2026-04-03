@@ -14,7 +14,7 @@ import { ShopManagementPage } from '../Shop/ShopManagementPage';
 import { importKomootRoute } from '../../services/maps/KomootService';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
-type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account' | 'service-book' | 'shop';
+type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'emergency' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account' | 'service-book' | 'shop';
 
 // ── Grouped menu matching desktop 9-category sidebar ────────
 interface MenuCategory {
@@ -31,6 +31,7 @@ const MENU_CATEGORIES: MenuCategory[] = [
     { id: 'personal', icon: 'badge', label: 'Dados Pessoais', desc: 'Nome, nascimento, género, clube, foto' },
     { id: 'physical', icon: 'monitor_heart', label: 'Perfil Físico', desc: 'Peso, altura, VO2max, FTP, SpO2' },
     { id: 'medical', icon: 'health_and_safety', label: 'Médico + Objectivos', desc: 'Condições, objectivos, perfil atleta' },
+    { id: 'emergency', icon: 'emergency', label: 'Emergência + QR', desc: 'Sangue, alergias, contactos, QR público' },
   ]},
   { label: 'Treino', icon: 'show_chart', color: '#fbbf24', items: [
     { id: 'zones', icon: 'show_chart', label: 'Zonas HR + Potência', desc: 'Zonas cardíacas e de potência editáveis' },
@@ -96,6 +97,7 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
         {activePage === 'physical' && <PhysicalPage />}
         {activePage === 'zones' && <ZonesPage />}
         {activePage === 'medical' && <MedicalPage />}
+        {activePage === 'emergency' && <EmergencyPage />}
         {activePage === 'bikefit' && <BikeFitSection />}
         {activePage === 'club' && <ClubPage />}
         {activePage === 'bike' && <BikesPage />}
@@ -730,6 +732,247 @@ function RoutesPage({ onNavigate }: { onNavigate?: (s: Screen) => void }) {
       )}
     </div>
   );
+}
+
+const SB_URL_EMG = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const SB_KEY_EMG = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
+function EmergencyPage() {
+  const profile = useSettingsStore((s) => s.riderProfile);
+  const updateProfile = useSettingsStore((s) => s.updateRiderProfile);
+  const user = useAuthStore((s) => s.user);
+
+  const [bloodType, setBloodType] = useState(profile.blood_type ?? '');
+  const [allergies, setAllergies] = useState((profile.allergies ?? []).join(', '));
+  const [medications, setMedications] = useState((profile.medications ?? []).join(', '));
+  const [healthInsurance, setHealthInsurance] = useState(profile.health_insurance ?? '');
+  const [organDonor, setOrganDonor] = useState(profile.organ_donor ?? false);
+  const [phone, setPhone] = useState(profile.phone ?? '');
+
+  // Emergency contacts
+  const [contacts, setContacts] = useState(profile.emergency_contacts ?? []);
+  const [newName, setNewName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newRelation, setNewRelation] = useState('spouse');
+
+  // QR
+  const [qrToken, setQrToken] = useState(profile.emergency_qr_token ?? '');
+  const [syncing, setSyncing] = useState(false);
+
+  const save = () => {
+    const patch = {
+      blood_type: bloodType || undefined,
+      allergies: allergies ? allergies.split(',').map((s: string) => s.trim()).filter(Boolean) : undefined,
+      medications: medications ? medications.split(',').map((s: string) => s.trim()).filter(Boolean) : undefined,
+      health_insurance: healthInsurance || undefined,
+      organ_donor: organDonor,
+      phone: phone || undefined,
+      emergency_contacts: contacts,
+      emergency_qr_token: qrToken || undefined,
+    };
+    updateProfile(patch);
+  };
+
+  const addContact = () => {
+    if (!newName || !newPhone) return;
+    const updated = [...contacts, { name: newName, phone: newPhone, relation: newRelation }];
+    setContacts(updated);
+    setNewName(''); setNewPhone('');
+    updateProfile({ emergency_contacts: updated });
+  };
+
+  const removeContact = (i: number) => {
+    const updated = contacts.filter((_, idx) => idx !== i);
+    setContacts(updated);
+    updateProfile({ emergency_contacts: updated });
+  };
+
+  // Generate & sync emergency profile to Supabase
+  const syncEmergencyProfile = async () => {
+    if (!SB_URL_EMG || !SB_KEY_EMG || !user?.id) return;
+    setSyncing(true);
+
+    const token = qrToken || crypto.randomUUID().slice(0, 12);
+    if (!qrToken) { setQrToken(token); updateProfile({ emergency_qr_token: token }); }
+
+    const body = {
+      user_id: user.id,
+      token,
+      name: profile.name,
+      birthdate: profile.birthdate,
+      gender: profile.gender,
+      phone: phone,
+      blood_type: bloodType,
+      allergies: allergies ? allergies.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+      medications: medications ? medications.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+      medical_conditions: profile.medical_conditions ?? [],
+      medical_notes: profile.medical_notes,
+      organ_donor: organDonor,
+      health_insurance: healthInsurance,
+      emergency_contacts: contacts,
+      address_city: profile.address?.city,
+      address_country: profile.address?.country,
+      avatar_url: profile.avatar_url,
+      weight_kg: profile.weight_kg,
+      height_cm: profile.height_cm,
+      active: true,
+    };
+
+    try {
+      await fetch(`${SB_URL_EMG}/rest/v1/emergency_profiles?token=eq.${token}`, {
+        method: 'DELETE',
+        headers: { 'apikey': SB_KEY_EMG, 'Authorization': `Bearer ${SB_KEY_EMG}` },
+      });
+      await fetch(`${SB_URL_EMG}/rest/v1/emergency_profiles`, {
+        method: 'POST',
+        headers: { 'apikey': SB_KEY_EMG, 'Authorization': `Bearer ${SB_KEY_EMG}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify(body),
+      });
+    } catch { /* ignore */ }
+    setSyncing(false);
+  };
+
+  const emergencyUrl = qrToken ? `${window.location.origin}/emergency.html?t=${qrToken}` : '';
+
+  return (
+    <div className="space-y-4">
+      {/* Blood type */}
+      <SectionLabel>Tipo Sanguineo</SectionLabel>
+      <Card>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center' }}>
+          {BLOOD_TYPES.map((bt) => (
+            <button key={bt} onClick={() => { setBloodType(bt); save(); }}
+              style={{
+                width: '52px', height: '44px', fontWeight: 900, fontSize: '16px', border: 'none', cursor: 'pointer', borderRadius: '4px',
+                backgroundColor: bloodType === bt ? '#ff3333' : '#262626',
+                color: bloodType === bt ? 'white' : '#777575',
+              }}>{bt}</button>
+          ))}
+        </div>
+      </Card>
+
+      {/* Medical alerts */}
+      <SectionLabel>Alertas Medicos</SectionLabel>
+      <Card>
+        <TextField label="Telefone pessoal" value={phone} onChange={(v) => { setPhone(v); save(); }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ color: '#adaaaa', fontSize: '13px' }}>Alergias</span>
+          <input type="text" value={allergies} onChange={(e) => { setAllergies(e.target.value); save(); }}
+            placeholder="Penicilina, Latex..." style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', width: '180px', textAlign: 'right', fontSize: '12px' }} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ color: '#adaaaa', fontSize: '13px' }}>Medicacao</span>
+          <input type="text" value={medications} onChange={(e) => { setMedications(e.target.value); save(); }}
+            placeholder="Aspirina, Metformina..." style={{ backgroundColor: '#262626', color: 'white', padding: '6px 10px', border: 'none', width: '180px', textAlign: 'right', fontSize: '12px' }} />
+        </div>
+        <TextField label="Seguro saude" value={healthInsurance} onChange={(v) => { setHealthInsurance(v); save(); }} />
+        <Toggle label="Dador de orgaos" value={organDonor} onChange={(v) => { setOrganDonor(v); save(); }} />
+      </Card>
+
+      {/* Emergency contacts */}
+      <SectionLabel>Contactos de Emergencia</SectionLabel>
+      <Card>
+        {contacts.map((c, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #262626' }}>
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: 'white' }}>{c.name}</div>
+              <div style={{ fontSize: '11px', color: '#888' }}>{c.relation} — {c.phone}</div>
+            </div>
+            <button onClick={() => removeContact(i)} style={{ background: 'none', border: 'none', color: '#ff716c', cursor: 'pointer', fontSize: '18px' }}>x</button>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+          <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nome"
+            style={{ flex: 1, minWidth: '80px', backgroundColor: '#262626', color: 'white', padding: '6px 8px', border: 'none', fontSize: '12px' }} />
+          <input type="tel" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} placeholder="Telefone"
+            style={{ flex: 1, minWidth: '80px', backgroundColor: '#262626', color: 'white', padding: '6px 8px', border: 'none', fontSize: '12px' }} />
+          <select value={newRelation} onChange={(e) => setNewRelation(e.target.value)}
+            style={{ backgroundColor: '#262626', color: 'white', padding: '6px', border: 'none', fontSize: '11px' }}>
+            <option value="spouse">Conjuge</option>
+            <option value="parent">Pai/Mae</option>
+            <option value="sibling">Irmao/a</option>
+            <option value="friend">Amigo/a</option>
+            <option value="coach">Treinador</option>
+            <option value="other">Outro</option>
+          </select>
+          <button onClick={addContact}
+            style={{ padding: '6px 12px', backgroundColor: '#3fff8b', color: 'black', border: 'none', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>+</button>
+        </div>
+      </Card>
+
+      {/* QR Code generation */}
+      <SectionLabel>QR de Emergencia</SectionLabel>
+      <Card>
+        <div style={{ fontSize: '11px', color: '#adaaaa', marginBottom: '8px' }}>
+          Gera um QR code que qualquer pessoa pode ler em caso de acidente. Mostra tipo sanguineo, alergias, contactos de emergencia e dados cardiacos das ultimas 24h.
+        </div>
+        <button onClick={syncEmergencyProfile} disabled={syncing}
+          style={{
+            width: '100%', height: '48px', fontWeight: 700, fontSize: '14px', border: 'none', cursor: 'pointer', borderRadius: '4px',
+            backgroundColor: syncing ? '#262626' : '#ff3333', color: 'white',
+          }}>
+          {syncing ? 'A sincronizar...' : qrToken ? 'Actualizar Perfil Emergencia' : 'Gerar QR de Emergencia'}
+        </button>
+        {emergencyUrl && (
+          <div style={{ marginTop: '12px', textAlign: 'center' }}>
+            <div style={{ display: 'inline-block', padding: '12px', backgroundColor: 'white', borderRadius: '8px' }}>
+              <canvas ref={(el) => { if (el) drawEmergencyQR(el, emergencyUrl); }} width={180} height={180} style={{ display: 'block' }} />
+            </div>
+            <div style={{ fontSize: '9px', color: '#494847', marginTop: '4px', wordBreak: 'break-all' }}>{emergencyUrl}</div>
+            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', marginTop: '8px' }}>
+              <button onClick={() => navigator.clipboard.writeText(emergencyUrl)}
+                style={{ padding: '8px 14px', fontSize: '10px', fontWeight: 700, backgroundColor: 'rgba(255,51,51,0.15)', color: '#ff3333', border: '1px solid rgba(255,51,51,0.25)', cursor: 'pointer' }}>
+                Copiar link
+              </button>
+              <button onClick={() => navigator.share?.({ title: 'KROMI Emergency', url: emergencyUrl })}
+                style={{ padding: '8px 14px', fontSize: '10px', fontWeight: 700, backgroundColor: '#262626', color: 'white', border: '1px solid #333', cursor: 'pointer' }}>
+                Partilhar
+              </button>
+            </div>
+            <div style={{ fontSize: '9px', color: '#ff716c', marginTop: '8px' }}>
+              Cola este QR no capacete, bicicleta ou braceleira. Em caso de acidente, qualquer pessoa pode ler e ver os teus dados medicos.
+            </div>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// Reuse QR drawing from BikeQRCode (simple visual placeholder)
+function drawEmergencyQR(canvas: HTMLCanvasElement, text: string) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const size = 180;
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, size, size);
+  const hash: number[] = [];
+  for (let i = 0; i < 256; i++) { let h = i; for (let j = 0; j < text.length; j++) h = (h * 31 + text.charCodeAt(j % text.length)) & 0xFF; hash.push(h); }
+  const ms = 5;
+  const mods = Math.floor(size / ms);
+  ctx.fillStyle = '#cc0000'; // Red QR for emergency
+  for (let y = 0; y < mods; y++) {
+    for (let x = 0; x < mods; x++) {
+      const s = 7;
+      const isFinder = (x < s && y < s) || (x >= mods - s && y < s) || (x < s && y >= mods - s);
+      if (isFinder) {
+        const lx = x < s ? x : (x >= mods - s ? x - (mods - s) : x);
+        const ly = y < s ? y : (y >= mods - s ? y - (mods - s) : y);
+        if ((lx === 0 || lx === s-1 || ly === 0 || ly === s-1) || (lx >= 2 && lx <= 4 && ly >= 2 && ly <= 4)) {
+          ctx.fillRect(x * ms, y * ms, ms, ms);
+        }
+        continue;
+      }
+      if ((hash[(y * mods + x) % hash.length]! ^ ((x * 7 + y * 13) & 0xFF)) & 1) {
+        ctx.fillRect(x * ms, y * ms, ms, ms);
+      }
+    }
+  }
+  ctx.fillStyle = '#999';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('EMERGENCY', size / 2, size - 4);
 }
 
 function AccountPage() {

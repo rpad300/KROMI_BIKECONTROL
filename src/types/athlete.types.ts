@@ -30,19 +30,49 @@ export interface PowerZone {
   description: string;
 }
 
+/** Emergency contact */
+export interface EmergencyContact {
+  name: string;
+  phone: string;
+  relation: string;  // 'spouse' | 'parent' | 'friend' | 'coach' | 'other'
+}
+
+/** Address with Google Places structure */
+export interface RiderAddress {
+  formatted: string;        // Full address string
+  street?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+  country?: string;
+  lat?: number;
+  lng?: number;
+  place_id?: string;        // Google Places ID
+}
+
 export interface RiderProfile {
   // Personal
   name?: string;
   birthdate?: string;       // ISO date string
   gender?: string;          // M, F, Outro
   avatar_url?: string;      // Profile photo URL
+  phone?: string;           // Personal phone number
+  nationality?: string;     // Country code (PT, ES, etc.)
+  id_number?: string;       // National ID / passport (private)
+
+  // Address
+  address?: RiderAddress;
+
+  // Emergency
+  emergency_contacts?: EmergencyContact[];
+  emergency_qr_token?: string;  // Token for public emergency page
 
   // Club
   club_id?: string;
   club_name?: string;
 
   // Privacy (per-field: 'public' | 'club' | 'private')
-  privacy?: { name?: string; stats?: string; rides?: string };
+  privacy?: { name?: string; stats?: string; rides?: string; emergency?: string };
 
   // Physiology
   hr_max: number;           // Observed max (from FIT imports or manual)
@@ -56,9 +86,14 @@ export interface RiderProfile {
   vo2max?: number;          // ml/kg/min (from watch, test, or estimated)
   ftp_watts?: number;       // Functional Threshold Power (manual or tested)
 
-  // Medical / conditions
+  // Medical
+  blood_type?: string;      // A+, A-, B+, B-, AB+, AB-, O+, O-
+  allergies?: string[];     // Drug/food allergies
+  medications?: string[];   // Current medications
   medical_conditions?: string[];  // ['asthma', 'cardiac', 'diabetes', etc.]
   medical_notes?: string;         // Free text for specific notes
+  organ_donor?: boolean;
+  health_insurance?: string;      // Insurance provider/number
 
   // Goals
   goal?: 'weight_loss' | 'endurance' | 'performance' | 'event_prep' | 'fun' | 'rehab';
