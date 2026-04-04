@@ -92,6 +92,11 @@ if (isMobile) {
   initBLE();
 }
 
+// Start adaptive brightness — auto-adjusts theme based on ambient light from BLE bridge
+import('./services/sensors/AdaptiveBrightnessService').then(({ adaptiveBrightnessService }) => {
+  adaptiveBrightnessService.start();
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
