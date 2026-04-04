@@ -2,8 +2,10 @@ package online.kromi.blebridge
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
+import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -11,21 +13,16 @@ import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import android.webkit.*
+import android.widget.FrameLayout
 import android.widget.ProgressBar
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
 /**
  * WebViewActivity — hosts the KROMI PWA inside the BLE Bridge APK.
  *
- * Benefits over Chrome tab:
- * - Android process keeps running (foreground service)
- * - WebView is not killed by Chrome's tab management
- * - Same process as BLE bridge = no WebSocket latency issues
- * - PWA auto-updates from kromi.online (no APK update needed for UI changes)
- * - Wake lock managed by Android, not by unreliable JS API
- *
- * The WebSocket bridge (localhost:8765) still works for both this WebView
- * AND external Chrome connections — full backwards compatibility.
+ * Flow: onCreate → setupWebView → requestPermissions → onPermissionsResult → startBLE → loadPWA
+ * The PWA only loads AFTER permissions are granted to avoid lifecycle conflicts.
  */
 class WebViewActivity : AppCompatActivity() {
 
@@ -33,277 +30,311 @@ class WebViewActivity : AppCompatActivity() {
         const val TAG = "WebViewActivity"
         const val PWA_URL = "https://kromi.online"
         const val FALLBACK_URL = "file:///android_asset/offline.html"
+        const val PERM_REQUEST_CODE = 1001
     }
 
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
     private var wakeLock: PowerManager.WakeLock? = null
+    private var pwaLoaded = false
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Remove ActionBar BEFORE calling super
+        supportActionBar?.hide()
+
         super.onCreate(savedInstanceState)
 
-        // Fullscreen, keep screen on, portrait
+        // Fullscreen dark, keep screen on
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.statusBarColor = 0xFF0e0e0e.toInt()
+        window.navigationBarColor = 0xFF0e0e0e.toInt()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-        )
-        window.statusBarColor = 0xFF0e0e0e.toInt()
-        window.navigationBarColor = 0xFF0e0e0e.toInt()
 
-        // Simple layout: ProgressBar + WebView
-        val root = android.widget.FrameLayout(this).apply {
+        // Build layout programmatically
+        val root = FrameLayout(this).apply { setBackgroundColor(0xFF0e0e0e.toInt()) }
+
+        webView = WebView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
             setBackgroundColor(0xFF0e0e0e.toInt())
         }
 
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            layoutParams = android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                8
-            )
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 6)
             max = 100
-            progressDrawable.setColorFilter(0xFF3fff8b.toInt(), android.graphics.PorterDuff.Mode.SRC_IN)
-        }
-
-        webView = WebView(this).apply {
-            layoutParams = android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
-            )
+            visibility = View.GONE
         }
 
         root.addView(webView)
         root.addView(progressBar)
         setContentView(root)
 
+        Log.i(TAG, "onCreate — setting up WebView")
         setupWebView()
 
-        // Request BLE permissions first, then start service
-        requestBLEPermissions()
-
-        // Acquire partial wake lock for ride reliability
-        acquireWakeLock()
-
-        // Load PWA
-        webView.loadUrl(PWA_URL)
-        Log.i(TAG, "Loading PWA: $PWA_URL")
+        // Request permissions FIRST — PWA loads only after
+        requestAllPermissions()
     }
 
-    private val BLE_PERMISSION_REQUEST = 1001
+    // ═══════════════════════════════════════════════════════════
+    // PERMISSIONS — request everything upfront, load PWA after
+    // ═══════════════════════════════════════════════════════════
 
-    private fun requestBLEPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val needed = mutableListOf<String>()
-            val perms = mutableListOf(
-                // BLE
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_SCAN,
-                android.Manifest.permission.BLUETOOTH_ADVERTISE,
-                // Location (GPS + BLE scanning)
-                android.Manifest.permission.ACCESS_FINE_LOCATION,
-                android.Manifest.permission.ACCESS_COARSE_LOCATION,
-                // Camera (QR scan, future features)
-                android.Manifest.permission.CAMERA,
-                // Notifications
-                android.Manifest.permission.POST_NOTIFICATIONS,
-                // Phone sensors (barometer, accelerometer already available without permission)
-                // Body sensors (HR from phone sensor if available)
-                android.Manifest.permission.BODY_SENSORS,
-                android.Manifest.permission.ACTIVITY_RECOGNITION,
-            )
-            for (p in perms) {
-                if (checkSelfPermission(p) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    needed.add(p)
-                }
-            }
-            if (needed.isNotEmpty()) {
-                requestPermissions(needed.toTypedArray(), BLE_PERMISSION_REQUEST)
-            } else {
-                startBLEService()
-            }
+    private fun requestAllPermissions() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            // Pre-Android 12: just start
+            onPermissionsReady()
+            return
+        }
+
+        val allPerms = mutableListOf(
+            android.Manifest.permission.BLUETOOTH_CONNECT,
+            android.Manifest.permission.BLUETOOTH_SCAN,
+            android.Manifest.permission.BLUETOOTH_ADVERTISE,
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            android.Manifest.permission.CAMERA,
+            android.Manifest.permission.POST_NOTIFICATIONS,
+            android.Manifest.permission.BODY_SENSORS,
+            android.Manifest.permission.ACTIVITY_RECOGNITION,
+        )
+
+        val needed = allPerms.filter {
+            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (needed.isEmpty()) {
+            onPermissionsReady()
         } else {
-            // Pre-Android 12: no runtime BLE permissions needed
-            startBLEService()
+            Log.i(TAG, "Requesting ${needed.size} permissions")
+            requestPermissions(needed.toTypedArray(), PERM_REQUEST_CODE)
         }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == BLE_PERMISSION_REQUEST) {
-            // Start service regardless — it will work with whatever permissions were granted
-            startBLEService()
+        if (requestCode == PERM_REQUEST_CODE) {
+            val granted = grantResults.count { it == PackageManager.PERMISSION_GRANTED }
+            Log.i(TAG, "Permissions granted: $granted / ${permissions.size}")
+            onPermissionsReady()
         }
     }
+
+    /** Called after permissions dialog is dismissed — safe to start services + load PWA */
+    private fun onPermissionsReady() {
+        startBLEService()
+        acquireWakeLock()
+        loadPWA()
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // WEBVIEW SETUP
+    // ═══════════════════════════════════════════════════════════
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupWebView() {
         webView.settings.apply {
+            // Core
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
-            allowFileAccess = true  // needed for offline.html fallback
-            allowContentAccess = false
-            // MUST allow mixed content: PWA is HTTPS but WebSocket bridge is ws://127.0.0.1:8765
+
+            // Allow mixed content: HTTPS page needs ws://127.0.0.1:8765 for BLE bridge
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+
+            // Allow file access for offline fallback
+            allowFileAccess = true
+            allowContentAccess = false
+
+            // Cache — use cache when offline, fetch when online
             cacheMode = WebSettings.LOAD_DEFAULT
+
+            // Media
             mediaPlaybackRequiresUserGesture = false
-            // Enable IndexedDB (critical for LocalRideStore)
+
+            // Single window — never open new windows
             javaScriptCanOpenWindowsAutomatically = false
             setSupportMultipleWindows(false)
-            // WebView user agent — append KROMI identifier for PWA detection
+
+            // User agent — append KROMI identifier so PWA knows it's in the APK
             userAgentString = "$userAgentString KROMI-WebView/${getAppVersion()}"
         }
 
-        // JavaScript interface — lets PWA call native functions
+        // JavaScript bridge — lets PWA call native functions
         webView.addJavascriptInterface(KromiBridge(), "KromiBridge")
 
-        // Handle page loading
+        // WebViewClient — CRITICAL: keeps ALL navigation inside the WebView
         webView.webViewClient = object : WebViewClient() {
-            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                progressBar.visibility = View.VISIBLE
-            }
 
-            override fun onPageFinished(view: WebView?, url: String?) {
-                progressBar.visibility = View.GONE
-                Log.i(TAG, "Page loaded: $url")
-            }
-
-            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                // Only handle main frame errors
-                if (request?.isForMainFrame == true) {
-                    Log.e(TAG, "Load error: ${error?.description}")
-                    // Show offline fallback
-                    view?.loadUrl(FALLBACK_URL)
-                }
-            }
-
+            // This is the KEY method — returning false = load in WebView, true = handle externally
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return false
-                val host = request?.url?.host ?: ""
+                val host = request.url?.host ?: ""
+                Log.d(TAG, "Navigation: $url (host=$host)")
 
-                // Keep kromi.online and localhost URLs inside WebView
-                if (host == "kromi.online" || host == "127.0.0.1" || host == "localhost") {
-                    return false // load in WebView
+                // ALWAYS keep kromi.online and localhost in WebView
+                if (host == "kromi.online" || host == "www.kromi.online"
+                    || host == "127.0.0.1" || host == "localhost") {
+                    return false
                 }
 
-                // tel:, mailto: etc — open in system apps
-                if (!url.startsWith("http")) {
+                // tel:, mailto:, intent: etc — open in system
+                if (!url.startsWith("http://") && !url.startsWith("https://")) {
                     try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
                     return true
                 }
 
-                // External HTTP links (Google Maps, etc) — open in browser
+                // External HTTP(S) links — open in browser
                 try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
                 return true
             }
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                Log.i(TAG, "Page loading: $url")
+                progressBar.visibility = View.VISIBLE
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                Log.i(TAG, "Page loaded: $url")
+                progressBar.visibility = View.GONE
+                pwaLoaded = true
+            }
+
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                if (request?.isForMainFrame == true) {
+                    Log.e(TAG, "Load error (main frame): ${error?.description} code=${error?.errorCode}")
+                    view?.loadUrl(FALLBACK_URL)
+                }
+            }
+
+            // Handle SSL errors — accept for kromi.online (our own domain)
+            override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
+                val url = error?.url ?: ""
+                Log.w(TAG, "SSL error: ${error?.primaryError} url=$url")
+                if (url.contains("kromi.online") || url.contains("127.0.0.1")) {
+                    handler?.proceed() // trust our own domain
+                } else {
+                    handler?.cancel()
+                }
+            }
         }
 
-        // Handle JS console, geolocation, file uploads
+        // WebChromeClient — JS console, geolocation, progress
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 progressBar.progress = newProgress
+                if (newProgress >= 100) progressBar.visibility = View.GONE
             }
 
             override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
                 consoleMessage?.let {
-                    Log.d(TAG, "[JS] ${it.sourceId()}:${it.lineNumber()} ${it.message()}")
+                    Log.d(TAG, "[JS:${it.messageLevel()}] ${it.sourceId()}:${it.lineNumber()} ${it.message()}")
                 }
                 return true
             }
 
-            // Geolocation permission — auto-grant for our own domain
+            // Auto-grant geolocation for our domain
             override fun onGeolocationPermissionsShowPrompt(origin: String?, callback: GeolocationPermissions.Callback?) {
+                Log.i(TAG, "Geolocation permission for: $origin")
                 callback?.invoke(origin, true, false)
             }
         }
 
-        // Enable remote debugging in debug builds
+        // Enable Chrome DevTools remote debugging
         WebView.setWebContentsDebuggingEnabled(true)
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // LOAD PWA
+    // ═══════════════════════════════════════════════════════════
+
+    private fun loadPWA() {
+        if (pwaLoaded) return
+        Log.i(TAG, "Loading PWA: $PWA_URL")
+        webView.loadUrl(PWA_URL)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // BLE SERVICE
+    // ═══════════════════════════════════════════════════════════
+
     private fun startBLEService() {
-        if (BLEBridgeService.instance == null) {
-            val serviceIntent = Intent(this, BLEBridgeService::class.java)
+        if (BLEBridgeService.instance != null) {
+            Log.i(TAG, "BLE service already running")
+            return
+        }
+        try {
+            val intent = Intent(this, BLEBridgeService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(serviceIntent)
+                startForegroundService(intent)
             } else {
-                startService(serviceIntent)
+                startService(intent)
             }
-            Log.i(TAG, "BLE Bridge service started")
-        } else {
-            Log.i(TAG, "BLE Bridge service already running")
+            Log.i(TAG, "BLE service started")
+        } catch (e: Exception) {
+            Log.e(TAG, "BLE service start failed: ${e.message}")
+            Toast.makeText(this, "BLE service error: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // WAKE LOCK
+    // ═══════════════════════════════════════════════════════════
 
     @SuppressLint("WakelockTimeout")
     private fun acquireWakeLock() {
-        val pm = getSystemService(POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "kromi:ride").apply {
-            acquire()
+        try {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "kromi:ride").apply { acquire() }
+        } catch (e: Exception) {
+            Log.w(TAG, "WakeLock failed: ${e.message}")
         }
     }
 
-    private fun getAppVersion(): String {
-        return try {
-            packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
-        } catch (_: Exception) { "?" }
-    }
-
-    // ── JavaScript Interface ──
+    // ═══════════════════════════════════════════════════════════
+    // JAVASCRIPT INTERFACE
+    // ═══════════════════════════════════════════════════════════
 
     inner class KromiBridge {
-        /** PWA can check if running inside KROMI APK */
         @JavascriptInterface
         fun isKromiApp(): Boolean = true
 
-        /** Get APK version */
         @JavascriptInterface
         fun getVersion(): String = getAppVersion()
 
-        /** Open BLE debug panel */
         @JavascriptInterface
         fun openDebugPanel() {
             startActivity(Intent(this@WebViewActivity, MainActivity::class.java))
         }
 
-        /** Check if BLE service is running */
         @JavascriptInterface
         fun isBLEServiceRunning(): Boolean = BLEBridgeService.instance != null
 
-        /** Check if BLE is connected to bike */
         @JavascriptInterface
         fun isBLEConnected(): Boolean = BLEBridgeService.instance?.bleManager?.isConnected == true
     }
 
-    // ── Back button navigation ──
+    // ═══════════════════════════════════════════════════════════
+    // LIFECYCLE
+    // ═══════════════════════════════════════════════════════════
 
     @Deprecated("Use OnBackPressedDispatcher")
     override fun onBackPressed() {
         if (webView.canGoBack()) {
             webView.goBack()
         } else {
-            // Don't close app — move to background (service keeps running)
-            moveTaskToBack(true)
+            moveTaskToBack(true) // don't kill app, keep service running
         }
     }
-
-    // ── Lifecycle ──
 
     override fun onResume() {
         super.onResume()
         webView.onResume()
-        // Re-apply fullscreen
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-        )
     }
 
     override fun onPause() {
@@ -312,10 +343,14 @@ class WebViewActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        wakeLock?.let {
-            if (it.isHeld) it.release()
-        }
+        wakeLock?.let { if (it.isHeld) it.release() }
         webView.destroy()
         super.onDestroy()
+    }
+
+    private fun getAppVersion(): String {
+        return try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+        } catch (_: Exception) { "?" }
     }
 }
