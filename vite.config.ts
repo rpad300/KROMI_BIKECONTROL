@@ -27,6 +27,11 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Force new SW to take over immediately — no stale cache
+        skipWaiting: true,
+        clientsClaim: true,
+        // Clean old precache on update
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/maps\.googleapis\.com\/.*/i,
