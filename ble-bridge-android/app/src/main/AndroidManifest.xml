@@ -15,20 +15,39 @@
 
     <application
         android:allowBackup="true"
-        android:label="BLE Bridge"
+        android:label="KROMI BikeControl"
         android:theme="@style/Theme.MaterialComponents.DayNight.DarkActionBar"
-        android:icon="@drawable/ic_launcher">
+        android:icon="@drawable/ic_launcher"
+        android:usesCleartextTraffic="true">
 
+        <!-- Main entry: WebView hosting the PWA -->
         <activity
-            android:name=".MainActivity"
+            android:name=".WebViewActivity"
             android:exported="true"
             android:screenOrientation="portrait"
-            android:launchMode="singleTask">
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Deep link: PWA can launch bridge via intent:// URL -->
+            <!-- Deep link from kromi.online -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="kromi.online"/>
+            </intent-filter>
+        </activity>
+
+        <!-- BLE Debug panel (accessible from settings or notification) -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:launchMode="singleTask"
+            android:label="BLE Debug">
+            <!-- Deep link: PWA can launch debug panel -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
