@@ -6,7 +6,14 @@ export function ElevationProfile() {
   const nextModeChange = useAutoAssistStore((s) => s.nextModeChange);
   const terrain = useAutoAssistStore((s) => s.terrain);
 
-  if (profile.length < 2) return null;
+  if (profile.length < 2) return (
+    <div className="bg-[#1a1919] rounded-sm overflow-hidden relative h-full flex items-center justify-center">
+      <div className="flex flex-col items-center gap-1 opacity-30">
+        <span className="material-symbols-outlined" style={{ fontSize: '20px', color: '#6e9bff' }}>landscape</span>
+        <span className="text-[9px] text-[#555] uppercase tracking-wider">Elevation</span>
+      </div>
+    </div>
+  );
 
   const gradient = terrain?.current_gradient_pct ?? 0;
   const gradientColor =

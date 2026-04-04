@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import { useIsEBike } from '../../hooks/useIsEBike';
 import { AssistMode } from '../../types/bike.types';
@@ -50,8 +51,9 @@ export function CruiseDashboard() {
         <ElevationProfile />
       </div>
 
-      {/* Weather + Trip strip — 6% */}
+      {/* Clock + Weather + Trip strip — 6% */}
       <div style={{ height: '6%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-around', backgroundColor: '#1a1919', borderTop: '1px solid rgba(73,72,71,0.1)', borderBottom: '1px solid rgba(73,72,71,0.1)' }}>
+        <ClockDisplay />
         {temp > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
             <span className="material-symbols-outlined" style={{ fontSize: '12px', color: '#6e9bff' }}>thermostat</span>
@@ -92,6 +94,25 @@ export function CruiseDashboard() {
           <MiniMap />
         )}
       </div>
+    </div>
+  );
+}
+
+/** Live clock — updates every second, shows HH:MM and day/month */
+function ClockDisplay() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const time = now.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+  const date = now.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <span className="font-headline font-bold tabular-nums" style={{ fontSize: '12px', color: '#fff' }}>{time}</span>
+      <span className="font-headline tabular-nums" style={{ fontSize: '9px', color: '#777575' }}>{date}</span>
     </div>
   );
 }
