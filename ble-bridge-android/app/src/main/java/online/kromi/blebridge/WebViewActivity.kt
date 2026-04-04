@@ -100,11 +100,22 @@ class WebViewActivity : AppCompatActivity() {
     private fun requestBLEPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val needed = mutableListOf<String>()
-            val perms = arrayOf(
+            val perms = mutableListOf(
+                // BLE
                 android.Manifest.permission.BLUETOOTH_CONNECT,
                 android.Manifest.permission.BLUETOOTH_SCAN,
+                android.Manifest.permission.BLUETOOTH_ADVERTISE,
+                // Location (GPS + BLE scanning)
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                // Camera (QR scan, future features)
+                android.Manifest.permission.CAMERA,
+                // Notifications
                 android.Manifest.permission.POST_NOTIFICATIONS,
+                // Phone sensors (barometer, accelerometer already available without permission)
+                // Body sensors (HR from phone sensor if available)
+                android.Manifest.permission.BODY_SENSORS,
+                android.Manifest.permission.ACTIVITY_RECOGNITION,
             )
             for (p in perms) {
                 if (checkSelfPermission(p) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
