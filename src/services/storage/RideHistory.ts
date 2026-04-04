@@ -93,7 +93,7 @@ class RideSessionManager {
 
   private emptyMetrics(): PersistedMetrics {
     return {
-      distance_km: 0, speed_max: 0,
+      distance_km: 0, start_km: 0, speed_max: 0,
       power_avg: 0, power_max: 0, power_sum: 0, power_count: 0,
       hr_max: 0, hr_sum: 0, hr_count: 0,
       cadence_sum: 0, cadence_count: 0,
@@ -215,6 +215,7 @@ class RideSessionManager {
     this.metrics = {
       ...this.emptyMetrics(),
       battery_start: bike.battery_percent,
+      start_km: bike.distance_km || bike.trip_distance_km || 0,
     };
 
     batteryEfficiencyTracker.reset();
@@ -296,7 +297,9 @@ class RideSessionManager {
 
     // Use persisted metrics (survive tab kill) with fallback to live bikeStore
     const m = this.metrics;
-    const totalKm = m.distance_km > 0 ? m.distance_km : bike.distance_km;
+    // Trip distance = current odometer - start odometer (NOT the raw odometer value)
+    const currentKm = m.distance_km > 0 ? m.distance_km : bike.distance_km;
+    const totalKm = Math.max(0, currentKm - (m.start_km || 0));
     const avgSpeed = elapsedS > 0 ? Math.round(totalKm / (elapsedS / 3600) * 10) / 10 : 0;
     const maxSpeed = Math.max(m.speed_max, bike.speed_max || 0);
     const avgPower = m.power_count > 0 ? Math.round(m.power_sum / m.power_count) : Math.round(bike.power_avg);

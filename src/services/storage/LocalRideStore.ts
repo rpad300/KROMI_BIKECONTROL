@@ -58,6 +58,7 @@ export interface LocalSession {
 
 export interface PersistedMetrics {
   distance_km: number;
+  start_km: number;
   speed_max: number;
   power_avg: number;
   power_max: number;
