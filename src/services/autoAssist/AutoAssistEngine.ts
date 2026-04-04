@@ -6,6 +6,8 @@ import type {
   AssistDecision,
 } from '../../types/elevation.types';
 import { elevationService } from '../maps/ElevationService';
+import { useMapStore } from '../../store/mapStore';
+import { useBikeStore } from '../../store/bikeStore';
 
 interface AutoAssistConfig {
   enabled: boolean;
@@ -32,6 +34,28 @@ class AutoAssistEngine {
   private config: AutoAssistConfig = DEFAULT_CONFIG;
   private lastManualOverride = 0;
   private modeHistory: AssistMode[] = [];
+  private altitudeHistory: Array<{ alt: number; dist: number; ts: number }> = [];
+
+  /**
+   * GPS-based gradient fallback — used when Google Elevation API is unavailable.
+   * Uses altitude from GPS (mapStore) and distance from odometer (bikeStore).
+   * Keeps a 30s sliding window to smooth GPS altitude noise.
+   */
+  private calculateLocalGradient(altitude: number | null, distanceKm: number): number {
+    if (altitude == null || altitude === 0) return 0;
+    const now = Date.now();
+    this.altitudeHistory.push({ alt: altitude, dist: distanceKm, ts: now });
+    // Keep last 30s of data
+    this.altitudeHistory = this.altitudeHistory.filter(p => now - p.ts < 30000);
+    if (this.altitudeHistory.length < 2) return 0;
+
+    const first = this.altitudeHistory[0]!;
+    const last = this.altitudeHistory[this.altitudeHistory.length - 1]!;
+    const dAlt = last.alt - first.alt;
+    const dDist = (last.dist - first.dist) * 1000; // km to m
+    if (dDist < 5) return 0; // need at least 5m movement
+    return (dAlt / dDist) * 100; // gradient %
+  }
 
   static getInstance(): AutoAssistEngine {
     if (!AutoAssistEngine.instance) {
@@ -89,8 +113,43 @@ class AutoAssistEngine {
       this.config.lookahead_m
     );
 
+    // Fallback: if Google Elevation API unavailable, use GPS altitude
     if (profile.length < 2) {
-      return { action: 'none', reason: 'Sem dados elevacao', terrain: null };
+      const mapAltitude = useMapStore.getState().altitude;
+      const bikeDistance = useBikeStore.getState().distance_km;
+      const localGradient = this.calculateLocalGradient(mapAltitude, bikeDistance);
+
+      if (localGradient === 0 && this.altitudeHistory.length < 2) {
+        return { action: 'none', reason: 'Sem dados elevacao (GPS a recolher)', terrain: null };
+      }
+
+      // Build a minimal terrain analysis from GPS gradient
+      const gpsTerrain: TerrainAnalysis = {
+        current_gradient_pct: localGradient,
+        avg_upcoming_gradient_pct: localGradient,
+        max_upcoming_gradient_pct: localGradient,
+        next_transition: null,
+        profile: [],
+      };
+
+      // Skip pre-emptive (no lookahead data), go straight to normal adjustment
+      const targetMode = this.gradientToMode(localGradient);
+      this.modeHistory.push(targetMode);
+      if (this.modeHistory.length > this.config.smoothing_window) {
+        this.modeHistory.shift();
+      }
+
+      const stableMode = this.getStableMode();
+      if (!stableMode || stableMode === currentMode) {
+        return { action: 'none', reason: `GPS grad: ${localGradient > 0 ? '+' : ''}${localGradient.toFixed(1)}%`, terrain: gpsTerrain };
+      }
+
+      return {
+        action: 'change_mode',
+        new_mode: stableMode,
+        reason: `GPS grad: ${localGradient > 0 ? '+' : ''}${localGradient.toFixed(1)}%`,
+        terrain: gpsTerrain,
+      };
     }
 
     const terrain = this.analyzeTerrain(profile);

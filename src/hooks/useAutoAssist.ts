@@ -3,8 +3,11 @@ import { useBikeStore } from '../store/bikeStore';
 import { useMapStore } from '../store/mapStore';
 import { useAutoAssistStore } from '../store/autoAssistStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useTorqueStore } from '../store/torqueStore';
 import { autoAssistEngine } from '../services/autoAssist/AutoAssistEngine';
-import { giantBLEService } from '../services/bluetooth/GiantBLEService';
+import { sendAssistMode, isBikeConnected } from '../services/bluetooth/BLEBridge';
+import { torqueEngine } from '../services/torque/TorqueEngine';
+import { AssistMode } from '../types/bike.types';
 
 const TICK_INTERVAL_MS = 2000; // Run every 2 seconds
 
@@ -58,9 +61,52 @@ export function useAutoAssist() {
         autoAssistEngine.getOverrideRemaining()
       );
 
-      // Execute mode change via BLE
+      // Execute mode change via BLE Bridge (routes to WebSocket or Web BLE)
       if (decision.action === 'change_mode' && decision.new_mode !== undefined) {
-        await giantBLEService.sendAssistMode(decision.new_mode);
+        try {
+          await sendAssistMode(decision.new_mode);
+        } catch (err) {
+          console.warn('[AutoAssist] Failed to send assist mode:', err);
+        }
+      }
+
+      // ── TorqueEngine — fine-tune torque/support for current terrain ──
+      try {
+        const terrain = aaStore.terrain;
+        if (terrain && isBikeConnected()) {
+          const torqueCmd = torqueEngine.calculateOptimalTorque(
+            terrain,
+            bike.hr_zone,
+            'stable', // TODO: derive HR trend from history
+            bike.gear,
+            bike.battery_percent,
+          );
+          if (torqueCmd) {
+            useTorqueStore.getState().setLastCommand(torqueCmd);
+          }
+        }
+      } catch (err) {
+        console.warn('[AutoAssist] TorqueEngine error:', err);
+      }
+
+      // ── BiometricAssist — HR Zone 5 emergency override to POWER ──
+      try {
+        if (
+          bike.hr_bpm > 0 &&
+          bike.hr_zone >= 5 &&
+          !autoAssistEngine.isOverrideActive() &&
+          bike.assist_mode !== AssistMode.POWER
+        ) {
+          await sendAssistMode(AssistMode.POWER);
+          aaStore.setLastDecision({
+            action: 'change_mode',
+            new_mode: AssistMode.POWER,
+            reason: 'HR ZONA 5 — Assistencia maxima',
+            terrain: aaStore.terrain,
+          });
+        }
+      } catch (err) {
+        console.warn('[AutoAssist] BiometricAssist error:', err);
       }
     }, TICK_INTERVAL_MS);
 

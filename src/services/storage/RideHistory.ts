@@ -349,7 +349,7 @@ class RideSessionManager {
     // Trigger immediate Supabase sync attempt
     localRideStore.syncToSupabase().catch(() => {});
 
-    // Process ride for adaptive learning
+    // Process ride for adaptive learning (athlete profile + TSS/fatigue)
     await useAthleteStore.getState().processRide({
       id: this.sessionId,
       snapshots: [],
@@ -371,6 +371,11 @@ class RideSessionManager {
       override_events: [],
       created_at: new Date(),
     });
+
+    // Increment learning store ride counter (overrides were recorded in real-time)
+    try {
+      useLearningStore.getState().learnFromRide([]); // empty = just increment ride count
+    } catch { /* learning is optional */ }
 
     // Reset in-memory state
     this.sessionId = null;
