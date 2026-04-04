@@ -678,7 +678,7 @@ class LocalRideStore {
 
       // Load metrics
       let metrics: PersistedMetrics = {
-        distance_km: 0, speed_max: 0,
+        distance_km: 0, start_km: 0, speed_max: 0,
         power_avg: 0, power_max: 0, power_sum: 0, power_count: 0,
         hr_max: 0, hr_sum: 0, hr_count: 0,
         cadence_sum: 0, cadence_count: 0,
