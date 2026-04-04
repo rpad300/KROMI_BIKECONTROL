@@ -433,16 +433,26 @@ export class WebSocketBLEClient {
 
         case 'crash':
           console.warn('[WSClient] CRASH DETECTED — magnitude:', msg.magnitude);
+          store.setCrash(msg.magnitude as number);
           if ('vibrate' in navigator) {
             navigator.vibrate([500, 200, 500, 200, 500]);
           }
           break;
 
         case 'light':
+          store.setLightLux(msg.lux as number);
           // Forward to AdaptiveBrightnessService for dynamic theme
           import('../sensors/AdaptiveBrightnessService').then(({ adaptiveBrightnessService }) => {
             adaptiveBrightnessService.updateLux(msg.lux);
           });
+          break;
+
+        case 'gyro':
+          store.setGyro(msg.x as number, msg.y as number, msg.z as number);
+          break;
+
+        case 'magnetometer':
+          store.setMagHeading(msg.heading as number);
           break;
 
         case 'deviceInfo':

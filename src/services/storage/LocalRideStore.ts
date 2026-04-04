@@ -114,6 +114,12 @@ export interface LocalSnapshot {
   barometric_altitude_m: number | null;
   lean_angle_deg: number;
   temperature_c: number;
+  light_lux: number;
+  mag_heading_deg: number;
+  gyro_x: number;
+  gyro_y: number;
+  gyro_z: number;
+  crash_magnitude: number;
 }
 
 export interface LocalOverrideEvent {
@@ -844,6 +850,9 @@ class LocalRideStore {
     rest.lean_angle_deg = Math.max(-9999.9, Math.min(9999.9, Math.round((rest.lean_angle_deg as number) * 10) / 10));
     rest.temperature_c = Math.max(-999.9, Math.min(999.9, Math.round((rest.temperature_c as number) * 10) / 10));
     if (rest.barometric_altitude_m != null) rest.barometric_altitude_m = Math.round((rest.barometric_altitude_m as number) * 10) / 10;
+    rest.light_lux = Math.round(rest.light_lux as number);
+    rest.mag_heading_deg = Math.max(0, Math.min(9999.9, Math.round((rest.mag_heading_deg as number) * 10) / 10));
+    rest.crash_magnitude = Math.max(0, Math.min(99.9, Math.round((rest.crash_magnitude as number) * 10) / 10));
     return rest;
   }
 

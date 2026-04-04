@@ -56,6 +56,12 @@ interface SnapshotRow {
   barometric_altitude_m: number | null;
   lean_angle_deg: number;
   temperature_c: number;
+  light_lux: number;
+  mag_heading_deg: number;
+  gyro_x: number;
+  gyro_y: number;
+  gyro_z: number;
+  crash_magnitude: number;
 }
 
 export interface RideSessionState {
@@ -489,6 +495,12 @@ class RideSessionManager {
       barometric_altitude_m: bike.barometric_altitude_m,
       lean_angle_deg: bike.lean_angle_deg,
       temperature_c: bike.temperature_c,
+      light_lux: bike.light_lux,
+      mag_heading_deg: bike.mag_heading_deg,
+      gyro_x: bike.gyro_x,
+      gyro_y: bike.gyro_y,
+      gyro_z: bike.gyro_z,
+      crash_magnitude: bike.crash_magnitude,
     };
 
     this.snapshotBuffer.push(row);

@@ -39,6 +39,10 @@ export function DiagBadge() {
   const pressure = useBikeStore((s) => s.pressure_hpa);
   const temp = useBikeStore((s) => s.temperature_c);
   const lean = useBikeStore((s) => s.lean_angle_deg);
+  const lux = useBikeStore((s) => s.light_lux);
+  const magHeading = useBikeStore((s) => s.mag_heading_deg);
+  const gyroX = useBikeStore((s) => s.gyro_x);
+  const crashMag = useBikeStore((s) => s.crash_magnitude);
   const assist = useBikeStore((s) => s.assist_mode);
   const bleStatus = useBikeStore((s) => s.ble_status);
 
@@ -71,6 +75,9 @@ export function DiagBadge() {
       battery: bike.battery_percent, assist: bike.assist_mode, torque: bike.torque_nm,
       gear: bike.gear, front_gear: bike.front_gear, rear_gear: bike.rear_gear,
       pressure: bike.pressure_hpa, temp: bike.temperature_c, lean: bike.lean_angle_deg,
+      lux: bike.light_lux, mag_heading: bike.mag_heading_deg,
+      gyro_x: bike.gyro_x, gyro_y: bike.gyro_y, gyro_z: bike.gyro_z,
+      crash_mag: bike.crash_magnitude,
       baro_alt: bike.barometric_altitude_m, spo2: bike.spo2_pct,
       lat: map.latitude, lng: map.longitude, alt: map.altitude, gps_acc: map.accuracy,
       ble: bike.ble_status, range: bike.range_km, assist_current: bike.assist_current_a,
@@ -123,8 +130,9 @@ export function DiagBadge() {
             <div>Cad: {val(cadence, '#fbbf24')} | Trq: {val(torque, '#f59e0b')} | Bat: {val(battery, '#3fff8b')}</div>
             <div>Assist: {val(assist, '#6e9bff')}</div>
             <div style={{ color: '#adaaaa', fontSize: 8, marginTop: 2, marginBottom: 2 }}>PHONE SENSORS</div>
+            <div>Lean: {val(lean, '#6e9bff')}° | Lux: {val(lux, '#fbbf24')} | Compass: {val(magHeading, '#22c55e')}°</div>
             <div>Baro: {val(pressure, '#22c55e')}hPa | Temp: {val(temp, '#f59e0b')}°C</div>
-            <div>Lean: {val(lean, '#6e9bff')}°</div>
+            <div>Gyro: {val(gyroX, '#6e9bff')} | Crash: {val(crashMag, '#ef4444')}g</div>
           </div>
 
           {/* Ride */}

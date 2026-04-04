@@ -44,11 +44,13 @@ class PhoneSensorService(
     private var gyroscopeSensor: Sensor? = null
     private var temperatureSensor: Sensor? = null
     private var lightSensor: Sensor? = null
+    private var magnetometerSensor: Sensor? = null
 
     private var lastAccelSendMs = 0L
     private var lastBaroSendMs = 0L
     private var lastTempSendMs = 0L
     private var lastLightSendMs = 0L
+    private var lastMagSendMs = 0L
 
     private var running = false
 
@@ -58,6 +60,7 @@ class PhoneSensorService(
     var hasGyroscope = false; private set
     var hasTemperature = false; private set
     var hasLight = false; private set
+    var hasMagnetometer = false; private set
 
     fun start() {
         if (running) return
@@ -68,12 +71,14 @@ class PhoneSensorService(
         gyroscopeSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
         temperatureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_AMBIENT_TEMPERATURE)
         lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
+        magnetometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
 
         hasBarometer = barometerSensor != null
         hasAccelerometer = accelerometerSensor != null
         hasGyroscope = gyroscopeSensor != null
         hasTemperature = temperatureSensor != null
         hasLight = lightSensor != null
+        hasMagnetometer = magnetometerSensor != null
 
         // Register with appropriate delays
         barometerSensor?.let {
@@ -96,8 +101,12 @@ class PhoneSensorService(
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
             Log.i(TAG, "Light sensor registered")
         }
+        magnetometerSensor?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
+            Log.i(TAG, "Magnetometer registered")
+        }
 
-        Log.i(TAG, "Sensors started — baro=$hasBarometer accel=$hasAccelerometer gyro=$hasGyroscope temp=$hasTemperature")
+        Log.i(TAG, "Sensors started — baro=$hasBarometer accel=$hasAccelerometer gyro=$hasGyroscope temp=$hasTemperature mag=$hasMagnetometer")
     }
 
     fun stop() {
@@ -187,6 +196,28 @@ class PhoneSensorService(
                 val json = JSONObject().apply {
                     put("type", "light")
                     put("lux", roundTo(lux, 0))
+                }
+                onData(json)
+            }
+
+            Sensor.TYPE_MAGNETIC_FIELD -> {
+                if (now - lastMagSendMs < BARO_MIN_INTERVAL_MS) return
+                lastMagSendMs = now
+
+                val x = event.values[0].toDouble()
+                val y = event.values[1].toDouble()
+                val z = event.values[2].toDouble()
+                // Calculate compass heading from magnetic field
+                val headingRad = atan2(y, x)
+                var headingDeg = Math.toDegrees(headingRad)
+                if (headingDeg < 0) headingDeg += 360.0
+
+                val json = JSONObject().apply {
+                    put("type", "magnetometer")
+                    put("heading", roundTo(headingDeg, 1))
+                    put("x", roundTo(x, 1))
+                    put("y", roundTo(y, 1))
+                    put("z", roundTo(z, 1))
                 }
                 onData(json)
             }

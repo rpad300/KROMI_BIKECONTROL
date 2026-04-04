@@ -75,6 +75,13 @@ interface BikeState {
   pressure_hpa: number;
   lean_angle_deg: number;
   temperature_c: number;
+  light_lux: number;
+  mag_heading_deg: number;
+  gyro_x: number;
+  gyro_y: number;
+  gyro_z: number;
+  crash_magnitude: number;
+  last_crash_at: number;
 
   // BLE state
   ble_status: BLEConnectionStatus;
@@ -109,6 +116,10 @@ interface BikeState {
   setBarometer: (pressure: number, altitude: number) => void;
   setLeanAngle: (deg: number) => void;
   setTemperature: (c: number) => void;
+  setLightLux: (lux: number) => void;
+  setMagHeading: (deg: number) => void;
+  setGyro: (x: number, y: number, z: number) => void;
+  setCrash: (magnitude: number) => void;
   setFirmwareVersion: (v: string) => void;
   setHardwareVersion: (v: string) => void;
   setSoftwareVersion: (v: string) => void;
@@ -182,6 +193,13 @@ export const useBikeStore = create<BikeState>((set) => ({
   pressure_hpa: 0,
   lean_angle_deg: 0,
   temperature_c: 0,
+  light_lux: 0,
+  mag_heading_deg: 0,
+  gyro_x: 0,
+  gyro_y: 0,
+  gyro_z: 0,
+  crash_magnitude: 0,
+  last_crash_at: 0,
   ble_status: 'disconnected',
   ble_services: {
     battery: false,
@@ -248,8 +266,11 @@ export const useBikeStore = create<BikeState>((set) => ({
   }),
 
   setLeanAngle: (deg) => set({ lean_angle_deg: Math.round(deg * 10) / 10 }),
-
   setTemperature: (c) => set({ temperature_c: Math.round(c * 10) / 10 }),
+  setLightLux: (lux: number) => set({ light_lux: Math.round(lux) }),
+  setMagHeading: (deg: number) => set({ mag_heading_deg: Math.round(deg * 10) / 10 }),
+  setGyro: (x: number, y: number, z: number) => set({ gyro_x: Math.round(x * 100) / 100, gyro_y: Math.round(y * 100) / 100, gyro_z: Math.round(z * 100) / 100 }),
+  setCrash: (magnitude: number) => set({ crash_magnitude: Math.round(magnitude * 10) / 10, last_crash_at: Date.now() }),
 
   setFirmwareVersion: (v) => set({ firmware_version: v }),
   setHardwareVersion: (v) => set({ hardware_version: v }),
