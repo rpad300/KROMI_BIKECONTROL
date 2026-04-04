@@ -6,6 +6,7 @@ import { initBLE } from './services/bluetooth/BLEBridge';
 import { syncQueue } from './services/sync/SyncQueue';
 import { localRideStore } from './services/storage/LocalRideStore';
 import { rideSessionManager } from './services/storage/RideHistory';
+import { isKromiWebView } from './utils/platform';
 import './index.css';
 
 // Init LocalRideStore (bulletproof ride storage) + SyncQueue early
@@ -17,13 +18,24 @@ localRideStore.init().then(() => {
 
 syncQueue.init().catch((err) => console.warn('[SyncQueue] Early init failed:', err));
 
-// Auto-update service worker — defer reload if ride is active
+// Auto-update service worker — defer reload if ride is active OR inside WebView
 let pendingSWUpdate = false;
+const inWebView = isKromiWebView();
+if (inWebView) {
+  console.log('[Platform] Running inside KROMI WebView APK');
+}
+
 registerSW({
   onNeedRefresh() {
     if (rideSessionManager.isActive()) {
-      // Don't reload mid-ride — defer until ride stops
       console.log('[SW] Update available but ride active — deferring reload');
+      pendingSWUpdate = true;
+      return;
+    }
+    if (inWebView) {
+      // In WebView: DON'T auto-reload — it can kill the app
+      // The next app open will get the new version from cache
+      console.log('[SW] Update available inside WebView — deferring to next launch');
       pendingSWUpdate = true;
       return;
     }
