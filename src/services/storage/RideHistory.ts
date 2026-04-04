@@ -199,6 +199,9 @@ class RideSessionManager {
   // ── Start / Stop ──
 
   async startSession(): Promise<string | null> {
+    const dlog = (window as unknown as Record<string, (m: string) => void>).__dlog ?? console.log;
+    dlog(`startSession called — existing=${this.sessionId}`);
+
     if (this.sessionId) return this.sessionId;
 
     const bike = useBikeStore.getState();
@@ -260,9 +263,9 @@ class RideSessionManager {
         metrics: this.metrics,
       };
       await localRideStore.createSession(session);
-      console.log('[RideSession] Session saved to IndexedDB:', this.sessionId);
+      dlog(`Session saved to IDB: ${this.sessionId} user=${userId}`);
     } catch (err) {
-      console.error('[RideSession] CRITICAL: Failed to save session to IndexedDB:', err);
+      dlog(`CRITICAL: IDB save FAILED: ${String(err)}`);
       // Continue anyway — we'll still collect data in memory buffer
     }
 
@@ -490,6 +493,7 @@ class RideSessionManager {
 
   private async flushSnapshots(): Promise<void> {
     if (this.snapshotBuffer.length === 0) return;
+    const dlog = (window as unknown as Record<string, (m: string) => void>).__dlog ?? console.log;
 
     const batch = [...this.snapshotBuffer];
 
@@ -505,9 +509,10 @@ class RideSessionManager {
       await localRideStore.writeSnapshots(localSnaps);
       // ONLY clear buffer after confirmed IndexedDB write
       this.snapshotBuffer = [];
+      if (this.snapshotCount <= 3) dlog(`Flush OK: ${batch.length} snaps to IDB (total ${this.snapshotCount})`);
     } catch (err) {
+      dlog(`Flush to IDB FAILED: ${String(err)}`);
       // IndexedDB write failed — keep buffer for next attempt
-      console.error('[RideSession] Flush to IndexedDB failed, keeping buffer:', err);
     }
   }
 

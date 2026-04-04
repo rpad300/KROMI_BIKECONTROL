@@ -9,12 +9,30 @@ import { rideSessionManager } from './services/storage/RideHistory';
 import { isKromiWebView } from './utils/platform';
 import './index.css';
 
+// Remote diagnostic log — fire-and-forget, no dependencies
+function dlog(msg: string) {
+  console.log('[DIAG]', msg);
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  if (!url || !key) return;
+  fetch(`${url}/rest/v1/debug_logs`, {
+    method: 'POST',
+    headers: { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+    body: JSON.stringify({ level: 'info', message: msg, data: { ts: new Date().toISOString(), ua: navigator.userAgent.slice(0, 100) } }),
+  }).catch(() => {});
+}
+(window as unknown as Record<string, unknown>).__dlog = dlog;
+
+dlog(`PWA boot — webview=${isKromiWebView()} online=${navigator.onLine}`);
+
 // Init LocalRideStore (bulletproof ride storage) + SyncQueue early
 localRideStore.init().then(() => {
+  dlog('LocalRideStore init OK');
   localRideStore.startSyncLoop();
-  // Purge old synced data on startup (>30 days)
   localRideStore.purgeOldSyncedData().catch(() => {});
-}).catch((err) => console.warn('[LocalRideStore] Early init failed:', err));
+}).catch((err) => {
+  dlog(`LocalRideStore init FAILED: ${String(err)}`);
+});
 
 syncQueue.init().catch((err) => console.warn('[SyncQueue] Early init failed:', err));
 
