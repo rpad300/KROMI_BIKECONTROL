@@ -147,9 +147,10 @@ class WebViewActivity : AppCompatActivity() {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
-            allowFileAccess = false
+            allowFileAccess = true  // needed for offline.html fallback
             allowContentAccess = false
-            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            // MUST allow mixed content: PWA is HTTPS but WebSocket bridge is ws://127.0.0.1:8765
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             cacheMode = WebSettings.LOAD_DEFAULT
             mediaPlaybackRequiresUserGesture = false
             // Enable IndexedDB (critical for LocalRideStore)
@@ -182,17 +183,24 @@ class WebViewActivity : AppCompatActivity() {
                 }
             }
 
-            // Allow localhost WebSocket connections (mixed content from HTTPS to ws://127.0.0.1)
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return false
-                // Open external links (tel:, mailto:, maps:) in system apps
-                if (!url.startsWith("https://kromi.online") && !url.startsWith("http://127.0.0.1") && !url.startsWith("http://localhost")) {
-                    try {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                    } catch (_: Exception) {}
+                val host = request?.url?.host ?: ""
+
+                // Keep kromi.online and localhost URLs inside WebView
+                if (host == "kromi.online" || host == "127.0.0.1" || host == "localhost") {
+                    return false // load in WebView
+                }
+
+                // tel:, mailto: etc — open in system apps
+                if (!url.startsWith("http")) {
+                    try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
                     return true
                 }
-                return false
+
+                // External HTTP links (Google Maps, etc) — open in browser
+                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
+                return true
             }
         }
 
