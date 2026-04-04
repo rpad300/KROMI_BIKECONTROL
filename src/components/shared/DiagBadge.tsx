@@ -121,10 +121,10 @@ export function DiagBadge() {
             <div style={{ color: '#adaaaa', fontSize: 8, marginBottom: 2 }}>LIVE SENSORS</div>
             <div>HR: {val(hr, '#ef4444')} | Spd: {val(speed, '#3fff8b')} | Pwr: {val(power, '#6e9bff')}</div>
             <div>Cad: {val(cadence, '#fbbf24')} | Trq: {val(torque, '#f59e0b')} | Bat: {val(battery, '#3fff8b')}</div>
-            <div>Assist: {val(assist, '#6e9bff')} | Gear: {val(useBikeStore.getState().gear, '#adaaaa')}</div>
+            <div>Assist: {val(assist, '#6e9bff')}</div>
             <div style={{ color: '#adaaaa', fontSize: 8, marginTop: 2, marginBottom: 2 }}>PHONE SENSORS</div>
             <div>Baro: {val(pressure, '#22c55e')}hPa | Temp: {val(temp, '#f59e0b')}°C</div>
-            <div>Lean: {val(lean, '#6e9bff')}° | Alt(baro): {val(useBikeStore.getState().barometric_altitude_m || 0, '#22c55e')}m</div>
+            <div>Lean: {val(lean, '#6e9bff')}°</div>
           </div>
 
           {/* Ride */}
