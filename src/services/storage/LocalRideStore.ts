@@ -109,6 +109,11 @@ export interface LocalSnapshot {
   trip_time_s: number;
   range_km: number;
   spo2_pct: number;
+  // Phone sensors
+  pressure_hpa: number;
+  barometric_altitude_m: number | null;
+  lean_angle_deg: number;
+  temperature_c: number;
 }
 
 export interface LocalOverrideEvent {
@@ -835,6 +840,10 @@ class LocalRideStore {
     rest.gps_accuracy = Math.min(9999.9, Math.round((rest.gps_accuracy as number) * 10) / 10);
     rest.speed_kmh = Math.min(9999.9, Math.round((rest.speed_kmh as number) * 10) / 10);
     rest.gradient_pct = Math.max(-9999.9, Math.min(9999.9, Math.round((rest.gradient_pct as number) * 10) / 10));
+    // Phone sensors — clamp to schema
+    rest.lean_angle_deg = Math.max(-9999.9, Math.min(9999.9, Math.round((rest.lean_angle_deg as number) * 10) / 10));
+    rest.temperature_c = Math.max(-999.9, Math.min(999.9, Math.round((rest.temperature_c as number) * 10) / 10));
+    if (rest.barometric_altitude_m != null) rest.barometric_altitude_m = Math.round((rest.barometric_altitude_m as number) * 10) / 10;
     return rest;
   }
 

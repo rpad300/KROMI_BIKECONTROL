@@ -51,6 +51,11 @@ interface SnapshotRow {
   trip_time_s: number;
   range_km: number;
   spo2_pct: number;
+  // Phone sensors
+  pressure_hpa: number;
+  barometric_altitude_m: number | null;
+  lean_angle_deg: number;
+  temperature_c: number;
 }
 
 export interface RideSessionState {
@@ -464,7 +469,7 @@ class RideSessionManager {
       hr_zone: bike.hr_zone,
       gear: bike.gear,
       is_shifting: bike.is_shifting,
-      torque_nm: torque.torque_nm,
+      torque_nm: bike.torque_nm || torque.torque_nm,  // prefer actual motor torque over calculated
       support_pct: torque.support_pct,
       launch_value: torque.launch_value,
       climb_type: torque.climb_type as string,
@@ -479,6 +484,11 @@ class RideSessionManager {
       trip_time_s: bike.trip_time_s,
       range_km: bike.range_km,
       spo2_pct: bike.spo2_pct,
+      // Phone sensors (from BLE bridge PhoneSensorService)
+      pressure_hpa: bike.pressure_hpa,
+      barometric_altitude_m: bike.barometric_altitude_m,
+      lean_angle_deg: bike.lean_angle_deg,
+      temperature_c: bike.temperature_c,
     };
 
     this.snapshotBuffer.push(row);
