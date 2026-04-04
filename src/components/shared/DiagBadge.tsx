@@ -116,7 +116,10 @@ export function DiagBadge() {
             <div>Unsynced: <span style={{ color: unsynced.sessions > 0 ? '#fbbf24' : '#888' }}>{unsynced.sessions}s {unsynced.snapshots}snap</span></div>
           </div>
           <div style={{ color: '#555', marginTop: 3 }}>Updated: {lastCheck}</div>
-          <div style={{ color: '#555' }}>Tap to close</div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            <button onClick={(e) => { e.stopPropagation(); window.KromiBridge?.reload?.() || window.location.reload(); }} style={{ background: '#333', color: '#3fff8b', border: 'none', padding: '3px 8px', fontSize: 9, fontFamily: 'monospace', cursor: 'pointer', borderRadius: 2 }}>REFRESH</button>
+            <button onClick={(e) => { e.stopPropagation(); localRideStore.syncToSupabase(); }} style={{ background: '#333', color: '#6e9bff', border: 'none', padding: '3px 8px', fontSize: 9, fontFamily: 'monospace', cursor: 'pointer', borderRadius: 2 }}>FORCE SYNC</button>
+          </div>
         </div>
       )}
     </div>

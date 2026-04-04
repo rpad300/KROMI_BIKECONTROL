@@ -11,6 +11,7 @@ declare global {
       openDebugPanel(): void;
       isBLEServiceRunning(): boolean;
       isBLEConnected(): boolean;
+      reload(): void;
     };
   }
 }

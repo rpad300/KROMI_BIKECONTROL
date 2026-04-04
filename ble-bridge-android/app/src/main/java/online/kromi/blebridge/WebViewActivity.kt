@@ -335,6 +335,11 @@ class WebViewActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun isBLEConnected(): Boolean = BLEBridgeService.instance?.bleManager?.isConnected == true
+
+        @JavascriptInterface
+        fun reload() {
+            runOnUiThread { webView.reload() }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
