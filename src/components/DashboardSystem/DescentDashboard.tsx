@@ -3,6 +3,7 @@ import { useAutoAssistStore } from '../../store/autoAssistStore';
 import { useMapStore } from '../../store/mapStore';
 import { SpeedHero } from './widgets/SpeedHero';
 import { ElevationProfile } from '../Dashboard/ElevationProfile';
+import { ClockDisplay } from '../shared/ClockDisplay';
 
 /** DESCENT Dashboard — speed hero (red above 40), safety focused */
 export function DescentDashboard() {
@@ -18,7 +19,11 @@ export function DescentDashboard() {
   const formatTime = (s: number) => s > 0 ? `${Math.floor(s/3600)}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}` : '0:00';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
+      {/* Clock — top right */}
+      <div style={{ position: 'absolute', top: 4, right: 8, zIndex: 10 }}>
+        <ClockDisplay />
+      </div>
       {/* Speed Hero — 28% (red above 40km/h) */}
       <div style={{ height: '28%', flexShrink: 0 }}><SpeedHero dangerThreshold={40} /></div>
 

@@ -4,6 +4,7 @@ import { GradientHero } from './widgets/GradientHero';
 import { MetricGrid, METRIC } from './widgets/MetricGrid';
 import { CompactIntelligence } from './widgets/CompactIntelligence';
 import { ElevationProfile } from '../Dashboard/ElevationProfile';
+import { ClockDisplay } from '../shared/ClockDisplay';
 
 /** CLIMB Dashboard — gradient hero, power/torque/cadence/HR emphasized */
 export function ClimbDashboard() {
@@ -12,7 +13,11 @@ export function ClimbDashboard() {
   const speed = useBikeStore((s) => s.speed_kmh);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
+      {/* Clock — top right */}
+      <div style={{ position: 'absolute', top: 4, right: 8, zIndex: 10 }}>
+        <ClockDisplay />
+      </div>
       {/* Gradient Hero — 15% */}
       <div style={{ height: '15%', flexShrink: 0 }}><GradientHero /></div>
 

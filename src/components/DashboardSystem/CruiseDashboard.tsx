@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import { useIsEBike } from '../../hooks/useIsEBike';
 import { AssistMode } from '../../types/bike.types';
@@ -8,6 +7,7 @@ import { CompactIntelligence } from './widgets/CompactIntelligence';
 import { IntelligenceWidget } from '../Dashboard/IntelligenceWidget';
 import { MiniMap } from '../Dashboard/MiniMap';
 import { ElevationProfile } from '../Dashboard/ElevationProfile';
+import { ClockDisplay } from '../shared/ClockDisplay';
 
 /** CRUISE Dashboard — flat terrain, efficiency focused */
 export function CruiseDashboard() {
@@ -40,7 +40,7 @@ export function CruiseDashboard() {
 
       {/* Efficiency metrics — 12% */}
       <div style={{ height: '12%', flexShrink: 0 }}>
-        <MetricGrid cols={4} metrics={[METRIC.range, METRIC.power, METRIC.battery, METRIC.cadence]} />
+        <MetricGrid cols={5} metrics={[METRIC.range, METRIC.power, METRIC.battery, METRIC.cadence, METRIC.gradient]} />
       </div>
 
       {/* KROMI Intelligence — 5% */}
@@ -98,21 +98,3 @@ export function CruiseDashboard() {
   );
 }
 
-/** Live clock — updates every second, shows HH:MM and day/month */
-function ClockDisplay() {
-  const [now, setNow] = useState(new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const time = now.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
-  const date = now.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-      <span className="font-headline font-bold tabular-nums" style={{ fontSize: '12px', color: '#fff' }}>{time}</span>
-      <span className="font-headline tabular-nums" style={{ fontSize: '9px', color: '#777575' }}>{date}</span>
-    </div>
-  );
-}

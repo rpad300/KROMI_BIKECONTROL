@@ -65,6 +65,8 @@ export function useAutoAssist() {
       if (decision.action === 'change_mode' && decision.new_mode !== undefined) {
         try {
           await sendAssistMode(decision.new_mode);
+          // Haptic feedback for mode change
+          try { navigator.vibrate?.([50, 30, 50]); } catch {}
         } catch (err) {
           console.warn('[AutoAssist] Failed to send assist mode:', err);
         }
@@ -98,6 +100,8 @@ export function useAutoAssist() {
           bike.assist_mode !== AssistMode.POWER
         ) {
           await sendAssistMode(AssistMode.POWER);
+          // HR Zone 5 emergency — stronger haptic feedback
+          try { navigator.vibrate?.([200, 100, 200, 100, 200]); } catch {}
           aaStore.setLastDecision({
             action: 'change_mode',
             new_mode: AssistMode.POWER,

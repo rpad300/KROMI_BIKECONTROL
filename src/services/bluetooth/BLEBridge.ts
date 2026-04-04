@@ -44,6 +44,12 @@ export async function initBLE(): Promise<void> {
   if (wsClient.isConnected) {
     bleMode = 'websocket';
     console.log('[BLE Bridge] Mode: WebSocket Bridge — full BLE via middleware');
+    // Auto-connect to saved bike device
+    const savedBike = getSavedDevice();
+    if (savedBike && wsClient.isConnected) {
+      console.log(`[BLE Bridge] Auto-connecting to saved bike: ${savedBike.name} (${savedBike.address})`);
+      wsClient.connectToDevice(savedBike.address);
+    }
     setTimeout(() => autoConnectSensors(), 2000);
   } else {
     // Default to web but keep trying WS in background
@@ -56,6 +62,12 @@ export async function initBLE(): Promise<void> {
       if (wsClient.isConnected && bleMode === 'web') {
         bleMode = 'websocket';
         console.log('[BLE Bridge] Mode switched: WebSocket Bridge now available!');
+        // Auto-connect bike + sensors
+        const savedBike = getSavedDevice();
+        if (savedBike) {
+          console.log(`[BLE Bridge] Auto-connecting to saved bike: ${savedBike.name} (${savedBike.address})`);
+          wsClient.connectToDevice(savedBike.address);
+        }
         setTimeout(() => autoConnectSensors(), 1000);
         clearInterval(checkInterval);
       }

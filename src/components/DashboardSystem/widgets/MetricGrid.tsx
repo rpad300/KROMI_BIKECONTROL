@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useBikeStore } from '../../../store/bikeStore';
+import { useAutoAssistStore } from '../../../store/autoAssistStore';
 
 type MetricDef = {
   icon: string;
@@ -25,7 +26,10 @@ export function MetricGrid({ metrics, cols }: { metrics: MetricDef[]; cols: numb
       });
     };
     update(useBikeStore.getState());
-    return useBikeStore.subscribe(update);
+    const unsub1 = useBikeStore.subscribe(update);
+    // Also subscribe to autoAssistStore for gradient/terrain updates
+    const unsub2 = useAutoAssistStore.subscribe(() => update(useBikeStore.getState()));
+    return () => { unsub1(); unsub2(); };
   }, [metrics]);
 
   return (
@@ -57,7 +61,23 @@ export const METRIC = {
   current: { icon: 'electric_bolt', iconColor: '#fbbf24', label: 'Current', unit: 'A', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.assist_current_a > 0 ? s.assist_current_a.toFixed(1) : '0' },
   whkm: { icon: 'ev_station', iconColor: '#6e9bff', label: 'Wh/km', unit: '', getValue: () => '--' }, // placeholder, needs calibration data
   hr: { icon: 'favorite', iconColor: '#ff716c', label: 'HR', unit: 'bpm', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.hr_bpm > 0 ? String(s.hr_bpm) : '--' },
-  gradient: { icon: 'trending_up', iconColor: '#e966ff', label: 'Grade', unit: '%', getValue: () => '0' }, // needs autoAssistStore
+  gradient: {
+    icon: 'landscape', iconColor: '#e966ff', label: 'Grade', unit: '',
+    getValue: () => {
+      const terrain = useAutoAssistStore.getState().terrain;
+      const g = terrain?.current_gradient_pct ?? 0;
+      return g === 0 ? '0%' : `${g > 0 ? '+' : ''}${g.toFixed(1)}%`;
+    },
+    getColor: () => {
+      const terrain = useAutoAssistStore.getState().terrain;
+      const g = terrain?.current_gradient_pct ?? 0;
+      if (g > 10) return '#ff716c';
+      if (g > 5) return '#fbbf24';
+      if (g > 0) return '#3fff8b';
+      if (g < -5) return '#6e9bff';
+      return '#adaaaa';
+    },
+  },
   altitude: { icon: 'landscape', iconColor: '#6e9bff', label: 'Alt', unit: 'm', getValue: () => '--' }, // needs mapStore
   gear: { icon: 'settings', iconColor: '#adaaaa', label: 'Gear', unit: '', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.rear_gear > 0 ? String(s.rear_gear) : '--' },
 } as const;
