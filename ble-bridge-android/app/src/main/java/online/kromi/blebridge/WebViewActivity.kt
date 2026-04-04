@@ -84,8 +84,8 @@ class WebViewActivity : AppCompatActivity() {
 
         setupWebView()
 
-        // Start BLE Bridge service (if not already running)
-        startBLEService()
+        // Request BLE permissions first, then start service
+        requestBLEPermissions()
 
         // Acquire partial wake lock for ride reliability
         acquireWakeLock()
@@ -93,6 +93,41 @@ class WebViewActivity : AppCompatActivity() {
         // Load PWA
         webView.loadUrl(PWA_URL)
         Log.i(TAG, "Loading PWA: $PWA_URL")
+    }
+
+    private val BLE_PERMISSION_REQUEST = 1001
+
+    private fun requestBLEPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val needed = mutableListOf<String>()
+            val perms = arrayOf(
+                android.Manifest.permission.BLUETOOTH_CONNECT,
+                android.Manifest.permission.BLUETOOTH_SCAN,
+                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.POST_NOTIFICATIONS,
+            )
+            for (p in perms) {
+                if (checkSelfPermission(p) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    needed.add(p)
+                }
+            }
+            if (needed.isNotEmpty()) {
+                requestPermissions(needed.toTypedArray(), BLE_PERMISSION_REQUEST)
+            } else {
+                startBLEService()
+            }
+        } else {
+            // Pre-Android 12: no runtime BLE permissions needed
+            startBLEService()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == BLE_PERMISSION_REQUEST) {
+            // Start service regardless — it will work with whatever permissions were granted
+            startBLEService()
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
