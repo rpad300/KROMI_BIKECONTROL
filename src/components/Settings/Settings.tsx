@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import QRCode from 'qrcode';
 import { useSettingsStore } from '../../store/settingsStore';
 import { calculateZones, calculatePowerZones } from '../../types/athlete.types';
 import { useBikeStore } from '../../store/bikeStore';
@@ -968,7 +969,7 @@ function EmergencyPage() {
         {emergencyUrl && (
           <div style={{ marginTop: '12px', textAlign: 'center' }}>
             <div style={{ display: 'inline-block', padding: '12px', backgroundColor: 'white', borderRadius: '8px' }}>
-              <canvas ref={(el) => { if (el) drawEmergencyQR(el, emergencyUrl); }} width={180} height={180} style={{ display: 'block' }} />
+              <canvas ref={(el) => { if (el) QRCode.toCanvas(el, emergencyUrl, { width: 180, margin: 1, color: { dark: '#cc0000', light: '#ffffff' }, errorCorrectionLevel: 'M' }); }} width={180} height={180} style={{ display: 'block' }} />
             </div>
             <div style={{ fontSize: '9px', color: '#494847', marginTop: '4px', wordBreak: 'break-all' }}>{emergencyUrl}</div>
             <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', marginTop: '8px' }}>
@@ -991,40 +992,6 @@ function EmergencyPage() {
   );
 }
 
-// Reuse QR drawing from BikeQRCode (simple visual placeholder)
-function drawEmergencyQR(canvas: HTMLCanvasElement, text: string) {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  const size = 180;
-  ctx.fillStyle = 'white';
-  ctx.fillRect(0, 0, size, size);
-  const hash: number[] = [];
-  for (let i = 0; i < 256; i++) { let h = i; for (let j = 0; j < text.length; j++) h = (h * 31 + text.charCodeAt(j % text.length)) & 0xFF; hash.push(h); }
-  const ms = 5;
-  const mods = Math.floor(size / ms);
-  ctx.fillStyle = '#cc0000'; // Red QR for emergency
-  for (let y = 0; y < mods; y++) {
-    for (let x = 0; x < mods; x++) {
-      const s = 7;
-      const isFinder = (x < s && y < s) || (x >= mods - s && y < s) || (x < s && y >= mods - s);
-      if (isFinder) {
-        const lx = x < s ? x : (x >= mods - s ? x - (mods - s) : x);
-        const ly = y < s ? y : (y >= mods - s ? y - (mods - s) : y);
-        if ((lx === 0 || lx === s-1 || ly === 0 || ly === s-1) || (lx >= 2 && lx <= 4 && ly >= 2 && ly <= 4)) {
-          ctx.fillRect(x * ms, y * ms, ms, ms);
-        }
-        continue;
-      }
-      if ((hash[(y * mods + x) % hash.length]! ^ ((x * 7 + y * 13) & 0xFF)) & 1) {
-        ctx.fillRect(x * ms, y * ms, ms, ms);
-      }
-    }
-  }
-  ctx.fillStyle = '#999';
-  ctx.font = '9px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('EMERGENCY', size / 2, size - 4);
-}
 
 function AccountPage() {
   const user = useAuthStore((s) => s.user);

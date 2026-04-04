@@ -2,21 +2,29 @@
 <html lang="pt">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="theme-color" content="#0e0e0e">
 <title>KROMI Emergency Profile</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #0e0e0e; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 0; min-height: 100vh; }
+  body { background: #0e0e0e; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; }
 
-  .emergency-header { background: linear-gradient(135deg, #ff3333 0%, #cc0000 100%); padding: 20px 16px; text-align: center; }
-  .emergency-header h1 { font-size: 20px; font-weight: 900; letter-spacing: 2px; }
-  .emergency-header .subtitle { font-size: 11px; opacity: 0.8; margin-top: 4px; }
+  /* Header with pulse */
+  .emergency-header { background: linear-gradient(135deg, #ff3333 0%, #cc0000 100%); padding: 20px 16px; text-align: center; position: relative; overflow: hidden; }
+  .emergency-header::after { content: ''; position: absolute; inset: 0; background: rgba(255,255,255,0.08); animation: pulse-bg 2s ease-in-out infinite; }
+  @keyframes pulse-bg { 0%,100% { opacity: 0; } 50% { opacity: 1; } }
+  .emergency-header h1 { font-size: 20px; font-weight: 900; letter-spacing: 2px; position: relative; z-index: 1; }
+  .emergency-header .subtitle { font-size: 11px; opacity: 0.8; margin-top: 4px; position: relative; z-index: 1; }
+  .live-badge { display: inline-block; padding: 3px 10px; background: rgba(0,0,0,0.3); border-radius: 12px; font-size: 10px; font-weight: 700; margin-top: 6px; position: relative; z-index: 1; }
+  .live-dot { display: inline-block; width: 6px; height: 6px; background: #3fff8b; border-radius: 50%; margin-right: 4px; animation: blink 1s infinite; }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-  .container { padding: 16px; max-width: 480px; margin: 0 auto; }
+  .container { padding: 12px; max-width: 520px; margin: 0 auto; }
   .card { background: #1a1919; border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid #262626; }
-  .card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+  .card-title .icon { font-size: 14px; }
 
-  .field { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #262626; }
+  .field { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #1f1f1f; }
   .field:last-child { border-bottom: none; }
   .field-label { color: #888; font-size: 13px; }
   .field-value { font-size: 14px; font-weight: 600; }
@@ -24,237 +32,805 @@
   .blood-type { font-size: 48px; font-weight: 900; color: #ff3333; text-align: center; line-height: 1.1; }
   .blood-type-label { font-size: 11px; color: #888; text-align: center; }
 
-  .call-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; margin-bottom: 8px; text-decoration: none; }
+  .call-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; margin-bottom: 8px; text-decoration: none; color: inherit; }
+  .call-emergency { background: #ff3333; color: #fff; font-size: 18px; }
   .call-primary { background: #3fff8b; color: #000; }
   .call-secondary { background: #262626; color: #fff; border: 1px solid #333; }
-  .call-emergency { background: #ff3333; color: #fff; font-size: 18px; }
 
   .alert-tag { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; margin: 2px; }
   .tag-red { background: rgba(255,51,51,0.2); color: #ff5555; border: 1px solid rgba(255,51,51,0.3); }
   .tag-amber { background: rgba(255,204,0,0.2); color: #ffcc00; border: 1px solid rgba(255,204,0,0.3); }
   .tag-blue { background: rgba(110,155,255,0.2); color: #6e9bff; border: 1px solid rgba(110,155,255,0.3); }
 
-  .hr-bar { display: flex; height: 24px; border-radius: 4px; overflow: hidden; margin: 4px 0; }
-  .hr-bar div { display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; }
+  .donor-badge { display: inline-block; padding: 4px 10px; background: rgba(63,255,139,0.15); color: #3fff8b; border: 1px solid rgba(63,255,139,0.3); border-radius: 4px; font-size: 11px; font-weight: 700; }
+
+  /* Stats grid */
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .stat { text-align: center; }
+  .stat .val { font-size: 28px; font-weight: 900; font-family: 'SF Mono', 'Cascadia Code', monospace; line-height: 1.2; }
+  .stat .lbl { font-size: 10px; color: #888; text-transform: uppercase; }
+
+  /* Map */
+  #map-container { width: 100%; height: 280px; border-radius: 8px; overflow: hidden; background: #111; position: relative; }
+  .map-legend { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .map-legend span { font-size: 9px; display: flex; align-items: center; gap: 3px; color: #888; }
+  .map-legend .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* Canvas charts */
+  .chart-canvas { width: 100%; height: 180px; display: block; border-radius: 6px; }
+  .chart-canvas-sm { width: 100%; height: 50px; display: block; }
+  .zone-bar-canvas { width: 100%; height: 32px; display: block; border-radius: 4px; }
+
+  /* Pre-accident alert */
+  .pre-accident { border: 1px solid rgba(255,51,51,0.4); background: rgba(255,51,51,0.05); }
+
+  /* HR zone colors */
   .z1 { background: #6b7280; } .z2 { background: #3b82f6; } .z3 { background: #22c55e; }
   .z4 { background: #f59e0b; } .z5 { background: #ef4444; }
-
-  .ride-stat { text-align: center; }
-  .ride-stat .val { font-size: 28px; font-weight: 900; font-family: 'Space Grotesk', monospace; }
-  .ride-stat .lbl { font-size: 10px; color: #888; }
 
   .loading { text-align: center; padding: 60px 20px; }
   .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: #ff3333; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-
   .not-found { text-align: center; padding: 60px 20px; color: #888; }
-  .donor-badge { display: inline-block; padding: 4px 10px; background: rgba(63,255,139,0.15); color: #3fff8b; border: 1px solid rgba(63,255,139,0.3); border-radius: 4px; font-size: 11px; font-weight: 700; }
   .footer { text-align: center; padding: 20px; font-size: 9px; color: #494847; }
+
+  /* Context mini-chart labels */
+  .context-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .context-label { width: 50px; font-size: 10px; color: #888; text-align: right; flex-shrink: 0; }
+  .context-val { font-size: 12px; font-weight: 700; width: 45px; text-align: right; flex-shrink: 0; }
 </style>
 </head>
 <body>
   <div class="emergency-header">
     <h1>PERFIL DE EMERGENCIA</h1>
     <div class="subtitle">KROMI BikeControl</div>
+    <div id="live-indicator"></div>
   </div>
 
   <div id="content" class="container">
     <div class="loading">
       <div class="spinner"></div>
-      <div>A carregar perfil...</div>
+      <div>A carregar perfil de emergencia...</div>
     </div>
   </div>
 
 <script>
+// ═══════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════
 const SB_URL = 'https://ctsuupvmmyjlrtjnxagv.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0c3V1cHZtbXlqbHJ0am54YWd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Njg3MTgsImV4cCI6MjA5MDU0NDcxOH0.VgpKrjxYirb9Gc7OZX-aHGJmGJ3QdDM5I7iXaWDmBXQ';
+const MAPS_KEY = 'AIzaSyAeeHw69Wzy3OQuN6SbAhXjlhSxBlJPfa0';
 
+const ZONE_COLORS = ['#6b7280','#3b82f6','#22c55e','#f59e0b','#ef4444'];
+const ZONE_NAMES  = ['Z1 Recuperacao','Z2 Endurance','Z3 Tempo','Z4 Limiar','Z5 VO2max'];
+const sbHeaders = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` };
+
+// ═══════════════════════════════════════════════════════════
+// MAIN LOAD
+// ═══════════════════════════════════════════════════════════
 async function load() {
   const token = window.location.pathname.split('/').pop() || new URLSearchParams(window.location.search).get('t');
   if (!token) { showNotFound(); return; }
 
   try {
-    // Fetch emergency profile
-    const res = await fetch(`${SB_URL}/rest/v1/emergency_profiles?token=eq.${token}&active=eq.true&select=*&limit=1`, {
-      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-    });
+    // 1. Fetch emergency profile
+    const res = await fetch(`${SB_URL}/rest/v1/emergency_profiles?token=eq.${token}&active=eq.true&select=*&limit=1`, { headers: sbHeaders });
     const profiles = await res.json();
     if (!profiles.length) { showNotFound(); return; }
-    const p = profiles[0];
+    const profile = profiles[0];
 
-    // Fetch last ride (24h)
-    let lastRide = null;
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const rideRes = await fetch(`${SB_URL}/rest/v1/ride_sessions?user_id=eq.${p.user_id}&started_at=gte.${since}&status=eq.completed&select=duration_s,total_km,avg_hr,max_hr,avg_speed_kmh,max_speed_kmh,avg_power_w,started_at,ended_at,start_lat,start_lng,end_lat,end_lng&order=started_at.desc&limit=1`, {
-      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-    });
-    const rides = await rideRes.json();
-    if (rides.length) lastRide = rides[0];
+    // 2. Fetch ride session — prefer active, then last 48h completed
+    let session = null;
+    let isLive = false;
 
-    // Fetch HR zone distribution from last ride snapshots
-    let hrZones = null;
-    if (lastRide) {
-      const snapRes = await fetch(`${SB_URL}/rest/v1/ride_snapshots?session_id=eq.${rides[0].id || ''}&hr_bpm=gt.0&select=hr_bpm,hr_zone&limit=2000`, {
-        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-      });
-      // If we don't have session_id, use user_settings HR zones
+    // Try active session first
+    const activeRes = await fetch(`${SB_URL}/rest/v1/ride_sessions?user_id=eq.${profile.user_id}&status=eq.active&select=id,duration_s,total_km,avg_hr,max_hr,avg_speed_kmh,max_speed_kmh,avg_power_w,max_power_w,started_at,ended_at,start_lat,start_lng,end_lat,end_lng,battery_start,battery_end&order=started_at.desc&limit=1`, { headers: sbHeaders });
+    const activeSessions = await activeRes.json();
+
+    if (activeSessions.length) {
+      session = activeSessions[0];
+      isLive = true;
+    } else {
+      // Fall back to last 48h completed
+      const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+      const rideRes = await fetch(`${SB_URL}/rest/v1/ride_sessions?user_id=eq.${profile.user_id}&started_at=gte.${since}&status=eq.completed&select=id,duration_s,total_km,avg_hr,max_hr,avg_speed_kmh,max_speed_kmh,avg_power_w,max_power_w,started_at,ended_at,start_lat,start_lng,end_lat,end_lng,battery_start,battery_end&order=started_at.desc&limit=1`, { headers: sbHeaders });
+      const rides = await rideRes.json();
+      if (rides.length) session = rides[0];
     }
 
-    // Fetch nearby riders for community rescue
+    // 3. Fetch snapshots for the session
+    let snapshots = [];
+    if (session?.id) {
+      const snapRes = await fetch(`${SB_URL}/rest/v1/ride_snapshots?session_id=eq.${session.id}&select=elapsed_s,lat,lng,altitude_m,hr_bpm,hr_zone,speed_kmh,power_watts,distance_km,gradient_pct,spo2_pct,cadence_rpm,battery_pct,assist_mode,torque_nm,created_at&order=elapsed_s.asc&limit=5000`, { headers: sbHeaders });
+      snapshots = await snapRes.json();
+      if (!Array.isArray(snapshots)) snapshots = [];
+    }
+
+    // 4. Fetch nearby riders for community rescue
     let nearbyRiders = [];
-    const victimLat = lastRide?.end_lat || lastRide?.start_lat || p.last_location_lat;
-    const victimLng = lastRide?.end_lng || lastRide?.start_lng || p.last_location_lng;
+    const victimLat = session?.end_lat || session?.start_lat || profile.last_location_lat;
+    const victimLng = session?.end_lng || session?.start_lng || profile.last_location_lng;
     if (victimLat && victimLng) {
       try {
         const nearbyRes = await fetch(`${SB_URL}/rest/v1/rpc/nearby_riders`, {
           method: 'POST',
-          headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ p_lat: victimLat, p_lng: victimLng, p_radius_km: 5, p_exclude_user: p.user_id }),
+          headers: { ...sbHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_lat: victimLat, p_lng: victimLng, p_radius_km: 5, p_exclude_user: profile.user_id }),
         });
         nearbyRiders = await nearbyRes.json();
+        if (!Array.isArray(nearbyRiders)) nearbyRiders = [];
       } catch {}
     }
 
-    render(p, lastRide, nearbyRiders);
+    // Show live badge
+    if (isLive) {
+      document.getElementById('live-indicator').innerHTML = '<div class="live-badge"><span class="live-dot"></span>SESSAO ACTIVA — TRACKING LIVE</div>';
+    }
+
+    render(profile, session, isLive, snapshots, nearbyRiders);
+
+    // 5. Init map and charts after DOM is ready
+    if (snapshots.length > 0) {
+      await loadGoogleMaps();
+      initMap(snapshots, session, isLive);
+    }
+    if (snapshots.length > 0) {
+      requestAnimationFrame(() => {
+        drawHRTimeline('hr-timeline', snapshots, session?.max_hr || 200);
+        drawHRZones('hr-zones', snapshots);
+        drawElevation('elevation-chart', snapshots);
+        drawPreAccident('pre-accident-hr', 'pre-accident-speed', 'pre-accident-power', snapshots);
+      });
+    }
+
+    // 6. Live refresh if active session
+    if (isLive) {
+      setInterval(() => refreshLiveData(profile.user_id, session.id), 10000);
+    }
+
   } catch (err) {
+    console.error('Emergency load error:', err);
     showNotFound();
   }
 }
 
-function render(p, lastRide, nearbyRiders) {
+// ═══════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════
+function render(p, session, isLive, snaps, nearbyRiders) {
   const age = p.birthdate ? Math.floor((Date.now() - new Date(p.birthdate).getTime()) / (365.25*24*60*60*1000)) : null;
   const contacts = p.emergency_contacts || [];
-
   let html = '';
 
-  // Emergency call buttons
-  html += `<a href="tel:112" class="call-btn call-emergency">112 — Emergencia</a>`;
-
-  // Contact de emergencia
+  // ── Emergency call buttons ──
+  html += `<a href="tel:112" class="call-btn call-emergency">112 — EMERGENCIA</a>`;
   contacts.forEach(c => {
-    html += `<a href="tel:${c.phone}" class="call-btn call-primary">${c.name} (${c.relation}) — ${c.phone}</a>`;
+    html += `<a href="tel:${c.phone}" class="call-btn call-primary">${esc(c.name)} (${esc(c.relation)}) — ${esc(c.phone)}</a>`;
   });
-  if (p.phone) {
-    html += `<a href="tel:${p.phone}" class="call-btn call-secondary">Vitima: ${p.phone}</a>`;
-  }
+  if (p.phone) html += `<a href="tel:${p.phone}" class="call-btn call-secondary">Vitima: ${esc(p.phone)}</a>`;
 
-  // ID card
+  // ── Identification ──
   html += `<div class="card">`;
-  html += `<div class="card-title" style="color:#ff3333">Identificacao</div>`;
-  if (p.avatar_url) html += `<div style="text-align:center;margin-bottom:12px"><img src="${p.avatar_url}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #ff3333" /></div>`;
-  html += `<div class="field"><span class="field-label">Nome</span><span class="field-value">${p.name || '—'}</span></div>`;
-  if (age) html += `<div class="field"><span class="field-label">Idade</span><span class="field-value">${age} anos</span></div>`;
-  if (p.gender) html += `<div class="field"><span class="field-label">Genero</span><span class="field-value">${p.gender}</span></div>`;
-  if (p.weight_kg) html += `<div class="field"><span class="field-label">Peso</span><span class="field-value">${p.weight_kg} kg</span></div>`;
-  if (p.height_cm) html += `<div class="field"><span class="field-label">Altura</span><span class="field-value">${p.height_cm} cm</span></div>`;
-  if (p.address_city) html += `<div class="field"><span class="field-label">Localidade</span><span class="field-value">${p.address_city}${p.address_country ? ', ' + p.address_country : ''}</span></div>`;
+  html += `<div class="card-title" style="color:#ff3333"><span class="icon">&#9888;</span> Identificacao</div>`;
+  if (p.avatar_url) html += `<div style="text-align:center;margin-bottom:12px"><img src="${esc(p.avatar_url)}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #ff3333" alt="avatar" /></div>`;
+  html += field('Nome', p.name);
+  if (age) html += field('Idade', age + ' anos');
+  if (p.gender) html += field('Genero', p.gender);
+  if (p.weight_kg) html += field('Peso', p.weight_kg + ' kg');
+  if (p.height_cm) html += field('Altura', p.height_cm + ' cm');
+  if (p.address_city) html += field('Localidade', p.address_city + (p.address_country ? ', ' + p.address_country : ''));
   html += `</div>`;
 
-  // Blood type + Medical
+  // ── Medical info ──
   html += `<div class="card">`;
-  html += `<div class="card-title" style="color:#ff3333">Informacao Medica</div>`;
-  if (p.blood_type) {
-    html += `<div style="padding:12px 0;text-align:center"><div class="blood-type">${p.blood_type}</div><div class="blood-type-label">Tipo Sanguineo</div></div>`;
-  }
-  if (p.organ_donor) html += `<div style="text-align:center;margin-bottom:8px"><span class="donor-badge">Dador de Orgaos</span></div>`;
-  if (p.health_insurance) html += `<div class="field"><span class="field-label">Seguro Saude</span><span class="field-value">${p.health_insurance}</span></div>`;
+  html += `<div class="card-title" style="color:#ff3333"><span class="icon">&#9829;</span> Informacao Medica</div>`;
+  if (p.blood_type) html += `<div style="padding:12px 0;text-align:center"><div class="blood-type">${esc(p.blood_type)}</div><div class="blood-type-label">Tipo Sanguineo</div></div>`;
+  if (p.organ_donor) html += `<div style="text-align:center;margin-bottom:8px"><span class="donor-badge">&#9829; Dador de Orgaos</span></div>`;
+  if (p.health_insurance) html += field('Seguro Saude', p.health_insurance);
   html += `</div>`;
 
-  // Allergies / Medications / Conditions
+  // ── Allergies / Medications / Conditions ──
   if ((p.allergies?.length) || (p.medications?.length) || (p.medical_conditions?.length) || p.medical_notes) {
     html += `<div class="card">`;
-    html += `<div class="card-title" style="color:#fbbf24">Alertas Medicos</div>`;
+    html += `<div class="card-title" style="color:#fbbf24"><span class="icon">&#9888;</span> Alertas Medicos</div>`;
     if (p.allergies?.length) {
-      html += `<div style="margin-bottom:8px"><div class="field-label" style="margin-bottom:4px">Alergias</div>`;
-      p.allergies.forEach(a => { html += `<span class="alert-tag tag-red">${a}</span>`; });
+      html += `<div style="margin-bottom:8px"><div class="field-label" style="margin-bottom:4px;color:#888;font-size:12px">Alergias</div>`;
+      p.allergies.forEach(a => { html += `<span class="alert-tag tag-red">${esc(a)}</span>`; });
       html += `</div>`;
     }
     if (p.medications?.length) {
-      html += `<div style="margin-bottom:8px"><div class="field-label" style="margin-bottom:4px">Medicacao</div>`;
-      p.medications.forEach(m => { html += `<span class="alert-tag tag-amber">${m}</span>`; });
+      html += `<div style="margin-bottom:8px"><div class="field-label" style="margin-bottom:4px;color:#888;font-size:12px">Medicacao</div>`;
+      p.medications.forEach(m => { html += `<span class="alert-tag tag-amber">${esc(m)}</span>`; });
       html += `</div>`;
     }
     if (p.medical_conditions?.length) {
-      html += `<div style="margin-bottom:8px"><div class="field-label" style="margin-bottom:4px">Condicoes</div>`;
-      p.medical_conditions.forEach(c => { html += `<span class="alert-tag tag-blue">${c}</span>`; });
+      html += `<div style="margin-bottom:8px"><div class="field-label" style="margin-bottom:4px;color:#888;font-size:12px">Condicoes</div>`;
+      p.medical_conditions.forEach(c => { html += `<span class="alert-tag tag-blue">${esc(c)}</span>`; });
       html += `</div>`;
     }
     if (p.medical_notes) {
-      html += `<div class="field-label" style="margin-bottom:4px">Notas</div><div style="font-size:13px;color:#adaaaa">${p.medical_notes}</div>`;
+      html += `<div class="field-label" style="margin-bottom:4px;color:#888;font-size:12px">Notas</div><div style="font-size:13px;color:#adaaaa">${esc(p.medical_notes)}</div>`;
     }
     html += `</div>`;
   }
 
-  // Last 24h ride data — cardiac profile for doctors
-  if (lastRide) {
-    html += `<div class="card">`;
-    html += `<div class="card-title" style="color:#6e9bff">Ultima Actividade (24h)</div>`;
+  // ── PRE-ACCIDENT CONTEXT (last 10 min) — critical for paramedics ──
+  if (snaps.length > 10) {
+    const lastSnap = snaps[snaps.length - 1];
+    const cutoff = lastSnap.elapsed_s - 600; // last 10 minutes
+    const recent = snaps.filter(s => s.elapsed_s >= cutoff);
 
-    const dur = lastRide.duration_s;
+    if (recent.length > 3) {
+      const recentHRs = recent.filter(s => s.hr_bpm > 0).map(s => s.hr_bpm);
+      const recentSpeeds = recent.map(s => s.speed_kmh || 0);
+      const recentPower = recent.map(s => s.power_watts || 0);
+      const avgRecentHR = recentHRs.length ? Math.round(recentHRs.reduce((a,b) => a+b, 0) / recentHRs.length) : 0;
+      const maxRecentHR = recentHRs.length ? Math.max(...recentHRs) : 0;
+      const lastHR = recentHRs.length ? recentHRs[recentHRs.length - 1] : 0;
+      const lastSpeed = recentSpeeds[recentSpeeds.length - 1] || 0;
+      const lastPower = recentPower[recentPower.length - 1] || 0;
+
+      // Detect clinical alerts
+      let alerts = [];
+      if (maxRecentHR > 170) alerts.push('HR elevada (>' + maxRecentHR + ' bpm)');
+      if (recentHRs.length > 5) {
+        const firstHalf = recentHRs.slice(0, Math.floor(recentHRs.length / 2));
+        const secondHalf = recentHRs.slice(Math.floor(recentHRs.length / 2));
+        const avgFirst = firstHalf.reduce((a,b) => a+b, 0) / firstHalf.length;
+        const avgSecond = secondHalf.reduce((a,b) => a+b, 0) / secondHalf.length;
+        if (avgFirst - avgSecond > 40) alerts.push('Queda abrupta de HR (-' + Math.round(avgFirst - avgSecond) + ' bpm)');
+        if (avgSecond - avgFirst > 30) alerts.push('Subida rapida de HR (+' + Math.round(avgSecond - avgFirst) + ' bpm)');
+      }
+      if (lastSpeed > 30) alerts.push('Velocidade alta no momento (' + lastSpeed.toFixed(0) + ' km/h)');
+
+      html += `<div class="card pre-accident">`;
+      html += `<div class="card-title" style="color:#ff3333"><span class="icon">&#9200;</span> Ultimos 10 Minutos (Contexto Pre-Acidente)</div>`;
+
+      if (alerts.length) {
+        html += `<div style="margin-bottom:12px">`;
+        alerts.forEach(a => { html += `<span class="alert-tag tag-red">${a}</span> `; });
+        html += `</div>`;
+      }
+
+      html += `<div class="stats-grid" style="margin-bottom:12px">`;
+      html += `<div class="stat"><div class="val" style="color:${lastHR > 160 ? '#ef4444' : '#3fff8b'}">${lastHR || '—'}</div><div class="lbl">HR Ultimo</div></div>`;
+      html += `<div class="stat"><div class="val" style="color:#fbbf24">${lastSpeed.toFixed(0)}</div><div class="lbl">km/h</div></div>`;
+      html += `<div class="stat"><div class="val" style="color:#6e9bff">${lastPower}</div><div class="lbl">Watts</div></div>`;
+      html += `</div>`;
+
+      // Mini charts for last 10 min
+      html += `<div class="context-row"><span class="context-label">HR</span><canvas id="pre-accident-hr" class="chart-canvas-sm" style="flex:1"></canvas><span class="context-val" style="color:#ef4444">${avgRecentHR}</span></div>`;
+      html += `<div class="context-row"><span class="context-label">Vel.</span><canvas id="pre-accident-speed" class="chart-canvas-sm" style="flex:1"></canvas><span class="context-val" style="color:#fbbf24">${(recentSpeeds.reduce((a,b)=>a+b,0)/recentSpeeds.length).toFixed(0)}</span></div>`;
+      html += `<div class="context-row"><span class="context-label">Potencia</span><canvas id="pre-accident-power" class="chart-canvas-sm" style="flex:1"></canvas><span class="context-val" style="color:#6e9bff">${(recentPower.reduce((a,b)=>a+b,0)/recentPower.length).toFixed(0)}</span></div>`;
+
+      // SpO2 if available
+      const spo2Snaps = recent.filter(s => s.spo2_pct && s.spo2_pct > 0);
+      if (spo2Snaps.length) {
+        const lastSpo2 = spo2Snaps[spo2Snaps.length - 1].spo2_pct;
+        html += `<div style="margin-top:8px;text-align:center"><span style="font-size:11px;color:#888">SpO2</span> <span style="font-size:22px;font-weight:900;color:${lastSpo2 < 94 ? '#ef4444' : '#3fff8b'}">${lastSpo2}%</span></div>`;
+      }
+
+      html += `</div>`;
+    }
+  }
+
+  // ── MAP — route with HR zone coloring ──
+  if (snaps.some(s => s.lat && s.lng)) {
+    html += `<div class="card">`;
+    html += `<div class="card-title" style="color:#6e9bff"><span class="icon">&#127758;</span> Mapa do Percurso${isLive ? ' (LIVE)' : ''}</div>`;
+    html += `<div id="map-container"></div>`;
+    html += `<div class="map-legend">`;
+    ZONE_NAMES.forEach((name, i) => { html += `<span><span class="dot" style="background:${ZONE_COLORS[i]}"></span>${name}</span>`; });
+    html += `</div></div>`;
+  }
+
+  // ── HR CARDIAC PROFILE ──
+  if (snaps.some(s => s.hr_bpm > 0)) {
+    html += `<div class="card">`;
+    html += `<div class="card-title" style="color:#ef4444"><span class="icon">&#9829;</span> Perfil Cardiaco</div>`;
+
+    // Stats row
+    const hrs = snaps.filter(s => s.hr_bpm > 0).map(s => s.hr_bpm);
+    const avgHR = Math.round(hrs.reduce((a,b) => a+b, 0) / hrs.length);
+    const maxHR = Math.max(...hrs);
+    const minHR = Math.min(...hrs);
+    const lastHR = hrs[hrs.length - 1];
+
+    html += `<div class="stats-grid" style="margin-bottom:12px">`;
+    html += `<div class="stat"><div class="val" style="color:#3fff8b">${avgHR}</div><div class="lbl">HR Media</div></div>`;
+    html += `<div class="stat"><div class="val" style="color:#ef4444">${maxHR}</div><div class="lbl">HR Max</div></div>`;
+    html += `<div class="stat"><div class="val" style="color:#fbbf24">${lastHR}</div><div class="lbl">HR Ultimo</div></div>`;
+    html += `</div>`;
+
+    // HR zone distribution bar
+    html += `<div style="margin-bottom:4px;font-size:10px;color:#888">Distribuicao por zonas</div>`;
+    html += `<canvas id="hr-zones" class="zone-bar-canvas"></canvas>`;
+
+    // HR timeline chart
+    html += `<div style="margin-top:12px;margin-bottom:4px;font-size:10px;color:#888">Frequencia cardiaca ao longo do tempo</div>`;
+    html += `<canvas id="hr-timeline" class="chart-canvas"></canvas>`;
+
+    html += `</div>`;
+  }
+
+  // ── ELEVATION PROFILE ──
+  if (snaps.some(s => s.altitude_m != null)) {
+    html += `<div class="card">`;
+    html += `<div class="card-title" style="color:#22c55e"><span class="icon">&#9968;</span> Perfil de Elevacao</div>`;
+
+    const alts = snaps.filter(s => s.altitude_m != null).map(s => s.altitude_m);
+    const minAlt = Math.round(Math.min(...alts));
+    const maxAlt = Math.round(Math.max(...alts));
+    const gain = calcElevGain(snaps);
+
+    html += `<div class="stats-grid" style="margin-bottom:8px">`;
+    html += `<div class="stat"><div class="val" style="color:#22c55e;font-size:20px">${minAlt}m</div><div class="lbl">Min</div></div>`;
+    html += `<div class="stat"><div class="val" style="color:#22c55e;font-size:20px">${maxAlt}m</div><div class="lbl">Max</div></div>`;
+    html += `<div class="stat"><div class="val" style="color:#22c55e;font-size:20px">+${gain}m</div><div class="lbl">D+</div></div>`;
+    html += `</div>`;
+
+    html += `<canvas id="elevation-chart" class="chart-canvas"></canvas>`;
+    html += `</div>`;
+  }
+
+  // ── RIDE SUMMARY ──
+  if (session) {
+    html += `<div class="card">`;
+    html += `<div class="card-title" style="color:#6e9bff"><span class="icon">&#128690;</span> Resumo da Actividade</div>`;
+
+    const dur = session.duration_s || 0;
     const h = Math.floor(dur / 3600);
     const m = Math.floor((dur % 3600) / 60);
     const timeStr = h > 0 ? `${h}h ${m}min` : `${m}min`;
-    const when = new Date(lastRide.started_at);
+    const when = new Date(session.started_at);
     const timeAgo = Math.round((Date.now() - when.getTime()) / 3600000);
+    const timeLabel = isLive ? 'Em curso' : `Ha ${timeAgo}h`;
 
-    html += `<div style="text-align:center;font-size:11px;color:#888;margin-bottom:12px">Há ${timeAgo}h — ${when.toLocaleString('pt-PT', {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</div>`;
+    html += `<div style="text-align:center;font-size:11px;color:#888;margin-bottom:12px">${timeLabel} — ${when.toLocaleString('pt-PT', {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</div>`;
 
-    html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">`;
-    html += `<div class="ride-stat"><div class="val" style="color:#3fff8b">${lastRide.avg_hr || '—'}</div><div class="lbl">HR Media</div></div>`;
-    html += `<div class="ride-stat"><div class="val" style="color:#ff3333">${lastRide.max_hr || '—'}</div><div class="lbl">HR Max</div></div>`;
-    html += `<div class="ride-stat"><div class="val" style="color:#fbbf24">${timeStr}</div><div class="lbl">Duracao</div></div>`;
+    html += `<div class="stats-grid">`;
+    html += `<div class="stat"><div class="val" style="color:#fff;font-size:22px">${(session.total_km || 0).toFixed(1)}</div><div class="lbl">km</div></div>`;
+    html += `<div class="stat"><div class="val" style="color:#fff;font-size:22px">${session.avg_speed_kmh || '—'}</div><div class="lbl">km/h med</div></div>`;
+    html += `<div class="stat"><div class="val" style="color:#fff;font-size:22px">${timeStr}</div><div class="lbl">Duracao</div></div>`;
     html += `</div>`;
 
-    html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">`;
-    html += `<div class="ride-stat"><div class="val" style="color:#fff;font-size:22px">${(lastRide.total_km || 0).toFixed(1)}</div><div class="lbl">km</div></div>`;
-    html += `<div class="ride-stat"><div class="val" style="color:#fff;font-size:22px">${lastRide.avg_speed_kmh || '—'}</div><div class="lbl">km/h med</div></div>`;
-    html += `<div class="ride-stat"><div class="val" style="color:#fff;font-size:22px">${lastRide.avg_power_w || '—'}</div><div class="lbl">watts med</div></div>`;
+    html += `<div class="stats-grid" style="margin-top:8px">`;
+    html += `<div class="stat"><div class="val" style="color:#6e9bff;font-size:22px">${session.avg_power_w || '—'}</div><div class="lbl">Watts med</div></div>`;
+    html += `<div class="stat"><div class="val" style="color:#6e9bff;font-size:22px">${session.max_power_w || '—'}</div><div class="lbl">Watts max</div></div>`;
+    html += `<div class="stat"><div class="val" style="color:#fbbf24;font-size:22px">${session.max_speed_kmh || '—'}</div><div class="lbl">km/h max</div></div>`;
     html += `</div>`;
 
-    // Last known location
-    const lat = lastRide.end_lat || lastRide.start_lat;
-    const lng = lastRide.end_lng || lastRide.start_lng;
-    if (lat && lng) {
-      html += `<div style="margin-top:12px;text-align:center"><a href="https://maps.google.com/?q=${lat},${lng}" target="_blank" class="call-btn call-secondary" style="display:inline-flex;width:auto;padding:10px 20px;font-size:13px">Ver ultima localizacao no mapa</a></div>`;
+    if (session.battery_start != null) {
+      html += `<div style="margin-top:12px;display:flex;justify-content:center;gap:16px;font-size:12px">`;
+      html += `<span style="color:#888">Bateria: <span style="color:#3fff8b;font-weight:700">${session.battery_start}%</span> → <span style="color:${(session.battery_end || 0) < 20 ? '#ef4444' : '#fbbf24'};font-weight:700">${session.battery_end ?? '?'}%</span></span>`;
+      html += `</div>`;
     }
 
     html += `</div>`;
   }
 
-  // Community rescue — privacy-first: show count only, reveal after acceptance
-  const victimLat2 = lastRide?.end_lat || lastRide?.start_lat || p.last_location_lat;
-  const victimLng2 = lastRide?.end_lng || lastRide?.start_lng || p.last_location_lng;
+  // ── RESCUE NETWORK ──
+  const victimLat = session?.end_lat || session?.start_lat || p.last_location_lat;
+  const victimLng = session?.end_lng || session?.start_lng || p.last_location_lng;
 
   html += `<div class="card" id="rescue-section">`;
-  html += `<div class="card-title" style="color:#3fff8b">Rede de Ajuda KROMI</div>`;
+  html += `<div class="card-title" style="color:#3fff8b"><span class="icon">&#128161;</span> Rede de Ajuda KROMI</div>`;
 
   if (nearbyRiders && nearbyRiders.length > 0) {
     html += `<div style="text-align:center;padding:12px 0">`;
     html += `<div style="font-size:48px;font-weight:900;color:#3fff8b">${nearbyRiders.length}</div>`;
     html += `<div style="font-size:13px;color:#adaaaa">ciclista${nearbyRiders.length > 1 ? 's' : ''} disponive${nearbyRiders.length > 1 ? 'is' : 'l'} num raio de 5km</div>`;
     html += `</div>`;
-    html += `<button onclick="sendSOS('${p.token}', '${p.name || 'Ciclista'}', ${victimLat2 || 0}, ${victimLng2 || 0})" class="call-btn" style="background:#ff3333;color:white;font-size:18px;height:60px" id="sos-btn">PEDIR AJUDA SOS</button>`;
-    html += `<div style="font-size:10px;color:#888;text-align:center;margin-top:6px">Envia um alerta sonoro aos ciclistas proximos. Os seus dados so aparecem se aceitarem ajudar.</div>`;
+    html += `<button onclick="sendSOS('${esc(p.token)}', '${esc(p.name || 'Ciclista')}', ${victimLat || 0}, ${victimLng || 0})" class="call-btn" style="background:#ff3333;color:white;font-size:18px;height:60px" id="sos-btn">PEDIR AJUDA SOS</button>`;
+    html += `<div style="font-size:10px;color:#888;text-align:center;margin-top:6px">Envia um alerta aos ciclistas proximos. Os dados so aparecem se aceitarem ajudar.</div>`;
   } else {
-    html += `<div style="text-align:center;padding:12px 0;color:#888;font-size:13px">Nenhum ciclista KROMI detectado num raio de 5km neste momento.</div>`;
+    html += `<div style="text-align:center;padding:12px 0;color:#888;font-size:13px">Nenhum ciclista KROMI detectado num raio de 5km.</div>`;
   }
   html += `<div id="responders"></div>`;
   html += `</div>`;
 
-  // Poll for responders if SOS was sent
-  if (window._sosRequestId) pollResponders(window._sosRequestId);
+  // ── Last known location link ──
+  if (victimLat && victimLng) {
+    html += `<a href="https://maps.google.com/?q=${victimLat},${victimLng}" target="_blank" class="call-btn call-secondary" style="font-size:13px;margin-bottom:12px">Abrir ultima localizacao no Google Maps</a>`;
+  }
 
-  // Footer
-  html += `<div class="footer">Esta pagina foi gerada automaticamente pelo KROMI BikeControl.<br>Os dados sao actualizados a cada sessao de treino.<br>Em caso de emergencia, ligue 112.</div>`;
+  // ── Footer ──
+  html += `<div class="footer">Esta pagina foi gerada pelo KROMI BikeControl.<br>Dados actualizados a cada sessao de treino. Em emergencia, ligue 112.</div>`;
 
   document.getElementById('content').innerHTML = html;
 }
 
-function showNotFound() {
-  document.getElementById('content').innerHTML = `<div class="not-found"><div style="font-size:48px;margin-bottom:16px">&#128722;</div><div>Perfil nao encontrado ou inactivo.</div></div>`;
+// ═══════════════════════════════════════════════════════════
+// GOOGLE MAPS
+// ═══════════════════════════════════════════════════════════
+function loadGoogleMaps() {
+  return new Promise((resolve, reject) => {
+    if (window.google?.maps) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=geometry`;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
 }
 
-// SOS flow
+function initMap(snapshots, session, isLive) {
+  const container = document.getElementById('map-container');
+  if (!container || !window.google?.maps) return;
+
+  const pts = snapshots.filter(s => s.lat && s.lng);
+  if (!pts.length) return;
+
+  const bounds = new google.maps.LatLngBounds();
+  pts.forEach(p => bounds.extend({ lat: p.lat, lng: p.lng }));
+
+  const map = new google.maps.Map(container, {
+    center: bounds.getCenter(),
+    zoom: 14,
+    mapTypeId: 'terrain',
+    disableDefaultUI: true,
+    zoomControl: true,
+    styles: [
+      { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
+      { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a2e' }] },
+      { elementType: 'labels.text.fill', stylers: [{ color: '#8888aa' }] },
+      { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2a2a4a' }] },
+      { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
+      { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+      { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+    ],
+  });
+  map.fitBounds(bounds, 30);
+
+  // Color-coded polyline segments by HR zone
+  for (let i = 0; i < pts.length - 1; i++) {
+    const zone = Math.max(0, Math.min(4, (pts[i].hr_zone || 1) - 1));
+    new google.maps.Polyline({
+      path: [{ lat: pts[i].lat, lng: pts[i].lng }, { lat: pts[i+1].lat, lng: pts[i+1].lng }],
+      strokeColor: ZONE_COLORS[zone],
+      strokeOpacity: 0.9,
+      strokeWeight: 4,
+      map,
+    });
+  }
+
+  // Start marker
+  new google.maps.Marker({
+    position: { lat: pts[0].lat, lng: pts[0].lng },
+    map,
+    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: '#3fff8b', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
+    title: 'Inicio',
+  });
+
+  // Last position marker with accuracy circle
+  const last = pts[pts.length - 1];
+  const lastMarker = new google.maps.Marker({
+    position: { lat: last.lat, lng: last.lng },
+    map,
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: isLive ? 10 : 8,
+      fillColor: isLive ? '#ff3333' : '#fbbf24',
+      fillOpacity: 1,
+      strokeColor: '#fff',
+      strokeWeight: 2,
+    },
+    title: isLive ? 'Posicao actual' : 'Ultima posicao',
+    animation: isLive ? google.maps.Animation.BOUNCE : null,
+  });
+
+  // Accuracy circle around last position
+  new google.maps.Circle({
+    center: { lat: last.lat, lng: last.lng },
+    radius: last.gps_accuracy || 30,
+    map,
+    fillColor: isLive ? '#ff3333' : '#fbbf24',
+    fillOpacity: 0.15,
+    strokeColor: isLive ? '#ff3333' : '#fbbf24',
+    strokeOpacity: 0.4,
+    strokeWeight: 1,
+  });
+
+  // Info window on last position
+  const info = new google.maps.InfoWindow({
+    content: `<div style="color:#000;font-size:12px;padding:4px"><b>${isLive ? 'POSICAO ACTUAL' : 'ULTIMA POSICAO'}</b><br>${last.lat.toFixed(5)}, ${last.lng.toFixed(5)}<br>Alt: ${last.altitude_m ? Math.round(last.altitude_m) + 'm' : '?'} | Vel: ${last.speed_kmh ? last.speed_kmh.toFixed(0) + 'km/h' : '?'}</div>`,
+  });
+  lastMarker.addListener('click', () => info.open(map, lastMarker));
+  if (isLive) info.open(map, lastMarker);
+
+  window._emergencyMap = map;
+  window._lastMarker = lastMarker;
+}
+
+// ═══════════════════════════════════════════════════════════
+// CANVAS CHARTS
+// ═══════════════════════════════════════════════════════════
+function setupCanvas(id) {
+  const canvas = document.getElementById(id);
+  if (!canvas) return null;
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, w: rect.width, h: rect.height };
+}
+
+function drawHRTimeline(id, snapshots, hrMax) {
+  const c = setupCanvas(id);
+  if (!c) return;
+  const { ctx, w, h } = c;
+  const hrs = snapshots.filter(s => s.hr_bpm > 0);
+  if (!hrs.length) return;
+
+  const pad = { top: 10, bottom: 20, left: 35, right: 10 };
+  const cw = w - pad.left - pad.right;
+  const ch = h - pad.top - pad.bottom;
+
+  const minHR = Math.max(40, Math.min(...hrs.map(s => s.hr_bpm)) - 10);
+  const maxHR = Math.min(220, hrMax + 10);
+  const maxTime = hrs[hrs.length - 1].elapsed_s;
+  const minTime = hrs[0].elapsed_s;
+  const timeRange = maxTime - minTime || 1;
+
+  // Zone bands background
+  const zoneThresholds = [0, 0.6, 0.7, 0.8, 0.9, 1.0];
+  for (let z = 0; z < 5; z++) {
+    const lo = maxHR * zoneThresholds[z];
+    const hi = maxHR * zoneThresholds[z + 1];
+    const y1 = pad.top + ch - ((Math.min(hi, maxHR) - minHR) / (maxHR - minHR)) * ch;
+    const y2 = pad.top + ch - ((Math.max(lo, minHR) - minHR) / (maxHR - minHR)) * ch;
+    if (y2 > y1) {
+      ctx.fillStyle = ZONE_COLORS[z] + '18';
+      ctx.fillRect(pad.left, Math.max(pad.top, y1), cw, Math.min(y2 - y1, ch));
+    }
+  }
+
+  // HR line
+  ctx.beginPath();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  hrs.forEach((s, i) => {
+    const x = pad.left + ((s.elapsed_s - minTime) / timeRange) * cw;
+    const y = pad.top + ch - ((s.hr_bpm - minHR) / (maxHR - minHR)) * ch;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Filled area under line
+  const lastPt = hrs[hrs.length - 1];
+  ctx.lineTo(pad.left + cw, pad.top + ch);
+  ctx.lineTo(pad.left, pad.top + ch);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
+  grad.addColorStop(0, 'rgba(239,68,68,0.25)');
+  grad.addColorStop(1, 'rgba(239,68,68,0.02)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Y-axis labels
+  ctx.fillStyle = '#666';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'right';
+  for (let hr = Math.ceil(minHR / 20) * 20; hr <= maxHR; hr += 20) {
+    const y = pad.top + ch - ((hr - minHR) / (maxHR - minHR)) * ch;
+    ctx.fillText(hr.toString(), pad.left - 4, y + 3);
+    ctx.strokeStyle = '#ffffff10';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
+  }
+
+  // X-axis time labels
+  ctx.fillStyle = '#666';
+  ctx.textAlign = 'center';
+  const step = Math.max(1, Math.floor(timeRange / 5 / 60)) * 60;
+  for (let t = Math.ceil(minTime / step) * step; t <= maxTime; t += step) {
+    const x = pad.left + ((t - minTime) / timeRange) * cw;
+    const m = Math.floor(t / 60);
+    ctx.fillText(m + 'min', x, h - 4);
+  }
+}
+
+function drawHRZones(id, snapshots) {
+  const c = setupCanvas(id);
+  if (!c) return;
+  const { ctx, w, h } = c;
+
+  const counts = [0, 0, 0, 0, 0];
+  let total = 0;
+  snapshots.forEach(s => {
+    if (s.hr_bpm > 0) {
+      const z = Math.max(0, Math.min(4, (s.hr_zone || 1) - 1));
+      counts[z]++;
+      total++;
+    }
+  });
+  if (!total) return;
+
+  let x = 0;
+  for (let z = 0; z < 5; z++) {
+    const pct = counts[z] / total;
+    const segW = pct * w;
+    if (segW < 1) { x += segW; continue; }
+
+    ctx.fillStyle = ZONE_COLORS[z];
+    ctx.fillRect(x, 0, segW, h);
+
+    // Label if wide enough
+    if (segW > 28) {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`Z${z + 1}`, x + segW / 2, h / 2 - 2);
+      ctx.font = '8px sans-serif';
+      ctx.fillText(`${Math.round(pct * 100)}%`, x + segW / 2, h / 2 + 9);
+    }
+    x += segW;
+  }
+}
+
+function drawElevation(id, snapshots) {
+  const c = setupCanvas(id);
+  if (!c) return;
+  const { ctx, w, h } = c;
+
+  const pts = snapshots.filter(s => s.altitude_m != null && s.distance_km != null);
+  if (pts.length < 2) return;
+
+  const pad = { top: 10, bottom: 20, left: 35, right: 10 };
+  const cw = w - pad.left - pad.right;
+  const ch = h - pad.top - pad.bottom;
+
+  const minAlt = Math.min(...pts.map(s => s.altitude_m)) - 5;
+  const maxAlt = Math.max(...pts.map(s => s.altitude_m)) + 5;
+  const altRange = maxAlt - minAlt || 1;
+  const minDist = pts[0].distance_km || 0;
+  const maxDist = pts[pts.length - 1].distance_km || 1;
+  const distRange = maxDist - minDist || 1;
+
+  // Filled area with gradient coloring by gradient_pct
+  ctx.beginPath();
+  pts.forEach((s, i) => {
+    const x = pad.left + ((s.distance_km - minDist) / distRange) * cw;
+    const y = pad.top + ch - ((s.altitude_m - minAlt) / altRange) * ch;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+
+  // Close path for fill
+  ctx.lineTo(pad.left + cw, pad.top + ch);
+  ctx.lineTo(pad.left, pad.top + ch);
+  ctx.closePath();
+
+  const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
+  grad.addColorStop(0, 'rgba(34,197,94,0.4)');
+  grad.addColorStop(0.6, 'rgba(34,197,94,0.15)');
+  grad.addColorStop(1, 'rgba(34,197,94,0.02)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Elevation line
+  ctx.beginPath();
+  pts.forEach((s, i) => {
+    const x = pad.left + ((s.distance_km - minDist) / distRange) * cw;
+    const y = pad.top + ch - ((s.altitude_m - minAlt) / altRange) * ch;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = '#22c55e';
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // Gradient coloring overlay (red segments for steep climbs)
+  for (let i = 1; i < pts.length; i++) {
+    const g = pts[i].gradient_pct || 0;
+    if (Math.abs(g) < 5) continue;
+    const x1 = pad.left + ((pts[i-1].distance_km - minDist) / distRange) * cw;
+    const x2 = pad.left + ((pts[i].distance_km - minDist) / distRange) * cw;
+    const y1 = pad.top + ch - ((pts[i-1].altitude_m - minAlt) / altRange) * ch;
+    const y2 = pad.top + ch - ((pts[i].altitude_m - minAlt) / altRange) * ch;
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.strokeStyle = g > 10 ? '#ef4444' : g > 5 ? '#f59e0b' : g < -10 ? '#3b82f6' : '#6b7280';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  }
+
+  // Y-axis labels (altitude)
+  ctx.fillStyle = '#666';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'right';
+  const altStep = Math.max(10, Math.ceil(altRange / 5 / 10) * 10);
+  for (let a = Math.ceil(minAlt / altStep) * altStep; a <= maxAlt; a += altStep) {
+    const y = pad.top + ch - ((a - minAlt) / altRange) * ch;
+    ctx.fillText(Math.round(a) + 'm', pad.left - 4, y + 3);
+  }
+
+  // X-axis labels (distance)
+  ctx.fillStyle = '#666';
+  ctx.textAlign = 'center';
+  const distStep = Math.max(0.5, Math.ceil(distRange / 5 * 2) / 2);
+  for (let d = Math.ceil(minDist / distStep) * distStep; d <= maxDist; d += distStep) {
+    const x = pad.left + ((d - minDist) / distRange) * cw;
+    ctx.fillText(d.toFixed(1) + 'km', x, h - 4);
+  }
+}
+
+function drawPreAccident(hrId, speedId, powerId, snapshots) {
+  const lastSnap = snapshots[snapshots.length - 1];
+  if (!lastSnap) return;
+  const cutoff = lastSnap.elapsed_s - 600;
+  const recent = snapshots.filter(s => s.elapsed_s >= cutoff);
+  if (recent.length < 3) return;
+
+  drawMiniLine(hrId, recent.map(s => s.hr_bpm || 0), '#ef4444');
+  drawMiniLine(speedId, recent.map(s => s.speed_kmh || 0), '#fbbf24');
+  drawMiniLine(powerId, recent.map(s => s.power_watts || 0), '#6e9bff');
+}
+
+function drawMiniLine(id, values, color) {
+  const c = setupCanvas(id);
+  if (!c) return;
+  const { ctx, w, h } = c;
+
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const pad = 4;
+  const cw = w - pad * 2;
+  const ch = h - pad * 2;
+
+  // Filled area
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = pad + (i / (values.length - 1)) * cw;
+    const y = pad + ch - ((v - min) / range) * ch;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.lineTo(pad + cw, pad + ch);
+  ctx.lineTo(pad, pad + ch);
+  ctx.closePath();
+  ctx.fillStyle = color + '20';
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = pad + (i / (values.length - 1)) * cw;
+    const y = pad + ch - ((v - min) / range) * ch;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+}
+
+// ═══════════════════════════════════════════════════════════
+// LIVE REFRESH (for active sessions)
+// ═══════════════════════════════════════════════════════════
+async function refreshLiveData(userId, sessionId) {
+  try {
+    const res = await fetch(`${SB_URL}/rest/v1/ride_snapshots?session_id=eq.${sessionId}&select=lat,lng,hr_bpm,speed_kmh,altitude_m,elapsed_s&order=elapsed_s.desc&limit=1`, { headers: sbHeaders });
+    const snaps = await res.json();
+    if (snaps.length && window._emergencyMap && window._lastMarker) {
+      const s = snaps[0];
+      if (s.lat && s.lng) {
+        const pos = { lat: s.lat, lng: s.lng };
+        window._lastMarker.setPosition(pos);
+        window._emergencyMap.panTo(pos);
+      }
+    }
+  } catch {}
+}
+
+// ═══════════════════════════════════════════════════════════
+// SOS FLOW
+// ═══════════════════════════════════════════════════════════
 async function sendSOS(token, name, lat, lng) {
   const btn = document.getElementById('sos-btn');
   btn.textContent = 'A ENVIAR SOS...';
@@ -262,10 +838,9 @@ async function sendSOS(token, name, lat, lng) {
   btn.style.opacity = '0.6';
 
   try {
-    // Create rescue request
     const res = await fetch(`${SB_URL}/rest/v1/rescue_requests`, {
       method: 'POST',
-      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+      headers: { ...sbHeaders, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
       body: JSON.stringify({ emergency_token: token, victim_name: name, victim_lat: lat, victim_lng: lng, status: 'active' }),
     });
     const created = await res.json();
@@ -275,8 +850,6 @@ async function sendSOS(token, name, lat, lng) {
       window._sosRequestId = requestId;
       btn.textContent = 'SOS ENVIADO — A AGUARDAR RESPOSTA';
       btn.style.background = '#ff9933';
-
-      // Start polling for responders
       pollResponders(requestId);
     }
   } catch {
@@ -290,37 +863,61 @@ function pollResponders(requestId) {
   const container = document.getElementById('responders');
   const interval = setInterval(async () => {
     try {
-      const res = await fetch(`${SB_URL}/rest/v1/rescue_responses?request_id=eq.${requestId}&select=*&order=created_at.asc`, {
-        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-      });
+      const res = await fetch(`${SB_URL}/rest/v1/rescue_responses?request_id=eq.${requestId}&select=*&order=created_at.asc`, { headers: sbHeaders });
       const responders = await res.json();
 
       if (responders.length > 0) {
         let html = '<div style="margin-top:16px;border-top:1px solid #262626;padding-top:12px">';
         html += '<div style="font-size:12px;font-weight:700;color:#3fff8b;margin-bottom:8px">AJUDA A CAMINHO!</div>';
-
         responders.forEach(r => {
           html += '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #262626">';
           html += `<div style="width:40px;height:40px;border-radius:50%;background:#1a3a2a;display:flex;align-items:center;justify-content:center;font-size:18px;color:#3fff8b;font-weight:700">${(r.responder_name || '?')[0]}</div>`;
           html += '<div style="flex:1">';
-          html += `<div style="font-size:14px;font-weight:700;color:white">${r.responder_name || 'Ciclista'}</div>`;
+          html += `<div style="font-size:14px;font-weight:700;color:white">${esc(r.responder_name || 'Ciclista')}</div>`;
           if (r.distance_km) html += `<div style="font-size:11px;color:#888">${r.distance_km}km de distancia</div>`;
           html += '</div>';
-          if (r.responder_phone) {
-            html += `<a href="tel:${r.responder_phone}" style="padding:10px 16px;background:#3fff8b;color:#000;font-weight:700;font-size:14px;border-radius:4px;text-decoration:none">LIGAR</a>`;
-          }
+          if (r.responder_phone) html += `<a href="tel:${esc(r.responder_phone)}" style="padding:10px 16px;background:#3fff8b;color:#000;font-weight:700;font-size:14px;border-radius:4px;text-decoration:none">LIGAR</a>`;
           html += '</div>';
         });
         html += '</div>';
         container.innerHTML = html;
       }
     } catch {}
-  }, 3000); // Poll every 3s
-
-  // Stop polling after 2h
+  }, 3000);
   setTimeout(() => clearInterval(interval), 2 * 60 * 60 * 1000);
 }
 
+// ═══════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════
+function showNotFound() {
+  document.getElementById('content').innerHTML = `<div class="not-found"><div style="font-size:48px;margin-bottom:16px">&#128722;</div><div>Perfil nao encontrado ou inactivo.</div></div>`;
+}
+
+function field(label, value) {
+  return `<div class="field"><span class="field-label">${esc(label)}</span><span class="field-value">${esc(String(value || '—'))}</span></div>`;
+}
+
+function esc(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = String(str);
+  return div.innerHTML;
+}
+
+function calcElevGain(snapshots) {
+  let gain = 0;
+  const alts = snapshots.filter(s => s.altitude_m != null).map(s => s.altitude_m);
+  for (let i = 1; i < alts.length; i++) {
+    const diff = alts[i] - alts[i - 1];
+    if (diff > 0) gain += diff;
+  }
+  return Math.round(gain);
+}
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
 load();
 </script>
 </body>

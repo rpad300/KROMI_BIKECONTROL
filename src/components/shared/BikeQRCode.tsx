@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import QRCode from 'qrcode';
 import { useAuthStore } from '../../store/authStore';
 import { getQRCode, createQRCode } from '../../services/maintenance/MaintenanceService';
 import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
@@ -26,11 +27,16 @@ export function BikeQRDisplay({ bikeId }: { bikeId?: string }) {
     })();
   }, [id, userId]);
 
-  // Draw QR code on canvas (simple implementation without external lib)
+  // Draw real QR code on canvas using qrcode lib
   useEffect(() => {
     if (!qr || !canvasRef.current) return;
     const url = `${window.location.origin}/bike/${qr.token}`;
-    drawQR(canvasRef.current, url);
+    QRCode.toCanvas(canvasRef.current, url, {
+      width: 200,
+      margin: 1,
+      color: { dark: '#000000', light: '#ffffff' },
+      errorCorrectionLevel: 'M',
+    });
   }, [qr]);
 
   if (loading) {
@@ -81,64 +87,3 @@ export function BikeQRDisplay({ bikeId }: { bikeId?: string }) {
   );
 }
 
-/** Simple QR code drawing (uses a basic encoding — for production use qrcode lib) */
-function drawQR(canvas: HTMLCanvasElement, text: string) {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-
-  const size = 200;
-  ctx.fillStyle = 'white';
-  ctx.fillRect(0, 0, size, size);
-
-  // Simple visual QR placeholder using text hash pattern
-  // For real QR, install 'qrcode' npm package
-  const hash = simpleHash(text);
-  const moduleSize = 5;
-  const modules = Math.floor(size / moduleSize);
-
-  ctx.fillStyle = '#000000';
-  for (let y = 0; y < modules; y++) {
-    for (let x = 0; x < modules; x++) {
-      // Position detection patterns (3 corners)
-      if (isFinderPattern(x, y, modules)) {
-        ctx.fillRect(x * moduleSize, y * moduleSize, moduleSize, moduleSize);
-        continue;
-      }
-      // Data modules from hash
-      const bit = (hash[(y * modules + x) % hash.length]! ^ ((x * 7 + y * 13) & 0xFF)) & 1;
-      if (bit) {
-        ctx.fillRect(x * moduleSize, y * moduleSize, moduleSize, moduleSize);
-      }
-    }
-  }
-
-  // Draw text below
-  ctx.fillStyle = '#666666';
-  ctx.font = '10px monospace';
-  ctx.textAlign = 'center';
-  const token = text.split('/').pop() ?? text;
-  ctx.fillText(token, size / 2, size - 4);
-}
-
-function isFinderPattern(x: number, y: number, modules: number): boolean {
-  const s = 7; // finder pattern size
-  // Top-left
-  if (x < s && y < s) return (x === 0 || x === s - 1 || y === 0 || y === s - 1) || (x >= 2 && x <= 4 && y >= 2 && y <= 4);
-  // Top-right
-  if (x >= modules - s && y < s) { const lx = x - (modules - s); return (lx === 0 || lx === s - 1 || y === 0 || y === s - 1) || (lx >= 2 && lx <= 4 && y >= 2 && y <= 4); }
-  // Bottom-left
-  if (x < s && y >= modules - s) { const ly = y - (modules - s); return (x === 0 || x === s - 1 || ly === 0 || ly === s - 1) || (x >= 2 && x <= 4 && ly >= 2 && ly <= 4); }
-  return false;
-}
-
-function simpleHash(str: string): number[] {
-  const result: number[] = [];
-  for (let i = 0; i < 256; i++) {
-    let h = i;
-    for (let j = 0; j < str.length; j++) {
-      h = (h * 31 + str.charCodeAt(j % str.length)) & 0xFF;
-    }
-    result.push(h);
-  }
-  return result;
-}
