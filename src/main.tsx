@@ -4,10 +4,17 @@ import { registerSW } from 'virtual:pwa-register';
 import { App } from './App';
 import { initBLE } from './services/bluetooth/BLEBridge';
 import { syncQueue } from './services/sync/SyncQueue';
+import { localRideStore } from './services/storage/LocalRideStore';
 import { rideSessionManager } from './services/storage/RideHistory';
 import './index.css';
 
-// Init SyncQueue IndexedDB early — before any ride data needs it
+// Init LocalRideStore (bulletproof ride storage) + SyncQueue early
+localRideStore.init().then(() => {
+  localRideStore.startSyncLoop();
+  // Purge old synced data on startup (>30 days)
+  localRideStore.purgeOldSyncedData().catch(() => {});
+}).catch((err) => console.warn('[LocalRideStore] Early init failed:', err));
+
 syncQueue.init().catch((err) => console.warn('[SyncQueue] Early init failed:', err));
 
 // Auto-update service worker — defer reload if ride is active

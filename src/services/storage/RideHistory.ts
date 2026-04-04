@@ -1,13 +1,10 @@
 /**
  * RideSessionManager — orchestrates full ride data capture.
  *
- * Resilience features:
- * - Session persisted in localStorage (survives tab kill / refresh)
- * - Snapshot buffer flushed on visibilitychange/pagehide (emergency save)
- * - Unsaved snapshots serialized to localStorage as crash recovery
- * - Session metrics (distance, power, speed) persisted separately
- * - Direct Supabase sync when online, IndexedDB fallback when offline
- * - Auto-resume on page reload with correct elapsed time
+ * Resilience: ALL ride data goes to LocalRideStore (IndexedDB) FIRST.
+ * Supabase sync happens in background via LocalRideStore sync engine.
+ * Data is NEVER deleted until confirmed synced (HTTP 200).
+ * No localStorage dependency — IndexedDB is more durable.
  */
 
 import { useBikeStore } from '../../store/bikeStore';
@@ -19,7 +16,7 @@ import { useAthleteStore } from '../../store/athleteStore';
 import { useLearningStore } from '../../store/learningStore';
 import { autoAssistEngine } from '../autoAssist/AutoAssistEngine';
 import { batteryEfficiencyTracker } from '../learning/BatteryEfficiencyTracker';
-import { syncQueue } from '../sync/SyncQueue';
+import { localRideStore, type LocalSession, type LocalSnapshot, type LocalOverrideEvent, type PersistedMetrics } from './LocalRideStore';
 
 interface SnapshotRow {
   session_id: string;
@@ -64,34 +61,9 @@ export interface RideSessionState {
   snapshotCount: number;
 }
 
-const PERSIST_KEY = 'bikecontrol-ride-session';
-const METRICS_KEY = 'bikecontrol-ride-metrics';
-const UNSAVED_KEY = 'bikecontrol-unsaved-snapshots';
-const FLUSH_INTERVAL = 10_000; // 10s — reduced from 30s for safety
-const CAPTURE_INTERVAL = 5_000;
-
-interface PersistedSession {
-  sessionId: string;
-  startedAt: number;
-  snapshotCount: number;
-  overrideCount: number;
-}
-
-/** Session metrics persisted separately so stopSession() has real values after tab kill */
-interface PersistedMetrics {
-  distance_km: number;
-  speed_max: number;
-  power_avg: number;
-  power_max: number;
-  power_sum: number;
-  power_count: number;
-  hr_max: number;
-  hr_sum: number;
-  hr_count: number;
-  cadence_sum: number;
-  cadence_count: number;
-  battery_start: number;
-}
+const FLUSH_INTERVAL = 10_000; // 10s — flush buffer to IndexedDB
+const CAPTURE_INTERVAL = 5_000; // 5s — capture snapshot from stores
+const METRICS_PERSIST_EVERY = 6; // persist metrics every 6 snapshots (30s)
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -111,6 +83,8 @@ class RideSessionManager {
   static getInstance(): RideSessionManager {
     if (!RideSessionManager.instance) {
       RideSessionManager.instance = new RideSessionManager();
+      // tryResume is async but we fire-and-forget from constructor
+      // It will set rideActive=true in the store if a session is found
       RideSessionManager.instance.tryResume();
       RideSessionManager.instance.registerLifecycleHandlers();
     }
@@ -143,122 +117,70 @@ class RideSessionManager {
         this.emergencyFlush();
       }
     });
-
-    // beforeunload — last chance synchronous save to localStorage
-    window.addEventListener('beforeunload', () => {
-      if (this.sessionId && this.snapshotBuffer.length > 0) {
-        this.saveUnsavedToLocalStorage();
-      }
-    });
   }
 
-  /** Emergency flush — called on visibilitychange/pagehide */
+  /** Emergency flush — write buffer to IndexedDB (fire-and-forget) */
   private emergencyFlush(): void {
-    // Save buffer to localStorage immediately (synchronous, always works)
-    this.saveUnsavedToLocalStorage();
-    this.persist();
-    this.persistMetrics();
-
-    // Also try async Supabase flush (may not complete if tab is killed)
-    this.flushSnapshots();
-  }
-
-  /** Serialize unsaved snapshots to localStorage as crash recovery */
-  private saveUnsavedToLocalStorage(): void {
-    if (this.snapshotBuffer.length === 0) return;
-    try {
-      localStorage.setItem(UNSAVED_KEY, JSON.stringify(this.snapshotBuffer));
-    } catch { /* localStorage full — nothing we can do */ }
-  }
-
-  /** Recover unsaved snapshots from localStorage after crash/tab kill */
-  private recoverUnsavedSnapshots(): void {
-    const raw = localStorage.getItem(UNSAVED_KEY);
-    if (!raw) return;
-    localStorage.removeItem(UNSAVED_KEY);
-
-    try {
-      const saved: SnapshotRow[] = JSON.parse(raw);
-      if (saved.length > 0) {
-        console.log(`[RideSession] Recovering ${saved.length} unsaved snapshots`);
-        syncQueue.pushBatch('ride_snapshots', saved as unknown as Record<string, unknown>[]);
-      }
-    } catch { /* corrupt data, discard */ }
-  }
-
-  // ── Session persistence ──
-
-  private persist(): void {
-    if (!this.sessionId) {
-      localStorage.removeItem(PERSIST_KEY);
+    if (this.snapshotBuffer.length === 0 && this.sessionId) {
+      // No buffer to flush, but persist metrics
+      localRideStore.updateSession(this.sessionId, { metrics: this.metrics }).catch(() => {});
       return;
     }
-    const data: PersistedSession = {
-      sessionId: this.sessionId,
-      startedAt: this.startedAt,
-      snapshotCount: this.snapshotCount,
-      overrideCount: this.overrideCount,
-    };
-    localStorage.setItem(PERSIST_KEY, JSON.stringify(data));
-  }
 
-  private persistMetrics(): void {
-    if (!this.sessionId) {
-      localStorage.removeItem(METRICS_KEY);
-      return;
-    }
-    try {
-      localStorage.setItem(METRICS_KEY, JSON.stringify(this.metrics));
-    } catch { /* ignore */ }
-  }
+    const batch = [...this.snapshotBuffer];
+    this.snapshotBuffer = [];
 
-  private loadMetrics(): void {
-    const raw = localStorage.getItem(METRICS_KEY);
-    if (!raw) return;
-    try {
-      this.metrics = { ...this.emptyMetrics(), ...JSON.parse(raw) };
-    } catch {
-      this.metrics = this.emptyMetrics();
+    const localSnaps: LocalSnapshot[] = batch.map(row => ({
+      ...row,
+      sync_status: 'local' as const,
+      synced_at: null,
+    }));
+
+    // Write to IndexedDB — fire-and-forget (pagehide gives limited time)
+    localRideStore.writeSnapshots(localSnaps).catch((err) => {
+      console.error('[RideSession] Emergency flush to IndexedDB failed:', err);
+      // Put back in buffer — next resume will find them in memory (if process survives)
+      this.snapshotBuffer.unshift(...batch);
+    });
+
+    // Also persist session metrics
+    if (this.sessionId) {
+      localRideStore.updateSession(this.sessionId, { metrics: this.metrics }).catch(() => {});
     }
   }
 
   // ── Resume ──
 
-  private tryResume(): void {
-    const raw = localStorage.getItem(PERSIST_KEY);
-    if (!raw) {
-      useAthleteStore.getState().setRideActive(false);
-      return;
-    }
-
+  private async tryResume(): Promise<void> {
     try {
-      const saved: PersistedSession = JSON.parse(raw);
-      if (!saved.sessionId || !saved.startedAt) {
+      // First, migrate any old localStorage data to IndexedDB
+      await localRideStore.migrateFromLocalStorage();
+
+      // Check for active session in IndexedDB
+      const activeSession = await localRideStore.getActiveSession();
+      if (!activeSession) {
         useAthleteStore.getState().setRideActive(false);
         return;
       }
 
       // Don't resume sessions older than 12h
-      if (Date.now() - saved.startedAt > 12 * 60 * 60 * 1000) {
+      if (Date.now() - activeSession.started_at > 12 * 60 * 60 * 1000) {
         console.log('[RideSession] Stale session discarded (>12h)');
-        localStorage.removeItem(PERSIST_KEY);
-        localStorage.removeItem(METRICS_KEY);
-        localStorage.removeItem(UNSAVED_KEY);
+        await localRideStore.updateSession(activeSession.id, { status: 'completed' });
         useAthleteStore.getState().setRideActive(false);
         return;
       }
 
-      this.sessionId = saved.sessionId;
-      this.startedAt = saved.startedAt;
-      this.snapshotCount = saved.snapshotCount || 0;
-      this.overrideCount = saved.overrideCount || 0;
+      this.sessionId = activeSession.id;
+      this.startedAt = activeSession.started_at;
+      this.snapshotCount = 0; // Will be updated from IndexedDB
+      this.overrideCount = activeSession.override_count;
+      this.metrics = activeSession.metrics || this.emptyMetrics();
       this.snapshotBuffer = [];
 
-      // Restore persisted metrics
-      this.loadMetrics();
-
-      // Recover any unsaved snapshots from crash
-      this.recoverUnsavedSnapshots();
+      // Count existing snapshots for this session
+      const existingSnaps = await localRideStore.getSessionSnapshots(activeSession.id);
+      this.snapshotCount = existingSnaps.length;
 
       // Restart capture intervals
       this.intervalId = setInterval(() => this.captureSnapshot(), CAPTURE_INTERVAL);
@@ -267,10 +189,9 @@ class RideSessionManager {
       useAthleteStore.getState().setRideActive(true);
 
       const elapsedMin = Math.round((Date.now() - this.startedAt) / 60000);
-      console.log(`[RideSession] Resumed: ${this.sessionId} (${elapsedMin}min, ${this.snapshotCount} snaps)`);
+      console.log(`[RideSession] Resumed: ${this.sessionId} (${elapsedMin}min, ${this.snapshotCount} snaps from IndexedDB)`);
     } catch (err) {
-      console.error('[RideSession] Resume failed — keeping localStorage for manual recovery:', err);
-      // DON'T wipe localStorage on resume failure — data may still be recoverable
+      console.error('[RideSession] Resume failed:', err);
       useAthleteStore.getState().setRideActive(false);
     }
   }
@@ -297,18 +218,34 @@ class RideSessionManager {
 
     const userId = useAuthStore.getState().getUserId();
     console.log('[RideSession] user_id for session:', userId);
-    if (!userId) {
-      console.error('[RideSession] WARNING: No user_id — session will fail FK constraint. Auth state:', useAuthStore.getState().isLoggedIn());
-    }
-    // athlete_id is resolved server-side via user_id — local store ID doesn't match Supabase
+
+    // Write session to IndexedDB FIRST — this is the durable store
     try {
-      await syncQueue.push('ride_sessions', {
+      const session: LocalSession = {
         id: this.sessionId,
         user_id: userId,
         status: 'active',
+        sync_status: 'local',
+        started_at: this.startedAt,
+        ended_at: null,
         battery_start: bike.battery_percent,
+        battery_end: null,
         start_lat: map.latitude || null,
         start_lng: map.longitude || null,
+        end_lat: null,
+        end_lng: null,
+        duration_s: null,
+        total_km: null,
+        avg_speed_kmh: null,
+        max_speed_kmh: null,
+        avg_power_w: null,
+        max_power_w: null,
+        avg_cadence: null,
+        max_hr: null,
+        avg_hr: null,
+        override_count: 0,
+        override_rate: null,
+        avg_gps_accuracy: null,
         devices_connected: {
           ble: bike.ble_status === 'connected',
           battery: bike.ble_services.battery,
@@ -319,22 +256,14 @@ class RideSessionManager {
           di2: bike.ble_services.di2,
           gps: map.gpsActive,
         },
-      });
-      console.log('[RideSession] Session pushed to Supabase:', this.sessionId);
+        synced_at: null,
+        metrics: this.metrics,
+      };
+      await localRideStore.createSession(session);
+      console.log('[RideSession] Session saved to IndexedDB:', this.sessionId);
     } catch (err) {
-      console.error('[RideSession] Failed to push session:', err);
-      // Remote diagnostic — fire-and-forget
-      try {
-        const diagUrl = import.meta.env.VITE_SUPABASE_URL;
-        const diagKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-        if (diagUrl && diagKey) {
-          fetch(`${diagUrl}/rest/v1/debug_logs`, {
-            method: 'POST',
-            headers: { 'apikey': diagKey, 'Authorization': `Bearer ${diagKey}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-            body: JSON.stringify({ level: 'error', message: `startSession failed: ${String(err).slice(0, 500)}`, data: { sessionId: this.sessionId, userId, online: navigator.onLine } }),
-          }).catch(() => {});
-        }
-      } catch { /* diagnostic only */ }
+      console.error('[RideSession] CRITICAL: Failed to save session to IndexedDB:', err);
+      // Continue anyway — we'll still collect data in memory buffer
     }
 
     this.intervalId = setInterval(() => this.captureSnapshot(), CAPTURE_INTERVAL);
@@ -344,8 +273,6 @@ class RideSessionManager {
     this.startPresenceSync();
 
     useAthleteStore.getState().setRideActive(true);
-    this.persist();
-    this.persistMetrics();
     console.log('[RideSession] Started:', this.sessionId);
     return this.sessionId;
   }
@@ -357,7 +284,7 @@ class RideSessionManager {
     if (this.flushIntervalId) { clearInterval(this.flushIntervalId); this.flushIntervalId = null; }
     this.stopPresenceSync();
 
-    // Final flush
+    // Final flush of remaining buffer to IndexedDB
     await this.flushSnapshots();
 
     const bike = useBikeStore.getState();
@@ -375,25 +302,35 @@ class RideSessionManager {
     const avgHr = m.hr_count > 0 ? Math.round(m.hr_sum / m.hr_count) : 0;
     const avgCadence = m.cadence_count > 0 ? Math.round(m.cadence_sum / m.cadence_count) : 0;
 
-    await syncQueue.push('ride_sessions', {
-      status: 'completed',
-      ended_at: new Date().toISOString(),
-      duration_s: elapsedS,
-      total_km: totalKm,
-      avg_speed_kmh: avgSpeed,
-      max_speed_kmh: maxSpeed,
-      avg_power_w: avgPower,
-      max_power_w: maxPower,
-      avg_cadence: avgCadence,
-      max_hr: maxHr,
-      avg_hr: avgHr,
-      battery_end: bike.battery_percent,
-      override_count: this.overrideCount,
-      override_rate: this.snapshotCount > 0 ? this.overrideCount / this.snapshotCount : 0,
-      avg_gps_accuracy: map.accuracySamples > 0 ? Math.round(map.accuracySum / map.accuracySamples * 10) / 10 : null,
-      end_lat: map.latitude || null,
-      end_lng: map.longitude || null,
-    }, 'PATCH', `/ride_sessions?id=eq.${this.sessionId}`);
+    // Update session in IndexedDB with final stats
+    try {
+      await localRideStore.updateSession(this.sessionId, {
+        status: 'completed',
+        ended_at: Date.now(),
+        duration_s: elapsedS,
+        total_km: totalKm,
+        avg_speed_kmh: avgSpeed,
+        max_speed_kmh: maxSpeed,
+        avg_power_w: avgPower,
+        max_power_w: maxPower,
+        avg_cadence: avgCadence,
+        max_hr: maxHr,
+        avg_hr: avgHr,
+        battery_end: bike.battery_percent,
+        override_count: this.overrideCount,
+        override_rate: this.snapshotCount > 0 ? this.overrideCount / this.snapshotCount : 0,
+        avg_gps_accuracy: map.accuracySamples > 0 ? Math.round(map.accuracySum / map.accuracySamples * 10) / 10 : null,
+        end_lat: map.latitude || null,
+        end_lng: map.longitude || null,
+        metrics: this.metrics,
+      });
+      console.log('[RideSession] Session finalized in IndexedDB:', this.sessionId);
+    } catch (err) {
+      console.error('[RideSession] Failed to finalize session in IndexedDB:', err);
+    }
+
+    // Trigger immediate Supabase sync attempt
+    localRideStore.syncToSupabase().catch(() => {});
 
     // Process ride for adaptive learning
     await useAthleteStore.getState().processRide({
@@ -418,14 +355,11 @@ class RideSessionManager {
       created_at: new Date(),
     });
 
-    // Reset
+    // Reset in-memory state
     this.sessionId = null;
     this.startedAt = 0;
     this.snapshotCount = 0;
     this.metrics = this.emptyMetrics();
-    this.persist();
-    this.persistMetrics();
-    localStorage.removeItem(UNSAVED_KEY);
     useAthleteStore.getState().setRideActive(false);
     bike.resetSession();
     console.log('[RideSession] Stopped');
@@ -443,8 +377,11 @@ class RideSessionManager {
     const decision = useAutoAssistStore.getState().lastDecision;
     const gradientPct = terrain?.current_gradient_pct ?? 0;
 
-    syncQueue.push('ride_override_events', {
+    // Write override event to IndexedDB
+    const event: LocalOverrideEvent = {
       session_id: this.sessionId,
+      sync_status: 'local',
+      synced_at: null,
       elapsed_s: Math.round((Date.now() - this.startedAt) / 1000),
       source,
       from_mode: fromMode,
@@ -457,6 +394,9 @@ class RideSessionManager {
       torque_nm: torque.torque_nm,
       climb_type: torque.climb_type,
       auto_assist_reason: decision?.reason ?? '',
+    };
+    localRideStore.writeOverrideEvent(event).catch((err) => {
+      console.error('[RideSession] Failed to write override event:', err);
     });
 
     const direction = (toMode !== undefined && toMode > fromMode) ? 'more' as const
@@ -480,7 +420,7 @@ class RideSessionManager {
 
     this.snapshotCount++;
 
-    // Update persisted metrics
+    // Update in-memory metrics
     this.metrics.distance_km = Math.max(this.metrics.distance_km, bike.distance_km);
     this.metrics.speed_max = Math.max(this.metrics.speed_max, bike.speed_kmh);
     if (bike.power_watts > 0) {
@@ -537,34 +477,39 @@ class RideSessionManager {
 
     this.snapshotBuffer.push(row);
 
-    // Persist session + metrics every 6 snapshots (30s)
-    if (this.snapshotCount % 6 === 0) {
-      this.persist();
-      this.persistMetrics();
+    // Persist metrics to IndexedDB every N snapshots
+    if (this.snapshotCount % METRICS_PERSIST_EVERY === 0 && this.sessionId) {
+      localRideStore.updateSession(this.sessionId, {
+        metrics: this.metrics,
+        override_count: this.overrideCount,
+      }).catch(() => {});
     }
   }
 
-  // ── Flush ──
+  // ── Flush buffer to IndexedDB ──
 
   private async flushSnapshots(): Promise<void> {
     if (this.snapshotBuffer.length === 0) return;
 
     const batch = [...this.snapshotBuffer];
-    this.snapshotBuffer = [];
-    // Clear crash-recovery since we're about to send
-    localStorage.removeItem(UNSAVED_KEY);
+
+    // Convert to LocalSnapshot format
+    const localSnaps: LocalSnapshot[] = batch.map(row => ({
+      ...row,
+      sync_status: 'local' as const,
+      synced_at: null,
+    }));
 
     try {
-      await syncQueue.pushBatch('ride_snapshots', batch as unknown as Record<string, unknown>[]);
-    } catch {
-      // Re-add failed snapshots back to buffer for next flush attempt
-      this.snapshotBuffer.unshift(...batch);
-      // Also save to localStorage in case tab dies before next flush
-      this.saveUnsavedToLocalStorage();
+      // Write to IndexedDB FIRST
+      await localRideStore.writeSnapshots(localSnaps);
+      // ONLY clear buffer after confirmed IndexedDB write
+      this.snapshotBuffer = [];
+    } catch (err) {
+      // IndexedDB write failed — keep buffer for next attempt
+      console.error('[RideSession] Flush to IndexedDB failed, keeping buffer:', err);
     }
   }
-
-  // ── State ──
 
   // ── Community rescue presence sync ──
 
@@ -616,6 +561,8 @@ class RideSessionManager {
       }
     } catch { /* best-effort */ }
   }
+
+  // ── State ──
 
   getState(): RideSessionState {
     return {
