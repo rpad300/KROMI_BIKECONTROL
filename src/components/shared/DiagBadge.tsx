@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { localRideStore } from '../../services/storage/LocalRideStore';
 import { isKromiWebView, getKromiAppVersion } from '../../utils/platform';
 import { useAuthStore } from '../../store/authStore';
+import { useMapStore } from '../../store/mapStore';
 import { rideSessionManager } from '../../services/storage/RideHistory';
 
 /**
@@ -109,6 +110,7 @@ export function DiagBadge() {
           <div>Supabase: <span style={{ color: supColor }}>{supOk === null ? '...' : supOk ? 'OK' : 'FAIL'}</span></div>
           <div>Auth: <span style={{ color: userId ? '#3fff8b' : '#ef4444' }}>{userId ? userId.slice(0, 8) + '...' : 'NULL'}</span></div>
           <div>Online: <span style={{ color: navigator.onLine ? '#3fff8b' : '#ef4444' }}>{navigator.onLine ? 'yes' : 'no'}</span></div>
+          <div>GPS: <GpsStatus /></div>
           <div style={{ borderTop: '1px solid #333', marginTop: 3, paddingTop: 3 }}>
             <div>Ride: <span style={{ color: rideState.active ? '#3fff8b' : '#888' }}>{rideState.active ? `ACTIVE (${rideState.snapshotCount} snaps)` : 'none'}</span></div>
             <div>Unsynced: <span style={{ color: unsynced.sessions > 0 ? '#fbbf24' : '#888' }}>{unsynced.sessions}s {unsynced.snapshots}snap</span></div>
@@ -119,4 +121,16 @@ export function DiagBadge() {
       )}
     </div>
   );
+}
+
+function GpsStatus() {
+  const active = useMapStore((s) => s.gpsActive);
+  const lat = useMapStore((s) => s.latitude);
+  const lng = useMapStore((s) => s.longitude);
+  const err = useMapStore((s) => s.gpsError);
+
+  if (err) return <span style={{ color: '#ef4444' }}>ERR: {err}</span>;
+  if (!active) return <span style={{ color: '#fbbf24' }}>waiting...</span>;
+  if (lat === 0 && lng === 0) return <span style={{ color: '#fbbf24' }}>fixing...</span>;
+  return <span style={{ color: '#3fff8b' }}>{lat.toFixed(4)},{lng.toFixed(4)}</span>;
 }
