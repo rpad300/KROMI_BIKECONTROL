@@ -5,6 +5,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useMapStore } from '../../store/mapStore';
 import { useBikeStore } from '../../store/bikeStore';
 import { rideSessionManager } from '../../services/storage/RideHistory';
+import { wsClient } from '../../services/bluetooth/WebSocketBLEClient';
 
 const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -118,7 +119,7 @@ export function DiagBadge() {
 
           {/* System */}
           <div style={{ borderBottom: '1px solid #262626', paddingBottom: 3, marginBottom: 3 }}>
-            <div>{platform} | BLE: <span style={{ color: bleStatus === 'connected' ? '#3fff8b' : '#fbbf24' }}>{bleStatus}</span></div>
+            <div>{platform} | Bridge: <BridgeStatus /> | Bike: <span style={{ color: bleStatus === 'connected' ? '#3fff8b' : '#888' }}>{bleStatus}</span></div>
             <div>IDB: <span style={{ color: idbColor }}>{idbOk ? 'OK' : 'FAIL'}</span> | SUP: <span style={{ color: supColor }}>{supOk ? 'OK' : 'FAIL'}</span> | Auth: <span style={{ color: userId ? '#3fff8b' : '#ef4444' }}>{userId ? 'OK' : 'NULL'}</span></div>
             <div>GPS: <GpsStatus /></div>
           </div>
@@ -159,6 +160,15 @@ const btnStyle = (color: string): React.CSSProperties => ({
   background: '#262626', color, border: 'none', padding: '4px 8px',
   fontSize: 9, fontFamily: 'monospace', cursor: 'pointer', borderRadius: 2, fontWeight: 'bold',
 });
+
+function BridgeStatus() {
+  const [connected, setConnected] = useState(wsClient.isConnected);
+  useEffect(() => {
+    const id = setInterval(() => setConnected(wsClient.isConnected), 2000);
+    return () => clearInterval(id);
+  }, []);
+  return <span style={{ color: connected ? '#3fff8b' : '#ef4444' }}>{connected ? 'OK' : 'OFF'}</span>;
+}
 
 function GpsStatus() {
   const active = useMapStore((s) => s.gpsActive);
