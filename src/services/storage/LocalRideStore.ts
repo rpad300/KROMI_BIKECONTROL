@@ -779,37 +779,61 @@ class LocalRideStore {
   }
 
   private toSupabaseSession(s: LocalSession): Record<string, unknown> {
+    // Clamp numeric fields to match Supabase column constraints
+    const clamp51 = (v: number | null) => v != null ? Math.max(-9999.9, Math.min(9999.9, Math.round(v * 10) / 10)) : null;
+    const clamp82 = (v: number | null) => v != null ? Math.max(-999999.99, Math.min(999999.99, Math.round(v * 100) / 100)) : null;
     return {
       id: s.id,
       user_id: s.user_id,
       status: s.status,
       started_at: new Date(s.started_at).toISOString(),
       ended_at: s.ended_at ? new Date(s.ended_at).toISOString() : null,
-      battery_start: s.battery_start,
-      battery_end: s.battery_end,
+      battery_start: s.battery_start != null ? Math.round(s.battery_start) : null,
+      battery_end: s.battery_end != null ? Math.round(s.battery_end) : null,
       start_lat: s.start_lat,
       start_lng: s.start_lng,
       end_lat: s.end_lat,
       end_lng: s.end_lng,
-      duration_s: s.duration_s,
-      total_km: s.total_km,
-      avg_speed_kmh: s.avg_speed_kmh,
-      max_speed_kmh: s.max_speed_kmh,
-      avg_power_w: s.avg_power_w,
-      max_power_w: s.max_power_w,
-      avg_cadence: s.avg_cadence,
-      max_hr: s.max_hr,
-      avg_hr: s.avg_hr,
+      duration_s: s.duration_s != null ? Math.round(s.duration_s) : null,
+      total_km: clamp82(s.total_km),
+      avg_speed_kmh: clamp51(s.avg_speed_kmh),
+      max_speed_kmh: clamp51(s.max_speed_kmh),
+      avg_power_w: s.avg_power_w != null ? Math.round(s.avg_power_w) : null,
+      max_power_w: s.max_power_w != null ? Math.round(s.max_power_w) : null,
+      avg_cadence: s.avg_cadence != null ? Math.round(s.avg_cadence) : null,
+      max_hr: s.max_hr != null ? Math.round(s.max_hr) : null,
+      avg_hr: s.avg_hr != null ? Math.round(s.avg_hr) : null,
       override_count: s.override_count,
-      override_rate: s.override_rate,
+      override_rate: s.override_rate != null ? Math.round(s.override_rate * 1000) / 1000 : null,
       avg_gps_accuracy: s.avg_gps_accuracy,
       devices_connected: s.devices_connected,
     };
   }
 
   private toSupabaseSnapshot(s: LocalSnapshot): Record<string, unknown> {
-    // Return all fields except auto_id, sync_status, synced_at
     const { auto_id: _, sync_status: __, synced_at: ___, ...rest } = s;
+    // Round smallint fields (Supabase rejects decimals in integer columns)
+    rest.cadence_rpm = Math.round(rest.cadence_rpm);
+    rest.power_watts = Math.round(rest.power_watts);
+    rest.battery_pct = Math.round(rest.battery_pct);
+    rest.assist_mode = Math.round(rest.assist_mode);
+    rest.hr_bpm = Math.round(rest.hr_bpm);
+    rest.hr_zone = Math.round(rest.hr_zone);
+    rest.gear = Math.round(rest.gear);
+    rest.torque_nm = Math.round(rest.torque_nm);
+    rest.support_pct = Math.round(rest.support_pct);
+    rest.launch_value = Math.round(rest.launch_value);
+    rest.front_gear = Math.round(rest.front_gear);
+    rest.rear_gear = Math.round(rest.rear_gear);
+    rest.trip_time_s = Math.round(rest.trip_time_s);
+    rest.range_km = Math.round(rest.range_km);
+    rest.spo2_pct = Math.round(rest.spo2_pct);
+    rest.elapsed_s = Math.round(rest.elapsed_s);
+    // Clamp numeric(5,1) fields to max 9999.9
+    rest.heading = Math.min(9999.9, Math.round((rest.heading as number) * 10) / 10);
+    rest.gps_accuracy = Math.min(9999.9, Math.round((rest.gps_accuracy as number) * 10) / 10);
+    rest.speed_kmh = Math.min(9999.9, Math.round((rest.speed_kmh as number) * 10) / 10);
+    rest.gradient_pct = Math.max(-9999.9, Math.min(9999.9, Math.round((rest.gradient_pct as number) * 10) / 10));
     return rest;
   }
 
