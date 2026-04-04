@@ -268,9 +268,9 @@ class RideSessionManager {
 
       const elapsedMin = Math.round((Date.now() - this.startedAt) / 60000);
       console.log(`[RideSession] Resumed: ${this.sessionId} (${elapsedMin}min, ${this.snapshotCount} snaps)`);
-    } catch {
-      localStorage.removeItem(PERSIST_KEY);
-      localStorage.removeItem(METRICS_KEY);
+    } catch (err) {
+      console.error('[RideSession] Resume failed — keeping localStorage for manual recovery:', err);
+      // DON'T wipe localStorage on resume failure — data may still be recoverable
       useAthleteStore.getState().setRideActive(false);
     }
   }
@@ -296,6 +296,10 @@ class RideSessionManager {
     batteryEfficiencyTracker.reset();
 
     const userId = useAuthStore.getState().getUserId();
+    console.log('[RideSession] user_id for session:', userId);
+    if (!userId) {
+      console.error('[RideSession] WARNING: No user_id — session will fail FK constraint. Auth state:', useAuthStore.getState().isLoggedIn());
+    }
     // athlete_id is resolved server-side via user_id — local store ID doesn't match Supabase
     try {
       await syncQueue.push('ride_sessions', {
@@ -316,8 +320,21 @@ class RideSessionManager {
           gps: map.gpsActive,
         },
       });
+      console.log('[RideSession] Session pushed to Supabase:', this.sessionId);
     } catch (err) {
       console.error('[RideSession] Failed to push session:', err);
+      // Remote diagnostic — fire-and-forget
+      try {
+        const diagUrl = import.meta.env.VITE_SUPABASE_URL;
+        const diagKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        if (diagUrl && diagKey) {
+          fetch(`${diagUrl}/rest/v1/debug_logs`, {
+            method: 'POST',
+            headers: { 'apikey': diagKey, 'Authorization': `Bearer ${diagKey}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ level: 'error', message: `startSession failed: ${String(err).slice(0, 500)}`, data: { sessionId: this.sessionId, userId, online: navigator.onLine } }),
+          }).catch(() => {});
+        }
+      } catch { /* diagnostic only */ }
     }
 
     this.intervalId = setInterval(() => this.captureSnapshot(), CAPTURE_INTERVAL);

@@ -107,6 +107,10 @@ class SyncQueue {
         const errText = await res.text();
         // 4xx = permanent error (FK violation, schema issue) — still queue for visibility but log
         console.error(`[SyncQueue] ${method} ${restPath} failed (${res.status}):`, errText);
+        // Remote log critical failures so we can diagnose without USB debug
+        if (res.status >= 400 && res.status < 500) {
+          this.remoteLog('error', `SyncQueue ${method} ${restPath} → ${res.status}: ${errText.slice(0, 300)}`);
+        }
       } catch (err) {
         console.warn('[SyncQueue] Direct send failed, queueing:', err);
       }
@@ -305,6 +309,15 @@ class SyncQueue {
       };
       req.onerror = () => reject(req.error);
     });
+  }
+  /** Send a log entry directly to debug_logs (fire-and-forget, never queued) */
+  private remoteLog(level: string, message: string): void {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return;
+    fetch(`${SUPABASE_URL}/rest/v1/debug_logs`, {
+      method: 'POST',
+      headers: supaHeaders(),
+      body: JSON.stringify({ level, message: message.slice(0, 1000), data: { ts: new Date().toISOString(), ua: navigator.userAgent.slice(0, 200) } }),
+    }).catch(() => {}); // truly fire-and-forget
   }
 }
 
