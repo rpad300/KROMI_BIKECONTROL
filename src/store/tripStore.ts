@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useBikeStore } from './bikeStore';
+import { rideSessionManager } from '../services/storage/RideHistory';
 
 export type TripState = 'idle' | 'running' | 'paused' | 'finished';
 
@@ -57,10 +58,18 @@ export const useTripStore = create<TripStore>()((set, get) => ({
       maxSpeed: 0,
       avgSpeed: 0,
     });
+    // Also start ride data recording (LocalRideStore + Supabase sync)
+    rideSessionManager.startSession().catch((err) => {
+      console.error('[TripStore] Failed to start ride session:', err);
+    });
   },
 
   stopTrip: () => {
     set({ state: 'finished' });
+    // Also stop ride data recording
+    rideSessionManager.stopSession().catch((err) => {
+      console.error('[TripStore] Failed to stop ride session:', err);
+    });
   },
 
   tick: () => {
