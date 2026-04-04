@@ -28,18 +28,13 @@ if (inWebView) {
 registerSW({
   onNeedRefresh() {
     if (rideSessionManager.isActive()) {
+      // NEVER reload mid-ride — defer until ride stops
       console.log('[SW] Update available but ride active — deferring reload');
       pendingSWUpdate = true;
       return;
     }
-    if (inWebView) {
-      // In WebView: DON'T auto-reload — it can kill the app
-      // The next app open will get the new version from cache
-      console.log('[SW] Update available inside WebView — deferring to next launch');
-      pendingSWUpdate = true;
-      return;
-    }
-    console.log('[SW] New version available — auto-updating...');
+    // Safe to update — no active ride (works in both WebView and Chrome)
+    console.log('[SW] New version available — updating...');
     window.location.reload();
   },
   onOfflineReady() {
