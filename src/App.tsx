@@ -19,6 +19,7 @@ import { trackLogin } from './services/sync/LoginTracker';
 import { useGlanceStore } from './store/glanceStore';
 import { AmbientGlance } from './components/DashboardSystem/AmbientGlance';
 import { RescueAlert } from './components/shared/RescueAlert';
+import { DiagBadge } from './components/shared/DiagBadge';
 
 type MobileScreen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
 type DesktopScreen = 'live' | 'settings' | 'history' | 'map';
@@ -77,6 +78,7 @@ function MobileApp() {
 
   return (
     <div className="h-full flex flex-col bg-[#0e0e0e] text-white">
+      <DiagBadge />
       {/* Content — no scroll on dashboard, scroll on settings/history */}
       <div
         className={`flex-1 min-h-0 ${screen === 'settings' || screen === 'history' ? 'overflow-y-auto' : 'overflow-hidden'}`}
@@ -182,6 +184,7 @@ function DesktopApp() {
 
   return (
     <div className="h-full flex bg-[#0e0e0e] text-white">
+      <DiagBadge />
       {/* Sidebar with expandable submenus */}
       <aside style={{ width: '240px', flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(73,72,71,0.2)', backgroundColor: '#131313', overflow: 'auto' }}>
         {/* Logo */}
