@@ -767,14 +767,16 @@ class BLEManager(private val context: Context) {
                                     val b14 = data[14].toInt() and 0xFF
                                     // uint16 LE remaining range for current mode (direct from motor!)
                                     val currentRange = b5 or (b6 shl 8)
+                                    // ALWAYS send assist mode to feedKromiCore (KromiCore needs this to start)
+                                    onDataReceived?.invoke(JSONObject()
+                                        .put("type", "fc23cmd41")
+                                        .put("wireMode", wireMode)
+                                        .put("currentRange", currentRange)
+                                        .put("b14", b14))
+                                    // Throttle LOG only (not the event)
                                     if (now - fc23LogTimes.getOrDefault("cmd41", 0L) > 2000) {
                                         fc23LogTimes["cmd41"] = now
                                         Log.i(TAG, "C41: mode=%d range=%dkm b14=%d".format(wireMode, currentRange, b14))
-                                        onDataReceived?.invoke(JSONObject()
-                                            .put("type", "fc23cmd41")
-                                            .put("wireMode", wireMode)
-                                            .put("currentRange", currentRange)
-                                            .put("b14", b14))
                                     }
                                 }
                             }

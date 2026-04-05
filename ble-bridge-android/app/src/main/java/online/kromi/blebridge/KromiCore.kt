@@ -471,13 +471,11 @@ class KromiCore(private val bleManager: BLEManager) {
     private fun estimateHumanPower(cadenceEff: Double, gearRatio: Double): Double {
         // Prefer power meter
         if (power > 0 && power < 600) return power.toDouble()
-        // Filter sensor noise: not really pedalling if speed too low for cadence
-        // At cad=14 gear=3 (ratio~1.3) wheel=2.29m → expected speed = 14*1.3*2.29*60/1000 = 2.5km/h
-        // If actual speed is much higher or cadence makes no sense for speed, it's noise
-        if (cadenceEff < 10 || speed < 4) return 0.0
-        // Consistency check: expected speed from cadence vs actual (reject if >3x mismatch)
+        // Filter sensor noise: need meaningful speed AND cadence
+        if (speed < 5 || cadenceEff < 20) return 0.0
+        // Consistency: expected speed from cadence×gear vs actual (reject if >2x mismatch)
         val expectedSpeedKmh = cadenceEff * gearRatio * wheelCircumM * 60.0 / 1000.0
-        if (expectedSpeedKmh > 0 && (speed / expectedSpeedKmh > 3.0 || speed / expectedSpeedKmh < 0.3)) return 0.0
+        if (expectedSpeedKmh > 0 && (speed / expectedSpeedKmh > 2.0 || speed / expectedSpeedKmh < 0.5)) return 0.0
 
         val riderKg = totalMass - 24.0
         val cadFactor = when { cadenceEff < 60 -> 1.2; cadenceEff < 80 -> 1.0; else -> 0.85 }
