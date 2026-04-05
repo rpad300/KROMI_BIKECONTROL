@@ -29,20 +29,22 @@ export function TripSummaryModal({ onClose }: { onClose: () => void }) {
     return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m ${String(s).padStart(2, '0')}s`;
   };
 
-  // Compute HR zone distribution using actual time between snapshots
+  // Compute HR zone distribution — only within ride duration (movingTime)
   const hrZones = useMemo(() => {
     const zones = [0, 0, 0, 0, 0]; // Z1-Z5 time in seconds
+    const rideDuration = trip.movingTime; // actual ride time in seconds
     for (let i = 0; i < snapshots.length; i++) {
       const s = snapshots[i]!;
       if (s.hr_zone < 1 || s.hr_zone > 5) continue;
+      if (s.elapsed_s > rideDuration + 10) continue; // skip snapshots after ride ended (+10s buffer)
       // Time this snapshot represents = gap to next (or 1s for last)
       const dt = i < snapshots.length - 1
-        ? Math.min(10, snapshots[i + 1]!.elapsed_s - s.elapsed_s) // cap at 10s to avoid gaps
+        ? Math.min(10, Math.max(0, snapshots[i + 1]!.elapsed_s - s.elapsed_s))
         : 1;
-      zones[s.hr_zone - 1] = (zones[s.hr_zone - 1] ?? 0) + Math.max(0, dt);
+      zones[s.hr_zone - 1] = (zones[s.hr_zone - 1] ?? 0) + dt;
     }
     return zones;
-  }, [snapshots]);
+  }, [snapshots, trip.movingTime]);
   const maxHrZone = Math.max(...hrZones, 1);
   const totalHrSamples = hrZones.reduce((a, b) => a + b, 0);
 
