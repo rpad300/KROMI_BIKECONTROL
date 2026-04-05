@@ -195,67 +195,144 @@ export function TripSummaryModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Energy comparison: KROMI actual vs what standard modes would have consumed */
+/** Energy comparison: KROMI actual vs standard modes + smart rider simulation */
 function EnergyComparison({ distanceKm, batteryUsedPct }: { distanceKm: number; batteryUsedPct: number }) {
   const bike = safeBikeConfig(useSettingsStore.getState().bikeConfig);
+  const [snapshots, setSnapshots] = useState<LocalSnapshot[]>([]);
+  const trip = useTripStore();
+
+  useEffect(() => {
+    if (trip.lastSessionId) {
+      localRideStore.getSessionSnapshots(trip.lastSessionId).then(setSnapshots).catch(() => {});
+    }
+  }, [trip.lastSessionId]);
 
   if (distanceKm < 0.1 || batteryUsedPct <= 0) return null;
 
-  // Actual KROMI consumption
   const totalBatteryWh = bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0);
   const kromiWh = Math.round((batteryUsedPct / 100) * totalBatteryWh);
   const kromiWhKm = distanceKm > 0 ? Math.round((kromiWh / distanceKm) * 10) / 10 : 0;
 
-  // Estimated consumption per mode (from bike config calibrated values)
-  const modes = [
-    { label: 'ECO', whKm: bike.consumption_eco, color: '#3fff8b' },
-    { label: 'TOUR', whKm: bike.consumption_tour, color: '#60a5fa' },
-    { label: 'ACTIVE', whKm: bike.consumption_active, color: '#fbbf24' },
-    { label: 'SPORT', whKm: bike.consumption_sport, color: '#ff716c' },
-    { label: 'KROMI', whKm: kromiWhKm, color: '#e966ff' },
+  // Mode consumption rates (Wh/km)
+  const modeRates: Record<string, number> = {
+    ECO: bike.consumption_eco,
+    TOUR: bike.consumption_tour,
+    ACTIVE: bike.consumption_active,
+    SPORT: bike.consumption_sport,
+  };
+
+  // === SIMULATE what a smart rider would do per segment ===
+  // Based on gradient, pick the mode a manual rider would use
+  const smartRiderWh = useMemo(() => {
+    if (snapshots.length < 5) return null;
+    let totalWh = 0;
+    const modeTime: Record<string, number> = { ECO: 0, TOUR: 0, ACTIVE: 0, SPORT: 0 };
+
+    for (let i = 0; i < snapshots.length - 1; i++) {
+      const s = snapshots[i]!;
+      const next = snapshots[i + 1]!;
+      const dt = Math.min(10, Math.max(0, next.elapsed_s - s.elapsed_s));
+      if (dt <= 0 || s.elapsed_s > trip.movingTime + 10) continue;
+
+      const distKm = (s.speed_kmh || 0) * (dt / 3600);
+      const grad = s.gradient_pct ?? 0;
+      const speed = s.speed_kmh || 0;
+
+      // What mode would a rider choose?
+      let mode: string;
+      if (speed < 3) {
+        mode = 'ECO'; // stopped/slow → ECO
+      } else if (grad > 8) {
+        mode = 'SPORT'; // steep climb → needs max power
+      } else if (grad > 4) {
+        mode = 'ACTIVE'; // moderate climb
+      } else if (grad > 1) {
+        mode = 'TOUR'; // gentle climb
+      } else if (grad < -3) {
+        mode = 'ECO'; // descent → save battery
+      } else {
+        mode = 'TOUR'; // flat → cruise in TOUR
+      }
+
+      totalWh += (modeRates[mode] ?? 15) * distKm;
+      modeTime[mode] = (modeTime[mode] ?? 0) + dt;
+    }
+
+    return { totalWh: Math.round(totalWh), modeTime };
+  }, [snapshots, trip.movingTime]);
+
+  // Build comparison bars
+  const strategies = [
+    { label: 'ECO', wh: Math.round((modeRates.ECO ?? 6) * distanceKm), color: '#3fff8b' },
+    { label: 'TOUR', wh: Math.round((modeRates.TOUR ?? 15) * distanceKm), color: '#60a5fa' },
+    { label: 'ACTIVE', wh: Math.round((modeRates.ACTIVE ?? 22) * distanceKm), color: '#fbbf24' },
+    { label: 'SPORT', wh: Math.round((modeRates.SPORT ?? 28) * distanceKm), color: '#ff716c' },
   ];
 
-  const maxWh = Math.max(...modes.map(m => m.whKm * distanceKm));
+  if (smartRiderWh) {
+    strategies.push({ label: 'MANUAL', wh: smartRiderWh.totalWh, color: '#adaaaa' });
+  }
+  strategies.push({ label: 'KROMI', wh: kromiWh, color: '#e966ff' });
 
-  // Calculate savings vs SPORT (typical alternative for aggressive riders)
-  const sportWh = bike.consumption_sport * distanceKm;
-  const savedVsSport = sportWh - kromiWh;
-  const savedPct = sportWh > 0 ? Math.round((savedVsSport / sportWh) * 100) : 0;
+  const maxWh = Math.max(...strategies.map(s => s.wh), 1);
+
+  // Best comparison: KROMI vs smart manual rider
+  const vsManual = smartRiderWh ? smartRiderWh.totalWh - kromiWh : 0;
+  const vsManualPct = smartRiderWh && smartRiderWh.totalWh > 0 ? Math.round((vsManual / smartRiderWh.totalWh) * 100) : 0;
 
   return (
-    <Section title="Consumo Energia" subtitle={`${kromiWhKm} Wh/km`}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', height: '80px', padding: '0 4px' }}>
-        {modes.map(({ label, whKm, color }) => {
-          const totalWh = Math.round(whKm * distanceKm);
-          const pct = maxWh > 0 ? (totalWh / maxWh) * 100 : 0;
+    <Section title="Consumo Energia" subtitle={`KROMI: ${kromiWhKm} Wh/km`}>
+      {/* Bar chart */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '90px', padding: '0 2px' }}>
+        {strategies.map(({ label, wh, color }) => {
+          const pct = maxWh > 0 ? (wh / maxWh) * 100 : 0;
           const isKromi = label === 'KROMI';
+          const isManual = label === 'MANUAL';
           return (
-            <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-              <span className="font-label tabular-nums" style={{ fontSize: '7px', color: '#777575' }}>{totalWh}Wh</span>
+            <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px' }}>
+              <span className="font-label tabular-nums" style={{ fontSize: '7px', color: '#777575' }}>{wh}Wh</span>
               <div style={{
                 width: '100%',
                 backgroundColor: color,
                 borderRadius: '2px 2px 0 0',
                 height: `${Math.max(pct, 4)}%`,
-                opacity: isKromi ? 1 : 0.5,
-                border: isKromi ? `2px solid ${color}` : 'none',
-                boxShadow: isKromi ? `0 0 8px ${color}40` : 'none',
+                opacity: isKromi ? 1 : isManual ? 0.7 : 0.4,
+                border: isKromi ? `2px solid ${color}` : isManual ? `1px dashed ${color}` : 'none',
+                boxShadow: isKromi ? `0 0 10px ${color}50` : 'none',
               }} />
-              <span className="font-headline font-bold" style={{ fontSize: '9px', color, opacity: isKromi ? 1 : 0.7 }}>{label}</span>
-              <span className="font-label tabular-nums" style={{ fontSize: '7px', color: '#494847' }}>{whKm}Wh/km</span>
+              <span className="font-headline font-bold" style={{ fontSize: isKromi || isManual ? '8px' : '7px', color }}>{label}</span>
             </div>
           );
         })}
       </div>
-      {savedVsSport > 0 && (
-        <div style={{ marginTop: '6px', textAlign: 'center', fontSize: '11px' }}>
-          <span style={{ color: '#e966ff', fontWeight: 700 }}>KROMI poupou {Math.round(savedVsSport)}Wh</span>
-          <span style={{ color: '#777575' }}> vs SPORT ({savedPct}% menos)</span>
+
+      {/* Smart rider mode breakdown */}
+      {smartRiderWh && (
+        <div style={{ marginTop: '6px', padding: '6px', backgroundColor: '#1a1919', borderRadius: '4px' }}>
+          <div style={{ fontSize: '9px', color: '#777575', marginBottom: '4px' }}>Simulação rider manual (muda modo por terreno):</div>
+          <div style={{ display: 'flex', gap: '8px', fontSize: '10px' }}>
+            {Object.entries(smartRiderWh.modeTime).filter(([, t]) => t > 0).map(([mode, time]) => {
+              const colors: Record<string, string> = { ECO: '#3fff8b', TOUR: '#60a5fa', ACTIVE: '#fbbf24', SPORT: '#ff716c' };
+              return (
+                <span key={mode} style={{ color: colors[mode] }}>
+                  {mode} {time >= 60 ? `${Math.round(time / 60)}m` : `${Math.round(time)}s`}
+                </span>
+              );
+            })}
+          </div>
         </div>
       )}
-      {savedVsSport <= 0 && kromiWh > 0 && (
+
+      {/* Savings message */}
+      {vsManual > 0 && (
+        <div style={{ marginTop: '6px', textAlign: 'center', fontSize: '12px' }}>
+          <span style={{ color: '#e966ff', fontWeight: 700 }}>KROMI poupou {vsManual}Wh vs rider manual</span>
+          <span style={{ color: '#777575' }}> ({vsManualPct}% menos energia)</span>
+        </div>
+      )}
+      {vsManual <= 0 && kromiWh > 0 && (
         <div style={{ marginTop: '6px', textAlign: 'center', fontSize: '11px', color: '#777575' }}>
-          KROMI: {kromiWh}Wh total · {batteryUsedPct}% bateria
+          KROMI: {kromiWh}Wh · {batteryUsedPct}% bateria · {kromiWhKm}Wh/km
         </div>
       )}
     </Section>
