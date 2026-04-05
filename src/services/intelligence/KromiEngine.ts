@@ -1,5 +1,5 @@
 /**
- * KromiEngine — 6-layer intelligence engine for e-bike motor control.
+ * KromiEngine — 7-layer intelligence engine for e-bike motor control.
  *
  * Layer 1: Physics (1s)      — forces, 3-zone speed, P_total, P_human
  * Layer 2: Physiology (1s)   — HR zones, W' balance, drift, EF, IRC
@@ -7,6 +7,7 @@
  * Layer 4: Lookahead (10s)   — 4km rolling horizon, GPX or discovery
  * Layer 5: Battery (30s)     — Wh budget, constraint factor, projection
  * Layer 6: Learning (60s)    — CP/W' calibration, form multiplier, overrides
+ * Layer 7: Nutrition (30s)   — glycogen, hydration, electrolytes → CP_effective
  *
  * tick() is synchronous — all slow operations happen in cached services.
  * Only active in POWER mode.
@@ -27,6 +28,7 @@ import { getCachedTrail } from '../maps/TerrainService';
 import { computeBatteryBudget, feedConsumption, type BatteryBudget } from '../autoAssist/BatteryOptimizer';
 import { buildDiscoveryLookahead, type LookaheadResult } from '../autoAssist/ElevationPredictor';
 import { RiderLearning } from '../autoAssist/RiderLearning';
+import { NutritionEngine, type NutritionState } from './NutritionEngine';
 import { elevationService } from '../maps/ElevationService';
 
 // ── Constants ──────────────────────────────────────────────────
@@ -44,6 +46,7 @@ const ENV_INTERVAL_MS = 60_000;
 const LOOKAHEAD_INTERVAL_MS = 10_000;
 const BATTERY_INTERVAL_MS = 30_000;
 const LEARNING_INTERVAL_MS = 60_000;
+const NUTRITION_INTERVAL_MS = 30_000;
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -76,6 +79,7 @@ export interface KromiTickOutput {
   batteryFactor: number;
   gearSuggestion: number | null;
   physiology: PhysiologyOutput | null;
+  nutrition: NutritionState | null;
   alerts: string[];
 }
 
@@ -87,6 +91,7 @@ class KromiEngine {
   // Sub-engines
   private physiology = new PhysiologyEngine(15000);
   private learning = new RiderLearning();
+  private nutrition = new NutritionEngine();
 
   // Smoothing state
   private prevSupport = 200;
@@ -97,6 +102,7 @@ class KromiEngine {
   private lastLookaheadTick = 0;
   private lastBatteryTick = 0;
   private lastLearningTick = 0;
+  private lastNutritionTick = 0;
 
   // Cached layer outputs
   private cachedCrr = 0.006;
@@ -106,6 +112,8 @@ class KromiEngine {
   private cachedBattery: BatteryBudget | null = null;
   private cachedLookahead: LookaheadResult | null = null;
   private cachedFormMultiplier = 1.0;
+  private cachedNutrition: NutritionState | null = null;
+  private rideStartTs = 0;
 
   // Pre-adjustment state
   private preAdjustTarget: { support: number; torque: number } | null = null;
@@ -148,6 +156,12 @@ class KromiEngine {
     if (now - this.lastLearningTick > LEARNING_INTERVAL_MS) {
       this.tickLearning(input);
       this.lastLearningTick = now;
+    }
+
+    // ── Layer 7: Nutrition (every 30s) ──
+    if (now - this.lastNutritionTick > NUTRITION_INTERVAL_MS) {
+      this.lastNutritionTick = now;
+      // Deferred: needs P_human and physio from current tick, runs below after Layer 2
     }
 
     // ── Layer 4: Lookahead (every 10s) ──
@@ -222,6 +236,37 @@ class KromiEngine {
       { name: 'W\'', value: physio.w_prime_balance * 100, detail: `${(physio.w_prime_balance * 100).toFixed(0)}% ${physio.w_prime_state}` },
       { name: 'EF', value: physio.ef_current, detail: `${physio.ef_current.toFixed(2)} W/bpm${physio.ef_degraded ? ' DEGRADADO' : ''}` },
     );
+
+    // ── Layer 7: Nutrition (runs after physiology, every 30s) ──
+    if (this.rideStartTs === 0) this.rideStartTs = now;
+    if (now - this.lastNutritionTick <= NUTRITION_INTERVAL_MS + 1000) {
+      // Tick was scheduled above, run it now with available data
+      this.cachedNutrition = this.nutrition.tick({
+        P_human: physics.P_human,
+        hr_zone: physio.zone_current,
+        temp_c: this.cachedTemp,
+        rider_weight_kg: rider.weight_kg || 135,
+        ride_elapsed_s: (now - this.rideStartTs) / 1000,
+      });
+
+      // Glycogen → CP_effective / W'_effective correction (bidirectional feedback)
+      if (this.cachedNutrition.cp_factor < 1.0) {
+        const params = this.learning.getParams();
+        // Apply glycogen correction to physiology engine's CP/W' for this tick
+        this.physiology.calibrate(
+          Math.round(params.w_prime_joules * this.cachedNutrition.w_prime_factor),
+          params.tau_seconds,
+        );
+        factors.push({
+          name: 'Glycogen',
+          value: this.cachedNutrition.glycogen_pct,
+          detail: `${this.cachedNutrition.glycogen_pct}% CP×${this.cachedNutrition.cp_factor}`,
+        });
+      }
+
+      // Add nutrition alerts
+      alerts.push(...this.cachedNutrition.alerts);
+    }
 
     // ── DECISION TREE (priority order) ──
     let supportPct = SUPPORT_MIN;
@@ -365,7 +410,8 @@ class KromiEngine {
       batteryFactor,
       gearSuggestion: this.cachedLookahead?.gear_suggestion ?? null,
       physiology: physio,
-      alerts: alerts.slice(0, 3), // max 3 alerts
+      nutrition: this.cachedNutrition,
+      alerts: alerts.slice(0, 4), // max 4 alerts (motor + nutrition)
     };
   }
 
@@ -395,8 +441,12 @@ class KromiEngine {
     this.sustainedEffortStart = 0;
     this.sustainedEffortPowerSum = 0;
     this.sustainedEffortSamples = 0;
+    this.cachedNutrition = null;
+    this.rideStartTs = 0;
+    this.lastNutritionTick = 0;
     this.physiology.reset();
     this.learning.resetRide();
+    this.nutrition.reset();
   }
 
   // ── Layer 3: Environment ─────────────────────────────────
@@ -546,6 +596,7 @@ class KromiEngine {
   getLearning(): RiderLearning { return this.learning; }
   getCachedBattery(): BatteryBudget | null { return this.cachedBattery; }
   getCachedLookahead(): LookaheadResult | null { return this.cachedLookahead; }
+  getNutrition(): NutritionEngine { return this.nutrition; }
 }
 
 export const kromiEngine = KromiEngine.getInstance();
