@@ -77,7 +77,7 @@ export interface RideSessionState {
 }
 
 const FLUSH_INTERVAL = 10_000; // 10s — flush buffer to IndexedDB
-const CAPTURE_INTERVAL = 5_000; // 5s — capture snapshot from stores
+const CAPTURE_INTERVAL = 2_000; // 2s — fast capture for accurate ride data
 const METRICS_PERSIST_EVERY = 6; // persist metrics every 6 snapshots (30s)
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;

@@ -11,7 +11,7 @@ import { setTuning, isTuningAvailable } from '../services/bluetooth/BLEBridge';
 import { AssistMode } from '../types/bike.types';
 import { encodeCalibration } from '../types/tuning.types';
 
-const TICK_INTERVAL_MS = 2000;
+const TICK_INTERVAL_MS = 1000; // 1s — fast reaction to gear/gradient/HR changes
 
 /**
  * Central motor control loop — KROMI intelligent assist.
