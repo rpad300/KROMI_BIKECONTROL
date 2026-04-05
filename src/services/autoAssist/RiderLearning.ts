@@ -132,6 +132,55 @@ export class RiderLearning {
     }
   }
 
+  // ── CP/W' Field Test Protocol ───────────────────────────────
+
+  /**
+   * Structured field test: two all-out efforts to calculate CP and W'.
+   *
+   * Protocol:
+   *   1. Warmup 15 min
+   *   2. 12-minute all-out effort → record avg power (P12)
+   *   3. Rest 30 min (full recovery)
+   *   4. 3-minute all-out effort → record avg power (P3)
+   *
+   * Physics:
+   *   Work_12 = P12 × 720s
+   *   Work_3  = P3  × 180s
+   *   CP = (Work_12 - Work_3) / (720 - 180)
+   *   W' = 720 × (P12 - CP)   [joules]
+   *   τ  = W' / (P3 - CP)     [seconds, recovery constant estimate]
+   *
+   * Call this after the rider completes the test with both power values.
+   */
+  applyFieldTest(P12_watts: number, P3_watts: number): {
+    cp: number; w_prime: number; tau: number;
+  } | null {
+    if (P3_watts <= P12_watts || P12_watts <= 0) return null;
+
+    const W12 = P12_watts * 720;
+    const W3 = P3_watts * 180;
+    const cp = Math.round((W12 - W3) / (720 - 180));
+    const w_prime = Math.round(720 * (P12_watts - cp));
+    const tau = P3_watts > cp ? Math.round(w_prime / (P3_watts - cp)) : 300;
+
+    if (cp < 50 || cp > 400 || w_prime < 3000 || w_prime > 40000) {
+      return null; // sanity check failed
+    }
+
+    this.params.cp_watts = cp;
+    this.params.w_prime_joules = w_prime;
+    this.params.tau_seconds = Math.max(120, Math.min(600, tau));
+    this.params.confidence = 0.9; // field test = high confidence
+
+    // Record as high-quality data points
+    this.cpDataPoints.push(
+      { power_avg: P12_watts, duration_s: 720, timestamp: Date.now() },
+      { power_avg: P3_watts, duration_s: 180, timestamp: Date.now() },
+    );
+
+    return { cp, w_prime, tau: this.params.tau_seconds };
+  }
+
   // ── W' and τ Calibration ───────────────────────────────────
 
   /**

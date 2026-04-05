@@ -22,6 +22,7 @@
 13. [Stack de APIs Externas](#13-stack-de-apis-externas)
 14. [Ficheiros e Dependencias](#14-ficheiros-e-dependencias)
 15. [Constantes do Rider e Bike](#15-constantes-do-rider-e-bike)
+16. [Output Pos-Ride](#16-output-pos-ride)
 
 ---
 
@@ -303,13 +304,50 @@ Query: way(around:30, lat, lng)[highway]; out tags;
 ## 6. Layer 4: Lookahead (10s)
 
 **Ficheiro:** `src/services/autoAssist/ElevationPredictor.ts`  
-**Funcao:** `buildDiscoveryLookahead()`
+**Classe:** `LookaheadController` (stateful, instancia no KromiEngine)
 
-### Modo B: Discovery (actual — sem GPX)
+### Tres Modos com Transicao Automatica
+
+| Modo | Nome | Trigger | Horizonte |
+|------|------|---------|-----------|
+| A | GPX Known | `loadRoute()` com rota GPX | 4km desde posicao actual na rota |
+| B | Discovery | Sem GPX, ou apos desvio | 4km por heading (Google Elevation API) |
+| C | Hybrid | GPX carregado mas rider desviou | Discovery ate re-entrar no corredor |
+
+### Transicao Automatica (Mode A ↔ C ↔ B)
+
+```
+Mode A (GPX):
+  Se distancia_ao_track > 50m durante 20s consecutivos:
+    → Switch para Mode C (Hybrid)
+
+Mode C (Hybrid):
+  Opera com Discovery lookahead
+  Mantem GPX como referencia de destino
+  Se distancia_ao_track < 30m:
+    → Switch para Mode A (GPX)
+
+Mode B (Discovery):
+  Activo quando nao ha GPX carregado
+  Projeta 4km a frente por heading + Google Elevation API
+```
+
+A deteccao de desvio usa haversine para distancia ao ponto mais proximo da rota, pesquisando ±50 pontos a volta da posicao actual (eficiente, nao varre a rota toda).
+
+### Modo A: GPX Known
+
+Quando rota GPX esta carregada:
+1. Encontra ponto mais proximo na rota (haversine)
+2. Extrai os proximos 4km de pontos da rota
+3. Converte para ElevationPoint[] com distancia relativa
+4. Alimenta o mesmo buildSegmentLookahead() que o Mode B usa
+5. Tambem fornece `route_remaining_km` para o Battery Budget (Layer 5)
+
+### Modo B: Discovery
 
 A cada 10s, constroi horizonte de ate 4km a frente:
 
-1. Le o perfil de elevacao do `ElevationService` (Google Elevation API, heading-based, 500m cache)
+1. Le o perfil de elevacao do `ElevationService` (Google Elevation API, heading-based)
 2. Agrupa em segmentos de 100m
 3. Classifica cada segmento:
 
@@ -419,6 +457,36 @@ Em segmentos planos (< 1% gradiente) com vento conhecido:
 - Se modelo sobre-estima velocidade: Crr demasiado baixo → aumenta 0.001
 - Se modelo sub-estima: Crr demasiado alto → reduz 0.001
 - Precisa de >= 3 observacoes por superficie
+
+### Protocolo de Campo CP/W' (3 + 12 minutos)
+
+Teste estruturado para calibracao precisa:
+
+**Protocolo:**
+1. Warmup 15 min
+2. Esforco maximo 12 minutos → registar potencia media (P12)
+3. Descanso 30 min (recuperacao total)
+4. Esforco maximo 3 minutos → registar potencia media (P3)
+
+**Calculos (fisica pura):**
+```
+Work_12 = P12 × 720s
+Work_3  = P3  × 180s
+CP = (Work_12 - Work_3) / (720 - 180)
+W' = 720 × (P12 - CP)         [joules]
+tau = W' / (P3 - CP)           [segundos]
+```
+
+**Exemplo para rider 135kg com FTP ~150W:**
+- P12 = 160W, P3 = 220W
+- CP = (160×720 - 220×180) / 540 = 140W
+- W' = 720 × (160 - 140) = 14400 J
+- tau = 14400 / (220 - 140) = 180s
+
+**Validacao:** CP 50-400W, W' 3000-40000J. Fora disto = teste invalido.  
+**Confianca:** 0.9 (field test >> calibracao passiva de rides).
+
+**Implementacao:** `RiderLearning.applyFieldTest(P12, P3)` — aplica imediatamente, regista como datapoints de alta qualidade.
 
 ### Override Detection
 
@@ -629,8 +697,9 @@ Alertas sao strings em portugues, max 4 por tick. Provem de:
 | `src/services/intelligence/NutritionEngine.ts` | ~355 | Glicogenio, hidratacao, electrolitos, CP feedback |
 | `src/services/weather/OpenMeteoService.ts` | ~60 | API gratis vento + temperatura |
 | `src/services/autoAssist/BatteryOptimizer.ts` | ~150 | Rolling Wh/km, 6-level budget, cold correction |
-| `src/services/autoAssist/ElevationPredictor.ts` | ~230 | 4km lookahead, segmentos 100m, gear suggestion |
-| `src/services/autoAssist/RiderLearning.ts` | ~230 | CP/W'/Crr calibracao, override detection |
+| `src/services/autoAssist/ElevationPredictor.ts` | ~310 | 4km lookahead, Mode A/B/C, auto-transition, gear suggestion |
+| `src/services/autoAssist/RiderLearning.ts` | ~280 | CP/W'/Crr calibracao, field test protocol, override detection |
+| `src/services/intelligence/PostRideAnalysis.ts` | ~370 | Pos-ride: actual vs predicted, W' curve, HR adherence, calibration |
 
 ### Editados
 
@@ -701,3 +770,80 @@ Estas constantes vem do `settingsStore.riderProfile` e `settingsStore.bikeConfig
 159 kg = 135 kg (rider) + 24 kg (bike)
 ```
 Domina completamente a fisica. Uma subida de 10% com 159kg requer ~153N so de gravidade vs ~96N para um ciclista tipico de 100kg.
+
+---
+
+## 16. Output Pos-Ride
+
+**Ficheiro:** `src/services/intelligence/PostRideAnalysis.ts`
+
+Chamado quando a ride termina. Gera relatorio completo a partir de snapshots gravados durante a ride (1 snapshot a cada 5-10s).
+
+### Consumo Real vs Previsto
+
+Por cada segmento de 1km:
+- **Wh previsto**: do Layer 4 (Lookahead) no momento em que o rider passou
+- **Wh actual**: da telemetria de bateria (BLE)
+- **Ratio**: actual/previsto. >1 = consumiu mais que esperado
+- **Precisao global**: `(1 - |actual - previsto| / previsto) × 100%`
+
+### Aderencia a Zonas de HR
+
+- Tempo em cada zona (Z1-Z5) em segundos
+- % do tempo na zona alvo
+- % do tempo acima da zona alvo
+- **Segmentos criticos**: onde HR excedeu zona alvo por >2 zonas durante >30s
+  - Localizacao (km), duracao, zona maxima atingida
+
+### Curva de W' Balance
+
+- Pontos timestamp/balance para grafico (amostragem a cada 30s)
+- Balance minimo atingido (%)
+- Numero de eventos criticos (W' < 30%)
+- Tempo total em estado critico (segundos)
+
+### Resumo de Nutricao
+
+- Glicogenio: inicio, fim, consumido, ingerido, balanco liquido
+- Hidratacao: deficit acumulado, fluido ingerido
+- Sodio perdido (mg)
+- Taxa media de queima (g/min)
+- Tempo em glicogenio baixo (<35%)
+
+### Actualizacao de Parametros Calibrados
+
+Compara antes vs depois da ride:
+- **CP**: valor anterior → novo → delta (se esforcos sustentados detectados)
+- **W'**: capacidade anterior → nova
+- **tau**: constante recuperacao → nova
+- **Crr**: ajustes por superficie acumulados
+- **EF baseline**: anterior → novo
+
+### Efficiency Score (0-100)
+
+Pontuacao composta:
+```
+30% × aderencia_zona_HR
+30% × precisao_consumo_bateria
+20% × (1 - tempo_critico_W' / tempo_total)
+20% × balanco_nutricional (positivo se net_glycogen > -100g)
+```
+
+### Texto de Resumo (Portugues)
+
+Exemplo:
+```
+"18.5km em 72min, 420m D+. Consumo bateria: 95Wh (previsto 102Wh, 93% preciso).
+Zona HR: 62% do tempo na Z2 alvo. W' critico 1× (min 22%). CP actualizado: 148→152W."
+```
+
+### Gravacao de Snapshots
+
+Durante a ride, `recordSnapshot()` e chamado a cada 5-10s com:
+- elapsed_s, km, speed, gradient, power, hr, hr_zone
+- w_prime_pct, support_pct, torque_nm
+- battery_soc, wh_consumed, predicted_wh_segment
+- surface, glycogen_pct
+
+`recordPrediction()` regista Wh previstos por segmento do Lookahead.  
+`generateReport()` processa tudo no fim da ride.
