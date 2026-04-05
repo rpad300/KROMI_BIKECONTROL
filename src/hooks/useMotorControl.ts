@@ -106,6 +106,11 @@ export function useMotorControl() {
       const decision = tuningIntelligence.evaluate(input);
       useIntelligenceStore.getState().setDecision(decision);
 
+      // Log decision every 10s for diagnostics (not every 1s to avoid spam)
+      if (Date.now() % 10000 < 1100) {
+        dlog?.(`[KROMI] EVAL: P=${decision.calibration.support} S=${decision.calibration.torque} A=${decision.calibration.midTorque} T=${decision.calibration.lowTorque} E=${decision.calibration.launch} | spd=${input.speed} cad=${input.cadence} hr=${input.hr} gear=${input.currentGear} grad=${input.gradient.toFixed(1)} bat=${input.batterySoc}`);
+      }
+
       // === Execute: send 5-ASMO calibration to motor ===
       if (isTuningAvailable()) {
         const tuning = useTuningStore.getState();
