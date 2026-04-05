@@ -13,6 +13,10 @@ import { ServiceBookPage } from '../ServiceBook/ServiceBookPage';
 import { ShopManagementPage } from '../Shop/ShopManagementPage';
 // TuningPreview removed — config is now read-only from motor telemetry
 import { importKomootRoute } from '../../services/maps/KomootService';
+import { useRouteStore } from '../../store/routeStore';
+import { parseGPXFile } from '../../services/routes/GPXParser';
+import { saveRoute, listRoutes, getRoute, deleteRoute } from '../../services/routes/RouteService';
+import { analyzeRoute } from '../../services/routes/PreRideAnalysis';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
 type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'emergency' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account' | 'service-book' | 'shop';
@@ -697,37 +701,217 @@ function RoutesPage({ onNavigate }: { onNavigate?: (s: Screen) => void }) {
   const [komootUrl, setKomootUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [routes, setRoutes] = useState<import('../../services/routes/RouteService').SavedRoute[]>([]);
+  const [, setAnalyzing] = useState(false);
+  const activeRoute = useRouteStore((s) => s.activeRoute);
+  const preRide = useRouteStore((s) => s.preRideAnalysis);
+  const setActiveRoute = useRouteStore((s) => s.setActiveRoute);
+  const setPreRideAnalysis = useRouteStore((s) => s.setPreRideAnalysis);
 
-  const handleImport = async () => {
+  // Load saved routes on mount
+  useEffect(() => {
+    listRoutes().then(setRoutes).catch(() => {});
+  }, []);
+
+  // GPX file upload
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLoading(true); setResult(null);
+    try {
+      const parsed = await parseGPXFile(file);
+      if (!parsed) { setResult('Ficheiro GPX invalido'); return; }
+
+      // Analyze route
+      setAnalyzing(true);
+      const analysis = analyzeRoute(parsed.points);
+
+      // Save to Supabase
+      const saved = await saveRoute(parsed, 'gpx', undefined,
+        analysis ? { wh: analysis.total_wh, time_min: analysis.estimated_time_min, glycogen_g: analysis.glycogen_g } : undefined);
+
+      if (saved) {
+        setResult(`"${parsed.name}" guardada — ${parsed.total_distance_km}km, ${parsed.total_elevation_gain_m}m D+`);
+        setRoutes(prev => [saved, ...prev]);
+        setActiveRoute(saved, parsed.points);
+        if (analysis) setPreRideAnalysis(analysis);
+      } else {
+        setResult(`Parsed OK (${parsed.points.length} pts) mas falhou a guardar`);
+      }
+    } catch (err) { setResult(err instanceof Error ? err.message : 'Import failed'); }
+    finally { setLoading(false); setAnalyzing(false); }
+  };
+
+  // Komoot import
+  const handleKomoot = async () => {
     if (!komootUrl.trim()) return;
     setLoading(true); setResult(null);
     try {
       const pts = await importKomootRoute(komootUrl);
-      setResult(`Importados ${pts.length} pontos`);
-      sessionStorage.setItem('komoot_route', JSON.stringify(pts));
+      // Convert to ParsedRoute format for saving
+      const routePoints = pts.map((p: { lat: number; lng: number; elevation: number }, i: number, arr: { lat: number; lng: number; elevation: number }[]) => ({
+        lat: p.lat, lng: p.lng, elevation: p.elevation,
+        distance_from_start_m: i === 0 ? 0 : Math.round(
+          arr.slice(0, i).reduce((sum, _, j) => {
+            if (j === 0) return 0;
+            const a = arr[j - 1]!, b = arr[j]!;
+            const R = 6371000, dLat = (b.lat - a.lat) * Math.PI / 180, dLon = (b.lng - a.lng) * Math.PI / 180;
+            const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+            return sum + R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+          }, 0)
+        ),
+      }));
+
+      const totalDist = routePoints.length > 0 ? routePoints[routePoints.length - 1]!.distance_from_start_m / 1000 : 0;
+      let elevGain = 0, elevLoss = 0;
+      for (let i = 1; i < routePoints.length; i++) {
+        const d = routePoints[i]!.elevation - routePoints[i - 1]!.elevation;
+        if (d > 0) elevGain += d; else elevLoss += Math.abs(d);
+      }
+
+      const parsed = {
+        name: `Komoot ${komootUrl.match(/\d+/)?.[0] ?? 'route'}`,
+        description: `Importado de Komoot`,
+        points: routePoints,
+        total_distance_km: Math.round(totalDist * 100) / 100,
+        total_elevation_gain_m: Math.round(elevGain),
+        total_elevation_loss_m: Math.round(elevLoss),
+        max_gradient_pct: 0, avg_gradient_pct: 0,
+        bbox: {
+          north: Math.max(...routePoints.map(p => p.lat)),
+          south: Math.min(...routePoints.map(p => p.lat)),
+          east: Math.max(...routePoints.map(p => p.lng)),
+          west: Math.min(...routePoints.map(p => p.lng)),
+        },
+      };
+
+      const analysis = analyzeRoute(parsed.points);
+      const saved = await saveRoute(parsed, 'komoot', komootUrl,
+        analysis ? { wh: analysis.total_wh, time_min: analysis.estimated_time_min, glycogen_g: analysis.glycogen_g } : undefined);
+
+      if (saved) {
+        setResult(`"${parsed.name}" guardada — ${parsed.total_distance_km}km`);
+        setRoutes(prev => [saved, ...prev]);
+        setActiveRoute(saved, parsed.points);
+        if (analysis) setPreRideAnalysis(analysis);
+      } else {
+        setResult(`Importados ${pts.length} pontos (não guardou no Supabase)`);
+        sessionStorage.setItem('komoot_route', JSON.stringify(pts));
+      }
     } catch (err) { setResult(err instanceof Error ? err.message : 'Import failed'); }
     finally { setLoading(false); }
   };
 
+  // Select route for ride
+  const handleSelectRoute = async (route: import('../../services/routes/RouteService').SavedRoute) => {
+    setLoading(true);
+    const full = await getRoute(route.id);
+    if (full) {
+      setActiveRoute(full, full.points);
+      const analysis = analyzeRoute(full.points);
+      if (analysis) setPreRideAnalysis(analysis);
+    }
+    setLoading(false);
+  };
+
+  // Delete route
+  const handleDelete = async (id: string) => {
+    await deleteRoute(id);
+    setRoutes(prev => prev.filter(r => r.id !== id));
+    if (activeRoute?.id === id) setActiveRoute(null);
+  };
+
   return (
     <div className="space-y-4">
-      <SectionLabel>Import Komoot Route</SectionLabel>
+      {/* GPX File Upload */}
+      <SectionLabel>Importar Rota GPX</SectionLabel>
       <Card>
-        <input type="text" value={komootUrl} onChange={(e) => setKomootUrl(e.target.value)} placeholder="Komoot tour URL or ID"
-          style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '10px', border: 'none', fontSize: '13px' }} />
-        <button onClick={handleImport} disabled={loading || !komootUrl.trim()}
-          style={{ width: '100%', height: '40px', marginTop: '8px', backgroundColor: loading ? '#262626' : '#3fff8b', color: 'black', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
-          {loading ? 'A importar...' : 'Import'}
-        </button>
-        {result && <div style={{ fontSize: '11px', color: result.startsWith('Importados') ? '#3fff8b' : '#ff716c', marginTop: '4px' }}>{result}</div>}
+        <label style={{ display: 'block', width: '100%', height: '44px', lineHeight: '44px', textAlign: 'center', backgroundColor: '#3fff8b', color: 'black', fontWeight: 700, fontSize: '14px', cursor: 'pointer', borderRadius: '4px' }}>
+          {loading ? 'A processar...' : 'Carregar ficheiro GPX'}
+          <input type="file" accept=".gpx,.xml" onChange={handleFileUpload} style={{ display: 'none' }} />
+        </label>
       </Card>
+
+      {/* Komoot Import */}
+      <SectionLabel>Importar de Komoot</SectionLabel>
+      <Card>
+        <input type="text" value={komootUrl} onChange={(e) => setKomootUrl(e.target.value)} placeholder="URL ou ID do tour Komoot"
+          style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '10px', border: 'none', fontSize: '13px', borderRadius: '4px' }} />
+        <button onClick={handleKomoot} disabled={loading || !komootUrl.trim()}
+          style={{ width: '100%', height: '40px', marginTop: '8px', backgroundColor: loading ? '#262626' : '#3b82f6', color: 'white', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer', borderRadius: '4px' }}>
+          {loading ? 'A importar...' : 'Importar Komoot'}
+        </button>
+      </Card>
+
+      {result && (
+        <div style={{ fontSize: '12px', color: result.includes('guardada') ? '#3fff8b' : '#ff716c', padding: '8px', backgroundColor: '#1a1919', borderRadius: '4px' }}>
+          {result}
+        </div>
+      )}
+
+      {/* Pre-ride Analysis */}
+      {preRide && activeRoute && (
+        <>
+          <SectionLabel>Analise Pre-Ride: {activeRoute.name}</SectionLabel>
+          <Card>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+              <div><span style={{ color: '#9ca3af' }}>Distancia</span><br/><b>{activeRoute.total_distance_km} km</b></div>
+              <div><span style={{ color: '#9ca3af' }}>Tempo est.</span><br/><b>{preRide.estimated_time_min} min</b></div>
+              <div><span style={{ color: '#9ca3af' }}>D+</span><br/><b>{activeRoute.total_elevation_gain_m} m</b></div>
+              <div><span style={{ color: '#9ca3af' }}>Motor Wh</span><br/><b style={{ color: preRide.feasible ? '#3fff8b' : '#ff716c' }}>{preRide.total_wh} Wh</b></div>
+              <div><span style={{ color: '#9ca3af' }}>Bateria</span><br/><b>{preRide.battery_remaining_wh} Wh ({preRide.battery_margin_pct}%)</b></div>
+              <div><span style={{ color: '#9ca3af' }}>Glicogenio</span><br/><b>{preRide.glycogen_g}g</b></div>
+              <div><span style={{ color: '#9ca3af' }}>Hidratos</span><br/><b>{preRide.carbs_needed_g}g</b></div>
+              <div><span style={{ color: '#9ca3af' }}>Agua</span><br/><b>{preRide.fluid_needed_ml}ml</b></div>
+            </div>
+            {!preRide.feasible && (
+              <div style={{ marginTop: '8px', padding: '6px', backgroundColor: '#3b1717', borderRadius: '4px', fontSize: '11px', color: '#ff716c' }}>
+                Bateria pode nao chegar. Carrega ou reduz assistencia.
+              </div>
+            )}
+            <div style={{ marginTop: '8px', fontSize: '11px', color: '#9ca3af' }}>{preRide.summary}</div>
+          </Card>
+        </>
+      )}
+
+      {/* Saved Routes */}
+      <SectionLabel>Rotas Guardadas</SectionLabel>
+      {routes.length === 0 && !loading && (
+        <div style={{ color: '#6b7280', fontSize: '12px', padding: '12px' }}>Nenhuma rota guardada. Importa um GPX ou Komoot acima.</div>
+      )}
+      {routes.map(route => (
+        <button key={route.id} onClick={() => handleSelectRoute(route)}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '12px',
+            backgroundColor: activeRoute?.id === route.id ? '#1a2e1a' : '#1a1919',
+            border: 'none', cursor: 'pointer',
+            borderLeft: `3px solid ${activeRoute?.id === route.id ? '#3fff8b' : '#333'}`,
+            textAlign: 'left',
+          }}>
+          <span className="material-symbols-outlined" style={{ color: route.is_favorite ? '#f59e0b' : '#6b7280', fontSize: '20px' }}>
+            {route.source === 'komoot' ? 'explore' : 'route'}
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: 'white', fontWeight: 600, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{route.name}</div>
+            <div style={{ color: '#9ca3af', fontSize: '11px' }}>
+              {route.total_distance_km}km | {route.total_elevation_gain_m}m D+ | {route.estimated_wh ? `${route.estimated_wh}Wh` : '—'}
+              {route.ride_count > 0 && ` | ${route.ride_count}× ridden`}
+            </div>
+          </div>
+          <button onClick={(e) => { e.stopPropagation(); handleDelete(route.id); }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+            <span className="material-symbols-outlined" style={{ color: '#6b7280', fontSize: '18px' }}>delete</span>
+          </button>
+        </button>
+      ))}
+
       {onNavigate && (
         <>
-          <SectionLabel>Histórico</SectionLabel>
+          <SectionLabel>Historico</SectionLabel>
           <button onClick={() => onNavigate('history')}
             style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', backgroundColor: '#1a1919', border: 'none', cursor: 'pointer', borderLeft: '3px solid #3fff8b' }}>
             <span className="material-symbols-outlined" style={{ color: '#3fff8b' }}>history</span>
-            <span style={{ color: 'white', fontWeight: 600 }}>Histórico de Rides</span>
+            <span style={{ color: 'white', fontWeight: 600 }}>Historico de Rides</span>
           </button>
         </>
       )}

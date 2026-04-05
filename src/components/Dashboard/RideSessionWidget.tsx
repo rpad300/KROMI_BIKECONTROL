@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { rideSessionManager } from '../../services/storage/RideHistory';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useMapStore } from '../../store/mapStore';
+import { useRouteStore } from '../../store/routeStore';
 import { batteryEfficiencyTracker } from '../../services/learning/BatteryEfficiencyTracker';
+import { listRoutes, getRoute, linkRideToRoute } from '../../services/routes/RouteService';
 
 export function RideSessionWidget() {
   const rideActive = useAthleteStore((s) => s.rideActive);
@@ -20,9 +22,33 @@ export function RideSessionWidget() {
     return () => clearInterval(id);
   }, [rideActive]);
 
+  const [showRouteSelect, setShowRouteSelect] = useState(false);
+  const [savedRoutes, setSavedRoutes] = useState<Awaited<ReturnType<typeof listRoutes>>>([]);
+  const activeRoute = useRouteStore((s) => s.activeRoute);
+  const setActiveRoute = useRouteStore((s) => s.setActiveRoute);
+  const startNavigation = useRouteStore((s) => s.startNavigation);
+
   const handleStart = async () => {
     await rideSessionManager.startSession();
+    // If a route is selected, link it and start navigation
+    if (activeRoute) {
+      const sessionId = rideSessionManager.getSessionId();
+      if (sessionId) linkRideToRoute(sessionId, activeRoute.id);
+      startNavigation();
+    }
     if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
+  };
+
+  const handleRouteSelect = async (routeId: string) => {
+    const full = await getRoute(routeId);
+    if (full) setActiveRoute(full, full.points);
+    setShowRouteSelect(false);
+  };
+
+  const loadRouteList = async () => {
+    const routes = await listRoutes();
+    setSavedRoutes(routes);
+    setShowRouteSelect(true);
   };
 
   const handleStop = async () => {
@@ -50,7 +76,48 @@ export function RideSessionWidget() {
   if (!rideActive) {
     const gpsReady = gpsActive && hasGps;
     return (
-      <div className="space-y-1">
+      <div className="space-y-2">
+        {/* Route selector */}
+        {activeRoute ? (
+          <div className="flex items-center gap-2 bg-[#1a2e1a] rounded-sm px-3 py-2">
+            <span className="material-symbols-outlined text-[#3fff8b] text-lg">route</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-white text-xs font-bold truncate">{activeRoute.name}</div>
+              <div className="text-[#9ca3af] text-[10px]">{activeRoute.total_distance_km}km | {activeRoute.total_elevation_gain_m}m D+</div>
+            </div>
+            <button onClick={() => setActiveRoute(null)} className="text-[#6b7280]">
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          </div>
+        ) : (
+          <button onClick={loadRouteList}
+            className="w-full flex items-center justify-center gap-2 h-10 bg-[#1a1919] rounded-sm text-[#9ca3af] text-xs border border-[#333]">
+            <span className="material-symbols-outlined text-sm">route</span>
+            Selecionar rota (opcional)
+          </button>
+        )}
+
+        {/* Route list popup */}
+        {showRouteSelect && (
+          <div className="bg-[#1a1919] rounded-sm border border-[#333] max-h-48 overflow-y-auto">
+            {savedRoutes.length === 0 ? (
+              <div className="p-3 text-[#6b7280] text-xs">Nenhuma rota guardada</div>
+            ) : savedRoutes.map(r => (
+              <button key={r.id} onClick={() => handleRouteSelect(r.id)}
+                className="w-full flex items-center gap-2 px-3 py-2 border-b border-[#262626] text-left hover:bg-[#262626]">
+                <span className="material-symbols-outlined text-[#3fff8b] text-sm">route</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-white text-xs font-semibold truncate">{r.name}</div>
+                  <div className="text-[#6b7280] text-[10px]">{r.total_distance_km}km | {r.total_elevation_gain_m}m D+</div>
+                </div>
+              </button>
+            ))}
+            <button onClick={() => setShowRouteSelect(false)}
+              className="w-full p-2 text-[#6b7280] text-xs text-center">Cancelar</button>
+          </div>
+        )}
+
+        {/* Start button */}
         <button
           onClick={handleStart}
           disabled={!gpsReady}
@@ -59,12 +126,14 @@ export function RideSessionWidget() {
           }`}
         >
           <span className="text-2xl">&#9654;</span>
-          {gpsReady ? 'INICIAR VOLTA' : 'A AGUARDAR GPS...'}
+          {gpsReady
+            ? activeRoute ? `INICIAR: ${activeRoute.name.slice(0, 20)}` : 'INICIAR VOLTA'
+            : 'A AGUARDAR GPS...'}
         </button>
         {!gpsReady && (
           <div className="flex items-center justify-center gap-2 text-[10px] text-[#777575]">
             <span className="w-2 h-2 rounded-full bg-[#fbbf24] animate-pulse" />
-            {!gpsActive ? 'GPS inactivo — verifica permissões' : 'A fixar posição...'}
+            {!gpsActive ? 'GPS inactivo — verifica permissoes' : 'A fixar posicao...'}
           </div>
         )}
       </div>

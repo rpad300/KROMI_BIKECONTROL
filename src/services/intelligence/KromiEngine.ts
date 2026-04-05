@@ -30,6 +30,7 @@ import { buildDiscoveryLookahead, type LookaheadResult } from '../autoAssist/Ele
 import { RiderLearning } from '../autoAssist/RiderLearning';
 import { NutritionEngine, type NutritionState } from './NutritionEngine';
 import { elevationService } from '../maps/ElevationService';
+import { useRouteStore } from '../../store/routeStore';
 
 // ── Constants ──────────────────────────────────────────────────
 
@@ -595,9 +596,15 @@ class KromiEngine {
   // ── Layer 5: Battery ─────────────────────────────────────
 
   private tickBattery(input: KromiTickInput): void {
+    // Get route remaining km from navigation state (if active)
+    const nav = useRouteStore.getState().navigation;
+    const routeRemainingKm = nav.active && nav.distanceRemaining_m > 0
+      ? nav.distanceRemaining_m / 1000
+      : null;
+
     this.cachedBattery = computeBatteryBudget(
       input.batterySoc,
-      null, // TODO: route remaining km when GPX loaded
+      routeRemainingKm,
       this.cachedTemp,
     );
   }
