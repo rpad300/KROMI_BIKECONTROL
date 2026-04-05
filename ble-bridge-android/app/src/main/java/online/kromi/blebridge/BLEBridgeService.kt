@@ -134,7 +134,10 @@ class BLEBridgeService : Service() {
                         if (uuids.contains("1818", true) && !tags.contains("GIANT")) tags.add("POWER")
                         if (name.contains("SRAM", true) || uuids.contains("4D50", true)) tags.add("SRAM")
                         if (name.contains("Di2", true) || name.contains("SHIMANO", true)
-                            || uuids.contains("6E40FEC1", true)) tags.add("DI2")
+                            || uuids.contains("5348-494D-414E", true)  // SHIMANO_BLE base
+                            || uuids.contains("18FF", true)            // E-Tube service
+                            || uuids.contains("18EF", true))           // Realtime service
+                            tags.add("DI2")
 
                         val result = JSONObject().apply {
                             put("type", "scanResult")

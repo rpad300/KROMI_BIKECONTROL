@@ -61,9 +61,14 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
       : null;
 
     if (sensorType) {
-      // External sensor → SensorManager (independent GATT)
+      // External sensor
       saveSensorDevice(sensorType, { name: device.name, address: device.address });
-      wsClient.send({ type: 'connectSensor', sensor: sensorType, address: device.address });
+      if (sensorType === 'di2') {
+        // Di2 → ShimanoProtocol (needs auth, not generic SensorManager)
+        wsClient.send({ type: 'shimanoConnect', address: device.address });
+      } else {
+        wsClient.send({ type: 'connectSensor', sensor: sensorType, address: device.address });
+      }
     } else {
       // Bike/gateway → BLEManager
       saveDevice({ name: device.name, address: device.address });

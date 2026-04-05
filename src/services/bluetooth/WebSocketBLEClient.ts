@@ -483,10 +483,15 @@ export class WebSocketBLEClient {
           di2Service.handleMessage(msg);
           break;
 
-        case 'shimanoBleLog':
+        case 'shimanoBleLog': {
           // Comprehensive BLE log from ShimanoProtocol — capture for analysis
-          console.log(`[SHIMANO_BLE] ${msg.event}: ${msg.detail}${msg.hex ? ` | ${msg.hex} (${msg.bytes}B)` : ''}`);
+          const bleMsg = `[SHIMANO] ${msg.event}: ${msg.detail}${msg.hex ? ` | ${msg.hex} (${msg.bytes}B)` : ''}`;
+          console.log(bleMsg);
+          // Send to Supabase for remote analysis
+          const dlog = (window as unknown as Record<string, (m: string, d?: unknown) => void>).__dlog;
+          if (dlog) dlog(bleMsg);
           break;
+        }
 
         case 'tpmsFront':
           store.setTPMSFront(msg.psi);
