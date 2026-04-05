@@ -22,6 +22,7 @@ export function BatteryWidget() {
   const displayRange = motorRange && motorRange > 0 ? motorRange : estimate.range_km;
   const isEstimated = estimatedModes.has(modeKey);
 
+  const di2Battery = useBikeStore((s) => s.di2_battery);
   const hasDual = bat1 > 0 || bat2 > 0;
 
   // Use individual battery data from SG cmd 0x43
@@ -72,6 +73,13 @@ export function BatteryWidget() {
             className={`h-full rounded-full transition-all duration-1000 ${barColor(soc)}`}
             style={{ width: `${Math.max(soc, 1)}%` }}
           />
+        </div>
+      )}
+
+      {/* Di2 battery */}
+      {di2Battery > 0 && (
+        <div className="mt-1.5">
+          <BatteryBar label="Di2" soc={di2Battery} health={0} wh={0} />
         </div>
       )}
 

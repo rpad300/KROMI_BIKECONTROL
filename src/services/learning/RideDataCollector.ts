@@ -19,6 +19,9 @@ export interface RideSnapshot {
   ride_duration_s: number;
   distance_km: number;
   was_overridden: boolean;
+  // Di2 / Shimano STEPS
+  di2_battery?: number;
+  shift_count?: number;
 }
 
 export interface RideSummary {
@@ -41,6 +44,9 @@ export interface RideSummary {
   tss_score: number;
   override_events: RideSnapshot[];
   created_at: Date;
+  // Di2 / Shimano STEPS
+  total_shifts?: number;
+  gear_usage_ms?: Record<number, number>;
 }
 
 const DB_NAME = 'bikecontrol';

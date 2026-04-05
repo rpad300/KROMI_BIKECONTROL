@@ -17,6 +17,7 @@ import { useLearningStore } from '../../store/learningStore';
 import { autoAssistEngine } from '../autoAssist/AutoAssistEngine';
 import { batteryEfficiencyTracker } from '../learning/BatteryEfficiencyTracker';
 import { localRideStore, type LocalSession, type LocalSnapshot, type LocalOverrideEvent, type PersistedMetrics } from './LocalRideStore';
+import { di2Service } from '../di2/Di2Service';
 
 interface SnapshotRow {
   session_id: string;
@@ -62,6 +63,9 @@ interface SnapshotRow {
   gyro_y: number;
   gyro_z: number;
   crash_magnitude: number;
+  // Shimano Di2 / STEPS
+  di2_battery: number;
+  shift_count: number;
 }
 
 export interface RideSessionState {
@@ -506,6 +510,9 @@ class RideSessionManager {
       gyro_y: bike.gyro_y,
       gyro_z: bike.gyro_z,
       crash_magnitude: bike.crash_magnitude,
+      // Shimano Di2 / STEPS
+      di2_battery: di2Service.getBattery(),
+      shift_count: di2Service.getShiftCount(),
     };
 
     this.snapshotBuffer.push(row);

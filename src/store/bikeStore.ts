@@ -57,9 +57,12 @@ interface BikeState {
   hr_zone: number;
   spo2_pct: number;  // Live SpO2 from sensor (0 = no data)
 
-  // Gear (Phase 3 - Di2)
+  // Gear (Phase 3 - Di2 / Shimano STEPS)
   gear: number;
   is_shifting: boolean;
+  di2_battery: number;
+  shift_count: number;
+  total_gears: number;
 
   // Device info
   firmware_version: string;
@@ -126,6 +129,9 @@ interface BikeState {
   setTPMSFront: (psi: number) => void;
   setTPMSRear: (psi: number) => void;
   setShifting: (v: boolean) => void;
+  setDi2Battery: (pct: number) => void;
+  setShiftCount: (n: number) => void;
+  setTotalGears: (n: number) => void;
   setBLEStatus: (status: BLEConnectionStatus) => void;
   setServiceConnected: (service: keyof BLEServiceStatus, connected: boolean) => void;
   resetSession: () => void;
@@ -184,6 +190,9 @@ export const useBikeStore = create<BikeState>((set) => ({
   spo2_pct: 0,
   gear: 0,
   is_shifting: false,
+  di2_battery: 0,
+  shift_count: 0,
+  total_gears: 12,
   firmware_version: '',
   hardware_version: '',
   software_version: '',
@@ -279,6 +288,9 @@ export const useBikeStore = create<BikeState>((set) => ({
   setTPMSRear: (psi) => set({ tpms_rear_psi: Math.round(psi * 10) / 10 }),
 
   setShifting: (v) => set({ is_shifting: v }),
+  setDi2Battery: (pct) => set({ di2_battery: pct }),
+  setShiftCount: (n) => set({ shift_count: n }),
+  setTotalGears: (n) => set({ total_gears: n }),
 
   setBLEStatus: (status) => set({ ble_status: status }),
 

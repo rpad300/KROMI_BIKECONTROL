@@ -21,6 +21,7 @@ class BLEBridgeService : Service() {
 
     lateinit var bleManager: BLEManager
     lateinit var sensorManager: SensorManager
+    lateinit var shimanoProtocol: ShimanoProtocol
     var wsServer: BridgeWebSocketServer? = null
     var phoneSensorService: PhoneSensorService? = null
 
@@ -36,6 +37,11 @@ class BLEBridgeService : Service() {
 
         sensorManager = SensorManager(this)
         sensorManager.onData = { json ->
+            wsServer?.broadcastData(json)
+        }
+
+        shimanoProtocol = ShimanoProtocol(this)
+        shimanoProtocol.onData = { json ->
             wsServer?.broadcastData(json)
         }
 
@@ -71,6 +77,7 @@ class BLEBridgeService : Service() {
 
     override fun onDestroy() {
         phoneSensorService?.stop()
+        shimanoProtocol.destroy()
         sensorManager.destroy()
         wsServer?.stop()
         bleManager.disconnect()
@@ -256,6 +263,42 @@ class BLEBridgeService : Service() {
                 // Echo to UI log via onDataReceived
                 bleManager.onDataReceived?.invoke(JSONObject()
                     .put("type", "pwaLog").put("msg", msg))
+            }
+
+            // === Shimano STEPS / Di2 ===
+            "shimanoScan" -> {
+                shimanoProtocol.scan()
+            }
+            "shimanoConnect" -> {
+                val address = json.optString("address", "")
+                if (address.isNotEmpty()) {
+                    shimanoProtocol.connect(address)
+                } else {
+                    shimanoProtocol.scan() // auto-find + connect
+                }
+            }
+            "shimanoDisconnect" -> {
+                shimanoProtocol.disconnect()
+            }
+            "shimanoBattery" -> {
+                shimanoProtocol.readBattery()
+            }
+            "shimanoGearState" -> {
+                shimanoProtocol.readGearState()
+            }
+            "shimanoGearStats" -> {
+                val stats = shimanoProtocol.getGearStats()
+                stats.put("type", "shimanoGearStats")
+                wsServer?.broadcastData(stats)
+            }
+            "shimanoResetStats" -> {
+                shimanoProtocol.resetStats()
+            }
+            "shimanoPceCommand" -> {
+                val ctrl = json.optInt("controlInfo", 0).toByte()
+                val hexData = json.optString("data", "")
+                val data = hexData.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+                shimanoProtocol.sendPceCommand(ctrl, data)
             }
         }
     }

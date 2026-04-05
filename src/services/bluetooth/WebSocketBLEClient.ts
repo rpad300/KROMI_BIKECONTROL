@@ -14,6 +14,7 @@ import { calculateZones } from '../../types/athlete.types';
 import { batteryEstimationService } from '../battery/BatteryEstimationService';
 import { calibrateFromMotorRanges } from '../battery/ConsumptionCalibration';
 import { recordBikeData, recordBatteryInfo, recordDeviceInfo, resetBikeProfile, recordMotorOdoHours, recordBatteryCapacity, recordMotorAvgCurrent, recordModeUsage, recordServiceStats } from '../sync/BikeProfileSync';
+import { di2Service } from '../di2/Di2Service';
 
 // Use 127.0.0.1 instead of localhost — Chrome Android blocks ws://localhost on HTTPS pages
 const WS_URL = 'ws://127.0.0.1:8765';
@@ -68,6 +69,8 @@ export class WebSocketBLEClient {
         this.stopReconnect();
         // Register beforeunload to auto-restore on page close/crash
         window.addEventListener('beforeunload', this.handleBeforeUnload);
+        // Inject send function into Di2Service for Shimano commands
+        di2Service.setSendFunction((msg: string) => this.ws?.send(msg));
       };
 
       this.ws.onmessage = (event) => {
@@ -459,6 +462,25 @@ export class WebSocketBLEClient {
           if (msg.firmware) store.setFirmwareVersion(msg.firmware);
           if (msg.hardware) store.setHardwareVersion(msg.hardware);
           if (msg.software) store.setSoftwareVersion(msg.software);
+          break;
+
+        // Shimano STEPS / Di2 messages — delegate to Di2Service
+        case 'shimanoConnected':
+        case 'shimanoStatus':
+        case 'shimanoBattery':
+        case 'shimanoGear':
+        case 'shimanoComponents':
+        case 'shimanoGearStats':
+        case 'shimanoPce':
+        case 'shimanoRealtime':
+        case 'shimanoError':
+        case 'shimanoFound':
+          di2Service.handleMessage(msg);
+          break;
+
+        case 'shimanoBleLog':
+          // Comprehensive BLE log from ShimanoProtocol — capture for analysis
+          console.log(`[SHIMANO_BLE] ${msg.event}: ${msg.detail}${msg.hex ? ` | ${msg.hex} (${msg.bytes}B)` : ''}`);
           break;
 
         case 'tpmsFront':

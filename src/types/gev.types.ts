@@ -81,10 +81,17 @@ export const BLE_UUIDS = {
   SRAM_WRITE: '4d500002-4745-5630-3031-e50e24dcca9e',
   SRAM_NOTIFY: '4d500003-4745-5630-3031-e50e24dcca9e',
 
-  // Shimano Di2
-  DI2_SERVICE: '6e40fec1-b5a3-f393-e0a9-e50e24dcca9e',
-  DI2_WRITE: '6e40fec2-b5a3-f393-e0a9-e50e24dcca9e',
-  DI2_NOTIFY: '6e40fec3-b5a3-f393-e0a9-e50e24dcca9e',
+  // Shimano Di2 / STEPS — proprietary UUIDs (base: SHIMANO_BLE)
+  DI2_SERVICE: '000018ff-5348-494d-414e-4f5f424c4500',        // E-Tube main
+  DI2_AUTH_CONTROL: '00002af3-5348-494d-414e-4f5f424c4500',   // Auth command
+  DI2_AUTH_NONCE: '00002af4-5348-494d-414e-4f5f424c4500',     // Auth challenge
+  DI2_PCE_RESPONSE: '00002af9-5348-494d-414e-4f5f424c4500',   // PCE response (notify)
+  DI2_PCE_COMMAND: '00002afa-5348-494d-414e-4f5f424c4500',    // PCE command (write)
+  DI2_INFO_SERVICE: '000018fe-5348-494d-414e-4f5f424c4500',   // Info service
+  DI2_REALTIME_SERVICE: '000018ef-5348-494d-414e-4f5f424c4500', // Real-time / D-FLY
+  DI2_RT_STATUS: '00002ac0-5348-494d-414e-4f5f424c4500',      // Status (I,R)
+  DI2_RT_NOTIFY: '00002ac1-5348-494d-414e-4f5f424c4500',      // Live data (N)
+  DI2_RT_COMPS: '00002ac3-5348-494d-414e-4f5f424c4500',       // Component slots (I,R)
 
   // Device Information Service (0x180A)
   DEVICE_INFO_SERVICE: '0000180a-0000-1000-8000-00805f9b34fb',

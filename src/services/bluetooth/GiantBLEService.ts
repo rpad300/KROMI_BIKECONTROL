@@ -112,35 +112,17 @@ class GiantBLEService {
     }
   }
 
-  /** Connect to a Shimano Di2 wireless unit (EW-WU111) */
+  /**
+   * Connect to Shimano Di2 / STEPS via WebSocket bridge.
+   * The APK handles Shimano auth (Xorshift128 + AES-128-ECB) and PCE protocol.
+   * Di2Service receives gear/battery/shift data via WebSocket messages.
+   */
   async connectDi2(): Promise<void> {
-    try {
-      this.di2Device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: [BLE_UUIDS.DI2_SERVICE] }],
-        optionalServices: [BLE_UUIDS.DI2_SERVICE],
-      });
-
-      const server = await this.di2Device.gatt!.connect();
-      const service = await server.getPrimaryService(BLE_UUIDS.DI2_SERVICE);
-      const char = await service.getCharacteristic(BLE_UUIDS.DI2_NOTIFY);
-
-      await char.startNotifications();
-      char.addEventListener('characteristicvaluechanged', (e) => {
-        const value = (e.target as BluetoothRemoteGATTCharacteristic).value!;
-        if (value.byteLength >= 5) {
-          const gear = value.getUint8(4);
-          if (gear >= 1 && gear <= 12) {
-            useBikeStore.getState().setGear(gear);
-          }
-        }
-      });
-
-      useBikeStore.getState().setServiceConnected('di2', true);
-      console.log('[BLE] Di2 connected:', this.di2Device.name);
-    } catch (err) {
-      console.warn('[BLE] Di2 connection failed:', err);
-      throw err;
-    }
+    // Shimano connection is handled by ShimanoProtocol in the APK.
+    // Send scan command via WebSocket — Di2Service handles the rest.
+    const { di2Service } = await import('../di2/Di2Service');
+    di2Service.scanAndConnect();
+    console.log('[BLE] Di2 scan initiated via WebSocket bridge');
   }
 
   /** Connect to a SRAM AXS device (Flight Attendant) */

@@ -30,9 +30,9 @@ class SensorManager(private val context: Context) {
         val HR_MEASUREMENT = UUID.fromString("00002a37-0000-1000-8000-00805f9b34fb")
         val POWER_SERVICE = UUID.fromString("00001818-0000-1000-8000-00805f9b34fb")
         val POWER_MEASUREMENT = UUID.fromString("00002a63-0000-1000-8000-00805f9b34fb")
-        // Di2 E-Tube (EW-WU111)
-        val DI2_SERVICE = UUID.fromString("6e40fec1-b5a3-f393-e0a9-e50e24dcca9e")
-        val DI2_NOTIFY = UUID.fromString("6e40fec2-b5a3-f393-e0a9-e50e24dcca9e")
+        // Di2 E-Tube — Shimano proprietary (SHIMANO_BLE base)
+        val DI2_SERVICE = UUID.fromString("000018FF-5348-494D-414E-4F5F424C4500")
+        val DI2_NOTIFY = UUID.fromString("00002AF9-5348-494D-414E-4F5F424C4500")
         // SRAM AXS
         val SRAM_SERVICE = UUID.fromString("4d500001-4745-5630-3031-e50e24dcca9e")
         val SRAM_NOTIFY = UUID.fromString("4d500003-4745-5630-3031-e50e24dcca9e")
