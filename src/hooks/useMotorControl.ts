@@ -9,7 +9,6 @@ import { tuningIntelligence, type TuningInput } from '../services/motor/TuningIn
 import { setAdvancedTuning, isTuningAvailable } from '../services/bluetooth/BLEBridge';
 import { kromiEngine } from '../services/intelligence/KromiEngine';
 import { useNutritionStore } from '../store/nutritionStore';
-import { useTuningStore } from '../store/tuningStore';
 import { AssistMode } from '../types/bike.types';
 
 const TICK_INTERVAL_MS = 1000;
@@ -91,14 +90,8 @@ export function useMotorControl() {
         if (intelligence.active) {
           // ── MODE FEEDBACK: rider left POWER → capture WHY ──
           if (lastKromiOutput && bike.assist_mode >= AssistMode.ECO && bike.assist_mode <= AssistMode.SPORT) {
-            // Read actual tuning level for the target mode
-            const tuning = useTuningStore.getState().current;
-            const modeKey = ['', 'eco', 'tour', 'active', 'sport'][bike.assist_mode] as keyof typeof tuning;
-            const tuningLevel = tuning[modeKey] ?? 2;
-
             const feedback = kromiEngine.getLearning().recordModeExit({
               targetMode: bike.assist_mode,
-              targetTuningLevel: tuningLevel,
               gradient: lastKromiOutput.gradient,
               hr_zone: lastKromiOutput.hr_zone,
               speed_kmh: lastKromiOutput.speed,

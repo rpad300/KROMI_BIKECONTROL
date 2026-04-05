@@ -59,38 +59,30 @@ export interface ModeFeedbackEvent {
   duration_s: number | null;
 }
 
-/**
- * Approximate support % for each Giant assist mode × tuning level.
- * Source: Giant SyncDrive Pro specs + observed behavior.
- * Key: `mode:tuning_level` where tuning 1=low, 2=mid, 3=high
- * These are fallback values — real support is measured from motor current.
- */
-const MODE_SUPPORT_APPROX: Record<number, Record<number, number>> = {
-  1: { 1: 50, 2: 70, 3: 100 },   // ECO
-  2: { 1: 100, 2: 120, 3: 150 },  // TOUR
-  3: { 1: 140, 2: 180, 3: 220 },  // ACTIVE
-  4: { 1: 220, 2: 280, 3: 340 },  // SPORT
+/** Fallback support % per mode (used when RideControl config not set) */
+const MODE_SUPPORT_FALLBACK: Record<number, number> = {
+  1: 70,   // ECO
+  2: 120,  // TOUR
+  3: 180,  // ACTIVE
+  4: 280,  // SPORT
 };
 
 /**
  * Get support % for a mode. Uses rider's RideControl config if available,
  * falls back to approximate table.
  */
-function getModeSupportApprox(mode: number, tuningLevel?: number): number {
+function getModeSupportApprox(mode: number): number {
   // Try to read from bike config (rider's actual RideControl values)
   try {
     const bike = safeBikeConfig(useSettingsStore.getState().bikeConfig);
     const modeKey = ['', 'eco', 'tour', 'active', 'sport'][mode] as 'eco' | 'tour' | 'active' | 'sport' | undefined;
     if (modeKey && bike.ridecontrol_modes[modeKey]) {
-      const levelKey = tuningLevel === 1 ? 'low' : tuningLevel === 3 ? 'high' : 'mid';
-      return bike.ridecontrol_modes[modeKey][levelKey].support_pct;
+      return bike.ridecontrol_modes[modeKey].support_pct;
     }
   } catch { /* store not ready */ }
 
-  // Fallback to approximate table
-  const levels = MODE_SUPPORT_APPROX[mode];
-  if (!levels) return 150;
-  return levels[tuningLevel ?? 2] ?? levels[2] ?? 150;
+  // Fallback
+  return MODE_SUPPORT_FALLBACK[mode] ?? 150;
 }
 
 interface CPDataPoint {
@@ -418,7 +410,6 @@ export class RiderLearning {
    */
   recordModeExit(context: {
     targetMode: AssistMode;
-    targetTuningLevel?: number;  // 1-3 from tuningStore, if available
     gradient: number;
     hr_zone: number;
     speed_kmh: number;
@@ -428,7 +419,7 @@ export class RiderLearning {
     kromi_torque_nm: number;
   }): ModeFeedbackEvent {
     const gradBucket = this.gradientBucket(context.gradient);
-    const targetSupport = getModeSupportApprox(context.targetMode, context.targetTuningLevel);
+    const targetSupport = getModeSupportApprox(context.targetMode);
     const correction = targetSupport - context.kromi_support_pct;
 
     const event: ModeFeedbackEvent = {

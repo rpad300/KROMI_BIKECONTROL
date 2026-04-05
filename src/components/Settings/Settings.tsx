@@ -672,22 +672,11 @@ function RideControlConfig() {
     { key: 'active' as const, label: 'ACTIVE', color: '#fbbf24' },
     { key: 'sport' as const, label: 'SPORT', color: '#ff716c' },
   ];
-  const levelNames = [
-    { key: 'low' as const, label: 'Low' },
-    { key: 'mid' as const, label: 'Mid' },
-    { key: 'high' as const, label: 'High' },
-  ];
 
-  const updateMode = (mode: string, level: string, field: string, value: number) => {
+  const updateMode = (mode: string, field: string, value: number) => {
     const updated = {
       ...modes,
-      [mode]: {
-        ...modes[mode as keyof typeof modes],
-        [level]: {
-          ...modes[mode as keyof typeof modes][level as 'low' | 'mid' | 'high'],
-          [field]: value,
-        },
-      },
+      [mode]: { ...modes[mode as keyof typeof modes], [field]: value },
     };
     updateBikeConfig({ ridecontrol_modes: updated });
   };
@@ -697,33 +686,34 @@ function RideControlConfig() {
       <SectionLabel>RideControl — Configuração por Modo</SectionLabel>
       <Card>
         <div style={{ fontSize: '10px', color: '#777575', marginBottom: '8px' }}>
-          Copia os valores do teu RideControl app. O KROMI usa estes dados para saber exactamente o que cada modo faz e aprender melhor com as tuas preferencias.
+          Copia os valores do teu RideControl app. O KROMI usa estes dados para aprender melhor com as tuas preferencias.
         </div>
+        {/* Header */}
+        <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr 1fr', gap: '4px', fontSize: '9px', color: '#777575', fontWeight: 600, marginBottom: '4px' }}>
+          <div />
+          <div style={{ textAlign: 'center' }}>Support %</div>
+          <div style={{ textAlign: 'center' }}>Torque Nm</div>
+          <div style={{ textAlign: 'center' }}>Launch</div>
+        </div>
+        {/* Mode rows */}
         {modeNames.map(({ key, label, color }) => (
-          <div key={key} style={{ marginBottom: '12px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 700, color, marginBottom: '4px' }}>{label}</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '50px 1fr 1fr 1fr', gap: '4px', fontSize: '10px' }}>
-              <div></div>
-              {levelNames.map(l => (
-                <div key={l.key} style={{ textAlign: 'center', color: '#777575', fontWeight: 600 }}>{l.label}</div>
-              ))}
-              {/* Support % */}
-              <div style={{ color: '#adaaaa', alignSelf: 'center' }}>S %</div>
-              {levelNames.map(l => (
-                <input key={`${key}-${l.key}-s`} type="number" value={modes[key][l.key].support_pct}
-                  onChange={(e) => updateMode(key, l.key, 'support_pct', Number(e.target.value))}
-                  style={{ width: '100%', backgroundColor: '#262626', color: 'white', border: 'none', textAlign: 'center', padding: '6px 2px', fontSize: '12px', fontWeight: 700, borderRadius: '2px' }}
-                />
-              ))}
-              {/* Torque Nm */}
-              <div style={{ color: '#adaaaa', alignSelf: 'center' }}>T Nm</div>
-              {levelNames.map(l => (
-                <input key={`${key}-${l.key}-t`} type="number" value={modes[key][l.key].torque_nm}
-                  onChange={(e) => updateMode(key, l.key, 'torque_nm', Number(e.target.value))}
-                  style={{ width: '100%', backgroundColor: '#262626', color: 'white', border: 'none', textAlign: 'center', padding: '6px 2px', fontSize: '12px', fontWeight: 700, borderRadius: '2px' }}
-                />
-              ))}
+          <div key={key} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr 1fr', gap: '4px', marginBottom: '6px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div style={{ width: '6px', height: '6px', borderRadius: '2px', backgroundColor: color }} />
+              <span style={{ fontSize: '11px', fontWeight: 700, color }}>{label}</span>
             </div>
+            <input type="number" value={modes[key].support_pct}
+              onChange={(e) => updateMode(key, 'support_pct', Number(e.target.value))}
+              style={{ width: '100%', backgroundColor: '#262626', color: 'white', border: 'none', textAlign: 'center', padding: '6px 2px', fontSize: '12px', fontWeight: 700, borderRadius: '2px' }}
+            />
+            <input type="number" value={modes[key].torque_nm}
+              onChange={(e) => updateMode(key, 'torque_nm', Number(e.target.value))}
+              style={{ width: '100%', backgroundColor: '#262626', color: 'white', border: 'none', textAlign: 'center', padding: '6px 2px', fontSize: '12px', fontWeight: 700, borderRadius: '2px' }}
+            />
+            <input type="number" value={modes[key].launch}
+              onChange={(e) => updateMode(key, 'launch', Number(e.target.value))}
+              style={{ width: '100%', backgroundColor: '#262626', color: 'white', border: 'none', textAlign: 'center', padding: '6px 2px', fontSize: '12px', fontWeight: 700, borderRadius: '2px' }}
+            />
           </div>
         ))}
       </Card>
