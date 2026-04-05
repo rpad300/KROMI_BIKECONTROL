@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useBikeStore } from '../store/bikeStore';
 import { useMapStore } from '../store/mapStore';
 import { useAutoAssistStore } from '../store/autoAssistStore';
-import { useSettingsStore } from '../store/settingsStore';
+import { useSettingsStore, safeBikeConfig } from '../store/settingsStore';
 import { useIntelligenceStore } from '../store/intelligenceStore';
 import { autoAssistEngine } from '../services/autoAssist/AutoAssistEngine';
 import { tuningIntelligence, type TuningInput } from '../services/motor/TuningIntelligence';
@@ -15,67 +15,136 @@ const TICK_INTERVAL_MS = 1000;
 // Track last sent values to avoid redundant writes
 let lastAdvancedTuning = { support: -1, torque: -1, launch: -1 };
 
+// Motor tuning ranges (from Giant RideControl → SyncDrive Pro)
+const SUPPORT_MIN = 50;   // 50%
+const SUPPORT_MAX = 350;  // 350%
+const TORQUE_MIN = 20;    // 20 Nm
+const TORQUE_MAX = 85;    // 85 Nm
+const LAUNCH_MIN = 1;     // level 1
+const LAUNCH_MAX = 7;     // level 7
+
+// Map a real value to wire 0-15
+function toWire(value: number, min: number, max: number): number {
+  const clamped = Math.max(min, Math.min(max, value));
+  return Math.round(((clamped - min) / (max - min)) * 15);
+}
+
 /**
- * KROMI Score: 0-100. Crosses ALL rider inputs into a single "need motor" score.
- * Higher = rider needs more motor assist.
+ * KROMI Physics Engine — calculates exact motor parameters from real data.
  *
- * Considers: gradient, HR, cadence, gear, speed — weighted together.
- * No battery constraint — POWER mode means rider wants full KROMI control.
+ * Uses: gradient, speed, cadence, gear ratio, rider weight, bike weight,
+ * HR zones, wheel circumference — to compute the physics of what the
+ * rider needs from the motor.
+ *
+ * Returns: support % (50-350), torque Nm (20-85), launch level (1-7)
  */
-function computeKromiScore(input: TuningInput): number {
-  let score = 40; // baseline: neutral
+function computeKromiPhysics(input: TuningInput): { supportPct: number; torqueNm: number; launchLvl: number; score: number } {
+  const settings = useSettingsStore.getState();
+  const rider = settings.riderProfile;
+  const bike = safeBikeConfig(settings.bikeConfig);
 
-  // ── GRADIENT (biggest factor: -25 to +30) ──
-  if (input.gradient > 10) score += 30;       // steep climb: max motor
-  else if (input.gradient > 6) score += 22;   // hard climb
-  else if (input.gradient > 3) score += 15;   // moderate climb
-  else if (input.gradient > 1) score += 5;    // slight incline
-  else if (input.gradient < -8) score -= 25;  // steep descent: minimal motor
-  else if (input.gradient < -4) score -= 18;  // descent
-  else if (input.gradient < -1) score -= 10;  // slight descent
+  const riderWeightKg = rider.weight_kg || 80;
+  const bikeWeightKg = bike.weight_kg || 24;
+  const totalMass = riderWeightKg + bikeWeightKg;
+  const wheelCircumM = (bike.wheel_circumference_mm || 2290) / 1000;
+  const speedLimitKmh = bike.speed_limit_kmh || 25;
+  const chainring = parseInt(bike.chainring_teeth?.replace(/\D/g, '') || '34') || 34;
+  const sprockets = bike.cassette_sprockets?.length >= 2
+    ? [...bike.cassette_sprockets].sort((a, b) => b - a) // gear 1 = biggest sprocket
+    : [51, 45, 39, 34, 30, 26, 23, 20, 17, 15, 13, 10];
 
-  // ── HR (effort indicator: -15 to +20) ──
+  const speedMs = input.speed / 3.6;
+  const gradientRad = Math.atan(input.gradient / 100);
+
+  // ── 1. RESISTANCE FORCES (Newtons) ──
+  const gravity = totalMass * 9.81 * Math.sin(gradientRad);  // climbing force
+  const rolling = totalMass * 9.81 * 0.006 * Math.cos(gradientRad); // Crr ≈ 0.006 MTB
+  const aero = 0.5 * 1.2 * 0.6 * speedMs * speedMs; // CdA ≈ 0.6 for MTB upright
+  const totalResistance = gravity + rolling + aero; // can be negative on descent
+
+  // ── 2. POWER NEEDED to maintain speed (Watts) ──
+  const powerNeeded = Math.max(0, totalResistance * speedMs);
+
+  // ── 3. RIDER POWER ESTIMATE (from cadence + gear ratio) ──
+  let riderPowerW = 0;
+  if (input.cadence > 0 && input.currentGear > 0) {
+    const sprocketIdx = input.currentGear - 1;
+    const sprocket = sprocketIdx < sprockets.length ? sprockets[sprocketIdx]! : 20;
+    const gearRatio = chainring / sprocket;
+    // Pedal torque estimate: ~1.2 Nm per kg at moderate effort, scaled by cadence
+    // At 60rpm sweet spot ≈ baseline, lower cadence = more torque per stroke
+    const cadenceFactor = input.cadence < 60 ? 1.2 : input.cadence < 80 ? 1.0 : 0.85;
+    const pedalTorqueNm = riderWeightKg * 0.015 * cadenceFactor * gearRatio;
+    riderPowerW = pedalTorqueNm * (2 * Math.PI * input.cadence / 60);
+    // Sanity: use actual power if available and plausible
+    if (input.riderPower > 0 && input.riderPower < 500) {
+      riderPowerW = input.riderPower;
+    }
+  }
+
+  // ── 4. MOTOR POWER GAP ──
+  const motorPowerNeeded = Math.max(0, powerNeeded - riderPowerW);
+
+  // ── 5. HR EFFORT MODIFIER ──
+  // If HR is high, rider is struggling → increase support
+  // If HR is low, rider is comfortable → decrease support
+  let hrModifier = 1.0;
   if (input.hr > 0) {
-    if (input.hr > 160) score += 20;         // very high: rider struggling
-    else if (input.hr > 140) score += 12;    // high effort
-    else if (input.hr > 120) score += 5;     // moderate effort
-    else if (input.hr < 90) score -= 15;     // very low: rider coasting
-    else if (input.hr < 110) score -= 8;     // comfortable
+    if (input.hr > 160) hrModifier = 1.4;       // struggling hard
+    else if (input.hr > 140) hrModifier = 1.2;  // high effort
+    else if (input.hr > 120) hrModifier = 1.05; // moderate
+    else if (input.hr < 90) hrModifier = 0.6;   // very comfortable
+    else if (input.hr < 110) hrModifier = 0.8;  // comfortable
   }
 
-  // ── CADENCE (pedalling efficiency: -10 to +15) ──
-  if (input.cadence > 0) {
-    if (input.cadence < 40) score += 15;      // grinding hard: needs help
-    else if (input.cadence < 55) score += 8;  // low cadence
-    else if (input.cadence > 95) score -= 10; // spinning easy
-    else if (input.cadence > 80) score -= 3;  // efficient
-    // 55-80: sweet spot, no change
+  // ── 6. SPEED LIMIT TAPER ──
+  // Gradually reduce as approaching e-bike speed limit
+  let speedTaper = 1.0;
+  if (input.speed > speedLimitKmh - 3) {
+    speedTaper = Math.max(0.1, (speedLimitKmh - input.speed) / 3);
   }
 
-  // ── GEAR POSITION (effort proxy: -8 to +10) ──
-  if (input.currentGear > 0) {
-    const gearPct = (input.currentGear - 1) / 11; // 0=easiest, 1=hardest (12-speed)
-    if (gearPct > 0.75) score += 10;     // heavy gear: hard effort
-    else if (gearPct > 0.5) score += 4;  // mid-heavy
-    else if (gearPct < 0.2) score -= 8;  // very light gear: easy
-    else if (gearPct < 0.35) score -= 3; // light
+  // ── 7. CALCULATE SUPPORT % ──
+  // Support = ratio of motor power to rider power
+  let supportPct = SUPPORT_MIN; // baseline minimum
+  if (riderPowerW > 10) {
+    const rawSupport = (motorPowerNeeded / riderPowerW) * 100 * hrModifier * speedTaper;
+    supportPct = Math.max(SUPPORT_MIN, Math.min(SUPPORT_MAX, rawSupport));
+  } else if (powerNeeded > 20) {
+    // Not pedalling but needs power (steep start) → high support
+    supportPct = Math.min(SUPPORT_MAX, 200 * hrModifier);
   }
 
-  // ── SPEED (context: -5 to +5) ──
-  if (input.speed > 25) score -= 5;       // high speed: motor cuts at 25, reduce
-  else if (input.speed < 5 && input.speed > 0 && input.gradient > 2) score += 5; // slow on climb: help
-
-  // ── COMBINED PATTERNS ──
-  // Grinding: heavy gear + low cadence + climb = emergency boost
-  if (input.currentGear > 8 && input.cadence > 0 && input.cadence < 50 && input.gradient > 3) {
-    score += 10; // extra boost for grinding uphill
-  }
-  // Coasting: light gear + high cadence + flat/descent = save motor
-  if (input.currentGear > 0 && input.currentGear < 5 && input.cadence > 80 && input.gradient < 1) {
-    score -= 8; // spinning easy on flat
+  // Descent: minimal support
+  if (input.gradient < -3) {
+    supportPct = Math.min(supportPct, SUPPORT_MIN + 20);
   }
 
-  return Math.max(0, Math.min(100, score));
+  // ── 8. CALCULATE TORQUE Nm ──
+  // Based on resistance + gradient
+  let torqueNm = TORQUE_MIN;
+  if (totalResistance > 0) {
+    // Motor torque needed at wheel
+    const wheelRadius = wheelCircumM / (2 * Math.PI);
+    const motorTorqueNeeded = (totalResistance * wheelRadius) * hrModifier * speedTaper;
+    torqueNm = Math.max(TORQUE_MIN, Math.min(TORQUE_MAX, motorTorqueNeeded));
+  }
+  // Grinding uphill: boost torque
+  if (input.cadence > 0 && input.cadence < 50 && input.gradient > 3) {
+    torqueNm = Math.min(TORQUE_MAX, torqueNm * 1.3);
+  }
+
+  // ── 9. CALCULATE LAUNCH ──
+  let launchLvl = 3; // neutral
+  if (input.speed < 3 && input.gradient > 5) launchLvl = 7; // steep hill start
+  else if (input.speed < 3 && input.gradient > 2) launchLvl = 5; // hill start
+  else if (input.speed < 5) launchLvl = 4; // normal start
+  else if (input.speed > 20) launchLvl = 1; // cruising, no launch needed
+
+  // ── 10. OVERALL SCORE for logging ──
+  const score = Math.round(((supportPct - SUPPORT_MIN) / (SUPPORT_MAX - SUPPORT_MIN)) * 100);
+
+  return { supportPct, torqueNm, launchLvl, score };
 }
 
 // Simple GPS-based gradient from altitude changes over time
@@ -200,29 +269,22 @@ export function useMotorControl() {
       const decision = tuningIntelligence.evaluate(input);
       useIntelligenceStore.getState().setDecision(decision);
 
-      // === KROMI Direct Decision — crosses ALL inputs ===
-      // Score 0-100 → map to 0-15 for support, torque, launch
-      const kromiScore = computeKromiScore(input);
-
-      // Map score to 16-level values (0=min, 15=max)
-      const support = Math.round((kromiScore / 100) * 15);
-      const torque = Math.round((kromiScore / 100) * 15);
-      // Launch: boost on low speed climbs, reduce at high speed
-      const launchScore = Math.max(0, Math.min(100,
-        kromiScore + (input.speed < 5 && input.gradient > 2 ? 20 : 0) - (input.speed > 20 ? 15 : 0)
-      ));
-      const launch = Math.round((launchScore / 100) * 15);
+      // === KROMI Physics Engine — calculates exact motor parameters ===
+      const physics = computeKromiPhysics(input);
+      const support = toWire(physics.supportPct, SUPPORT_MIN, SUPPORT_MAX);
+      const torque = toWire(physics.torqueNm, TORQUE_MIN, TORQUE_MAX);
+      const launch = toWire(physics.launchLvl, LAUNCH_MIN, LAUNCH_MAX);
 
       // Log every 10s
       if (Date.now() % 10000 < 1100) {
-        dlog?.(`[KROMI] score=${kromiScore} → S=${support}/15 T=${torque}/15 L=${launch}/15 | grad=${input.gradient.toFixed(1)} gear=${input.currentGear} spd=${input.speed.toFixed(0)} cad=${input.cadence} hr=${input.hr}`);
+        dlog?.(`[KROMI] support=${physics.supportPct.toFixed(0)}%(${support}/15) torque=${physics.torqueNm.toFixed(0)}Nm(${torque}/15) launch=${physics.launchLvl}(${launch}/15) | grad=${input.gradient.toFixed(1)} gear=${input.currentGear} spd=${input.speed.toFixed(0)} cad=${input.cadence} hr=${input.hr} score=${physics.score}`);
       }
 
       // === Execute: Advanced tuning — 16 levels, ONLY POWER mode ===
       if (isTuningAvailable()) {
         const last = lastAdvancedTuning;
         if (support !== last.support || torque !== last.torque || launch !== last.launch) {
-          dlog?.(`[KROMI] POWER → support=${support} torque=${torque} launch=${launch} (score=${kromiScore}) | grad=${input.gradient.toFixed(1)} gear=${input.currentGear} spd=${input.speed.toFixed(0)} cad=${input.cadence} hr=${input.hr}`);
+          dlog?.(`[KROMI] → S=${support}/15(${physics.supportPct.toFixed(0)}%) T=${torque}/15(${physics.torqueNm.toFixed(0)}Nm) L=${launch}/15 | grad=${input.gradient.toFixed(1)} gear=${input.currentGear} spd=${input.speed.toFixed(0)} cad=${input.cadence} hr=${input.hr}`);
           setAdvancedTuning({
             powerSupport: support,
             powerTorque: torque,
