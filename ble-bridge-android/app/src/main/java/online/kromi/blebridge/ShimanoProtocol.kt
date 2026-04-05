@@ -599,14 +599,58 @@ class ShimanoProtocol(private val context: Context) {
 
     private fun parseRealtimeNotify(data: ByteArray) {
         val hex = data.joinToString("") { "%02x".format(it) }
-        Log.d(TAG, "RT Notify: $hex")
 
-        // Forward raw + try to extract gear info
-        onData?.invoke(JSONObject().apply {
-            put("type", "shimanoRealtime")
-            put("hex", hex)
-            put("length", data.size)
-        })
+        // 17-byte packet: gear data
+        // Format: 00 00 03 FF FF [GEAR] [TOTAL_GEARS] 80 80 80 00 EE 12 FF FF 15 00
+        //         byte 0-4: header    byte 5: gear    byte 6: total (0x0C=12)
+        if (data.size >= 7 && data[0].toInt() == 0x00 && data[1].toInt() == 0x00) {
+            val gear = data[5].toInt() and 0xFF
+            val total = data[6].toInt() and 0xFF
+
+            if (gear in 1..total && total in 1..24) {
+                totalGears = total
+
+                if (gear != currentGear) {
+                    val oldGear = currentGear
+                    currentGear = gear
+                    shiftCount++
+                    gearHistory.add(Pair(System.currentTimeMillis(), gear))
+
+                    val direction = if (gear > oldGear) "up" else "down"
+                    bleLog("GEAR_CHANGE", "$oldGear → $gear ($direction) total=$total shifts=$shiftCount")
+
+                    onData?.invoke(JSONObject().apply {
+                        put("type", "shimanoGear")
+                        put("gear", gear)
+                        put("previousGear", oldGear)
+                        put("totalGears", total)
+                        put("shiftCount", shiftCount)
+                        put("direction", direction)
+                    })
+                }
+                // Don't spam logs for same gear — only log changes
+                return
+            }
+        }
+
+        // 3-byte packet: heartbeat (04 FF FF)
+        if (data.size == 3 && data[0].toInt() and 0xFF == 0x04) {
+            // Heartbeat — ignore silently
+            return
+        }
+
+        // 6-byte packet: shift event (06 42 00 00 00 03)
+        if (data.size == 6 && data[0].toInt() and 0xFF == 0x06) {
+            bleLog("SHIFT_EVENT", "raw", data)
+            onData?.invoke(JSONObject().apply {
+                put("type", "shimanoShiftEvent")
+                put("hex", hex)
+            })
+            return
+        }
+
+        // Unknown format — log for analysis
+        bleLog("RT_UNKNOWN", "len=${data.size}", data)
     }
 
     // ══════════════════════════════════════════

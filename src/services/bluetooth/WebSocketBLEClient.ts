@@ -15,6 +15,7 @@ import { batteryEstimationService } from '../battery/BatteryEstimationService';
 import { calibrateFromMotorRanges } from '../battery/ConsumptionCalibration';
 import { recordBikeData, recordBatteryInfo, recordDeviceInfo, resetBikeProfile, recordMotorOdoHours, recordBatteryCapacity, recordMotorAvgCurrent, recordModeUsage, recordServiceStats } from '../sync/BikeProfileSync';
 import { di2Service } from '../di2/Di2Service';
+import { shiftMotorInhibit } from '../di2/ShiftMotorInhibit';
 
 // Use 127.0.0.1 instead of localhost — Chrome Android blocks ws://localhost on HTTPS pages
 const WS_URL = 'ws://127.0.0.1:8765';
@@ -71,6 +72,8 @@ export class WebSocketBLEClient {
         window.addEventListener('beforeunload', this.handleBeforeUnload);
         // Inject send function into Di2Service for Shimano commands
         di2Service.setSendFunction((msg: string) => this.ws?.send(msg));
+        // Initialize motor inhibit during gear shifts (ECO during shift, resume after)
+        shiftMotorInhibit.initialize();
       };
 
       this.ws.onmessage = (event) => {

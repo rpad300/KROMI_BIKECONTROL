@@ -187,11 +187,14 @@ class Di2Service {
         this.state.totalGears = totalGears;
         this.state.shiftCount = shiftCount;
 
-        // Update store
+        // Update store — this triggers GearEfficiencyEngine + ShiftMotorInhibit
         const store = useBikeStore.getState();
         store.setGear(gear);
         store.setShiftCount(shiftCount);
         store.setTotalGears(totalGears);
+        // Brief shifting flag for motor inhibit
+        store.setShifting(true);
+        setTimeout(() => useBikeStore.getState().setShifting(false), 300);
 
         // Record shift event
         const shiftEvent: ShiftEvent = {
