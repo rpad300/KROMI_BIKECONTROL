@@ -45,9 +45,11 @@ object GEVCrypto {
             val key = SecretKeySpec(AES_KEYS[keyIndex], "AES")
             val cipher = Cipher.getInstance("AES/ECB/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, key)
-            cipher.doFinal(padded)
+            val result = cipher.doFinal(padded)
+            Log.d(TAG, "Encrypt OK: cmd=%02X key=%d len=${data.size}→${result.size}".format(data[0].toInt() and 0xFF, keyIndex))
+            result
         } catch (e: Exception) {
-            Log.e(TAG, "Encrypt failed (key=$keyIndex): ${e.message}")
+            Log.e(TAG, "Encrypt FAILED (key=$keyIndex cmd=%02X): ${e.message}".format(data[0].toInt() and 0xFF))
             data
         }
     }
@@ -57,9 +59,11 @@ object GEVCrypto {
             val key = SecretKeySpec(AES_KEYS[keyIndex], "AES")
             val cipher = Cipher.getInstance("AES/ECB/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, key)
-            cipher.doFinal(data)
+            val result = cipher.doFinal(data)
+            Log.d(TAG, "Decrypt OK: resp=%02X key=%d len=${data.size}".format(result[0].toInt() and 0xFF, keyIndex))
+            result
         } catch (e: Exception) {
-            Log.e(TAG, "Decrypt failed (key=$keyIndex): ${e.message}")
+            Log.e(TAG, "Decrypt FAILED (key=$keyIndex): ${e.message}")
             data
         }
     }

@@ -80,6 +80,7 @@ class KromiCore(private val bleManager: BLEManager) {
 
     // W' Balance (Skiba)
     private var wPrimeBalance = 15000.0
+    private var prevWPrimeState = "green" // track transitions for logging
 
     // HR history for drift detection (10 min, sampled every 5s)
     private data class HRSample(val ts: Long, val hr: Int, val gradient: Double, val speed: Double)
@@ -160,7 +161,7 @@ class KromiCore(private val bleManager: BLEManager) {
     // ═════════════════════════════════════════════════════════
 
     fun updateParams(json: JSONObject) {
-        Log.d(TAG, "◆ PWA params update: crr=${json.optDouble("crr", -1.0)} wind=${json.optDouble("wind_component_ms", -1.0)} rho=${json.optDouble("air_density", -1.0)} bat×${json.optDouble("battery_factor", -1.0)} cp=${json.optDouble("cp_effective", -1.0)} glyc×${json.optDouble("glycogen_cp_factor", -1.0)}")
+        Log.d(TAG, "◆ PWA params update: crr=${json.optDouble("crr", -1.0)} wind=${json.optDouble("wind_component_ms", -1.0)} rho=${json.optDouble("air_density", -1.0)} bat×${json.optDouble("battery_factor", -1.0)} cp=${json.optDouble("cp_effective", -1.0)} glyc×${json.optDouble("glycogen_cp_factor", -1.0)} route=${json.optDouble("route_remaining_km", -1.0)}km")
         crr = json.optDouble("crr", crr)
         windComponent = json.optDouble("wind_component_ms", windComponent)
         airDensity = json.optDouble("air_density", airDensity)
@@ -171,6 +172,13 @@ class KromiCore(private val bleManager: BLEManager) {
         formMultiplier = json.optDouble("form_multiplier", formMultiplier)
         glycogenCpFactor = json.optDouble("glycogen_cp_factor", glycogenCpFactor)
         routeRemainingKm = json.optDouble("route_remaining_km", routeRemainingKm)
+
+        // Validate ranges — log warnings for out-of-bounds values
+        if (batteryFactor !in 0.05..1.1) Log.w(TAG, "⚠ PARAM battery_factor=$batteryFactor OUT OF RANGE [0.05-1.1]")
+        if (cpWatts !in 30.0..500.0) Log.w(TAG, "⚠ PARAM cp_effective=$cpWatts OUT OF RANGE [30-500]")
+        if (glycogenCpFactor !in 0.5..1.1) Log.w(TAG, "⚠ PARAM glycogen_cp_factor=$glycogenCpFactor OUT OF RANGE [0.5-1.1]")
+        if (formMultiplier !in 0.5..1.5) Log.w(TAG, "⚠ PARAM form_multiplier=$formMultiplier OUT OF RANGE [0.5-1.5]")
+        if (crr !in 0.001..0.05) Log.w(TAG, "⚠ PARAM crr=$crr OUT OF RANGE [0.001-0.05]")
 
         json.optJSONObject("pre_adjust")?.let {
             preAdjustSupport = it.optDouble("support", 0.0)
@@ -254,6 +262,13 @@ class KromiCore(private val bleManager: BLEManager) {
         val cpEff = cpWatts * glycogenCpFactor
         updateWPrime(Phuman, cpEff, 1.0) // dt=1s
         val wPrimePct = wPrimeBalance / wPrimeTotal
+
+        // Log W' state transitions
+        val wState = when { wPrimePct < 0.30 -> "CRITICAL"; wPrimePct < 0.70 -> "AMBER"; else -> "green" }
+        if (wState != prevWPrimeState) {
+            Log.w(TAG, "⚠ W' TRANSITION: $prevWPrimeState → $wState (${(wPrimePct * 100).roundToInt()}%) CP_eff=${cpEff.roundToInt()}W glyc×${String.format("%.2f", glycogenCpFactor)}")
+            prevWPrimeState = wState
+        }
 
         // Route-aware battery budget: if we know remaining distance,
         // modulate batteryFactor so motor paces itself to finish the route

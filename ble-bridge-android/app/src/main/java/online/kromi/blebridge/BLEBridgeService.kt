@@ -366,26 +366,34 @@ class BLEBridgeService : Service() {
      */
     private fun feedKromiCore(json: JSONObject) {
         try {
-            when (json.optString("type")) {
+            val type = json.optString("type")
+            when (type) {
                 "speed"     -> kromiCore.onSpeed(json.optDouble("value", 0.0))
                 "cadence"   -> kromiCore.onCadence(json.optInt("value", 0))
                 "power"     -> kromiCore.onPower(json.optInt("value", 0))
                 "hr"        -> kromiCore.onHR(json.optInt("bpm", 0))
                 "battery"   -> kromiCore.onBattery(json.optInt("value", 0))
                 "sgRiding"  -> {
-                    // Smart Gateway riding data — has speed, power, cadence, torque, assist
-                    kromiCore.onSpeed(json.optDouble("speed", 0.0))
-                    if (json.has("cadence")) kromiCore.onCadence(json.optInt("cadence", 0))
-                    if (json.has("assistMode")) kromiCore.onAssistMode(json.optInt("assistMode", 0))
+                    val spd = json.optDouble("speed", 0.0)
+                    val cad = json.optInt("cadence", 0)
+                    val mode = json.optInt("assistMode", -1)
+                    Log.d(TAG, "feedKromiCore sgRiding: spd=${"%.1f".format(spd)} cad=$cad mode=$mode")
+                    kromiCore.onSpeed(spd)
+                    if (json.has("cadence")) kromiCore.onCadence(cad)
+                    if (json.has("assistMode")) kromiCore.onAssistMode(mode)
                 }
                 "gevRiding" -> {
                     if (json.has("speed")) kromiCore.onSpeed(json.optDouble("speed", 0.0))
                 }
                 "sgAssist"  -> {
-                    if (json.has("mode")) kromiCore.onAssistMode(json.optInt("mode", 0))
+                    val mode = json.optInt("mode", 0)
+                    Log.d(TAG, "feedKromiCore sgAssist: mode=$mode (${listOf("OFF","ECO","TOUR","ACTV","SPRT","PWR","SMART").getOrElse(mode) { "?" }})")
+                    kromiCore.onAssistMode(mode)
                 }
                 "shimanoGear" -> {
-                    kromiCore.onGear(json.optInt("gear", 0))
+                    val gear = json.optInt("gear", 0)
+                    Log.d(TAG, "feedKromiCore shimanoGear: gear=$gear")
+                    kromiCore.onGear(gear)
                 }
                 "gradient"  -> {
                     kromiCore.onGradient(json.optDouble("value", 0.0))

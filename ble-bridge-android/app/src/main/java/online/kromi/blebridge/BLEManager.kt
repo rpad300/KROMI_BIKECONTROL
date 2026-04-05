@@ -77,6 +77,12 @@ class BLEManager(private val context: Context) {
     private val rideDataAccum = mutableListOf<Byte>()
     private var rideDataPending = false
 
+    // Motor command ACK tracking — last sent values for verification
+    private var lastSentTuning: IntArray? = null  // [power, sport, active, tour, eco]
+    private var lastSentAdvanced: IntArray? = null // [ps, pt, pl, ss, st, sl, as, at, al, ts, tt, tl, es, et, el]
+    private var awaitingTuningAck = false
+    private var tuningAckDeadline = 0L
+
     // Battery SOC smoothing (cmd 0x43 fluctuates wildly)
     private val socBuffer = mutableListOf<Int>()
     private var smoothedSoc = -1
@@ -975,6 +981,32 @@ class BLEManager(private val context: Context) {
                                         // Tuning data response
                                         val hex = dec.joinToString("") { "%02x".format(it) }
                                         Log.i(TAG, "★ TUNING: $hex")
+
+                                        // Motor ACK verification — compare received vs last sent
+                                        if (awaitingTuningAck && dec.size >= 5) {
+                                            awaitingTuningAck = false
+                                            val b2 = dec[2].toInt() and 0xFF
+                                            val b3 = dec[3].toInt() and 0xFF
+                                            val b4 = dec[4].toInt() and 0xFF
+                                            val recvP = b2 and 0x0F; val recvS = (b2 shr 4) and 0x0F
+                                            val recvA = b3 and 0x0F; val recvT = (b3 shr 4) and 0x0F
+                                            val recvE = b4 and 0x0F
+                                            Log.i(TAG, "★ TUNING READBACK: PWR=$recvP SPT=$recvS ACT=$recvA TUR=$recvT ECO=$recvE")
+
+                                            lastSentTuning?.let { sent ->
+                                                val match = sent[0] == recvP && sent[1] == recvS && sent[2] == recvA && sent[3] == recvT && sent[4] == recvE
+                                                if (match) {
+                                                    Log.i(TAG, "✓ MOTOR ACK: tuning values CONFIRMED by motor")
+                                                } else {
+                                                    Log.e(TAG, "✗ MOTOR REJECTED: sent=[${sent.joinToString()}] recv=[$recvP,$recvS,$recvA,$recvT,$recvE]")
+                                                }
+                                            }
+                                            lastSentAdvanced?.let { sent ->
+                                                // For advanced tuning, just log the readback since 0x2C only returns basic levels
+                                                Log.i(TAG, "✓ ADV_TUNE readback OK (0x2C basic levels). Sent PWR(s=${sent[0]} t=${sent[1]} l=${sent[2]})")
+                                            }
+                                        }
+
                                         onDataReceived?.invoke(JSONObject()
                                             .put("type", "sgTuning")
                                             .put("hex", hex))
@@ -1571,8 +1603,14 @@ class BLEManager(private val context: Context) {
         val b3 = (a or (t shl 4)).toByte()
         val b4 = e.toByte()
 
-        Log.i(TAG, "★ SET_TUNING: PWR=$powerLv SPT=$sportLv ACT=$activeLv TUR=$tourLv ECO=$ecoLv → bytes=%02X %02X %02X"
+        Log.i(TAG, "★ SET_TUNING: PWR=$powerLv SPT=$sportLv ACT=$activeLv TUR=$tourLv ECO=$ecoLv → bytes=%02X %02X %02X (key=3)"
             .format(b2.toInt() and 0xFF, b3.toInt() and 0xFF, b4.toInt() and 0xFF))
+
+        // Track sent values for ACK verification
+        lastSentTuning = intArrayOf(p, s, a, t, e)
+        lastSentAdvanced = null
+        awaitingTuningAck = true
+        tuningAckDeadline = System.currentTimeMillis() + 2000
 
         val plain = ByteArray(16).also {
             it[0] = 0x2D; it[1] = 0x03
@@ -1582,7 +1620,7 @@ class BLEManager(private val context: Context) {
 
         // Follow up with READ_TUNING to verify the change was applied
         handler.postDelayed({
-            Log.i(TAG, "★ Verifying with READ_TUNING...")
+            Log.i(TAG, "★ Verifying SET_TUNING with READ_TUNING (0x2C)...")
             val readPlain = ByteArray(16).also { it[0] = 0x2C; it[1] = 0x00 }
             sendEncryptedCommand(readPlain, 0, "READ_TUNING_VERIFY")
         }, 500)
@@ -1666,7 +1704,13 @@ class BLEManager(private val context: Context) {
         val ts = clamp(tourSupport);   val tt = clamp(tourTorque);   val tl = clamp(tourLaunch)
         val es = clamp(ecoSupport);    val et = clamp(ecoTorque);    val el = clamp(ecoLaunch)
 
-        Log.i(TAG, "★ ADV_TUNE: PWR(s=$ps t=$pt l=$pl) SPT(s=$ss t=$st l=$sl) ACT(s=$as_ t=$at_ l=$al) TUR(s=$ts t=$tt l=$tl) ECO(s=$es t=$et l=$el)")
+        Log.i(TAG, "★ ADV_TUNE: PWR(s=$ps t=$pt l=$pl) SPT(s=$ss t=$st l=$sl) ACT(s=$as_ t=$at_ l=$al) TUR(s=$ts t=$tt l=$tl) ECO(s=$es t=$et l=$el) (key=12)")
+
+        // Track sent values for ACK verification
+        lastSentAdvanced = intArrayOf(ps, pt, pl, ss, st, sl, as_, at_, al, ts, tt, tl, es, et, el)
+        lastSentTuning = null
+        awaitingTuningAck = true
+        tuningAckDeadline = System.currentTimeMillis() + 2000
 
         val plain = ByteArray(16).also {
             it[0] = 0xE3.toByte(); it[1] = 0x0C

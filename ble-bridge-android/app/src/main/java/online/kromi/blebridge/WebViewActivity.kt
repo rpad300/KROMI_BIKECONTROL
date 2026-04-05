@@ -354,7 +354,9 @@ class WebViewActivity : AppCompatActivity() {
         @JavascriptInterface
         fun updateKromiParams(json: String) {
             try {
-                BLEBridgeService.instance?.kromiCore?.updateParams(JSONObject(json))
+                val j = JSONObject(json)
+                Log.d(TAG, "JS_BRIDGE updateKromiParams: bat×${j.optDouble("battery_factor", -1.0)} cp=${j.optDouble("cp_effective", -1.0)} glyc×${j.optDouble("glycogen_cp_factor", -1.0)} route=${j.optDouble("route_remaining_km", -1.0)}km wind=${j.optDouble("wind_component_ms", 0.0)}m/s")
+                BLEBridgeService.instance?.kromiCore?.updateParams(j)
             } catch (e: Exception) {
                 Log.w(TAG, "updateKromiParams error: ${e.message}")
             }
@@ -367,6 +369,7 @@ class WebViewActivity : AppCompatActivity() {
         /** Send motor command directly via JS Bridge (bypass WebSocket). ~1ms vs ~40ms. */
         @JavascriptInterface
         fun setAdvancedTuning(powerSupport: Int, powerTorque: Int, powerLaunch: Int) {
+            Log.i(TAG, "JS_BRIDGE setAdvancedTuning: S=$powerSupport/15 T=$powerTorque/15 L=$powerLaunch/15")
             BLEBridgeService.instance?.bleManager?.setAdvancedTuning(
                 powerSupport = powerSupport,
                 powerTorque = powerTorque,
@@ -378,6 +381,7 @@ class WebViewActivity : AppCompatActivity() {
         /** Send assist mode directly via JS Bridge */
         @JavascriptInterface
         fun sendAssistMode(mode: Int) {
+            Log.i(TAG, "JS_BRIDGE sendAssistMode: mode=$mode")
             BLEBridgeService.instance?.bleManager?.writeAssistMode(mode)
         }
 
