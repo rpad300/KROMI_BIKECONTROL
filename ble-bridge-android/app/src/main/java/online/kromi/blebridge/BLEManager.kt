@@ -166,6 +166,8 @@ class BLEManager(private val context: Context) {
     private var lastConnectedDevice: BluetoothDevice? = null
     private var shouldAutoReconnect = true
     private val reconnectHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var keepAliveRunnable: Runnable? = null
+    private val KEEPALIVE_INTERVAL_MS = 30_000L // 30s
 
     private fun connectGatt(device: BluetoothDevice) {
         lastConnectedDevice = device
@@ -177,6 +179,7 @@ class BLEManager(private val context: Context) {
     fun disconnect() {
         shouldAutoReconnect = false
         lastConnectedDevice = null
+        stopKeepAlive()
         gatt?.disconnect()
         gatt?.close()
         gatt = null
@@ -185,6 +188,27 @@ class BLEManager(private val context: Context) {
         sgWriteChar = null
         onDataReceived?.invoke(JSONObject().put("type", "disconnected"))
         onStatusChanged?.invoke("Disconnected")
+    }
+
+    /** Keep-alive: read RSSI every 30s to maintain BLE connection */
+    private fun startKeepAlive() {
+        stopKeepAlive()
+        val runnable = object : Runnable {
+            override fun run() {
+                gatt?.let { g ->
+                    g.readRemoteRssi()
+                    Log.d(TAG, "Keep-alive RSSI ping")
+                }
+                reconnectHandler.postDelayed(this, KEEPALIVE_INTERVAL_MS)
+            }
+        }
+        keepAliveRunnable = runnable
+        reconnectHandler.postDelayed(runnable, KEEPALIVE_INTERVAL_MS)
+    }
+
+    private fun stopKeepAlive() {
+        keepAliveRunnable?.let { reconnectHandler.removeCallbacks(it) }
+        keepAliveRunnable = null
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
@@ -209,6 +233,7 @@ class BLEManager(private val context: Context) {
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Log.i(TAG, "GATT disconnected (status=$status, autoReconnect=$shouldAutoReconnect)")
+                    stopKeepAlive()
                     gatt?.close()
                     gatt = null
                     gevChar = null
@@ -240,6 +265,9 @@ class BLEManager(private val context: Context) {
 
             val deviceName = g.device.name ?: "Unknown"
             val bondState = g.device.bondState
+
+            // Start keep-alive pings
+            startKeepAlive()
 
             // Log ALL discovered services with full detail
             Log.i(TAG, "╔══════════════════════════════════════════╗")
@@ -450,6 +478,12 @@ class BLEManager(private val context: Context) {
                     .put("size", char.value?.size ?: 0))
             }
             handleCharacteristicData(char)
+        }
+
+        override fun onReadRemoteRssi(g: BluetoothGatt, rssi: Int, status: Int) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                Log.d(TAG, "Keep-alive RSSI: $rssi dBm")
+            }
         }
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
