@@ -31,8 +31,8 @@ class ShiftMotorInhibit {
     di2Service.onShiftStart(async (event) => {
       const currentMode = useBikeStore.getState().assist_mode;
       this.savedMode = currentMode;
-
-      console.log(`[ShiftInhibit] Shift ${event.direction}: mode ${currentMode} → ECO (inhibit)`);
+      const dlog = (window as unknown as Record<string, (m: string) => void>).__dlog;
+      dlog?.(`[ShiftInhibit] ${event.direction}: mode ${currentMode} → ECO`);
 
       // Reduce to ECO during shift (not OFF — would cause jerk)
       if (currentMode !== AssistMode.ECO && currentMode !== AssistMode.OFF) {

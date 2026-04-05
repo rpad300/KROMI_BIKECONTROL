@@ -40,9 +40,9 @@ export function useMotorControl() {
       const bike = useBikeStore.getState();
       const intelligence = useIntelligenceStore.getState();
 
+      const dlog = (window as unknown as Record<string, (m: string) => void>).__dlog;
+
       // === Gate: KROMI only in POWER mode ===
-      // POWER mode = KROMI controls tuning (torque/support/launch)
-      // SMART mode = Giant's native auto-assist (for comparison)
       if (bike.assist_mode !== AssistMode.POWER) {
         if (intelligence.active) {
           useIntelligenceStore.getState().setActive(false);
@@ -51,14 +51,14 @@ export function useMotorControl() {
             reason: 'Muda para POWER para activar KROMI',
             terrain: null,
           });
+          dlog?.(`[KROMI] DEACTIVATED — mode=${bike.assist_mode} (not POWER=5)`);
         }
         return;
       }
 
       if (!intelligence.active) {
         useIntelligenceStore.getState().setActive(true);
-        console.log('[KROMI] Intelligence ACTIVATED — mode=POWER, gear=%d, ble=%s, tuning=%s',
-          bike.gear, bike.ble_status, isTuningAvailable() ? 'available' : 'unavailable');
+        dlog?.(`[KROMI] ACTIVATED — mode=POWER gear=${bike.gear} ble=${bike.ble_status} tuning=${isTuningAvailable()}`);
       }
 
       // === Gather inputs (personalized via settingsStore) ===
@@ -118,7 +118,7 @@ export function useMotorControl() {
           current.eco + 1,
         ];
         if (b0 !== prevBytes[0] || b1 !== prevBytes[1] || b2 !== prevBytes[2]) {
-          // Map 5 ASMOs to the 5-mode tuning format for the existing setTuning API
+          dlog?.(`[KROMI] TUNING → P=${decision.calibration.support} S=${decision.calibration.torque} A=${decision.calibration.midTorque} T=${decision.calibration.lowTorque} E=${decision.calibration.launch} | gear=${bike.gear} spd=${bike.speed_kmh} cad=${bike.cadence_rpm} hr=${bike.hr_bpm}`);
           setTuning({
             power: decision.calibration.support,
             sport: decision.calibration.torque,
