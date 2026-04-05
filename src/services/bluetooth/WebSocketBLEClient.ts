@@ -245,6 +245,17 @@ export class WebSocketBLEClient {
     this.setTuning({ ...current, [mode]: level });
   }
 
+  /** Advanced tuning: 16 levels (0-15) per parameter per mode */
+  setAdvancedTuning(params: {
+    powerSupport: number; powerTorque: number; powerLaunch: number;
+    sportSupport?: number; sportTorque?: number; sportLaunch?: number;
+    activeSupport?: number; activeTorque?: number; activeLaunch?: number;
+    tourSupport?: number; tourTorque?: number; tourLaunch?: number;
+    ecoSupport?: number; ecoTorque?: number; ecoLaunch?: number;
+  }): void {
+    this.send({ type: 'advancedTuning', ...params });
+  }
+
   /** Preset: all modes to MAX (level 1 = max power) */
   tuneMax(): void {
     this.send({ type: 'tuneMax' });

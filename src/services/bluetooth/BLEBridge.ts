@@ -285,6 +285,14 @@ export function setTuning(levels: TuningLevels): void {
   if (bleMode === 'websocket') wsClient.setTuning(levels);
 }
 
+/** Advanced tuning: 16 levels (0-15) per support/torque/launch per mode */
+export function setAdvancedTuning(params: {
+  powerSupport: number; powerTorque: number; powerLaunch: number;
+  sportSupport?: number; sportTorque?: number; sportLaunch?: number;
+}): void {
+  if (bleMode === 'websocket') wsClient.setAdvancedTuning(params);
+}
+
 /** Set a single mode's tuning level */
 export function setTuningMode(mode: TuningMode, level: number): void {
   if (bleMode === 'websocket') wsClient.setTuningMode(mode, level);

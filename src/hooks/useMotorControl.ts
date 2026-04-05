@@ -3,15 +3,17 @@ import { useBikeStore } from '../store/bikeStore';
 import { useMapStore } from '../store/mapStore';
 import { useAutoAssistStore } from '../store/autoAssistStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { useTuningStore } from '../store/tuningStore';
 import { useIntelligenceStore } from '../store/intelligenceStore';
 import { autoAssistEngine } from '../services/autoAssist/AutoAssistEngine';
 import { tuningIntelligence, type TuningInput } from '../services/motor/TuningIntelligence';
-import { setTuning, isTuningAvailable } from '../services/bluetooth/BLEBridge';
+import { setAdvancedTuning, isTuningAvailable } from '../services/bluetooth/BLEBridge';
 import { AssistMode } from '../types/bike.types';
 // encodeCalibration no longer needed — KROMI only changes POWER level
 
 const TICK_INTERVAL_MS = 1000;
+
+// Track last sent values to avoid redundant writes
+let lastAdvancedTuning = { support: -1, torque: -1, launch: -1 };
 
 /**
  * KROMI Score: 0-100. Crosses ALL rider inputs into a single "need motor" score.
@@ -199,25 +201,34 @@ export function useMotorControl() {
       useIntelligenceStore.getState().setDecision(decision);
 
       // === KROMI Direct Decision — crosses ALL inputs ===
-      // Score 0-100: higher = more motor needed
+      // Score 0-100 → map to 0-15 for support, torque, launch
       const kromiScore = computeKromiScore(input);
-      // Map score to wire: 0=MAX power, 1=MID, 2=MIN
-      const powerLevel = kromiScore >= 55 ? 0 : kromiScore >= 30 ? 1 : 2;
-      const powerLabel = powerLevel === 0 ? 'MAX' : powerLevel === 1 ? 'MID' : 'MIN';
+
+      // Map score to 16-level values (0=min, 15=max)
+      const support = Math.round((kromiScore / 100) * 15);
+      const torque = Math.round((kromiScore / 100) * 15);
+      // Launch: boost on low speed climbs, reduce at high speed
+      const launchScore = Math.max(0, Math.min(100,
+        kromiScore + (input.speed < 5 && input.gradient > 2 ? 20 : 0) - (input.speed > 20 ? 15 : 0)
+      ));
+      const launch = Math.round((launchScore / 100) * 15);
 
       // Log every 10s
       if (Date.now() % 10000 < 1100) {
-        dlog?.(`[KROMI] score=${kromiScore} → ${powerLabel} | grad=${input.gradient.toFixed(1)} gear=${input.currentGear} spd=${input.speed.toFixed(0)} cad=${input.cadence} hr=${input.hr}`);
+        dlog?.(`[KROMI] score=${kromiScore} → S=${support}/15 T=${torque}/15 L=${launch}/15 | grad=${input.gradient.toFixed(1)} gear=${input.currentGear} spd=${input.speed.toFixed(0)} cad=${input.cadence} hr=${input.hr}`);
       }
 
-      // === Execute: ONLY change POWER mode ===
+      // === Execute: Advanced tuning — 16 levels, ONLY POWER mode ===
       if (isTuningAvailable()) {
-        const tuning = useTuningStore.getState();
-        if (powerLevel !== tuning.current.power) {
-          const newLevels = { ...tuning.current, power: powerLevel };
-          dlog?.(`[KROMI] POWER → ${powerLabel} (score=${kromiScore}) | grad=${input.gradient.toFixed(1)} gear=${input.currentGear} spd=${input.speed.toFixed(0)} cad=${input.cadence} hr=${input.hr}`);
-          setTuning(newLevels);
-          tuning.setCurrent(newLevels);
+        const last = lastAdvancedTuning;
+        if (support !== last.support || torque !== last.torque || launch !== last.launch) {
+          dlog?.(`[KROMI] POWER → support=${support} torque=${torque} launch=${launch} (score=${kromiScore}) | grad=${input.gradient.toFixed(1)} gear=${input.currentGear} spd=${input.speed.toFixed(0)} cad=${input.cadence} hr=${input.hr}`);
+          setAdvancedTuning({
+            powerSupport: support,
+            powerTorque: torque,
+            powerLaunch: launch,
+          });
+          lastAdvancedTuning = { support, torque, launch };
         }
       }
     }, TICK_INTERVAL_MS);

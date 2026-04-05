@@ -273,6 +273,26 @@ class BLEBridgeService : Service() {
                 val plain = ByteArray(16).also { it[0] = 0x2C; it[1] = 0x00 }
                 bleManager.sendEncryptedCommand(plain, 0, "WS_READ_TUNE")
             }
+            "advancedTuning" -> {
+                // PWA sends: {type:"advancedTuning", powerSupport:12, powerTorque:10, powerLaunch:8, ...}
+                bleManager.setAdvancedTuning(
+                    powerSupport = json.optInt("powerSupport", -1),
+                    powerTorque = json.optInt("powerTorque", -1),
+                    powerLaunch = json.optInt("powerLaunch", -1),
+                    sportSupport = json.optInt("sportSupport", -1),
+                    sportTorque = json.optInt("sportTorque", -1),
+                    sportLaunch = json.optInt("sportLaunch", -1),
+                    activeSupport = json.optInt("activeSupport", -1),
+                    activeTorque = json.optInt("activeTorque", -1),
+                    activeLaunch = json.optInt("activeLaunch", -1),
+                    tourSupport = json.optInt("tourSupport", -1),
+                    tourTorque = json.optInt("tourTorque", -1),
+                    tourLaunch = json.optInt("tourLaunch", -1),
+                    ecoSupport = json.optInt("ecoSupport", -1),
+                    ecoTorque = json.optInt("ecoTorque", -1),
+                    ecoLaunch = json.optInt("ecoLaunch", -1),
+                )
+            }
             "tuneMax" -> bleManager.tuningMax()
             "tuneMin" -> bleManager.tuningMin()
             "tuneRestore" -> bleManager.tuningRestore()

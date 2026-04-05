@@ -1627,6 +1627,85 @@ class BLEManager(private val context: Context) {
         }, 500)
     }
 
+    /**
+     * ADVANCED MOTOR TUNING — cmd=0xE3, sub=0x0C, key 12
+     *
+     * Reverse-engineered from Giant RideControl APK (MotorTuningParams).
+     * Each mode has 3 parameters with 16 levels (0-15):
+     *   - support: motor assist level (0=min, 15=max)
+     *   - torque: motor torque response (0=min, 15=max)
+     *   - launch: startup boost (0=min, 15=max)
+     *
+     * Wire format per mode (2 bytes):
+     *   byte[n]   = support & 0x0F
+     *   byte[n+1] = (torque << 4) | (launch & 0x0F)
+     *
+     * Order: power, sport, active, tour, eco (5 modes × 2 bytes = 10 data bytes)
+     *
+     * @param powerSupport  POWER mode support (0-15)
+     * @param powerTorque   POWER mode torque (0-15)
+     * @param powerLaunch   POWER mode launch (0-15)
+     */
+    fun setAdvancedTuning(
+        powerSupport: Int, powerTorque: Int, powerLaunch: Int,
+        sportSupport: Int = -1, sportTorque: Int = -1, sportLaunch: Int = -1,
+        activeSupport: Int = -1, activeTorque: Int = -1, activeLaunch: Int = -1,
+        tourSupport: Int = -1, tourTorque: Int = -1, tourLaunch: Int = -1,
+        ecoSupport: Int = -1, ecoTorque: Int = -1, ecoLaunch: Int = -1,
+        label: String = "ADV_TUNE"
+    ) {
+        logBondState(label)
+
+        // Read current values — if -1, keep existing (from last read or defaults)
+        // Defaults: mid-range (8) for modes not specified
+        fun clamp(v: Int, default: Int = 8) = if (v < 0) default else v.coerceIn(0, 15)
+
+        val ps = clamp(powerSupport);  val pt = clamp(powerTorque);  val pl = clamp(powerLaunch)
+        val ss = clamp(sportSupport);  val st = clamp(sportTorque);  val sl = clamp(sportLaunch)
+        val as_ = clamp(activeSupport); val at_ = clamp(activeTorque); val al = clamp(activeLaunch)
+        val ts = clamp(tourSupport);   val tt = clamp(tourTorque);   val tl = clamp(tourLaunch)
+        val es = clamp(ecoSupport);    val et = clamp(ecoTorque);    val el = clamp(ecoLaunch)
+
+        Log.i(TAG, "★ ADV_TUNE: PWR(s=$ps t=$pt l=$pl) SPT(s=$ss t=$st l=$sl) ACT(s=$as_ t=$at_ l=$al) TUR(s=$ts t=$tt l=$tl) ECO(s=$es t=$et l=$el)")
+
+        val plain = ByteArray(16).also {
+            it[0] = 0xE3.toByte(); it[1] = 0x0C
+            it[2] = 0x00 // not reset mode
+            // Power (index g in RideControl)
+            it[3] = (ps and 0x0F).toByte()
+            it[4] = ((pt shl 4) or (pl and 0x0F)).toByte()
+            // Sport (index f)
+            it[5] = (ss and 0x0F).toByte()
+            it[6] = ((st shl 4) or (sl and 0x0F)).toByte()
+            // Active (index e)
+            it[7] = (as_ and 0x0F).toByte()
+            it[8] = ((at_ shl 4) or (al and 0x0F)).toByte()
+            // Tour (index d)
+            it[9] = (ts and 0x0F).toByte()
+            it[10] = ((tt shl 4) or (tl and 0x0F)).toByte()
+            // Eco (index c)
+            it[11] = (es and 0x0F).toByte()
+            it[12] = ((et shl 4) or (el and 0x0F)).toByte()
+        }
+        sendEncryptedCommand(plain, 12, label)
+
+        // Notify PWA
+        onDataReceived?.invoke(JSONObject().apply {
+            put("type", "advancedTuning")
+            put("power", JSONObject().put("support", ps).put("torque", pt).put("launch", pl))
+            put("sport", JSONObject().put("support", ss).put("torque", st).put("launch", sl))
+            put("active", JSONObject().put("support", as_).put("torque", at_).put("launch", al))
+            put("tour", JSONObject().put("support", ts).put("torque", tt).put("launch", tl))
+            put("eco", JSONObject().put("support", es).put("torque", et).put("launch", el))
+        })
+
+        // Verify
+        handler.postDelayed({
+            val readPlain = ByteArray(16).also { it[0] = 0x2C; it[1] = 0x00 }
+            sendEncryptedCommand(readPlain, 0, "READ_ADV_TUNE")
+        }, 500)
+    }
+
     private fun logBondState(label: String) {
         val bond = gatt?.device?.bondState ?: -1
         val bondStr = when (bond) {
