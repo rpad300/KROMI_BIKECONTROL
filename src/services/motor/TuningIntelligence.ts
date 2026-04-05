@@ -16,7 +16,6 @@ import { type AsmoCalibration, type AsmoWire, DU7_TABLES, resolveCalibration } f
 import { useLearningStore } from '../../store/learningStore';
 import { getCachedTrail } from '../maps/TerrainService';
 import { getCachedWeather } from '../weather/WeatherService';
-import { useBikeStore } from '../../store/bikeStore';
 import { gearEfficiencyEngine } from '../di2/GearEfficiencyEngine';
 
 export interface TuningInput {
@@ -77,7 +76,6 @@ class TuningIntelligence {
     const rider = useSettingsStore.getState().riderProfile;
     const bike = safeBikeConfig(useSettingsStore.getState().bikeConfig);
     const factors: TuningFactor[] = [];
-    const totalWh = bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0);
     const targetZone = getTargetZone(rider);
 
     // ═══════════════════════════════════════════════
@@ -476,35 +474,6 @@ class TuningIntelligence {
       gradient > 3 ? 48 : gradient > 1 ? 38 : gradient > -2 ? 25 : 10;
     if (gradient > 2 && weight > 0) base = Math.min(100, Math.round(base * (0.8 + 0.2 * (weight / 75))));
     return base;
-  }
-
-  // ── Battery constraint — uses motor range data when available ──
-  private getBatteryConstraint(soc: number, totalWh: number): number {
-    // Use motor-reported range for smarter conservation
-    const rangePerMode = useBikeStore.getState().range_per_mode;
-
-    if (rangePerMode && rangePerMode.power > 0) {
-      // Motor knows real remaining range — use POWER mode as reference
-      const powerRange = rangePerMode.power;
-      const ecoRange = rangePerMode.eco;
-
-      if (powerRange > 40) return 1.0;
-      if (powerRange > 20) return 0.8 + (powerRange - 20) / 20 * 0.2;
-      if (powerRange > 10) return 0.6 + (powerRange - 10) / 10 * 0.2;
-      if (powerRange > 5) return 0.5 + (powerRange - 5) / 5 * 0.1;
-      // Under 5km in POWER — emergency
-      return ecoRange > 10 ? 0.4 : 0.2;
-    }
-
-    // Fallback: SOC-based (no motor range data)
-    const capacityFactor = Math.min(totalWh / 1050, 1.2);
-    const conserveAt = 30 * capacityFactor;
-    const emergencyAt = 15 * capacityFactor;
-
-    if (soc > 60) return 1.0;
-    if (soc > conserveAt) return 0.7 + ((soc - conserveAt) / (60 - conserveAt)) * 0.3;
-    if (soc > emergencyAt) return 0.5 + ((soc - emergencyAt) / (conserveAt - emergencyAt)) * 0.2;
-    return 0.4;
   }
 
   private descGradient(g: number): string {
