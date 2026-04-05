@@ -61,3 +61,6 @@ export const useMapStore = create<MapState>((set) => ({
 
   resetAccuracyStats: () => set({ accuracySum: 0, accuracySamples: 0, accuracyMin: 999, accuracyMax: 0 }),
 }));
+
+// Expose getter for dlog (no React dependency)
+(window as unknown as Record<string, unknown>).__mapStoreGet = () => useMapStore.getState();

@@ -5,7 +5,17 @@ import { VitePWA } from 'vite-plugin-pwa';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import { resolve } from 'path';
 
+// Inject git version at build time
+const gitVersion = (() => {
+  try {
+    return require('child_process').execSync('git describe --tags --always', { encoding: 'utf-8' }).trim();
+  } catch { return 'dev'; }
+})();
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(gitVersion),
+  },
   plugins: [
     react(),
     tailwindcss(),

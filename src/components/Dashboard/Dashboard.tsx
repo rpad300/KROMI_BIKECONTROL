@@ -308,8 +308,23 @@ function InfoStrip() {
   const bat2PctRef = useRef<HTMLSpanElement>(null);
   const curValRef = useRef<HTMLSpanElement>(null);
   const curLabelRef = useRef<HTMLSpanElement>(null);
+  const wPrimeValRef = useRef<HTMLSpanElement>(null);
+  const wPrimeBarRef = useRef<HTMLDivElement>(null);
+  const wPrimeLabelRef = useRef<HTMLSpanElement>(null);
   const timeValRef = useRef<HTMLSpanElement>(null);
   const timeLabelRef = useRef<HTMLSpanElement>(null);
+
+  // Subscribe to physiology for W' balance
+  useEffect(() => {
+    const unsub2 = useNutritionStore.subscribe((s) => {
+      const pct = s.physiology ? Math.round(s.physiology.w_prime_balance * 100) : -1;
+      const color = pct < 30 ? '#ff716c' : pct < 70 ? '#fbbf24' : '#3fff8b';
+      if (wPrimeValRef.current) { wPrimeValRef.current.textContent = pct >= 0 ? `${pct}%` : '--'; wPrimeValRef.current.style.color = color; }
+      if (wPrimeBarRef.current) { wPrimeBarRef.current.style.width = `${Math.max(0, pct)}%`; wPrimeBarRef.current.style.backgroundColor = color; }
+      if (wPrimeLabelRef.current) wPrimeLabelRef.current.textContent = pct >= 0 ? (pct < 30 ? 'CRITICAL' : "W'") : "W'";
+    });
+    return unsub2;
+  }, []);
 
   useEffect(() => {
     const update = (s: ReturnType<typeof useBikeStore.getState>) => {
@@ -342,7 +357,7 @@ function InfoStrip() {
   }, []);
 
   return (
-    <section style={{ height: '8%', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', backgroundColor: '#1a1919', borderTop: '1px solid rgba(73,72,71,0.2)', borderBottom: '1px solid rgba(73,72,71,0.2)' }}>
+    <section style={{ height: '8%', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', backgroundColor: '#1a1919', borderTop: '1px solid rgba(73,72,71,0.2)', borderBottom: '1px solid rgba(73,72,71,0.2)' }}>
       {/* HR */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid rgba(73,72,71,0.1)' }}>
         <span ref={hrIconRef} className="material-symbols-outlined" style={{ fontSize: '14px', color: '#494847', fontVariationSettings: "'FILL' 1" }}>favorite</span>
@@ -373,6 +388,15 @@ function InfoStrip() {
         <span className="material-symbols-outlined" style={{ fontSize: '14px', color: '#fbbf24' }}>electric_bolt</span>
         <span ref={curValRef} className="font-headline font-bold tabular-nums" style={{ fontSize: '16px' }}>0</span>
         <span ref={curLabelRef} style={{ fontSize: '8px', color: '#777575' }}>AMP</span>
+      </div>
+
+      {/* W' Balance */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid rgba(73,72,71,0.1)' }}>
+        <span className="material-symbols-outlined" style={{ fontSize: '14px', color: '#e966ff', fontVariationSettings: "'FILL' 1" }}>bolt</span>
+        <span ref={wPrimeValRef} className="font-headline font-bold tabular-nums" style={{ fontSize: '16px', color: '#777575' }}>--</span>
+        <div style={{ width: '80%', height: '3px', backgroundColor: '#262626', marginTop: '1px', overflow: 'hidden' }}>
+          <div ref={wPrimeBarRef} style={{ height: '100%', width: '0%', backgroundColor: '#3fff8b' }} />
+        </div>
       </div>
 
       {/* Time */}
