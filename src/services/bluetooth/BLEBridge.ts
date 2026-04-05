@@ -203,6 +203,7 @@ export const connectDi2 = () => {
 };
 export const connectSRAM = () => connectSensor('sram', () => giantBLEService.connectSRAM());
 export const connectExtPower = () => connectSensor('power', () => giantBLEService.connectExtPower());
+export const connectExtCadence = () => connectSensor('cadence', () => Promise.resolve()); // external cadence — APK only
 
 export const disconnectHR = () => disconnectSensorBridge('hr', () => giantBLEService.disconnectHR());
 export const disconnectDi2 = () => {
@@ -214,6 +215,7 @@ export const disconnectDi2 = () => {
 };
 export const disconnectSRAM = () => disconnectSensorBridge('sram', () => giantBLEService.disconnectSRAM());
 export const disconnectExtPower = () => disconnectSensorBridge('power', () => giantBLEService.disconnectExtPower());
+export const disconnectExtCadence = () => disconnectSensorBridge('cadence', () => {});
 
 /** Get HR device name */
 export function getHRDeviceName(): string | null {

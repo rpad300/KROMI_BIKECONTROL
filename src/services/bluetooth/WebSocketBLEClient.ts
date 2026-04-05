@@ -40,6 +40,10 @@ export class WebSocketBLEClient {
   private _bikeConnected = false;
   private _bridgeVersion = '';
 
+  // External cadence sensor tracking
+  hasExternalCadence = false;
+  lastExternalCadenceTs = 0;
+
   /** Minimum required bridge version for correct data */
   static readonly REQUIRED_VERSION = '0.9.6';
 
@@ -351,6 +355,11 @@ export class WebSocketBLEClient {
 
         case 'cadence':
           store.setCadence(msg.value);
+          // If from external sensor, mark it so motor cadence doesn't override
+          if (msg.source === 'external') {
+            this.hasExternalCadence = true;
+            this.lastExternalCadenceTs = Date.now();
+          }
           break;
 
         case 'power':
@@ -539,7 +548,10 @@ export class WebSocketBLEClient {
 
           if (spd > 0.5) store.setSpeed(spd);
           if (motorPwr > 0 || riderPwr > 0) store.setPower(motorPwr > 0 ? motorPwr : riderPwr);
-          if (cad > 0) store.setCadence(Math.round(cad));
+          // Only use motor cadence if no external cadence sensor active (external is more accurate)
+          if (cad > 0 && !(this.hasExternalCadence && Date.now() - this.lastExternalCadenceTs < 10000)) {
+            store.setCadence(Math.round(cad));
+          }
           if (trq !== 0) store.setTorque(trq);
           if (cur > 0) store.setAssistCurrent(cur);
           if (tDist > 0) { store.setDistance(tDist); store.setTripDistance(tDist); }

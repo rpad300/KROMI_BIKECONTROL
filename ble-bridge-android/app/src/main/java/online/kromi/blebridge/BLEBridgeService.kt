@@ -395,6 +395,14 @@ class BLEBridgeService : Service() {
                     Log.d(TAG, "feedKromiCore shimanoGear: gear=$gear")
                     kromiCore.onGear(gear)
                 }
+                "cadence" -> {
+                    // External cadence sensor — more accurate than motor crank sensor
+                    val rpm = json.optInt("value", 0)
+                    if (json.optString("source") == "external" && rpm > 0) {
+                        Log.d(TAG, "feedKromiCore EXT_CADENCE: $rpm rpm")
+                        kromiCore.onCadence(rpm)
+                    }
+                }
                 "gradient"  -> {
                     kromiCore.onGradient(json.optDouble("value", 0.0))
                 }

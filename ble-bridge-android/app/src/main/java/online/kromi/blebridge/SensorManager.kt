@@ -30,6 +30,8 @@ class SensorManager(private val context: Context) {
         val HR_MEASUREMENT = UUID.fromString("00002a37-0000-1000-8000-00805f9b34fb")
         val POWER_SERVICE = UUID.fromString("00001818-0000-1000-8000-00805f9b34fb")
         val POWER_MEASUREMENT = UUID.fromString("00002a63-0000-1000-8000-00805f9b34fb")
+        val CSC_SERVICE = UUID.fromString("00001816-0000-1000-8000-00805f9b34fb")
+        val CSC_MEASUREMENT = UUID.fromString("00002a5b-0000-1000-8000-00805f9b34fb")
         // Di2 E-Tube — Shimano proprietary (SHIMANO_BLE base)
         val DI2_SERVICE = UUID.fromString("000018FF-5348-494D-414E-4F5F424C4500")
         val DI2_NOTIFY = UUID.fromString("00002AF9-5348-494D-414E-4F5F424C4500")
@@ -53,6 +55,7 @@ class SensorManager(private val context: Context) {
     private val SENSOR_TYPES = mapOf(
         "hr" to SensorType("hr", HR_SERVICE, HR_MEASUREMENT),
         "power" to SensorType("power", POWER_SERVICE, POWER_MEASUREMENT),
+        "cadence" to SensorType("cadence", CSC_SERVICE, CSC_MEASUREMENT),
         "di2" to SensorType("di2", DI2_SERVICE, DI2_NOTIFY),
         "sram" to SensorType("sram", SRAM_SERVICE, SRAM_NOTIFY),
     )
@@ -239,6 +242,7 @@ class SensorManager(private val context: Context) {
             when (sensorKey) {
                 "hr" -> parseHR(data)
                 "power" -> parsePower(data)
+                "cadence" -> parseCadence(data)
                 "di2" -> parseDi2(data)
                 "sram" -> parseSRAM(data)
             }
@@ -271,6 +275,64 @@ class SensorManager(private val context: Context) {
             put("type", "power")
             put("value", watts)
         })
+    }
+
+    /**
+     * Parse CSC Measurement (0x2A5B) for external cadence sensor.
+     *
+     * BLE CSC spec flags byte[0]:
+     *   bit 0 = Wheel Revolution Data present
+     *   bit 1 = Crank Revolution Data present
+     *
+     * Crank data (when bit 1 set):
+     *   Cumulative Crank Revolutions: uint16 LE
+     *   Last Crank Event Time: uint16 LE (unit: 1/1024 seconds)
+     *
+     * We compute RPM from delta revs / delta time between notifications.
+     */
+    private var lastCrankRevs = 0
+    private var lastCrankTime = 0
+    private var lastCrankTs = 0L
+
+    private fun parseCadence(data: ByteArray) {
+        if (data.isEmpty()) return
+        val flags = data[0].toInt() and 0xFF
+        val hasCrank = (flags and 0x02) != 0
+
+        if (!hasCrank) return
+
+        // Crank data offset depends on whether wheel data is present
+        val offset = if ((flags and 0x01) != 0) 7 else 1 // skip wheel data (6 bytes) if present
+        if (data.size < offset + 4) return
+
+        val crankRevs = (data[offset].toInt() and 0xFF) or ((data[offset + 1].toInt() and 0xFF) shl 8)
+        val crankTime = (data[offset + 2].toInt() and 0xFF) or ((data[offset + 3].toInt() and 0xFF) shl 8)
+
+        val now = System.currentTimeMillis()
+        if (lastCrankTs > 0 && crankRevs != lastCrankRevs) {
+            var deltaRevs = crankRevs - lastCrankRevs
+            if (deltaRevs < 0) deltaRevs += 65536 // uint16 overflow
+
+            var deltaTime = crankTime - lastCrankTime
+            if (deltaTime < 0) deltaTime += 65536
+            val deltaTimeSec = deltaTime / 1024.0
+
+            if (deltaTimeSec > 0 && deltaTimeSec < 10) { // sanity: max 10s between events
+                val rpm = Math.round((deltaRevs / deltaTimeSec) * 60.0).toInt()
+                if (rpm in 1..200) { // sanity range
+                    Log.d(TAG, "EXT_CADENCE: $rpm rpm (revs=$deltaRevs dt=${String.format("%.2f", deltaTimeSec)}s)")
+                    onData?.invoke(JSONObject().apply {
+                        put("type", "cadence")
+                        put("value", rpm)
+                        put("source", "external")
+                    })
+                }
+            }
+        }
+
+        lastCrankRevs = crankRevs
+        lastCrankTime = crankTime
+        lastCrankTs = now
     }
 
     private fun parseDi2(data: ByteArray) {
