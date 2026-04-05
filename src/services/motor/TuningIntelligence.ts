@@ -262,14 +262,12 @@ class TuningIntelligence {
     }
 
     // ═══════════════════════════════════════════════
-    // LAYER 3: Battery Constraint (×0.4-1.0)
-    // Lacuna 5 fix: explicit linear formula
-    // Lacuna 6 fix: capacity adjustment restored
+    // LAYER 3: Battery — NO constraint in POWER/KROMI mode
+    // The rider chose POWER = full KROMI control.
+    // KROMI optimizes for rider needs, not battery conservation.
+    // Battery management is the rider's responsibility in POWER mode.
     // ═══════════════════════════════════════════════
-    const batteryConstraint = this.getBatteryConstraint(input.batterySoc, totalWh);
-    if (batteryConstraint < 1) {
-      factors.push({ name: 'Bateria', value: Math.round((batteryConstraint - 1) * 100), detail: `${input.batterySoc}% — limite ×${batteryConstraint.toFixed(2)}` });
-    }
+    const batteryConstraint = 1.0; // Always 1.0 — no battery limiting
 
     // ═══════════════════════════════════════════════
     // COMBINE: layered
