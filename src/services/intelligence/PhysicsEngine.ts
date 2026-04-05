@@ -131,8 +131,8 @@ function estimateHumanPower(
     return input.power_watts;
   }
 
-  // Estimate from cadence + gear ratio + rider weight
-  if (cadence <= 0) return 0;
+  // Filter residual sensor noise: cad<5 or very low speed = not pedalling
+  if (cadence < 5 || input.speed_kmh < 3) return 0;
 
   const riderWeightKg = input.totalMass - 24; // approximate bike weight
   const cadenceFactor = cadence < 60 ? 1.2 : cadence < 80 ? 1.0 : 0.85;

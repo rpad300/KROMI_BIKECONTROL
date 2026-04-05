@@ -398,6 +398,12 @@ class BLEBridgeService : Service() {
                 "gradient"  -> {
                     kromiCore.onGradient(json.optDouble("value", 0.0))
                 }
+                "assistMode" -> {
+                    // GEV motor reports assist mode (0x15 response)
+                    val mode = json.optInt("value", 0)
+                    Log.d(TAG, "feedKromiCore assistMode(GEV): mode=$mode (${listOf("OFF","ECO","TOUR","ACTV","SPRT","PWR","SMART").getOrElse(mode) { "?" }})")
+                    kromiCore.onAssistMode(mode)
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "feedKromiCore error: ${e.message}")

@@ -27,7 +27,13 @@ class KromiCore(private val bleManager: BLEManager) {
         const val SUPPORT_MIN = 50.0;  const val SUPPORT_MAX = 350.0
         const val TORQUE_MIN = 20.0;   const val TORQUE_MAX = 85.0
         const val LAUNCH_MIN = 1.0;    const val LAUNCH_MAX = 7.0
-        const val EMA_ALPHA = 0.3
+        // Adaptive EMA: faster at riding speed, slower when nearly stopped (GPS noise)
+        fun emaAlpha(speedKmh: Double): Double = when {
+            speedKmh > 15 -> 0.35
+            speedKmh > 8  -> 0.25
+            speedKmh > 3  -> 0.15
+            else          -> 0.08
+        }
 
         // Speed zones (EU 25km/h)
         const val SPEED_LIMIT = 25.0
@@ -380,8 +386,9 @@ class KromiCore(private val bleManager: BLEManager) {
         if (preAdjustCountdown > 0) preAdjustCountdown--
 
         // ── EMA Smoothing ──
-        supportPct = prevSupport + EMA_ALPHA * (supportPct - prevSupport)
-        torqueNm = prevTorque + EMA_ALPHA * (torqueNm - prevTorque)
+        val alpha = emaAlpha(speed)
+        supportPct = prevSupport + alpha * (supportPct - prevSupport)
+        torqueNm = prevTorque + alpha * (torqueNm - prevTorque)
         prevSupport = supportPct; prevTorque = torqueNm
 
         // Clamp
@@ -463,7 +470,8 @@ class KromiCore(private val bleManager: BLEManager) {
     private fun estimateHumanPower(cadenceEff: Double, gearRatio: Double): Double {
         // Prefer power meter
         if (power > 0 && power < 600) return power.toDouble()
-        if (cadenceEff <= 0) return 0.0
+        // Filter residual sensor noise: cad<5 or speed<3 = not really pedalling
+        if (cadenceEff < 5 || speed < 3) return 0.0
 
         val riderKg = totalMass - 24.0
         val cadFactor = when { cadenceEff < 60 -> 1.2; cadenceEff < 80 -> 1.0; else -> 0.85 }

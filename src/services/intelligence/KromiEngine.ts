@@ -40,7 +40,13 @@ const TORQUE_MIN = 20;
 const TORQUE_MAX = 85;
 const LAUNCH_MIN = 1;
 const LAUNCH_MAX = 7;
-const EMA_ALPHA = 0.3;
+// Adaptive EMA: faster at high speed (reliable data), slower at low speed (noisy GPS)
+function emaAlpha(speedKmh: number): number {
+  if (speedKmh > 15) return 0.35;  // responsive at riding speed
+  if (speedKmh > 8) return 0.25;   // moderate
+  if (speedKmh > 3) return 0.15;   // slow, GPS noisy
+  return 0.08;                      // nearly stopped, very slow changes
+}
 
 // Layer intervals
 const ENV_INTERVAL_MS = 60_000;
@@ -411,8 +417,9 @@ class KromiEngine {
     }
 
     // ── EMA Smoothing (support and torque) ──
-    supportPct = this.prevSupport + EMA_ALPHA * (supportPct - this.prevSupport);
-    torqueNm = this.prevTorque + EMA_ALPHA * (torqueNm - this.prevTorque);
+    const alpha = emaAlpha(input.speed_kmh);
+    supportPct = this.prevSupport + alpha * (supportPct - this.prevSupport);
+    torqueNm = this.prevTorque + alpha * (torqueNm - this.prevTorque);
     this.prevSupport = supportPct;
     this.prevTorque = torqueNm;
 

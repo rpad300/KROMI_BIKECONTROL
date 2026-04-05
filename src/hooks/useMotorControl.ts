@@ -36,26 +36,43 @@ let lastKromiOutput: {
   speed: number; gear: number; hr_zone: number; wPrimePct: number;
 } | null = null;
 
-// Simple GPS-based gradient from altitude changes over time
-const gradientHistory: { alt: number; ts: number }[] = [];
+// GPS-based gradient with spike protection and speed-adaptive smoothing
+const gradientHistory: { alt: number; ts: number; dist: number }[] = [];
+let smoothedGradient = 0;
 function getGpsGradient(altitude: number | null, speedKmh: number): number {
-  if (!altitude || altitude === 0 || speedKmh < 1) return 0;
+  if (!altitude || altitude === 0 || speedKmh < 2) return smoothedGradient * 0.95; // decay at rest
   const now = Date.now();
-  gradientHistory.push({ alt: altitude, ts: now });
-  // Keep 10s window
-  while (gradientHistory.length > 0 && now - gradientHistory[0]!.ts > 10000) {
+  const distSoFar = gradientHistory.length > 0 ? gradientHistory[gradientHistory.length - 1]!.dist : 0;
+  gradientHistory.push({ alt: altitude, ts: now, dist: distSoFar });
+  // Keep 15s window for better averaging
+  while (gradientHistory.length > 0 && now - gradientHistory[0]!.ts > 15000) {
     gradientHistory.shift();
   }
-  if (gradientHistory.length < 2) return 0;
+  if (gradientHistory.length < 3) return smoothedGradient; // need 3+ samples
   const first = gradientHistory[0]!;
   const last = gradientHistory[gradientHistory.length - 1]!;
   const dtSec = (last.ts - first.ts) / 1000;
-  if (dtSec < 2) return 0;
+  if (dtSec < 3) return smoothedGradient; // need 3+ seconds
   const dAlt = last.alt - first.alt;
   const dDistM = (speedKmh / 3.6) * dtSec;
-  if (dDistM < 3) return 0;
-  const grad = (dAlt / dDistM) * 100;
-  return Math.max(-30, Math.min(30, Math.round(grad * 10) / 10));
+  if (dDistM < 10) return smoothedGradient; // need 10m+ distance (was 3m — way too low)
+
+  // Filter altitude outlier: if dAlt implies >20% grade, likely GPS noise
+  const rawGrad = (dAlt / dDistM) * 100;
+  const clampedGrad = Math.max(-20, Math.min(20, rawGrad)); // ±20% max (was ±30%)
+
+  // Speed-adaptive EMA: at low speed GPS is noisier, smooth more
+  const alpha = speedKmh > 10 ? 0.4 : speedKmh > 5 ? 0.25 : 0.15;
+  smoothedGradient = smoothedGradient * (1 - alpha) + clampedGrad * alpha;
+
+  // Anti-spike: reject if change > 8% per second
+  const maxChangePerSec = 8;
+  const prevGrad = smoothedGradient;
+  if (Math.abs(clampedGrad - prevGrad) / dtSec > maxChangePerSec) {
+    smoothedGradient = prevGrad + Math.sign(clampedGrad - prevGrad) * maxChangePerSec * dtSec * alpha;
+  }
+
+  return Math.round(smoothedGradient * 10) / 10;
 }
 
 /**
