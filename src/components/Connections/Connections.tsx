@@ -54,6 +54,15 @@ const EXTERNAL_SENSORS: ExternalSensor[] = [
     getDeviceName: () => BLE.getSRAMDeviceName(),
   },
   {
+    key: 'cadence',
+    name: 'External Cadence Sensor',
+    icon: 'speed',
+    serviceKey: 'cadence',
+    onConnect: () => BLE.connectExtCadence(),
+    onDisconnect: () => BLE.disconnectExtCadence(),
+    getDeviceName: () => null, // TODO: persist cadence device name
+  },
+  {
     key: 'extPower',
     name: 'External Power Meter',
     icon: 'bolt',
