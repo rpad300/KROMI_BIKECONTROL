@@ -169,8 +169,20 @@ class WebViewActivity : AppCompatActivity() {
             allowFileAccess = true
             allowContentAccess = false
 
-            // Cache — use cache when offline, fetch when online
-            cacheMode = WebSettings.LOAD_DEFAULT
+            // Cache — clear on version change, normal otherwise
+            val prefs = getSharedPreferences("kromi_wv", MODE_PRIVATE)
+            val currentVer = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }
+            val lastVer = prefs.getString("last_version", "")
+            if (currentVer != lastVer) {
+                // New APK version — force fresh load to pick up any PWA changes
+                android.util.Log.i("WebView", "Version changed $lastVer → $currentVer — clearing WebView cache")
+                webView.clearCache(true)
+                android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                prefs.edit().putString("last_version", currentVer).apply()
+                cacheMode = WebSettings.LOAD_NO_CACHE
+            } else {
+                cacheMode = WebSettings.LOAD_DEFAULT
+            }
 
             // Media
             mediaPlaybackRequiresUserGesture = false
