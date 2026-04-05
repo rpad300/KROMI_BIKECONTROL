@@ -1,11 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTripStore } from '../../../store/tripStore';
+import { TripSummaryModal } from './TripSummaryModal';
 
 /** Trip control bar — start/stop + live stats (DOM refs for zero flicker) */
 export function TripControl() {
   const state = useTripStore((s) => s.state);
   const startTrip = useTripStore((s) => s.startTrip);
   const stopTrip = useTripStore((s) => s.stopTrip);
+  const [showSummary, setShowSummary] = useState(false);
 
   const timeRef = useRef<HTMLSpanElement>(null);
   const distRef = useRef<HTMLSpanElement>(null);
@@ -17,6 +19,13 @@ export function TripControl() {
     const interval = setInterval(() => useTripStore.getState().tick(), 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Show summary modal when trip finishes
+  useEffect(() => {
+    if (state === 'finished') {
+      setShowSummary(true);
+    }
+  }, [state]);
 
   // Update display via refs
   useEffect(() => {
@@ -38,12 +47,14 @@ export function TripControl() {
     return unsub;
   }, []);
 
+  // Trip summary modal
+  if (showSummary) {
+    return <TripSummaryModal onClose={() => setShowSummary(false)} />;
+  }
+
   if (state === 'idle' || state === 'finished') {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '12px', backgroundColor: '#131313' }}>
-        {state === 'finished' && (
-          <span className="font-label" style={{ fontSize: '10px', color: '#3fff8b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Trip saved</span>
-        )}
         <button
           onClick={startTrip}
           style={{
@@ -52,7 +63,7 @@ export function TripControl() {
             letterSpacing: '0.05em', cursor: 'pointer',
           }}
         >
-          {state === 'finished' ? 'NEW TRIP' : 'START TRIP'}
+          START TRIP
         </button>
       </div>
     );
