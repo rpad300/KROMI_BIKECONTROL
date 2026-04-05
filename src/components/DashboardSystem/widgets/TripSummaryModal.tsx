@@ -29,12 +29,18 @@ export function TripSummaryModal({ onClose }: { onClose: () => void }) {
     return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m ${String(s).padStart(2, '0')}s`;
   };
 
-  // Compute HR zone distribution
+  // Compute HR zone distribution using actual time between snapshots
   const hrZones = useMemo(() => {
-    const zones = [0, 0, 0, 0, 0]; // Z1-Z5 time counts
-    snapshots.forEach((s) => {
-      if (s.hr_zone >= 1 && s.hr_zone <= 5) zones[s.hr_zone - 1] = (zones[s.hr_zone - 1] ?? 0) + 1;
-    });
+    const zones = [0, 0, 0, 0, 0]; // Z1-Z5 time in seconds
+    for (let i = 0; i < snapshots.length; i++) {
+      const s = snapshots[i]!;
+      if (s.hr_zone < 1 || s.hr_zone > 5) continue;
+      // Time this snapshot represents = gap to next (or 1s for last)
+      const dt = i < snapshots.length - 1
+        ? Math.min(10, snapshots[i + 1]!.elapsed_s - s.elapsed_s) // cap at 10s to avoid gaps
+        : 1;
+      zones[s.hr_zone - 1] = (zones[s.hr_zone - 1] ?? 0) + Math.max(0, dt);
+    }
     return zones;
   }, [snapshots]);
   const maxHrZone = Math.max(...hrZones, 1);
@@ -130,10 +136,10 @@ export function TripSummaryModal({ onClose }: { onClose: () => void }) {
             {hrZones.map((count, i) => {
               const pct = (count / maxHrZone) * 100;
               const colors = ['#6e9bff', '#3fff8b', '#fbbf24', '#ff9b3f', '#ff716c'];
-              const mins = (count * 5 / 60).toFixed(0); // each sample ≈ 5s
+              const label = count >= 60 ? `${Math.round(count / 60)}m` : `${Math.round(count)}s`;
               return (
                 <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                  <span className="font-label tabular-nums" style={{ fontSize: '8px', color: '#777575' }}>{mins}m</span>
+                  <span className="font-label tabular-nums" style={{ fontSize: '8px', color: '#777575' }}>{label}</span>
                   <div style={{ width: '100%', backgroundColor: colors[i], borderRadius: '2px 2px 0 0', height: `${Math.max(pct, 4)}%`, opacity: 0.85 }} />
                   <span className="font-headline font-bold" style={{ fontSize: '10px', color: colors[i] }}>Z{i + 1}</span>
                 </div>
