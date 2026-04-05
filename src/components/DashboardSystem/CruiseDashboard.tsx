@@ -4,6 +4,7 @@ import { AssistMode } from '../../types/bike.types';
 import { SpeedHero } from './widgets/SpeedHero';
 import { MetricGrid, METRIC } from './widgets/MetricGrid';
 import { CompactIntelligence } from './widgets/CompactIntelligence';
+import { IntelligenceWidget } from '../Dashboard/IntelligenceWidget';
 import { MiniMap } from '../Dashboard/MiniMap';
 import { ElevationProfile } from '../Dashboard/ElevationProfile';
 import { ClockDisplay } from '../shared/ClockDisplay';
@@ -16,6 +17,7 @@ export function CruiseDashboard() {
   const temp = useBikeStore((s) => s.temperature_c);
   const tripTime = useBikeStore((s) => s.trip_time_s);
   const isEBike = useIsEBike();
+  const isPowerMode = assistMode === AssistMode.POWER;
 
   const formatTime = (s: number) => s > 0 ? `${Math.floor(s/3600)}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}` : '0:00';
 
@@ -84,9 +86,15 @@ export function CruiseDashboard() {
         })}
       </div>}
 
-      {/* Map — always visible at bottom */}
+      {/* Bottom: KROMI Intelligence in POWER mode, Map otherwise */}
       <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-        <MiniMap />
+        {isPowerMode ? (
+          <div style={{ height: '100%', overflow: 'hidden' }}>
+            <IntelligenceWidget />
+          </div>
+        ) : (
+          <MiniMap />
+        )}
       </div>
     </div>
   );
