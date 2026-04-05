@@ -13,6 +13,31 @@ import { AssistMode } from '../types/bike.types';
 
 const TICK_INTERVAL_MS = 1000; // 1s — fast reaction to gear/gradient/HR changes
 
+// Simple GPS-based gradient from altitude changes over time
+// More reliable than depending on Elevation API which may fail
+const gradientHistory: { alt: number; ts: number }[] = [];
+function getGpsGradient(altitude: number | null, speedKmh: number): number {
+  if (!altitude || altitude === 0 || speedKmh < 1) return 0;
+  const now = Date.now();
+  gradientHistory.push({ alt: altitude, ts: now });
+  // Keep 10s window
+  while (gradientHistory.length > 0 && now - gradientHistory[0]!.ts > 10000) {
+    gradientHistory.shift();
+  }
+  if (gradientHistory.length < 2) return 0;
+  const first = gradientHistory[0]!;
+  const last = gradientHistory[gradientHistory.length - 1]!;
+  const dtSec = (last.ts - first.ts) / 1000;
+  if (dtSec < 2) return 0; // need at least 2s of data
+  const dAlt = last.alt - first.alt; // meters
+  // Estimate horizontal distance from speed × time
+  const dDistM = (speedKmh / 3.6) * dtSec;
+  if (dDistM < 3) return 0;
+  const grad = (dAlt / dDistM) * 100;
+  // Clamp to reasonable range (-30% to +30%)
+  return Math.max(-30, Math.min(30, Math.round(grad * 10) / 10));
+}
+
 /**
  * Central motor control loop — KROMI intelligent assist.
  *
@@ -62,14 +87,19 @@ export function useMotorControl() {
 
       // === Gather inputs (personalized via settingsStore) ===
       const map = useMapStore.getState();
+      const altitude = map.altitude ?? bike.barometric_altitude_m;
+
+      // Direct GPS gradient calculation (backup for when autoAssistEngine fails)
+      const liveGradient = getGpsGradient(altitude, bike.speed_kmh);
+
       const input: TuningInput = {
-        gradient: 0,
+        gradient: liveGradient,
         speed: bike.speed_kmh,
         cadence: bike.cadence_rpm,
         riderPower: bike.power_watts,
         batterySoc: bike.battery_percent,
         hr: bike.hr_bpm,
-        altitude: map.altitude ?? bike.barometric_altitude_m,
+        altitude,
         upcomingGradient: null,
         distanceToChange: null,
         currentGear: bike.gear,
