@@ -97,48 +97,90 @@ class ShimanoProtocol(private val context: Context) {
     // SCAN — find any Shimano STEPS device
     // ══════════════════════════════════════════
 
+    /** Address to exclude from scan (e.g., the Giant gateway already connected) */
+    var excludeAddress: String? = null
+
     fun scan() {
         val scanner = adapter?.bluetoothLeScanner ?: return
         scanCallback?.let { scanner.stopScan(it) }
 
-        Log.i(TAG, "Scanning for Shimano STEPS devices...")
+        bleLog("SCAN_START", "Looking for Shimano STEPS (service UUID + name patterns)...")
         emitStatus("scanning")
 
-        val filter = ScanFilter.Builder()
-            .setServiceUuid(ParcelUuid(SERVICE_ETUBE))
-            .build()
+        // Multiple filters: by service UUID + by known name patterns
+        // Some Shimano devices don't advertise service UUIDs until connected
+        val filters = listOf(
+            ScanFilter.Builder().setServiceUuid(ParcelUuid(SERVICE_ETUBE)).build(),
+            ScanFilter.Builder().setServiceUuid(ParcelUuid(SERVICE_REALTIME)).build(),
+        )
 
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
+        val foundAddresses = mutableSetOf<String>()
+
         val cb = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val device = result.device
-                val name = device.name ?: "SHIMANO"
-                Log.i(TAG, "Found: $name (${device.address}) RSSI=${result.rssi}")
+                val name = device.name ?: ""
+                val addr = device.address
+
+                // Skip already-found and excluded devices
+                if (addr in foundAddresses) return
+                if (addr == excludeAddress) return
+                foundAddresses.add(addr)
+
+                // Check if this looks like a Shimano device
+                val uuids = result.scanRecord?.serviceUuids?.joinToString(",") { it.toString() } ?: ""
+                // Detect Shimano by:
+                // 1. Service UUIDs containing SHIMANO_BLE base (most reliable)
+                // 2. Appearance = 0x0480 (Generic Cycling) — set by Shimano STEPS
+                // 3. Known device name patterns (user can customize name in E-Tube!)
+                val appearance = result.scanRecord?.bytes?.let { getAppearance(it) } ?: 0
+                val isCyclingAppearance = appearance == 0x0480 // Generic Cycling
+
+                val isShimano = uuids.contains("5348-494d-414e", true) // SHIMANO_BLE base
+                    || uuids.contains("18ff", true) || uuids.contains("18ef", true)
+                    || isCyclingAppearance
+                    || name.contains("SHIMANO", true)
+                    || name.contains("Di2", true)
+                    || name.contains("DU-E", true)
+                    || name.contains("EP800", true)
+                    || name.contains("EP600", true)
+                    || name.contains("SC-E", true)
+
+                bleLog("SCAN_FOUND", "name=$name addr=$addr rssi=${result.rssi} shimano=$isShimano uuids=$uuids")
+
+                if (!isShimano) return
 
                 onData?.invoke(JSONObject().apply {
                     put("type", "shimanoFound")
                     put("name", name)
-                    put("address", device.address)
+                    put("address", addr)
                     put("rssi", result.rssi)
+                    put("uuids", uuids)
                 })
 
-                // Auto-connect to first found
+                // Auto-connect to first Shimano found
                 scanner.stopScan(this)
                 scanCallback = null
-                connect(device.address)
+                connect(addr)
             }
 
             override fun onScanFailed(errorCode: Int) {
-                Log.e(TAG, "Scan failed: $errorCode")
+                bleLog("SCAN_FAIL", "errorCode=$errorCode")
                 emitError("Shimano scan failed: $errorCode")
             }
         }
 
         scanCallback = cb
-        scanner.startScan(listOf(filter), settings, cb)
+
+        // Use unfiltered scan — Shimano devices with custom names may not advertise
+        // service UUIDs. We detect them by service UUIDs in scan record OR known name
+        // patterns. The Appearance field (0x0480 = Cycling) is also checked.
+        // Filtered scan misses devices that only expose services after connection.
+        scanner.startScan(null, settings, cb)
 
         handler.postDelayed({
             if (scanCallback === cb) {
@@ -728,6 +770,23 @@ class ShimanoProtocol(private val context: Context) {
             put("bytes", rawBytes?.size ?: 0)
             put("ts", System.currentTimeMillis())
         })
+    }
+
+    /** Parse BLE Appearance from raw advertising bytes (AD type 0x19) */
+    private fun getAppearance(scanRecord: ByteArray): Int {
+        var i = 0
+        while (i < scanRecord.size - 1) {
+            val len = scanRecord[i].toInt() and 0xFF
+            if (len == 0) break
+            if (i + len >= scanRecord.size) break
+            val type = scanRecord[i + 1].toInt() and 0xFF
+            if (type == 0x19 && len >= 3) { // Appearance
+                return (scanRecord[i + 2].toInt() and 0xFF) or
+                       ((scanRecord[i + 3].toInt() and 0xFF) shl 8)
+            }
+            i += len + 1
+        }
+        return 0
     }
 
     fun destroy() {

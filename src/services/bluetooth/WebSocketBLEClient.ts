@@ -300,6 +300,11 @@ export class WebSocketBLEClient {
           setTimeout(() => this.send({ type: 'readBattery' }), 5000);
           // Start periodic range polling (every 2 minutes)
           this.startRangePolling();
+          // Auto-scan for Shimano Di2/STEPS when bike connects
+          setTimeout(() => {
+            console.log('[WSClient] Auto-scanning for Shimano Di2...');
+            di2Service.scanAndConnect();
+          }, 3000);
           break;
 
         case 'disconnected':

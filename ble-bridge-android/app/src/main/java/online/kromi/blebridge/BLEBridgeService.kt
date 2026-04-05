@@ -267,6 +267,7 @@ class BLEBridgeService : Service() {
 
             // === Shimano STEPS / Di2 ===
             "shimanoScan" -> {
+                shimanoProtocol.excludeAddress = bleManager.connectedAddress
                 shimanoProtocol.scan()
             }
             "shimanoConnect" -> {

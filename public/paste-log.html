@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paste BLE Log</title>
+<style>
+  body { background: #0e0e0e; color: #fff; font-family: sans-serif; padding: 20px; }
+  button { width: 100%; height: 80px; font-size: 24px; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; margin: 10px 0; }
+  #pasteBtn { background: #3fff8b; color: #000; }
+  #pasteBtn:active { transform: scale(0.97); }
+  #status { font-size: 16px; padding: 10px; margin: 10px 0; border-radius: 8px; }
+  .ok { background: #1a3a2a; color: #3fff8b; }
+  .err { background: #3a1a1a; color: #ff716c; }
+  .working { background: #1a2a3a; color: #6e9bff; }
+  #info { color: #888; font-size: 14px; }
+</style>
+</head>
+<body>
+  <h2>Upload BLE Log</h2>
+  <p id="info">1. Na APK: toca "Copy Log"<br>2. Aqui: toca o botao abaixo</p>
+  <button id="pasteBtn" onclick="pasteAndUpload()">COLAR E ENVIAR LOG</button>
+  <div id="status"></div>
+
+<script>
+const SB_URL = 'https://ctsuupvmmyjlrtjnxagv.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0c3V1cHZtbXlqbHJ0am54YWd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Njg3MTgsImV4cCI6MjA5MDU0NDcxOH0.VgpKrjxYirb9Gc7OZX-aHGJmGJ3QdDM5I7iXaWDmBXQ';
+
+async function pasteAndUpload() {
+  const status = document.getElementById('status');
+
+  try {
+    status.className = 'working';
+    status.textContent = 'A ler clipboard...';
+
+    const text = await navigator.clipboard.readText();
+    if (!text || text.length < 10) {
+      status.className = 'err';
+      status.textContent = 'Clipboard vazio ou sem dados';
+      return;
+    }
+
+    const lines = text.split('\n');
+    status.textContent = `${lines.length} linhas lidas. A enviar...`;
+
+    // Split into chunks of 200 lines
+    const chunkSize = 200;
+    let sent = 0;
+
+    for (let i = 0; i < lines.length; i += chunkSize) {
+      const chunk = lines.slice(i, i + chunkSize);
+      const rows = [{
+        level: 'log',
+        message: `[APK-LOG] chunk ${Math.floor(i/chunkSize)+1}/${Math.ceil(lines.length/chunkSize)} (lines ${i+1}-${i+chunk.length})`,
+        data: { lines: chunk, total_lines: lines.length }
+      }];
+
+      const res = await fetch(`${SB_URL}/rest/v1/debug_logs`, {
+        method: 'POST',
+        headers: {
+          'apikey': SB_KEY,
+          'Authorization': `Bearer ${SB_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify(rows),
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        status.className = 'err';
+        status.textContent = `Erro no chunk ${Math.floor(i/chunkSize)+1}: ${err}`;
+        return;
+      }
+
+      sent += chunk.length;
+      status.textContent = `Enviadas ${sent}/${lines.length} linhas...`;
+    }
+
+    status.className = 'ok';
+    status.textContent = `Feito! ${lines.length} linhas enviadas com sucesso.`;
+
+  } catch (err) {
+    status.className = 'err';
+    status.textContent = `Erro: ${err.message}`;
+  }
+}
+</script>
+</body>
+</html>
