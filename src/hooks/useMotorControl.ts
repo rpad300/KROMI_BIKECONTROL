@@ -11,7 +11,70 @@ import { setTuning, isTuningAvailable } from '../services/bluetooth/BLEBridge';
 import { AssistMode } from '../types/bike.types';
 // encodeCalibration no longer needed — KROMI only changes POWER level
 
-const TICK_INTERVAL_MS = 1000; // 1s — fast reaction to gear/gradient/HR changes
+const TICK_INTERVAL_MS = 1000;
+
+/**
+ * KROMI Score: 0-100. Crosses ALL rider inputs into a single "need motor" score.
+ * Higher = rider needs more motor assist.
+ *
+ * Considers: gradient, HR, cadence, gear, speed — weighted together.
+ * No battery constraint — POWER mode means rider wants full KROMI control.
+ */
+function computeKromiScore(input: TuningInput): number {
+  let score = 40; // baseline: neutral
+
+  // ── GRADIENT (biggest factor: -25 to +30) ──
+  if (input.gradient > 10) score += 30;       // steep climb: max motor
+  else if (input.gradient > 6) score += 22;   // hard climb
+  else if (input.gradient > 3) score += 15;   // moderate climb
+  else if (input.gradient > 1) score += 5;    // slight incline
+  else if (input.gradient < -8) score -= 25;  // steep descent: minimal motor
+  else if (input.gradient < -4) score -= 18;  // descent
+  else if (input.gradient < -1) score -= 10;  // slight descent
+
+  // ── HR (effort indicator: -15 to +20) ──
+  if (input.hr > 0) {
+    if (input.hr > 160) score += 20;         // very high: rider struggling
+    else if (input.hr > 140) score += 12;    // high effort
+    else if (input.hr > 120) score += 5;     // moderate effort
+    else if (input.hr < 90) score -= 15;     // very low: rider coasting
+    else if (input.hr < 110) score -= 8;     // comfortable
+  }
+
+  // ── CADENCE (pedalling efficiency: -10 to +15) ──
+  if (input.cadence > 0) {
+    if (input.cadence < 40) score += 15;      // grinding hard: needs help
+    else if (input.cadence < 55) score += 8;  // low cadence
+    else if (input.cadence > 95) score -= 10; // spinning easy
+    else if (input.cadence > 80) score -= 3;  // efficient
+    // 55-80: sweet spot, no change
+  }
+
+  // ── GEAR POSITION (effort proxy: -8 to +10) ──
+  if (input.currentGear > 0) {
+    const gearPct = (input.currentGear - 1) / 11; // 0=easiest, 1=hardest (12-speed)
+    if (gearPct > 0.75) score += 10;     // heavy gear: hard effort
+    else if (gearPct > 0.5) score += 4;  // mid-heavy
+    else if (gearPct < 0.2) score -= 8;  // very light gear: easy
+    else if (gearPct < 0.35) score -= 3; // light
+  }
+
+  // ── SPEED (context: -5 to +5) ──
+  if (input.speed > 25) score -= 5;       // high speed: motor cuts at 25, reduce
+  else if (input.speed < 5 && input.speed > 0 && input.gradient > 2) score += 5; // slow on climb: help
+
+  // ── COMBINED PATTERNS ──
+  // Grinding: heavy gear + low cadence + climb = emergency boost
+  if (input.currentGear > 8 && input.cadence > 0 && input.cadence < 50 && input.gradient > 3) {
+    score += 10; // extra boost for grinding uphill
+  }
+  // Coasting: light gear + high cadence + flat/descent = save motor
+  if (input.currentGear > 0 && input.currentGear < 5 && input.cadence > 80 && input.gradient < 1) {
+    score -= 8; // spinning easy on flat
+  }
+
+  return Math.max(0, Math.min(100, score));
+}
 
 // Simple GPS-based gradient from altitude changes over time
 // More reliable than depending on Elevation API which may fail
@@ -131,28 +194,28 @@ export function useMotorControl() {
         );
       }
 
-      // === Evaluate ===
+      // === Evaluate: still use TuningIntelligence for UI/IntelligenceWidget ===
       const decision = tuningIntelligence.evaluate(input);
       useIntelligenceStore.getState().setDecision(decision);
 
-      // Log decision every 10s for diagnostics (not every 1s to avoid spam)
+      // === KROMI Direct Decision — crosses ALL inputs ===
+      // Score 0-100: higher = more motor needed
+      const kromiScore = computeKromiScore(input);
+      // Map score to wire: 0=MAX power, 1=MID, 2=MIN
+      const powerLevel = kromiScore >= 55 ? 0 : kromiScore >= 30 ? 1 : 2;
+      const powerLabel = powerLevel === 0 ? 'MAX' : powerLevel === 1 ? 'MID' : 'MIN';
+
+      // Log every 10s
       if (Date.now() % 10000 < 1100) {
-        dlog?.(`[KROMI] EVAL: P=${decision.calibration.support} S=${decision.calibration.torque} A=${decision.calibration.midTorque} T=${decision.calibration.lowTorque} E=${decision.calibration.launch} | spd=${input.speed} cad=${input.cadence} hr=${input.hr} gear=${input.currentGear} grad=${input.gradient.toFixed(1)} bat=${input.batterySoc}`);
+        dlog?.(`[KROMI] score=${kromiScore} → ${powerLabel} | grad=${input.gradient.toFixed(1)} gear=${input.currentGear} spd=${input.speed.toFixed(0)} cad=${input.cadence} hr=${input.hr}`);
       }
 
-      // === Execute: ONLY change POWER mode level, leave other modes untouched ===
+      // === Execute: ONLY change POWER mode ===
       if (isTuningAvailable()) {
         const tuning = useTuningStore.getState();
-        // KROMI decision → single POWER level (0=max, 1=mid, 2=min)
-        const powerLevel = decision.calibration.support; // primary output
-
         if (powerLevel !== tuning.current.power) {
-          // Keep other modes at their original values, only change POWER
-          const newLevels = {
-            ...tuning.current,
-            power: powerLevel,
-          };
-          dlog?.(`[KROMI] POWER → ${powerLevel} (${powerLevel === 0 ? 'MAX' : powerLevel === 1 ? 'MID' : 'MIN'}) | gear=${bike.gear} spd=${bike.speed_kmh} cad=${bike.cadence_rpm} hr=${bike.hr_bpm} grad=${input.gradient.toFixed(1)} bat=${bike.battery_percent}`);
+          const newLevels = { ...tuning.current, power: powerLevel };
+          dlog?.(`[KROMI] POWER → ${powerLabel} (score=${kromiScore}) | grad=${input.gradient.toFixed(1)} gear=${input.currentGear} spd=${input.speed.toFixed(0)} cad=${input.cadence} hr=${input.hr}`);
           setTuning(newLevels);
           tuning.setCurrent(newLevels);
         }
