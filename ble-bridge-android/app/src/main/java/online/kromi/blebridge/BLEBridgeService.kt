@@ -401,7 +401,13 @@ class BLEBridgeService : Service() {
                 "assistMode" -> {
                     // GEV motor reports assist mode (0x15 response)
                     val mode = json.optInt("value", 0)
-                    Log.d(TAG, "feedKromiCore assistMode(GEV): mode=$mode (${listOf("OFF","ECO","TOUR","ACTV","SPRT","PWR","SMART").getOrElse(mode) { "?" }})")
+                    Log.d(TAG, "feedKromiCore assistMode(GEV 0x15): mode=$mode (${listOf("OFF","ECO","TOUR","ACTV","SPRT","PWR","SMART").getOrElse(mode) { "?" }})")
+                    kromiCore.onAssistMode(mode)
+                }
+                "fc23cmd41" -> {
+                    // FC23 telemetry stream — assist mode (primary source, every 2s)
+                    val mode = json.optInt("wireMode", 0)
+                    Log.d(TAG, "feedKromiCore assistMode(FC23 0x41): mode=$mode (${listOf("OFF","ECO","TOUR","ACTV","SPRT","PWR","SMART").getOrElse(mode) { "?" }})")
                     kromiCore.onAssistMode(mode)
                 }
             }

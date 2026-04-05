@@ -44,7 +44,12 @@ let lastKromiOutput: {
 const gradientSamples: { alt: number; dist_m: number; ts: number }[] = [];
 let smoothedGradient = 0;
 function getGpsGradient(altitude: number | null, speedKmh: number, distanceKm: number): number {
-  if (!altitude || altitude === 0 || speedKmh < 2) return smoothedGradient * 0.95; // decay at rest
+  if (!altitude || altitude === 0 || speedKmh < 2) {
+    // Fast decay to 0 when stopped — gradient is meaningless at rest
+    smoothedGradient *= 0.7;
+    if (Math.abs(smoothedGradient) < 0.3) smoothedGradient = 0;
+    return smoothedGradient;
+  }
 
   const now = Date.now();
   const dist_m = distanceKm * 1000; // wheel distance in meters (precise)

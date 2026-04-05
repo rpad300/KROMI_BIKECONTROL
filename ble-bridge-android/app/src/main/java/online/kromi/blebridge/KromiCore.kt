@@ -294,7 +294,7 @@ class KromiCore(private val bleManager: BLEManager) {
         // hrModifier
         val hrMod = when {
             hr <= 0            -> 1.0
-            tBreach < 8        -> 0.6  // pre-emptive protection
+            tBreach < 3        -> 0.6  // pre-emptive protection (only if very imminent)
             zone > targetZone  -> 0.7  // reduce load urgently
             zone < targetZone  -> 1.1  // can push motor more
             else               -> 1.0  // in target zone
@@ -314,10 +314,11 @@ class KromiCore(private val bleManager: BLEManager) {
                 launchLvl = 5.0
                 reason = "W' ${(wPrimePct * 100).toInt()}% critico"
             }
-            // P2: Zone breach imminent
-            tBreach < 8 -> {
-                supportPct = min(SUPPORT_MAX, 280.0)
-                torqueNm = min(TORQUE_MAX, 65.0)
+            // P2: Zone breach imminent — only hard override if <3min
+            tBreach < 3 -> {
+                val urgency = max(0.0, 1.0 - tBreach / 3.0)
+                supportPct = SUPPORT_MIN + (SUPPORT_MAX - SUPPORT_MIN) * 0.5 * (0.5 + urgency * 0.5)
+                torqueNm = TORQUE_MIN + (TORQUE_MAX - TORQUE_MIN) * 0.4 * (0.5 + urgency * 0.5)
                 launchLvl = 4.0
                 reason = "Breach Z$targetZone em ${tBreach.toInt()}min"
             }
@@ -470,8 +471,13 @@ class KromiCore(private val bleManager: BLEManager) {
     private fun estimateHumanPower(cadenceEff: Double, gearRatio: Double): Double {
         // Prefer power meter
         if (power > 0 && power < 600) return power.toDouble()
-        // Filter residual sensor noise: cad<5 or speed<3 = not really pedalling
-        if (cadenceEff < 5 || speed < 3) return 0.0
+        // Filter sensor noise: not really pedalling if speed too low for cadence
+        // At cad=14 gear=3 (ratio~1.3) wheel=2.29m → expected speed = 14*1.3*2.29*60/1000 = 2.5km/h
+        // If actual speed is much higher or cadence makes no sense for speed, it's noise
+        if (cadenceEff < 10 || speed < 4) return 0.0
+        // Consistency check: expected speed from cadence vs actual (reject if >3x mismatch)
+        val expectedSpeedKmh = cadenceEff * gearRatio * wheelCircumM * 60.0 / 1000.0
+        if (expectedSpeedKmh > 0 && (speed / expectedSpeedKmh > 3.0 || speed / expectedSpeedKmh < 0.3)) return 0.0
 
         val riderKg = totalMass - 24.0
         val cadFactor = when { cadenceEff < 60 -> 1.2; cadenceEff < 80 -> 1.0; else -> 0.85 }

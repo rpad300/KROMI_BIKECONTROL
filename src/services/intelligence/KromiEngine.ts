@@ -316,13 +316,16 @@ class KromiEngine {
       reason = 'W\' critico — protecao maxima';
       alerts.push('Reserva anaerobica baixa. Mantem zona 2.');
     }
-    // Priority 2: Zone breach imminent → pre-emptive
-    else if (physio.flags.includes('zone_breach_imminent')) {
-      supportPct = Math.min(SUPPORT_MAX, 280);
-      torqueNm = Math.min(TORQUE_MAX, 65);
+    // Priority 2: Zone breach imminent → proportional response
+    // Only hard-override for very imminent breach (<3min). 3-8min = soft boost via hrModifier.
+    else if (physio.flags.includes('zone_breach_imminent') && physio.t_breach_minutes < 3) {
+      // Proportional: closer to breach = stronger response
+      const urgency = Math.max(0, 1 - physio.t_breach_minutes / 3); // 0→1 as breach approaches
+      supportPct = SUPPORT_MIN + (SUPPORT_MAX - SUPPORT_MIN) * 0.5 * (0.5 + urgency * 0.5);
+      torqueNm = TORQUE_MIN + (TORQUE_MAX - TORQUE_MIN) * 0.4 * (0.5 + urgency * 0.5);
       launchLvl = 4;
       reason = `Breach Z${targetZone} em ${physio.t_breach_minutes.toFixed(0)}min — pre-emptivo`;
-      alerts.push(`Fadiga cardiaca detetada. Reduz ritmo ${Math.ceil(physio.t_breach_minutes)} minutos.`);
+      alerts.push(`Fadiga cardiaca. Reduz ritmo ${Math.ceil(physio.t_breach_minutes)} minutos.`);
     }
     // Priority 3: Battery emergency
     else if (this.cachedBattery?.is_emergency) {

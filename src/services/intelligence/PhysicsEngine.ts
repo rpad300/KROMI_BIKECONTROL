@@ -131,10 +131,13 @@ function estimateHumanPower(
     return input.power_watts;
   }
 
-  // Filter residual sensor noise: cad<5 or very low speed = not pedalling
-  if (cadence < 5 || input.speed_kmh < 3) return 0;
+  // Filter sensor noise: not pedalling if cadence too low or speed inconsistent
+  if (cadence < 10 || input.speed_kmh < 4) return 0;
+  // Consistency: expected speed from cadence vs actual (reject >3x mismatch)
+  const expectedSpeedKmh = (cadence * gearRatio * input.wheelCircumM * 60) / 1000;
+  if (expectedSpeedKmh > 0 && (input.speed_kmh / expectedSpeedKmh > 3 || input.speed_kmh / expectedSpeedKmh < 0.3)) return 0;
 
-  const riderWeightKg = input.totalMass - 24; // approximate bike weight
+  const riderWeightKg = input.totalMass - 24;
   const cadenceFactor = cadence < 60 ? 1.2 : cadence < 80 ? 1.0 : 0.85;
   const pedalTorqueNm = riderWeightKg * 0.015 * cadenceFactor * gearRatio;
   return pedalTorqueNm * (2 * Math.PI * cadence / 60);
