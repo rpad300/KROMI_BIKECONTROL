@@ -721,7 +721,75 @@ function EBikeSection({ bike, update }: { bike: BikeConfig; update: (p: Partial<
           Valores auto-calibrados dos ranges do motor. Actualizam durante a volta.
         </div>
       </Card>
+
+      {/* RideControl mode configuration */}
+      <RideControlModeSection bike={bike} update={update} />
     </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// RIDECONTROL MODE CONFIG — support/torque per mode × level
+// ═══════════════════════════════════════════════════════════
+
+function RideControlModeSection({ bike, update }: { bike: BikeConfig; update: (p: Partial<BikeConfig>) => void }) {
+  const defaults = safeBikeConfig(undefined).ridecontrol_modes;
+  const modes = bike.ridecontrol_modes ?? defaults;
+
+  const modeList = [
+    { key: 'eco' as const, label: 'ECO', color: '#3fff8b' },
+    { key: 'tour' as const, label: 'TOUR', color: '#60a5fa' },
+    { key: 'active' as const, label: 'ACTIVE', color: '#fbbf24' },
+    { key: 'sport' as const, label: 'SPORT', color: '#ff716c' },
+  ];
+  const levels = ['low', 'mid', 'high'] as const;
+
+  const updateVal = (mode: string, level: string, field: string, value: number) => {
+    const updated = {
+      ...modes,
+      [mode]: {
+        ...modes[mode as keyof typeof modes],
+        [level]: { ...modes[mode as keyof typeof modes][level as 'low' | 'mid' | 'high'], [field]: value },
+      },
+    };
+    update({ ridecontrol_modes: updated });
+  };
+
+  return (
+    <Card>
+      <SubLabel>Configuração RideControl</SubLabel>
+      <div style={{ fontSize: '9px', color: '#494847', marginBottom: '8px' }}>
+        Copia os valores do teu Giant RideControl app (Support % e Torque Nm por modo e nível). O KROMI usa estes dados para aprender melhor com as tuas preferências.
+      </div>
+      {modeList.map(({ key, label, color }) => (
+        <div key={key} style={{ marginBottom: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            <div style={{ width: '8px', height: '8px', borderRadius: '2px', backgroundColor: color }} />
+            <span style={{ fontSize: '11px', fontWeight: 700, color }}>{label}</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '45px 1fr 1fr 1fr', gap: '3px', fontSize: '9px' }}>
+            <div />
+            {levels.map(l => <div key={l} style={{ textAlign: 'center', color: '#777575', fontWeight: 600, textTransform: 'uppercase' }}>{l}</div>)}
+            <div style={{ color: '#adaaaa', alignSelf: 'center', fontSize: '9px' }}>S %</div>
+            {levels.map(l => (
+              <input key={`${key}-${l}-s`} type="number" value={modes[key][l].support_pct}
+                onChange={(e) => updateVal(key, l, 'support_pct', Number(e.target.value))}
+                className="tabular-nums"
+                style={{ width: '100%', backgroundColor: '#1a1919', color: 'white', border: '1px solid #333', textAlign: 'center', padding: '5px 2px', fontSize: '12px', fontWeight: 700, borderRadius: '3px' }}
+              />
+            ))}
+            <div style={{ color: '#adaaaa', alignSelf: 'center', fontSize: '9px' }}>Nm</div>
+            {levels.map(l => (
+              <input key={`${key}-${l}-t`} type="number" value={modes[key][l].torque_nm}
+                onChange={(e) => updateVal(key, l, 'torque_nm', Number(e.target.value))}
+                className="tabular-nums"
+                style={{ width: '100%', backgroundColor: '#1a1919', color: 'white', border: '1px solid #333', textAlign: 'center', padding: '5px 2px', fontSize: '12px', fontWeight: 700, borderRadius: '3px' }}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </Card>
   );
 }
 
