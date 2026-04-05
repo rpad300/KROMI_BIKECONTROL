@@ -467,6 +467,9 @@ class KromiEngine {
       tau: this.learning.getParams().tau_seconds,
       form_multiplier: this.cachedFormMultiplier,
       glycogen_cp_factor: this.cachedNutrition?.cp_factor ?? 1.0,
+      route_remaining_km: useRouteStore.getState().navigation.active
+        ? useRouteStore.getState().navigation.distanceRemaining_m / 1000
+        : -1,
       total_mass: totalMass,
       wheel_circum_m: wheelCircumM,
       chainring,

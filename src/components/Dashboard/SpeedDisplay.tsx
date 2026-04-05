@@ -6,7 +6,7 @@ export function SpeedDisplay() {
   const rideTime = useBikeStore((s) => s.ride_time_s);
 
   const integer = Math.floor(speed);
-  const decimal = Math.round((speed - integer) * 10);
+  const decimal = Math.round((speed - integer) * 100);
 
   // Elapsed time from ride start (wall clock approximation)
   // ride_time_s is moving time; we estimate stopped time from speed=0 periods
@@ -24,7 +24,7 @@ export function SpeedDisplay() {
       {/* Speed */}
       <div className="flex items-baseline justify-center">
         <span className="text-6xl font-bold tabular-nums tracking-tight">{integer}</span>
-        <span className="text-3xl font-bold text-[#adaaaa]">.{decimal}</span>
+        <span className="text-3xl font-bold text-[#adaaaa]">.{decimal.toString().padStart(2, '0')}</span>
         <span className="text-sm text-[#777575] ml-1 self-end mb-2">km/h</span>
       </div>
 

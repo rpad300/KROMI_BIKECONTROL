@@ -1,6 +1,8 @@
 import { useMemo, useEffect, useState } from 'react';
 import { useTripStore } from '../../../store/tripStore';
 import { useBikeStore } from '../../../store/bikeStore';
+import { useRouteStore } from '../../../store/routeStore';
+import { useNutritionStore } from '../../../store/nutritionStore';
 import { di2Service } from '../../../services/di2/Di2Service';
 import { localRideStore, type LocalSnapshot } from '../../../services/storage/LocalRideStore';
 
@@ -168,8 +170,104 @@ export function TripSummaryModal({ onClose }: { onClose: () => void }) {
         </div>
       </Section>
 
+      {/* Pre-ride vs Actual comparison */}
+      <PreRideComparison
+        actualKm={trip.tripKm}
+        actualTimeMin={Math.round(trip.movingTime / 60)}
+        actualBatteryUsed={batteryUsed}
+        elevGain={elevGain}
+      />
+
       <div style={{ height: '60px' }} />
     </div>
+  );
+}
+
+/** Pre-ride vs Actual comparison — only shows if pre-ride analysis exists */
+function PreRideComparison({ actualTimeMin, actualBatteryUsed }: {
+  actualKm: number; actualTimeMin: number; actualBatteryUsed: number; elevGain: number;
+}) {
+  const preRide = useRouteStore((s) => s.preRideAnalysis);
+  const nutrition = useNutritionStore((s) => s.state);
+
+  if (!preRide) return null;
+
+  // Estimate actual Wh from battery used: 625Wh × %used / 100
+  const actualWh = Math.round((actualBatteryUsed / 100) * 625);
+
+  const rows: { label: string; predicted: string; actual: string; delta: string; color: string }[] = [
+    {
+      label: 'Tempo',
+      predicted: `${preRide.estimated_time_min} min`,
+      actual: `${actualTimeMin} min`,
+      delta: `${actualTimeMin - preRide.estimated_time_min > 0 ? '+' : ''}${actualTimeMin - preRide.estimated_time_min} min`,
+      color: Math.abs(actualTimeMin - preRide.estimated_time_min) < 10 ? '#3fff8b' : '#fbbf24',
+    },
+    {
+      label: 'Motor Wh',
+      predicted: `${preRide.total_wh} Wh`,
+      actual: `${actualWh} Wh`,
+      delta: `${actualWh - preRide.total_wh > 0 ? '+' : ''}${actualWh - preRide.total_wh} Wh`,
+      color: actualWh <= preRide.total_wh ? '#3fff8b' : actualWh < preRide.total_wh * 1.2 ? '#fbbf24' : '#ff716c',
+    },
+  ];
+
+  if (nutrition) {
+    rows.push({
+      label: 'Carbs ingeridos',
+      predicted: `${preRide.carbs_needed_g}g recomendados`,
+      actual: `${nutrition.carbs_ingested_g}g`,
+      delta: nutrition.carbs_ingested_g >= preRide.carbs_needed_g * 0.8 ? 'OK' : 'Deficit',
+      color: nutrition.carbs_ingested_g >= preRide.carbs_needed_g * 0.8 ? '#3fff8b' : '#ff716c',
+    });
+    rows.push({
+      label: 'Hidratacao',
+      predicted: `${preRide.fluid_needed_ml}ml recomendados`,
+      actual: `${nutrition.fluid_ingested_ml}ml`,
+      delta: nutrition.fluid_ingested_ml >= preRide.fluid_needed_ml * 0.7 ? 'OK' : 'Deficit',
+      color: nutrition.fluid_ingested_ml >= preRide.fluid_needed_ml * 0.7 ? '#3fff8b' : '#ff716c',
+    });
+  }
+
+  const accuracy = preRide.total_wh > 0
+    ? Math.round((1 - Math.abs(actualWh - preRide.total_wh) / preRide.total_wh) * 100)
+    : 0;
+
+  return (
+    <Section title="Previsto vs Real" subtitle={`${Math.max(0, accuracy)}% precisao`}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {/* Header */}
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '4px', fontSize: '8px', color: '#777575', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          <span></span>
+          <span style={{ textAlign: 'right' }}>Previsto</span>
+          <span style={{ textAlign: 'right' }}>Real</span>
+          <span style={{ textAlign: 'right' }}>Delta</span>
+        </div>
+        {/* Rows */}
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '4px', fontSize: '11px', padding: '4px 0', borderBottom: '1px solid #1a1919' }}>
+            <span style={{ color: '#adaaaa', fontWeight: 600 }}>{r.label}</span>
+            <span style={{ textAlign: 'right', color: '#777575' }}>{r.predicted}</span>
+            <span style={{ textAlign: 'right', color: 'white', fontWeight: 700 }}>{r.actual}</span>
+            <span style={{ textAlign: 'right', color: r.color, fontWeight: 700 }}>{r.delta}</span>
+          </div>
+        ))}
+        {/* Consumption accuracy bar */}
+        <div style={{ marginTop: '4px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#777575', marginBottom: '3px' }}>
+            <span>Precisao da previsao</span>
+            <span style={{ color: accuracy > 85 ? '#3fff8b' : accuracy > 70 ? '#fbbf24' : '#ff716c', fontWeight: 700 }}>{Math.max(0, accuracy)}%</span>
+          </div>
+          <div style={{ height: '4px', backgroundColor: '#262626', borderRadius: '2px', overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', borderRadius: '2px',
+              backgroundColor: accuracy > 85 ? '#3fff8b' : accuracy > 70 ? '#fbbf24' : '#ff716c',
+              width: `${Math.max(0, accuracy)}%`,
+            }} />
+          </div>
+        </div>
+      </div>
+    </Section>
   );
 }
 

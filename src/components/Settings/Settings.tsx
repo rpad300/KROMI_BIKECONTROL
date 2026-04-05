@@ -17,6 +17,7 @@ import { useRouteStore } from '../../store/routeStore';
 import { parseGPXFile } from '../../services/routes/GPXParser';
 import { saveRoute, listRoutes, getRoute, deleteRoute } from '../../services/routes/RouteService';
 import { analyzeRoute } from '../../services/routes/PreRideAnalysis';
+import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
 type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'emergency' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account' | 'service-book' | 'shop';
@@ -853,19 +854,33 @@ function RoutesPage({ onNavigate }: { onNavigate?: (s: Screen) => void }) {
       {preRide && activeRoute && (
         <>
           <SectionLabel>Analise Pre-Ride: {activeRoute.name}</SectionLabel>
+
+          {/* Elevation Profile Chart */}
           <Card>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+            <PreRideElevationChart />
+          </Card>
+
+          {/* Stats Grid */}
+          <Card>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', fontSize: '12px' }}>
               <div><span style={{ color: '#9ca3af' }}>Distancia</span><br/><b>{activeRoute.total_distance_km} km</b></div>
               <div><span style={{ color: '#9ca3af' }}>Tempo est.</span><br/><b>{preRide.estimated_time_min} min</b></div>
               <div><span style={{ color: '#9ca3af' }}>D+</span><br/><b>{activeRoute.total_elevation_gain_m} m</b></div>
-              <div><span style={{ color: '#9ca3af' }}>Motor Wh</span><br/><b style={{ color: preRide.feasible ? '#3fff8b' : '#ff716c' }}>{preRide.total_wh} Wh</b></div>
-              <div><span style={{ color: '#9ca3af' }}>Bateria</span><br/><b>{preRide.battery_remaining_wh} Wh ({preRide.battery_margin_pct}%)</b></div>
-              <div><span style={{ color: '#9ca3af' }}>Glicogenio</span><br/><b>{preRide.glycogen_g}g</b></div>
-              <div><span style={{ color: '#9ca3af' }}>Hidratos</span><br/><b>{preRide.carbs_needed_g}g</b></div>
-              <div><span style={{ color: '#9ca3af' }}>Agua</span><br/><b>{preRide.fluid_needed_ml}ml</b></div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #262626' }}>
+              <div>
+                <span style={{ color: '#9ca3af' }}>Motor</span><br/>
+                <b style={{ color: preRide.feasible ? '#3fff8b' : '#ff716c', fontSize: '16px' }}>{preRide.total_wh} Wh</b>
+                <span style={{ color: '#6b7280', fontSize: '10px', display: 'block' }}>de {preRide.battery_remaining_wh} Wh ({preRide.battery_margin_pct}% margem)</span>
+              </div>
+              <div>
+                <span style={{ color: '#9ca3af' }}>Nutricao</span><br/>
+                <b style={{ fontSize: '16px' }}>{preRide.carbs_needed_g}g</b> <span style={{ color: '#6b7280', fontSize: '10px' }}>carbs</span><br/>
+                <b style={{ fontSize: '16px' }}>{preRide.fluid_needed_ml}ml</b> <span style={{ color: '#6b7280', fontSize: '10px' }}>agua</span>
+              </div>
             </div>
             {!preRide.feasible && (
-              <div style={{ marginTop: '8px', padding: '6px', backgroundColor: '#3b1717', borderRadius: '4px', fontSize: '11px', color: '#ff716c' }}>
+              <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#3b1717', borderRadius: '4px', fontSize: '12px', color: '#ff716c', fontWeight: 600 }}>
                 Bateria pode nao chegar. Carrega ou reduz assistencia.
               </div>
             )}
@@ -915,6 +930,76 @@ function RoutesPage({ onNavigate }: { onNavigate?: (s: Screen) => void }) {
           </button>
         </>
       )}
+    </div>
+  );
+}
+
+/** Elevation profile chart for pre-ride analysis */
+function PreRideElevationChart() {
+  const points = useRouteStore((s) => s.activeRoutePoints);
+
+  if (!points || points.length < 5) {
+    return <div style={{ color: '#6b7280', fontSize: '12px', textAlign: 'center', padding: '20px' }}>Sem pontos de elevacao</div>;
+  }
+
+  // Downsample to ~100 points for performance
+  const step = Math.max(1, Math.floor(points.length / 100));
+  const data = points
+    .filter((_, i) => i % step === 0 || i === points.length - 1)
+    .map(p => ({
+      km: Math.round(p.distance_from_start_m / 100) / 10, // 1 decimal km
+      ele: Math.round(p.elevation),
+    }));
+
+  const minEle = Math.min(...data.map(d => d.ele)) - 20;
+  const maxEle = Math.max(...data.map(d => d.ele)) + 20;
+
+  return (
+    <div>
+      <div style={{ fontSize: '10px', color: '#777575', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px' }}>
+        Perfil de Elevação
+      </div>
+      <div style={{ height: '120px' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+            <defs>
+              <linearGradient id="preRideElevFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.5} />
+                <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.05} />
+              </linearGradient>
+            </defs>
+            <XAxis
+              dataKey="km"
+              tick={{ fontSize: 9, fill: '#777575' }}
+              tickLine={false}
+              axisLine={{ stroke: '#262626' }}
+              unit=" km"
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              domain={[minEle, maxEle]}
+              tick={{ fontSize: 9, fill: '#777575' }}
+              tickLine={false}
+              axisLine={false}
+              width={35}
+              unit="m"
+            />
+            <Tooltip
+              contentStyle={{ backgroundColor: '#1a1919', border: '1px solid #333', fontSize: '11px', borderRadius: '4px' }}
+              labelFormatter={(v) => `${v} km`}
+              formatter={(v: number) => [`${v} m`, 'Elevação']}
+            />
+            <Area
+              type="monotone"
+              dataKey="ele"
+              fill="url(#preRideElevFill)"
+              stroke="#60a5fa"
+              strokeWidth={2}
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

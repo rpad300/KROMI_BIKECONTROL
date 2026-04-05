@@ -8,6 +8,7 @@ import { autoAssistEngine } from '../services/autoAssist/AutoAssistEngine';
 import { tuningIntelligence, type TuningInput } from '../services/motor/TuningIntelligence';
 import { setAdvancedTuning, isTuningAvailable } from '../services/bluetooth/BLEBridge';
 import { kromiEngine } from '../services/intelligence/KromiEngine';
+import { useNutritionStore } from '../store/nutritionStore';
 import { AssistMode } from '../types/bike.types';
 
 const TICK_INTERVAL_MS = 1000;
@@ -161,6 +162,14 @@ export function useMotorControl() {
         upcomingGradient: tuningInput.upcomingGradient,
         distanceToChange: tuningInput.distanceToChange,
       });
+
+      // Pipe nutrition + physiology state to store for UI
+      if (kromi.nutrition) {
+        useNutritionStore.getState().setState(kromi.nutrition);
+      }
+      if (kromi.physiology) {
+        useNutritionStore.getState().setPhysiology(kromi.physiology);
+      }
 
       const support = toWire(kromi.supportPct, SUPPORT_MIN, SUPPORT_MAX);
       const torque = toWire(kromi.torqueNm, TORQUE_MIN, TORQUE_MAX);

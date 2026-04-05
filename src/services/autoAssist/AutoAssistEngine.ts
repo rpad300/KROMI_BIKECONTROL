@@ -21,8 +21,8 @@ interface AutoAssistConfig {
 
 const DEFAULT_CONFIG: AutoAssistConfig = {
   enabled: false,
-  lookahead_m: 300,
-  preempt_distance_m: 50,
+  lookahead_m: 4000,
+  preempt_distance_m: 150,
   override_duration_s: 60,
   smoothing_window: 3,
   climb_threshold_pct: 3,

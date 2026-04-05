@@ -60,6 +60,7 @@ class KromiCore(private val bleManager: BLEManager) {
     private var tau = 300.0            // W' recovery constant (s)
     private var formMultiplier = 1.0   // 0.85-1.20
     private var glycogenCpFactor = 1.0 // 0.75-1.0 from nutrition
+    private var routeRemainingKm = -1.0 // -1 = no route, else km remaining
     private var preAdjustSupport = 0.0
     private var preAdjustTorque = 0.0
     private var preAdjustCountdown = 0
@@ -169,6 +170,7 @@ class KromiCore(private val bleManager: BLEManager) {
         tau = json.optDouble("tau", tau)
         formMultiplier = json.optDouble("form_multiplier", formMultiplier)
         glycogenCpFactor = json.optDouble("glycogen_cp_factor", glycogenCpFactor)
+        routeRemainingKm = json.optDouble("route_remaining_km", routeRemainingKm)
 
         json.optJSONObject("pre_adjust")?.let {
             preAdjustSupport = it.optDouble("support", 0.0)
@@ -253,6 +255,21 @@ class KromiCore(private val bleManager: BLEManager) {
         updateWPrime(Phuman, cpEff, 1.0) // dt=1s
         val wPrimePct = wPrimeBalance / wPrimeTotal
 
+        // Route-aware battery budget: if we know remaining distance,
+        // modulate batteryFactor so motor paces itself to finish the route
+        val batEff = if (routeRemainingKm > 0 && batterySoc > 0) {
+            // Rough estimate: 625Wh battery, consumption ~15Wh/km average
+            val remainingWh = (batterySoc / 100.0) * 625.0
+            val neededWh = routeRemainingKm * 15.0
+            val budgetRatio = if (neededWh > 0) remainingWh / neededWh else 99.0
+            when {
+                budgetRatio < 0.5 -> batteryFactor * 0.40
+                budgetRatio < 0.7 -> batteryFactor * 0.60
+                budgetRatio < 0.9 -> batteryFactor * 0.80
+                else -> batteryFactor
+            }
+        } else batteryFactor
+
         // hrModifier
         val hrMod = when {
             hr <= 0            -> 1.0
@@ -293,7 +310,7 @@ class KromiCore(private val bleManager: BLEManager) {
             // P4: Cardiac drift
             drift > 0.4 -> {
                 val gapR = if (Ptotal > 0) Pgap / Ptotal else 0.5
-                supportPct = (gapR * 300 * 0.8 * batteryFactor).coerceIn(SUPPORT_MIN, SUPPORT_MAX)
+                supportPct = (gapR * 300 * 0.8 * batEff).coerceIn(SUPPORT_MIN, SUPPORT_MAX)
                 torqueNm = min(TORQUE_MAX * 0.7, Ftotal * (wheelCircumM / (2 * PI)))
                     .coerceIn(TORQUE_MIN, TORQUE_MAX)
                 launchLvl = 3.0
@@ -303,15 +320,15 @@ class KromiCore(private val bleManager: BLEManager) {
             speedZone != "free" -> {
                 // Support from power gap
                 supportPct = if (Phuman > 10) {
-                    ((Pgap / Phuman) * 100 * hrMod * fadeFactor * batteryFactor * formMultiplier)
+                    ((Pgap / Phuman) * 100 * hrMod * fadeFactor * batEff * formMultiplier)
                         .coerceIn(SUPPORT_MIN, SUPPORT_MAX)
                 } else if (Ptotal > 20) {
-                    (200 * hrMod * batteryFactor).coerceIn(SUPPORT_MIN, SUPPORT_MAX)
+                    (200 * hrMod * batEff).coerceIn(SUPPORT_MIN, SUPPORT_MAX)
                 } else SUPPORT_MIN
 
                 // Torque from resistance
                 torqueNm = if (Ftotal > 0) {
-                    (Ftotal * (wheelCircumM / (2 * PI)) * hrMod * fadeFactor * batteryFactor)
+                    (Ftotal * (wheelCircumM / (2 * PI)) * hrMod * fadeFactor * batEff)
                         .coerceIn(TORQUE_MIN, TORQUE_MAX)
                 } else TORQUE_MIN
 
@@ -385,7 +402,7 @@ class KromiCore(private val bleManager: BLEManager) {
             Log.i(TAG, "│ POWER  Ptotal=${Ptotal.roundToInt()}W Phuman=${Phuman.roundToInt()}W Pgap=${Pgap.roundToInt()}W zone=$speedZone fade=${String.format("%.2f", fadeFactor)}")
             Log.i(TAG, "│ PHYSIO hrZ=$zone margin=$margin drift=${String.format("%.2f", drift)}bpm/min tBreach=${if (tBreach < 999) "${tBreach.roundToInt()}min" else "safe"} hrMod=${String.format("%.2f", hrMod)}")
             Log.i(TAG, "│ W'BAL  ${(wPrimePct * 100).roundToInt()}% (${wPrimeBalance.roundToInt()}/${wPrimeTotal.roundToInt()}J) CP_eff=${cpEff.roundToInt()}W glyc×${String.format("%.2f", glycogenCpFactor)}")
-            Log.i(TAG, "│ PARAMS crr=${String.format("%.4f", crr)} wind=${String.format("%.1f", windComponent)}m/s rho=${String.format("%.3f", airDensity)} bat×${String.format("%.2f", batteryFactor)} form×${String.format("%.2f", formMultiplier)}")
+            Log.i(TAG, "│ PARAMS crr=${String.format("%.4f", crr)} wind=${String.format("%.1f", windComponent)}m/s rho=${String.format("%.3f", airDensity)} bat×${String.format("%.2f", batteryFactor)}→${String.format("%.2f", batEff)} route=${if (routeRemainingKm > 0) "${String.format("%.1f", routeRemainingKm)}km" else "none"} form×${String.format("%.2f", formMultiplier)}")
             Log.i(TAG, "│ OUT    S=${supportPct.roundToInt()}%(w$wireS) T=${torqueNm.roundToInt()}Nm(w$wireT) L=${launchLvl.roundToInt()}(w$wireL) score=$score")
             Log.i(TAG, "│ REASON $reason")
             if (preAdjustCountdown > 0) Log.i(TAG, "│ PREADJ support=${preAdjustSupport.roundToInt()} torque=${preAdjustTorque.roundToInt()} in ${preAdjustCountdown}s")

@@ -12,6 +12,10 @@ import { AutoAssistWidget } from './AutoAssistWidget';
 import { BatteryWidget } from './BatteryWidget';
 import { HRWidget } from './HRWidget';
 import { RideSessionWidget } from './RideSessionWidget';
+import { NutritionWidget } from './NutritionWidget';
+import { WPrimeWidget } from './WPrimeWidget';
+import { useNutritionStore } from '../../store/nutritionStore';
+import { kromiEngine } from '../../services/intelligence/KromiEngine';
 
 /**
  * STEALTH-EV Dashboard — Fullscreen, no-scroll, fixed height sections.
@@ -33,6 +37,7 @@ export function Dashboard() {
           <MetricsRow />
           <AssistBar />
           <InfoStrip />
+          <NutritionAlertStrip />
           <ElevationSection />
           {/* Expand button */}
           <button
@@ -67,6 +72,11 @@ export function Dashboard() {
               <HRWidget />
             </div>
 
+            <div className="flex gap-2">
+              <div className="flex-1"><WPrimeWidget /></div>
+              <div className="flex-1"><NutritionWidget /></div>
+            </div>
+
             <WeatherWidget />
             <TrailWidget />
 
@@ -94,7 +104,7 @@ function CompactHeader() {
   return (
     <div className="flex items-center justify-between bg-black px-4 py-2">
       <div className="flex items-baseline gap-1">
-        <span className="font-headline font-black text-3xl tabular-nums">{speed > 0 ? speed.toFixed(1) : '0.0'}</span>
+        <span className="font-headline font-black text-3xl tabular-nums">{speed > 0 ? speed.toFixed(2) : '0.00'}</span>
         <span className="font-headline text-sm text-[#3fff8b]">km/h</span>
       </div>
       <div className="flex items-center gap-3 text-sm font-headline">
@@ -151,13 +161,13 @@ function SpeedSection() {
     <section className="h-[15%] flex-none flex flex-col items-center justify-center bg-black">
       <div className="flex items-baseline gap-2">
         <span className="font-headline font-black text-7xl tracking-tighter text-white leading-none tabular-nums">
-          {speed > 0 ? speed.toFixed(1) : '0.0'}
+          {speed > 0 ? speed.toFixed(2) : '0.00'}
         </span>
         <span className="font-headline font-bold text-2xl text-[#3fff8b]">KM/H</span>
       </div>
       <div className="flex items-center gap-2 opacity-80">
         <span className="text-xs font-label uppercase text-[#adaaaa] tracking-widest">Trip</span>
-        <span className="font-headline font-bold text-xl text-white">{tripDist.toFixed(1)} KM</span>
+        <span className="font-headline font-bold text-xl text-white">{tripDist.toFixed(2)} KM</span>
       </div>
     </section>
   );
@@ -371,6 +381,40 @@ function InfoStrip() {
         <span ref={timeValRef} className="font-headline font-bold tabular-nums" style={{ fontSize: '16px' }}>0:00</span>
         <span ref={timeLabelRef} style={{ fontSize: '8px', color: '#777575' }}>TIME</span>
       </div>
+    </section>
+  );
+}
+
+/** Compact nutrition alert for ride view — only shows when alert is active */
+function NutritionAlertStrip() {
+  const nutrition = useNutritionStore((s) => s.state);
+  const alertVisible = useNutritionStore((s) => s.alertVisible);
+
+  if (!nutrition || !alertVisible || nutrition.alerts.length === 0) return null;
+
+  const worstStatus = nutrition.glycogen_status === 'critical' || nutrition.hydration_status === 'critical'
+    ? 'critical' : 'amber';
+  const borderColor = worstStatus === 'critical' ? 'border-[#ff716c]' : 'border-[#fbbf24]';
+  const textColor = worstStatus === 'critical' ? 'text-[#ff716c]' : 'text-[#fbbf24]';
+
+  const handleEat = () => {
+    kromiEngine.getNutrition().recordEat();
+    useNutritionStore.getState().setAlertVisible(false);
+  };
+  const handleDrink = () => {
+    kromiEngine.getNutrition().recordDrink();
+    useNutritionStore.getState().setAlertVisible(false);
+  };
+
+  return (
+    <section className={`flex-none h-16 ${borderColor} border-y flex items-center gap-2 px-3 bg-black/80`}>
+      <p className={`flex-1 text-xs font-bold ${textColor} line-clamp-2`}>{nutrition.alerts[0]}</p>
+      <button onClick={handleEat} className="h-12 px-4 rounded bg-[#3fff8b]/20 border border-[#3fff8b]/30 active:bg-[#3fff8b]/40">
+        <span className="text-[#3fff8b] font-headline font-black text-sm">COMI</span>
+      </button>
+      <button onClick={handleDrink} className="h-12 px-4 rounded bg-[#60a5fa]/20 border border-[#60a5fa]/30 active:bg-[#60a5fa]/40">
+        <span className="text-[#60a5fa] font-headline font-black text-sm">BEBI</span>
+      </button>
     </section>
   );
 }
