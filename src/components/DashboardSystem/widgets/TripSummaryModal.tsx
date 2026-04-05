@@ -3,6 +3,7 @@ import { useTripStore } from '../../../store/tripStore';
 import { useBikeStore } from '../../../store/bikeStore';
 import { useRouteStore } from '../../../store/routeStore';
 import { useNutritionStore } from '../../../store/nutritionStore';
+import { useSettingsStore, safeBikeConfig } from '../../../store/settingsStore';
 import { di2Service } from '../../../services/di2/Di2Service';
 import { localRideStore, type LocalSnapshot } from '../../../services/storage/LocalRideStore';
 
@@ -178,6 +179,9 @@ export function TripSummaryModal({ onClose }: { onClose: () => void }) {
         </div>
       </Section>
 
+      {/* Energy comparison: KROMI vs standard modes */}
+      <EnergyComparison distanceKm={trip.tripKm} batteryUsedPct={batteryUsed} />
+
       {/* Pre-ride vs Actual comparison */}
       <PreRideComparison
         actualKm={trip.tripKm}
@@ -188,6 +192,73 @@ export function TripSummaryModal({ onClose }: { onClose: () => void }) {
 
       <div style={{ height: '60px' }} />
     </div>
+  );
+}
+
+/** Energy comparison: KROMI actual vs what standard modes would have consumed */
+function EnergyComparison({ distanceKm, batteryUsedPct }: { distanceKm: number; batteryUsedPct: number }) {
+  const bike = safeBikeConfig(useSettingsStore.getState().bikeConfig);
+
+  if (distanceKm < 0.1 || batteryUsedPct <= 0) return null;
+
+  // Actual KROMI consumption
+  const totalBatteryWh = bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0);
+  const kromiWh = Math.round((batteryUsedPct / 100) * totalBatteryWh);
+  const kromiWhKm = distanceKm > 0 ? Math.round((kromiWh / distanceKm) * 10) / 10 : 0;
+
+  // Estimated consumption per mode (from bike config calibrated values)
+  const modes = [
+    { label: 'ECO', whKm: bike.consumption_eco, color: '#3fff8b' },
+    { label: 'TOUR', whKm: bike.consumption_tour, color: '#60a5fa' },
+    { label: 'ACTIVE', whKm: bike.consumption_active, color: '#fbbf24' },
+    { label: 'SPORT', whKm: bike.consumption_sport, color: '#ff716c' },
+    { label: 'KROMI', whKm: kromiWhKm, color: '#e966ff' },
+  ];
+
+  const maxWh = Math.max(...modes.map(m => m.whKm * distanceKm));
+
+  // Calculate savings vs SPORT (typical alternative for aggressive riders)
+  const sportWh = bike.consumption_sport * distanceKm;
+  const savedVsSport = sportWh - kromiWh;
+  const savedPct = sportWh > 0 ? Math.round((savedVsSport / sportWh) * 100) : 0;
+
+  return (
+    <Section title="Consumo Energia" subtitle={`${kromiWhKm} Wh/km`}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', height: '80px', padding: '0 4px' }}>
+        {modes.map(({ label, whKm, color }) => {
+          const totalWh = Math.round(whKm * distanceKm);
+          const pct = maxWh > 0 ? (totalWh / maxWh) * 100 : 0;
+          const isKromi = label === 'KROMI';
+          return (
+            <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+              <span className="font-label tabular-nums" style={{ fontSize: '7px', color: '#777575' }}>{totalWh}Wh</span>
+              <div style={{
+                width: '100%',
+                backgroundColor: color,
+                borderRadius: '2px 2px 0 0',
+                height: `${Math.max(pct, 4)}%`,
+                opacity: isKromi ? 1 : 0.5,
+                border: isKromi ? `2px solid ${color}` : 'none',
+                boxShadow: isKromi ? `0 0 8px ${color}40` : 'none',
+              }} />
+              <span className="font-headline font-bold" style={{ fontSize: '9px', color, opacity: isKromi ? 1 : 0.7 }}>{label}</span>
+              <span className="font-label tabular-nums" style={{ fontSize: '7px', color: '#494847' }}>{whKm}Wh/km</span>
+            </div>
+          );
+        })}
+      </div>
+      {savedVsSport > 0 && (
+        <div style={{ marginTop: '6px', textAlign: 'center', fontSize: '11px' }}>
+          <span style={{ color: '#e966ff', fontWeight: 700 }}>KROMI poupou {Math.round(savedVsSport)}Wh</span>
+          <span style={{ color: '#777575' }}> vs SPORT ({savedPct}% menos)</span>
+        </div>
+      )}
+      {savedVsSport <= 0 && kromiWh > 0 && (
+        <div style={{ marginTop: '6px', textAlign: 'center', fontSize: '11px', color: '#777575' }}>
+          KROMI: {kromiWh}Wh total · {batteryUsedPct}% bateria
+        </div>
+      )}
+    </Section>
   );
 }
 
