@@ -2,6 +2,29 @@ plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
 }
+
+// Auto-version from git tags: v1.2.3 → versionName="1.2.3", versionCode=1*10000+2*100+3=10203
+def gitVersionName = {
+    try {
+        def tag = 'git describe --tags --abbrev=0'.execute(null, rootDir.parentFile).text.trim()
+        return tag.replaceFirst(/^v/, '')
+    } catch (Exception e) {
+        return '1.0.0'
+    }
+}()
+
+def gitVersionCode = {
+    try {
+        def parts = gitVersionName.split('\\.')
+        def major = (parts.length > 0 ? parts[0] as int : 1)
+        def minor = (parts.length > 1 ? parts[1] as int : 0)
+        def patch = (parts.length > 2 ? parts[2] as int : 0)
+        return major * 10000 + minor * 100 + patch
+    } catch (Exception e) {
+        return 10000
+    }
+}()
+
 android {
     namespace 'online.kromi.blebridge'
     compileSdk 35
@@ -9,8 +32,8 @@ android {
         applicationId "online.kromi.blebridge"
         minSdk 26
         targetSdk 35
-        versionCode 28
-        versionName "1.1.9"
+        versionCode gitVersionCode
+        versionName gitVersionName
     }
     buildTypes {
         release {
