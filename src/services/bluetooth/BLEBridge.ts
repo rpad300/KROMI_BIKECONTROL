@@ -188,12 +188,30 @@ function disconnectSensorBridge(sensor: string, webFallback: () => void): void {
 }
 
 export const connectHR = () => connectSensor('hr', () => giantBLEService.connectHR());
-export const connectDi2 = () => connectSensor('di2', () => giantBLEService.connectDi2());
+export const connectDi2 = () => {
+  // Use ShimanoProtocol (with auth) instead of generic SensorManager
+  if (bleMode === 'websocket') {
+    const saved = getSavedSensorDevice('di2' as SensorType);
+    if (saved) {
+      wsClient.send({ type: 'shimanoConnect', address: saved.address });
+    } else {
+      wsClient.send({ type: 'shimanoScan' });
+    }
+    return Promise.resolve();
+  }
+  return giantBLEService.connectDi2();
+};
 export const connectSRAM = () => connectSensor('sram', () => giantBLEService.connectSRAM());
 export const connectExtPower = () => connectSensor('power', () => giantBLEService.connectExtPower());
 
 export const disconnectHR = () => disconnectSensorBridge('hr', () => giantBLEService.disconnectHR());
-export const disconnectDi2 = () => disconnectSensorBridge('di2', () => giantBLEService.disconnectDi2());
+export const disconnectDi2 = () => {
+  if (bleMode === 'websocket') {
+    wsClient.send({ type: 'shimanoDisconnect' });
+  } else {
+    giantBLEService.disconnectDi2();
+  }
+};
 export const disconnectSRAM = () => disconnectSensorBridge('sram', () => giantBLEService.disconnectSRAM());
 export const disconnectExtPower = () => disconnectSensorBridge('power', () => giantBLEService.disconnectExtPower());
 

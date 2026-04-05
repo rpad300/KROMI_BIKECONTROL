@@ -189,19 +189,35 @@ class BLEBridgeService : Service() {
 
             // === External sensor management (hr, power, di2, sram) ===
             "scanSensor" -> {
-                sensorManager.excludeAddress = bleManager.connectedAddress
                 val sensor = json.optString("sensor", "")
-                sensorManager.scanFor(sensor)
+                // Redirect Di2 to ShimanoProtocol (needs auth)
+                if (sensor == "di2") {
+                    shimanoProtocol.excludeAddress = bleManager.connectedAddress
+                    shimanoProtocol.scan()
+                } else {
+                    sensorManager.excludeAddress = bleManager.connectedAddress
+                    sensorManager.scanFor(sensor)
+                }
             }
 
             "connectSensor" -> {
-                sensorManager.excludeAddress = bleManager.connectedAddress
                 val sensor = json.optString("sensor", "")
                 val address = json.optString("address", "")
-                if (address.isNotEmpty()) {
-                    sensorManager.connectSensor(sensor, address)
+                // Redirect Di2 to ShimanoProtocol (needs auth)
+                if (sensor == "di2") {
+                    if (address.isNotEmpty()) {
+                        shimanoProtocol.connect(address)
+                    } else {
+                        shimanoProtocol.excludeAddress = bleManager.connectedAddress
+                        shimanoProtocol.scan()
+                    }
                 } else {
-                    sensorManager.scanFor(sensor)
+                    sensorManager.excludeAddress = bleManager.connectedAddress
+                    if (address.isNotEmpty()) {
+                        sensorManager.connectSensor(sensor, address)
+                    } else {
+                        sensorManager.scanFor(sensor)
+                    }
                 }
             }
 
