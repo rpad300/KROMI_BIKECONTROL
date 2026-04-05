@@ -43,15 +43,13 @@ if (inWebView) {
   console.log('[Platform] Running inside KROMI WebView APK');
 }
 
-registerSW({
+const updateSW = registerSW({
   onNeedRefresh() {
     if (rideSessionManager.isActive()) {
-      // NEVER reload mid-ride — defer until ride stops
       console.log('[SW] Update available but ride active — deferring reload');
       pendingSWUpdate = true;
       return;
     }
-    // Safe to update — no active ride (works in both WebView and Chrome)
     console.log('[SW] New version available — updating...');
     window.location.reload();
   },
@@ -59,6 +57,11 @@ registerSW({
     console.log('[SW] Offline ready');
   },
 });
+
+// Check for SW updates every 60s (ensures WebView picks up Vercel deploys quickly)
+setInterval(() => {
+  updateSW(true); // true = revalidate
+}, 60_000);
 
 // Check for pending SW update when ride stops
 const origStop = rideSessionManager.stopSession.bind(rideSessionManager);
