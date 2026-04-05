@@ -95,6 +95,15 @@ class RideSessionManager {
   private overrideCount = 0;
   private metrics: PersistedMetrics = this.emptyMetrics();
 
+  /** Get current session ID (for reading snapshots after stop) */
+  getSessionId(): string | null { return this.sessionId; }
+
+  /** Get the in-memory metrics */
+  getMetrics(): PersistedMetrics { return { ...this.metrics }; }
+
+  /** Get battery at start */
+  getBatteryStart(): number { return this.metrics.battery_start; }
+
   static getInstance(): RideSessionManager {
     if (!RideSessionManager.instance) {
       RideSessionManager.instance = new RideSessionManager();

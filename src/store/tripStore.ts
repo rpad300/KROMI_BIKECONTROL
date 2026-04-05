@@ -21,6 +21,10 @@ interface TripStore {
   /** Stats */
   maxSpeed: number;
   avgSpeed: number;
+  /** Session ID for reading snapshots after finish */
+  lastSessionId: string | null;
+  /** Battery at trip start */
+  batteryStart: number;
 
   // Actions
   startTrip: () => void;
@@ -42,6 +46,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   autoPausedAt: 0,
   maxSpeed: 0,
   avgSpeed: 0,
+  lastSessionId: null,
+  batteryStart: 0,
 
   startTrip: () => {
     const bike = useBikeStore.getState();
@@ -57,6 +63,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
       autoPausedAt: 0,
       maxSpeed: 0,
       avgSpeed: 0,
+      lastSessionId: null,
+      batteryStart: bike.battery_percent,
     });
     // Also start ride data recording (LocalRideStore + Supabase sync)
     rideSessionManager.startSession().catch((err) => {
@@ -65,7 +73,9 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   },
 
   stopTrip: () => {
-    set({ state: 'finished' });
+    // Capture session ID before stopSession clears it
+    const sessionId = rideSessionManager.getSessionId();
+    set({ state: 'finished', lastSessionId: sessionId });
     // Also stop ride data recording
     rideSessionManager.stopSession().catch((err) => {
       console.error('[TripStore] Failed to stop ride session:', err);
