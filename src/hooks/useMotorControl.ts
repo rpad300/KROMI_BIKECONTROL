@@ -173,10 +173,17 @@ export function useMotorControl() {
       }
 
       // === Execute: Send to motor via BLE ===
-      if (isTuningAvailable()) {
+      // If native KromiCore is active, it handles motor commands directly (~15ms).
+      // PWA only sends if native is NOT available (fallback via WebSocket ~110ms).
+      const nativeBridge = (window as unknown as Record<string, unknown>).KromiBridge as
+        | { isKromiCoreActive?: () => boolean }
+        | undefined;
+      const nativeActive = nativeBridge?.isKromiCoreActive?.() === true;
+
+      if (!nativeActive && isTuningAvailable()) {
         const last = lastAdvancedTuning;
         if (support !== last.support || torque !== last.torque || launch !== last.launch) {
-          dlog?.(`[KROMI v2] → S=${support}/15(${kromi.supportPct.toFixed(0)}%) T=${torque}/15(${kromi.torqueNm.toFixed(0)}Nm) L=${launch}/15 | ${kromi.reason}`);
+          dlog?.(`[KROMI v2 fallback] → S=${support}/15(${kromi.supportPct.toFixed(0)}%) T=${torque}/15(${kromi.torqueNm.toFixed(0)}Nm) L=${launch}/15 | ${kromi.reason}`);
           setAdvancedTuning({
             powerSupport: support,
             powerTorque: torque,

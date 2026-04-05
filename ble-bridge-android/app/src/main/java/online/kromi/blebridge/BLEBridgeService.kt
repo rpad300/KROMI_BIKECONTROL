@@ -24,6 +24,7 @@ class BLEBridgeService : Service() {
     lateinit var shimanoProtocol: ShimanoProtocol
     var wsServer: BridgeWebSocketServer? = null
     var phoneSensorService: PhoneSensorService? = null
+    lateinit var kromiCore: KromiCore
 
     override fun onCreate() {
         super.onCreate()
@@ -31,8 +32,17 @@ class BLEBridgeService : Service() {
         createNotificationChannel()
 
         bleManager = BLEManager(this)
+        kromiCore = KromiCore(bleManager)
+
+        // Forward BLE data to WebSocket AND feed KromiCore sensor inputs
         bleManager.onDataReceived = { json ->
             wsServer?.broadcastData(json)
+            feedKromiCore(json)
+        }
+
+        // KromiCore telemetry → WebSocket → PWA UI
+        kromiCore.onTelemetry = { telemetry ->
+            wsServer?.broadcastData(telemetry)
         }
 
         sensorManager = SensorManager(this)
@@ -76,6 +86,7 @@ class BLEBridgeService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        kromiCore.stop()
         phoneSensorService?.stop()
         shimanoProtocol.destroy()
         sensorManager.destroy()
@@ -293,6 +304,11 @@ class BLEBridgeService : Service() {
                     ecoLaunch = json.optInt("ecoLaunch", -1),
                 )
             }
+            // === KromiCore params from PWA (Layers 3-7 cached values) ===
+            "kromiParams" -> {
+                kromiCore.updateParams(json)
+            }
+
             "tuneMax" -> bleManager.tuningMax()
             "tuneMin" -> bleManager.tuningMin()
             "tuneRestore" -> bleManager.tuningRestore()
@@ -340,6 +356,43 @@ class BLEBridgeService : Service() {
                 val data = hexData.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
                 shimanoProtocol.sendPceCommand(ctrl, data)
             }
+        }
+    }
+
+    /**
+     * Feed BLE sensor data to KromiCore for native motor control.
+     * Called on every onDataReceived from BLEManager.
+     * KromiCore extracts what it needs — speed, cadence, power, HR, gear, battery, assist mode.
+     */
+    private fun feedKromiCore(json: JSONObject) {
+        try {
+            when (json.optString("type")) {
+                "speed"     -> kromiCore.onSpeed(json.optDouble("value", 0.0))
+                "cadence"   -> kromiCore.onCadence(json.optInt("value", 0))
+                "power"     -> kromiCore.onPower(json.optInt("value", 0))
+                "hr"        -> kromiCore.onHR(json.optInt("bpm", 0))
+                "battery"   -> kromiCore.onBattery(json.optInt("value", 0))
+                "sgRiding"  -> {
+                    // Smart Gateway riding data — has speed, power, cadence, torque, assist
+                    kromiCore.onSpeed(json.optDouble("speed", 0.0))
+                    if (json.has("cadence")) kromiCore.onCadence(json.optInt("cadence", 0))
+                    if (json.has("assistMode")) kromiCore.onAssistMode(json.optInt("assistMode", 0))
+                }
+                "gevRiding" -> {
+                    if (json.has("speed")) kromiCore.onSpeed(json.optDouble("speed", 0.0))
+                }
+                "sgAssist"  -> {
+                    if (json.has("mode")) kromiCore.onAssistMode(json.optInt("mode", 0))
+                }
+                "shimanoGear" -> {
+                    kromiCore.onGear(json.optInt("gear", 0))
+                }
+                "gradient"  -> {
+                    kromiCore.onGradient(json.optDouble("value", 0.0))
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "feedKromiCore error: ${e.message}")
         }
     }
 

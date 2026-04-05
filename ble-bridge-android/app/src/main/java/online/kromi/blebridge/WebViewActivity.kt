@@ -13,6 +13,7 @@ import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import android.webkit.*
+import org.json.JSONObject
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.Toast
@@ -275,6 +276,12 @@ class WebViewActivity : AppCompatActivity() {
         if (pwaLoaded) return
         Log.i(TAG, "Loading PWA: $PWA_URL")
         webView.loadUrl(PWA_URL)
+
+        // Wire KromiCore telemetry → WebView for UI display
+        BLEBridgeService.instance?.kromiCore?.onTelemetry = { telemetry ->
+            val js = "window.__kromiState && window.__kromiState(${telemetry})"
+            runOnUiThread { webView.evaluateJavascript(js, null) }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -339,6 +346,45 @@ class WebViewActivity : AppCompatActivity() {
         @JavascriptInterface
         fun reload() {
             runOnUiThread { webView.reload() }
+        }
+
+        // ── KromiCore JS Bridge (direct, no WebSocket) ──
+
+        /** PWA sends Layer 3-7 cached params to native KromiCore. ~1ms. */
+        @JavascriptInterface
+        fun updateKromiParams(json: String) {
+            try {
+                BLEBridgeService.instance?.kromiCore?.updateParams(JSONObject(json))
+            } catch (e: Exception) {
+                Log.w(TAG, "updateKromiParams error: ${e.message}")
+            }
+        }
+
+        /** Check if KromiCore is actively controlling motor */
+        @JavascriptInterface
+        fun isKromiCoreActive(): Boolean = BLEBridgeService.instance?.kromiCore?.isActive() == true
+
+        /** Send motor command directly via JS Bridge (bypass WebSocket). ~1ms vs ~40ms. */
+        @JavascriptInterface
+        fun setAdvancedTuning(powerSupport: Int, powerTorque: Int, powerLaunch: Int) {
+            BLEBridgeService.instance?.bleManager?.setAdvancedTuning(
+                powerSupport = powerSupport,
+                powerTorque = powerTorque,
+                powerLaunch = powerLaunch,
+                label = "JS_BRIDGE"
+            )
+        }
+
+        /** Send assist mode directly via JS Bridge */
+        @JavascriptInterface
+        fun sendAssistMode(mode: Int) {
+            BLEBridgeService.instance?.bleManager?.writeAssistMode(mode)
+        }
+
+        /** Send gradient from PWA GPS to KromiCore */
+        @JavascriptInterface
+        fun setGradient(gradient: Double) {
+            BLEBridgeService.instance?.kromiCore?.onGradient(gradient)
         }
     }
 

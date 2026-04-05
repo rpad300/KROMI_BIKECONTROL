@@ -141,21 +141,25 @@ class KromiEngine {
     const alerts: string[] = [];
 
     // ── Layer 3: Environment (every 60s) ──
+    let paramsChanged = false;
     if (now - this.lastEnvTick > ENV_INTERVAL_MS) {
       this.tickEnvironment(input);
       this.lastEnvTick = now;
+      paramsChanged = true;
     }
 
     // ── Layer 5: Battery (every 30s) ──
     if (now - this.lastBatteryTick > BATTERY_INTERVAL_MS) {
       this.tickBattery(input);
       this.lastBatteryTick = now;
+      paramsChanged = true;
     }
 
     // ── Layer 6: Learning (every 60s) ──
     if (now - this.lastLearningTick > LEARNING_INTERVAL_MS) {
       this.tickLearning(input);
       this.lastLearningTick = now;
+      paramsChanged = true;
     }
 
     // ── Layer 7: Nutrition (every 30s) ──
@@ -168,7 +172,19 @@ class KromiEngine {
     if (now - this.lastLookaheadTick > LOOKAHEAD_INTERVAL_MS) {
       this.tickLookahead(input);
       this.lastLookaheadTick = now;
+      paramsChanged = true;
     }
+
+    // Push updated params to native KromiCore (when any slow layer changed)
+    if (paramsChanged) {
+      this.pushParamsToNative();
+    }
+
+    // Send gradient to native KromiCore every tick (it needs this for physics)
+    const bridge = (window as unknown as Record<string, unknown>).KromiBridge as
+      | { setGradient?: (g: number) => void }
+      | undefined;
+    bridge?.setGradient?.(input.gradient_pct);
 
     // Feed battery consumption tracker
     const motorPower = useBikeStore.getState().power_watts;
@@ -413,6 +429,56 @@ class KromiEngine {
       nutrition: this.cachedNutrition,
       alerts: alerts.slice(0, 4), // max 4 alerts (motor + nutrition)
     };
+  }
+
+  /**
+   * Push Layer 3-7 cached params to native KromiCore via JS Bridge.
+   * Called after each slow-layer tick. Native engine uses these for its 1s physics.
+   */
+  private pushParamsToNative(): void {
+    const bridge = (window as unknown as Record<string, unknown>).KromiBridge as
+      | { updateKromiParams?: (json: string) => void; setGradient?: (g: number) => void }
+      | undefined;
+    if (!bridge?.updateKromiParams) return;
+
+    const settings = useSettingsStore.getState();
+    const rider = settings.riderProfile;
+    const bike = safeBikeConfig(settings.bikeConfig);
+    const totalMass = (rider.weight_kg || 135) + (bike.weight_kg || 24);
+    const wheelCircumM = (bike.wheel_circumference_mm || 2290) / 1000;
+    const chainring = parseInt(bike.chainring_teeth?.replace(/\D/g, '') || '34') || 34;
+    const sprockets = bike.cassette_sprockets?.length >= 2
+      ? [...bike.cassette_sprockets].sort((a, b) => b - a)
+      : [51, 45, 39, 34, 30, 26, 23, 20, 17, 15, 13, 10];
+
+    const zones = rider.zones?.length > 0
+      ? rider.zones
+      : calculateZones(rider.hr_max || 185);
+
+    const params = {
+      crr: this.learning.getAdjustedCrr(this.cachedCrr, getCachedTrail()?.category ?? 'unknown'),
+      wind_component_ms: this.cachedWindComponent,
+      air_density: this.cachedAirDensity,
+      battery_factor: this.cachedBattery?.constraint_factor ?? 1.0,
+      cp_effective: this.learning.getParams().cp_watts,
+      w_prime_total: this.learning.getParams().w_prime_joules,
+      tau: this.learning.getParams().tau_seconds,
+      form_multiplier: this.cachedFormMultiplier,
+      glycogen_cp_factor: this.cachedNutrition?.cp_factor ?? 1.0,
+      total_mass: totalMass,
+      wheel_circum_m: wheelCircumM,
+      chainring,
+      sprockets,
+      target_zone: rider.target_zone || 2,
+      hr_zone_bounds: zones.map(z => z.max_bpm),
+      pre_adjust: this.preAdjustTarget && this.preAdjustCountdown > 0
+        ? { support: this.preAdjustTarget.support, torque: this.preAdjustTarget.torque, countdown: this.preAdjustCountdown }
+        : undefined,
+    };
+
+    try {
+      bridge.updateKromiParams(JSON.stringify(params));
+    } catch (_) { /* bridge not available */ }
   }
 
   /** Map real value to wire 0-15 */
