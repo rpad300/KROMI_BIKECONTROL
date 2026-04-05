@@ -36,40 +36,47 @@ let lastKromiOutput: {
   speed: number; gear: number; hr_zone: number; wPrimePct: number;
 } | null = null;
 
-// GPS-based gradient with spike protection and speed-adaptive smoothing
-const gradientHistory: { alt: number; ts: number; dist: number }[] = [];
+/**
+ * Gradient from GPS altitude + wheel distance (not GPS position).
+ * Uses real wheel distance (CSC sensor) which is centimetre-accurate,
+ * combined with GPS altitude (which has ±2-3m noise).
+ */
+const gradientSamples: { alt: number; dist_m: number; ts: number }[] = [];
 let smoothedGradient = 0;
-function getGpsGradient(altitude: number | null, speedKmh: number): number {
+function getGpsGradient(altitude: number | null, speedKmh: number, distanceKm: number): number {
   if (!altitude || altitude === 0 || speedKmh < 2) return smoothedGradient * 0.95; // decay at rest
+
   const now = Date.now();
-  const distSoFar = gradientHistory.length > 0 ? gradientHistory[gradientHistory.length - 1]!.dist : 0;
-  gradientHistory.push({ alt: altitude, ts: now, dist: distSoFar });
-  // Keep 15s window for better averaging
-  while (gradientHistory.length > 0 && now - gradientHistory[0]!.ts > 15000) {
-    gradientHistory.shift();
+  const dist_m = distanceKm * 1000; // wheel distance in meters (precise)
+  gradientSamples.push({ alt: altitude, dist_m, ts: now });
+
+  // Keep 20s window
+  while (gradientSamples.length > 0 && now - gradientSamples[0]!.ts > 20000) {
+    gradientSamples.shift();
   }
-  if (gradientHistory.length < 3) return smoothedGradient; // need 3+ samples
-  const first = gradientHistory[0]!;
-  const last = gradientHistory[gradientHistory.length - 1]!;
-  const dtSec = (last.ts - first.ts) / 1000;
-  if (dtSec < 3) return smoothedGradient; // need 3+ seconds
+  if (gradientSamples.length < 3) return smoothedGradient;
+
+  const first = gradientSamples[0]!;
+  const last = gradientSamples[gradientSamples.length - 1]!;
+  const dDistM = last.dist_m - first.dist_m; // REAL wheel distance, not GPS estimated
+  if (dDistM < 15) return smoothedGradient;   // need 15m+ of actual riding
+
   const dAlt = last.alt - first.alt;
-  const dDistM = (speedKmh / 3.6) * dtSec;
-  if (dDistM < 10) return smoothedGradient; // need 10m+ distance (was 3m — way too low)
-
-  // Filter altitude outlier: if dAlt implies >20% grade, likely GPS noise
   const rawGrad = (dAlt / dDistM) * 100;
-  const clampedGrad = Math.max(-20, Math.min(20, rawGrad)); // ±20% max (was ±30%)
+  const clampedGrad = Math.max(-20, Math.min(20, rawGrad));
 
-  // Speed-adaptive EMA: at low speed GPS is noisier, smooth more
-  const alpha = speedKmh > 10 ? 0.4 : speedKmh > 5 ? 0.25 : 0.15;
-  smoothedGradient = smoothedGradient * (1 - alpha) + clampedGrad * alpha;
-
-  // Anti-spike: reject if change > 8% per second
-  const maxChangePerSec = 8;
+  // Speed-adaptive EMA
+  const alpha = speedKmh > 15 ? 0.4 : speedKmh > 8 ? 0.3 : speedKmh > 4 ? 0.2 : 0.1;
   const prevGrad = smoothedGradient;
-  if (Math.abs(clampedGrad - prevGrad) / dtSec > maxChangePerSec) {
-    smoothedGradient = prevGrad + Math.sign(clampedGrad - prevGrad) * maxChangePerSec * dtSec * alpha;
+
+  // Anti-spike: max 5%/s rate of change
+  const dtSec = (last.ts - first.ts) / 1000;
+  const maxDelta = 5 * Math.max(1, dtSec) * alpha;
+  const delta = clampedGrad - prevGrad;
+  if (Math.abs(delta) > maxDelta) {
+    smoothedGradient = prevGrad + Math.sign(delta) * maxDelta;
+  } else {
+    smoothedGradient = prevGrad + alpha * delta;
   }
 
   return Math.round(smoothedGradient * 10) / 10;
@@ -146,7 +153,7 @@ export function useMotorControl() {
       // === Gather inputs ===
       const map = useMapStore.getState();
       const altitude = map.altitude ?? bike.barometric_altitude_m;
-      const liveGradient = getGpsGradient(altitude, bike.speed_kmh);
+      const liveGradient = getGpsGradient(altitude, bike.speed_kmh, bike.distance_km);
 
       const tuningInput: TuningInput = {
         gradient: liveGradient,

@@ -29,6 +29,7 @@ import { computeBatteryBudget, feedConsumption, type BatteryBudget } from '../au
 import { LookaheadController, type LookaheadResult } from '../autoAssist/ElevationPredictor';
 import { RiderLearning } from '../autoAssist/RiderLearning';
 import { NutritionEngine, type NutritionState } from './NutritionEngine';
+import { terrainDiscovery } from './TerrainDiscovery';
 import { elevationService } from '../maps/ElevationService';
 import { useRouteStore } from '../../store/routeStore';
 
@@ -197,6 +198,11 @@ class KromiEngine {
     // Feed battery consumption tracker
     const motorPower = useBikeStore.getState().power_watts;
     feedConsumption(motorPower, input.distanceKm);
+
+    // Feed terrain discovery (always, even with route — builds cache for future rides)
+    if (input.gpsActive && input.latitude !== 0 && input.altitude != null) {
+      terrainDiscovery.feed(input.latitude, input.longitude, input.altitude, input.distanceKm, input.speed_kmh);
+    }
 
     // ── Layer 1: Physics (every tick) ──
     const settings = useSettingsStore.getState();
@@ -409,6 +415,22 @@ class KromiEngine {
       }
     }
 
+    // ── Terrain Discovery: predict and pre-adjust for unplanned rides ──
+    const routeActive = useRouteStore.getState().navigation.active;
+    if (!routeActive && input.gpsActive && input.latitude !== 0) {
+      const terrainPred = terrainDiscovery.predict(input.latitude, input.longitude, input.heading);
+      if (terrainPred.confidence > 0.3 && terrainPred.pre_adjust_support > 0) {
+        // Apply terrain discovery pre-adjustment (like lookahead but from learned terrain)
+        supportPct += terrainPred.pre_adjust_support;
+        torqueNm += terrainPred.pre_adjust_torque;
+        factors.push({
+          name: 'Terrain',
+          value: terrainPred.pre_adjust_support,
+          detail: `${terrainPred.pattern} → ${terrainPred.predicted_gradient > 0 ? '+' : ''}${terrainPred.predicted_gradient.toFixed(1)}% (${(terrainPred.confidence * 100).toFixed(0)}% conf)`,
+        });
+      }
+    }
+
     // ── Mode Feedback Learning: apply rider preference correction ──
     const riderCorrection = this.learning.getSupportCorrection(input.gradient_pct, physio.zone_current);
     if (riderCorrection !== 0) {
@@ -533,6 +555,7 @@ class KromiEngine {
     this.learning.resetRide();
     this.nutrition.reset();
     this.lookaheadCtrl.reset();
+    terrainDiscovery.reset(); // keeps terrain cache, clears ride segments
   }
 
   // ── Layer 3: Environment ─────────────────────────────────
