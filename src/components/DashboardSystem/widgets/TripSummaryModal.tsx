@@ -222,11 +222,13 @@ function EnergyComparison({ distanceKm, batteryUsedPct }: { distanceKm: number; 
   };
 
   // === SIMULATE what a smart rider would do per segment ===
-  // Based on gradient, pick the mode a manual rider would use
+  // Considers gradient + HR state + recovery lag (rider doesn't instantly drop modes)
   const smartRiderWh = useMemo(() => {
     if (snapshots.length < 5) return null;
     let totalWh = 0;
     const modeTime: Record<string, number> = { ECO: 0, TOUR: 0, ACTIVE: 0, SPORT: 0 };
+    let currentMode = 'TOUR'; // rider starts in TOUR typically
+    const modeOrder = ['ECO', 'TOUR', 'ACTIVE', 'SPORT'];
 
     for (let i = 0; i < snapshots.length - 1; i++) {
       const s = snapshots[i]!;
@@ -237,25 +239,42 @@ function EnergyComparison({ distanceKm, batteryUsedPct }: { distanceKm: number; 
       const distKm = (s.speed_kmh || 0) * (dt / 3600);
       const grad = s.gradient_pct ?? 0;
       const speed = s.speed_kmh || 0;
+      const hrZone = s.hr_zone ?? 0;
 
-      // What mode would a rider choose?
-      let mode: string;
-      if (speed < 3) {
-        mode = 'ECO'; // stopped/slow → ECO
-      } else if (grad > 8) {
-        mode = 'SPORT'; // steep climb → needs max power
-      } else if (grad > 4) {
-        mode = 'ACTIVE'; // moderate climb
-      } else if (grad > 1) {
-        mode = 'TOUR'; // gentle climb
-      } else if (grad < -3) {
-        mode = 'ECO'; // descent → save battery
-      } else {
-        mode = 'TOUR'; // flat → cruise in TOUR
+      // What mode would the terrain suggest?
+      let terrainMode: string;
+      if (speed < 3) terrainMode = 'ECO';
+      else if (grad > 8) terrainMode = 'SPORT';
+      else if (grad > 4) terrainMode = 'ACTIVE';
+      else if (grad > 1) terrainMode = 'TOUR';
+      else if (grad < -3) terrainMode = 'ECO';
+      else terrainMode = 'TOUR';
+
+      // HR adjustment: if HR is high, rider keeps stronger mode even on flat
+      // A rider coming out of a climb with HR zone 4 doesn't drop to ECO immediately
+      if (hrZone >= 4 && modeOrder.indexOf(terrainMode) < modeOrder.indexOf('ACTIVE')) {
+        terrainMode = 'ACTIVE'; // exhausted rider keeps at least ACTIVE
+      } else if (hrZone >= 3 && modeOrder.indexOf(terrainMode) < modeOrder.indexOf('TOUR')) {
+        terrainMode = 'TOUR'; // moderate effort → at least TOUR
       }
 
-      totalWh += (modeRates[mode] ?? 15) * distKm;
-      modeTime[mode] = (modeTime[mode] ?? 0) + dt;
+      // Mode switching lag: rider only changes mode when terrain clearly demands it
+      // Don't drop more than 1 mode at a time (realistic button pressing)
+      const targetIdx = modeOrder.indexOf(terrainMode);
+      const currentIdx = modeOrder.indexOf(currentMode);
+      if (targetIdx > currentIdx) {
+        // Going UP is immediate (rider feels the need)
+        currentMode = terrainMode;
+      } else if (targetIdx < currentIdx) {
+        // Going DOWN is gradual — drop 1 level per ~10s
+        // Only drop if we've been in this terrain for a bit
+        if (currentIdx - targetIdx >= 1) {
+          currentMode = modeOrder[currentIdx - 1] ?? currentMode;
+        }
+      }
+
+      totalWh += (modeRates[currentMode] ?? 15) * distKm;
+      modeTime[currentMode] = (modeTime[currentMode] ?? 0) + dt;
     }
 
     return { totalWh: Math.round(totalWh), modeTime };
