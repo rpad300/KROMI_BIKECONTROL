@@ -9,7 +9,7 @@ import { autoAssistEngine } from '../services/autoAssist/AutoAssistEngine';
 import { tuningIntelligence, type TuningInput } from '../services/motor/TuningIntelligence';
 import { setTuning, isTuningAvailable } from '../services/bluetooth/BLEBridge';
 import { AssistMode } from '../types/bike.types';
-import { encodeCalibration } from '../types/tuning.types';
+// encodeCalibration no longer needed — KROMI only changes POWER level
 
 const TICK_INTERVAL_MS = 1000; // 1s — fast reaction to gear/gradient/HR changes
 
@@ -36,7 +36,6 @@ export function useMotorControl() {
     autoAssistEngine.updateConfig(useSettingsStore.getState().autoAssist);
 
     intervalRef.current = setInterval(async () => {
-      const settings = useSettingsStore.getState();
       const bike = useBikeStore.getState();
       const intelligence = useIntelligenceStore.getState();
 
@@ -76,8 +75,8 @@ export function useMotorControl() {
         currentGear: bike.gear,
       };
 
-      // Terrain data (optional — needs GPS + auto-assist enabled)
-      if (settings.autoAssist.enabled && map.gpsActive && map.latitude !== 0) {
+      // Terrain data — always active in POWER mode (no toggle needed)
+      if (map.gpsActive && map.latitude !== 0) {
         const modeDecision = await autoAssistEngine.tick(
           map.latitude, map.longitude, map.heading,
           bike.speed_kmh, bike.assist_mode,
@@ -111,33 +110,21 @@ export function useMotorControl() {
         dlog?.(`[KROMI] EVAL: P=${decision.calibration.support} S=${decision.calibration.torque} A=${decision.calibration.midTorque} T=${decision.calibration.lowTorque} E=${decision.calibration.launch} | spd=${input.speed} cad=${input.cadence} hr=${input.hr} gear=${input.currentGear} grad=${input.gradient.toFixed(1)} bat=${input.batterySoc}`);
       }
 
-      // === Execute: send 5-ASMO calibration to motor ===
+      // === Execute: ONLY change POWER mode level, leave other modes untouched ===
       if (isTuningAvailable()) {
         const tuning = useTuningStore.getState();
-        const [b0, b1, b2] = encodeCalibration(decision.calibration);
-        const current = tuning.current;
-        // Check if any ASMO changed
-        const prevBytes = [
-          (current.power + 1) | ((current.sport + 1) << 4),
-          (current.active + 1) | ((current.tour + 1) << 4),
-          current.eco + 1,
-        ];
-        if (b0 !== prevBytes[0] || b1 !== prevBytes[1] || b2 !== prevBytes[2]) {
-          dlog?.(`[KROMI] TUNING → P=${decision.calibration.support} S=${decision.calibration.torque} A=${decision.calibration.midTorque} T=${decision.calibration.lowTorque} E=${decision.calibration.launch} | gear=${bike.gear} spd=${bike.speed_kmh} cad=${bike.cadence_rpm} hr=${bike.hr_bpm}`);
-          setTuning({
-            power: decision.calibration.support,
-            sport: decision.calibration.torque,
-            active: decision.calibration.midTorque,
-            tour: decision.calibration.lowTorque,
-            eco: decision.calibration.launch,
-          });
-          tuning.setCurrent({
-            power: decision.calibration.support,
-            sport: decision.calibration.torque,
-            active: decision.calibration.midTorque,
-            tour: decision.calibration.lowTorque,
-            eco: decision.calibration.launch,
-          });
+        // KROMI decision → single POWER level (0=max, 1=mid, 2=min)
+        const powerLevel = decision.calibration.support; // primary output
+
+        if (powerLevel !== tuning.current.power) {
+          // Keep other modes at their original values, only change POWER
+          const newLevels = {
+            ...tuning.current,
+            power: powerLevel,
+          };
+          dlog?.(`[KROMI] POWER → ${powerLevel} (${powerLevel === 0 ? 'MAX' : powerLevel === 1 ? 'MID' : 'MIN'}) | gear=${bike.gear} spd=${bike.speed_kmh} cad=${bike.cadence_rpm} hr=${bike.hr_bpm} grad=${input.gradient.toFixed(1)} bat=${bike.battery_percent}`);
+          setTuning(newLevels);
+          tuning.setCurrent(newLevels);
         }
       }
     }, TICK_INTERVAL_MS);
