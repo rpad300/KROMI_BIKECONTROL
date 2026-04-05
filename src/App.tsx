@@ -10,6 +10,8 @@ import { ConnectionStatus } from './components/shared/ConnectionStatus';
 import { BridgeSetup } from './components/shared/BridgeSetup';
 import { useGeolocation } from './hooks/useGeolocation';
 import { useMotorControl } from './hooks/useMotorControl';
+import { useRouteNavigation } from './hooks/useRouteNavigation';
+import { NavigationBar } from './components/Dashboard/NavigationBar';
 import { useAuthStore } from './store/authStore';
 import { usePlatform } from './hooks/usePlatform';
 import { DesktopLiveView } from './components/Desktop/DesktopLiveView';
@@ -73,6 +75,7 @@ function MobileApp() {
 
   useGeolocation();
   useMotorControl();
+  useRouteNavigation();
 
   // Glance mode — tick idle counter every 1s
   useEffect(() => {
@@ -86,6 +89,8 @@ function MobileApp() {
   return (
     <div className="h-full flex flex-col bg-[#0e0e0e] text-white">
       <DiagSafe><DiagBadge /></DiagSafe>
+      {/* Navigation bar — only visible when following a route */}
+      <NavigationBar />
       {/* Content — no scroll on dashboard, scroll on settings/history */}
       <div
         className={`flex-1 min-h-0 ${screen === 'settings' || screen === 'history' ? 'overflow-y-auto' : 'overflow-hidden'}`}

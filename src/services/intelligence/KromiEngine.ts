@@ -26,7 +26,7 @@ import { getCachedWeather, type WeatherData } from '../weather/WeatherService';
 import { getCachedOpenMeteo, fetchOpenMeteoWeather } from '../weather/OpenMeteoService';
 import { getCachedTrail } from '../maps/TerrainService';
 import { computeBatteryBudget, feedConsumption, type BatteryBudget } from '../autoAssist/BatteryOptimizer';
-import { buildDiscoveryLookahead, type LookaheadResult } from '../autoAssist/ElevationPredictor';
+import { LookaheadController, type LookaheadResult } from '../autoAssist/ElevationPredictor';
 import { RiderLearning } from '../autoAssist/RiderLearning';
 import { NutritionEngine, type NutritionState } from './NutritionEngine';
 import { elevationService } from '../maps/ElevationService';
@@ -93,6 +93,7 @@ class KromiEngine {
   private physiology = new PhysiologyEngine(15000);
   private learning = new RiderLearning();
   private nutrition = new NutritionEngine();
+  private lookaheadCtrl = new LookaheadController();
 
   // Smoothing state
   private prevSupport = 200;
@@ -514,6 +515,7 @@ class KromiEngine {
     this.physiology.reset();
     this.learning.resetRide();
     this.nutrition.reset();
+    this.lookaheadCtrl.reset();
   }
 
   // ── Layer 3: Environment ─────────────────────────────────
@@ -546,8 +548,15 @@ class KromiEngine {
   // ── Layer 4: Lookahead ───────────────────────────────────
 
   private tickLookahead(input: KromiTickInput): void {
+    // Load route into LookaheadController if active and not yet loaded
+    const routeStore = useRouteStore.getState();
+    if (routeStore.navigation.active && routeStore.activeRoutePoints.length > 0 && this.lookaheadCtrl.getMode() === 'discovery') {
+      this.lookaheadCtrl.loadRoute(routeStore.activeRoutePoints);
+    } else if (!routeStore.navigation.active && this.lookaheadCtrl.getMode() !== 'discovery') {
+      this.lookaheadCtrl.clearRoute();
+    }
+
     const profile = elevationService.getLastResult();
-    if (!profile || profile.length < 2) return;
 
     const settings = useSettingsStore.getState();
     const bike = safeBikeConfig(settings.bikeConfig);
@@ -559,8 +568,11 @@ class KromiEngine {
       ? [...bike.cassette_sprockets].sort((a, b) => b - a)
       : [51, 45, 39, 34, 30, 26, 23, 20, 17, 15, 13, 10];
 
-    this.cachedLookahead = buildDiscoveryLookahead(
-      profile, input.speed_kmh,
+    // Use LookaheadController (handles Mode A/B/C automatically)
+    this.cachedLookahead = this.lookaheadCtrl.tick(
+      input.latitude, input.longitude,
+      profile ?? [],
+      input.speed_kmh,
       {
         cadence_rpm: input.cadence_rpm,
         power_watts: input.power_watts,
@@ -577,10 +589,8 @@ class KromiEngine {
     // Set up pre-adjustment if transition coming
     const la = this.cachedLookahead;
     if (la.seconds_to_transition !== null && la.seconds_to_transition < 15 && la.next_transition_gradient !== null) {
-      // Calculate target params for upcoming gradient
       const upGrad = la.next_transition_gradient;
       if (Math.abs(upGrad) > 5) {
-        // Estimate support/torque for upcoming gradient
         const gradRad = Math.atan(upGrad / 100);
         const Fg = totalMass * 9.81 * Math.sin(gradRad);
         const estTorque = Math.max(TORQUE_MIN, Math.min(TORQUE_MAX, Fg * (wheelCircumM / (2 * Math.PI))));

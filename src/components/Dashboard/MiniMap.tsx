@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMapStore } from '../../store/mapStore';
+import { useRouteStore } from '../../store/routeStore';
 import { initGoogleMaps, isMapsLoaded } from '../../services/maps/GoogleMapsService';
 
 /**
@@ -10,6 +11,7 @@ export function MiniMap() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<google.maps.Map | null>(null);
   const markerRef = useRef<google.maps.Marker | null>(null);
+  const polylineRef = useRef<google.maps.Polyline | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(false);
   const [mapType, setMapType] = useState<'hybrid' | 'terrain' | 'roadmap'>('hybrid');
@@ -75,6 +77,49 @@ export function MiniMap() {
       markerRef.current.setPosition(pos);
     }
   }, [lat, lng]);
+
+  // Draw route polyline when active route changes
+  const routePoints = useRouteStore((s) => s.activeRoutePoints);
+  const navActive = useRouteStore((s) => s.navigation.active);
+  const navProgress = useRouteStore((s) => s.navigation.currentIndex);
+
+  useEffect(() => {
+    if (!mapInstance.current || !isMapsLoaded()) return;
+
+    // Remove old polyline
+    if (polylineRef.current) {
+      polylineRef.current.setMap(null);
+      polylineRef.current = null;
+    }
+
+    if (routePoints.length < 2) return;
+
+    // Draw route polyline
+    const path = routePoints.map(p => ({ lat: p.lat, lng: p.lng }));
+    polylineRef.current = new google.maps.Polyline({
+      path,
+      map: mapInstance.current,
+      strokeColor: '#3fff8b',
+      strokeOpacity: 0.7,
+      strokeWeight: 3,
+    });
+
+    // Fit map to route bounds
+    const bounds = new google.maps.LatLngBounds();
+    path.forEach(p => bounds.extend(p));
+    mapInstance.current.fitBounds(bounds, 20);
+  }, [routePoints, ready]);
+
+  // Highlight completed portion of route
+  useEffect(() => {
+    if (!polylineRef.current || !navActive || navProgress <= 0) return;
+    // Change color of completed portion — use a second polyline overlay
+    // For simplicity, just update opacity to show progress
+    polylineRef.current.setOptions({
+      strokeColor: '#3fff8b',
+      strokeOpacity: 0.5,
+    });
+  }, [navProgress, navActive]);
 
   if (error) {
     return (
