@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { useSettingsStore } from '../../store/settingsStore';
+import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import { calculateZones, calculatePowerZones } from '../../types/athlete.types';
 import { useBikeStore } from '../../store/bikeStore';
 import { useAuthStore } from '../../store/authStore';
@@ -654,7 +654,80 @@ function KromiPage() {
           </button>
         )}
       </Card>
+
+      <RideControlConfig />
     </div>
+  );
+}
+
+/** RideControl mode configuration — rider inputs their actual RideControl app values */
+function RideControlConfig() {
+  const bikeConfig = useSettingsStore((s) => s.bikeConfig);
+  const updateBikeConfig = useSettingsStore((s) => s.updateBikeConfig);
+  const modes = bikeConfig.ridecontrol_modes ?? safeBikeConfig(undefined).ridecontrol_modes;
+
+  const modeNames = [
+    { key: 'eco' as const, label: 'ECO', color: '#3fff8b' },
+    { key: 'tour' as const, label: 'TOUR', color: '#60a5fa' },
+    { key: 'active' as const, label: 'ACTIVE', color: '#fbbf24' },
+    { key: 'sport' as const, label: 'SPORT', color: '#ff716c' },
+  ];
+  const levelNames = [
+    { key: 'low' as const, label: 'Low' },
+    { key: 'mid' as const, label: 'Mid' },
+    { key: 'high' as const, label: 'High' },
+  ];
+
+  const updateMode = (mode: string, level: string, field: string, value: number) => {
+    const updated = {
+      ...modes,
+      [mode]: {
+        ...modes[mode as keyof typeof modes],
+        [level]: {
+          ...modes[mode as keyof typeof modes][level as 'low' | 'mid' | 'high'],
+          [field]: value,
+        },
+      },
+    };
+    updateBikeConfig({ ridecontrol_modes: updated });
+  };
+
+  return (
+    <>
+      <SectionLabel>RideControl — Configuração por Modo</SectionLabel>
+      <Card>
+        <div style={{ fontSize: '10px', color: '#777575', marginBottom: '8px' }}>
+          Copia os valores do teu RideControl app. O KROMI usa estes dados para saber exactamente o que cada modo faz e aprender melhor com as tuas preferencias.
+        </div>
+        {modeNames.map(({ key, label, color }) => (
+          <div key={key} style={{ marginBottom: '12px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color, marginBottom: '4px' }}>{label}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '50px 1fr 1fr 1fr', gap: '4px', fontSize: '10px' }}>
+              <div></div>
+              {levelNames.map(l => (
+                <div key={l.key} style={{ textAlign: 'center', color: '#777575', fontWeight: 600 }}>{l.label}</div>
+              ))}
+              {/* Support % */}
+              <div style={{ color: '#adaaaa', alignSelf: 'center' }}>S %</div>
+              {levelNames.map(l => (
+                <input key={`${key}-${l.key}-s`} type="number" value={modes[key][l.key].support_pct}
+                  onChange={(e) => updateMode(key, l.key, 'support_pct', Number(e.target.value))}
+                  style={{ width: '100%', backgroundColor: '#262626', color: 'white', border: 'none', textAlign: 'center', padding: '6px 2px', fontSize: '12px', fontWeight: 700, borderRadius: '2px' }}
+                />
+              ))}
+              {/* Torque Nm */}
+              <div style={{ color: '#adaaaa', alignSelf: 'center' }}>T Nm</div>
+              {levelNames.map(l => (
+                <input key={`${key}-${l.key}-t`} type="number" value={modes[key][l.key].torque_nm}
+                  onChange={(e) => updateMode(key, l.key, 'torque_nm', Number(e.target.value))}
+                  style={{ width: '100%', backgroundColor: '#262626', color: 'white', border: 'none', textAlign: 'center', padding: '6px 2px', fontSize: '12px', fontWeight: 700, borderRadius: '2px' }}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </Card>
+    </>
   );
 }
 

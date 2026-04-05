@@ -128,6 +128,23 @@ export interface BikeConfig {
   tuning_mid: TuningLevelSpec;
   tuning_min: TuningLevelSpec;
   fixed_baseline: TuningLevelSpec;
+  // RideControl mode config — what each mode does at each tuning level (1-3)
+  // Rider configures these from their RideControl app values
+  ridecontrol_modes: RideControlModeConfig;
+}
+
+/** RideControl per-mode config: support/torque/launch at each tuning level */
+export interface RideControlModeTuning {
+  support_pct: number;    // Motor support % (e.g., 280%)
+  torque_nm: number;      // Max torque Nm
+  launch: number;         // Launch responsiveness (1-7 wire)
+}
+
+export interface RideControlModeConfig {
+  eco:    { low: RideControlModeTuning; mid: RideControlModeTuning; high: RideControlModeTuning };
+  tour:   { low: RideControlModeTuning; mid: RideControlModeTuning; high: RideControlModeTuning };
+  active: { low: RideControlModeTuning; mid: RideControlModeTuning; high: RideControlModeTuning };
+  sport:  { low: RideControlModeTuning; mid: RideControlModeTuning; high: RideControlModeTuning };
 }
 
 export const DEFAULT_BIKE_CONFIG: BikeConfig = {
@@ -239,6 +256,13 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   tuning_mid: { assist_pct: 240, torque_nm: 65, launch: 5, consumption_wh_km: 16 },
   tuning_min: { assist_pct: 140, torque_nm: 45, launch: 3, consumption_wh_km: 9 },
   fixed_baseline: { assist_pct: 125, torque_nm: 40, launch: 3, consumption_wh_km: 7 },
+  // SyncDrive Pro defaults — rider should update from their RideControl app
+  ridecontrol_modes: {
+    eco:    { low: { support_pct: 50,  torque_nm: 25, launch: 1 }, mid: { support_pct: 70,  torque_nm: 35, launch: 2 }, high: { support_pct: 100, torque_nm: 45, launch: 3 } },
+    tour:   { low: { support_pct: 100, torque_nm: 40, launch: 2 }, mid: { support_pct: 120, torque_nm: 50, launch: 3 }, high: { support_pct: 150, torque_nm: 60, launch: 4 } },
+    active: { low: { support_pct: 140, torque_nm: 50, launch: 3 }, mid: { support_pct: 180, torque_nm: 60, launch: 4 }, high: { support_pct: 220, torque_nm: 70, launch: 5 } },
+    sport:  { low: { support_pct: 220, torque_nm: 60, launch: 4 }, mid: { support_pct: 280, torque_nm: 75, launch: 5 }, high: { support_pct: 340, torque_nm: 85, launch: 7 } },
+  },
 };
 
 /** Deep merge bikeConfig with defaults — handles missing fields from old DB/localStorage */
@@ -253,6 +277,12 @@ export function safeBikeConfig(raw: Partial<BikeConfig> | undefined): BikeConfig
     tuning_mid: { ...d.tuning_mid, ...(raw.tuning_mid ?? {}) },
     tuning_min: { ...d.tuning_min, ...(raw.tuning_min ?? {}) },
     fixed_baseline: { ...d.fixed_baseline, ...(raw.fixed_baseline ?? {}) },
+    ridecontrol_modes: raw.ridecontrol_modes ? {
+      eco:    { low: { ...d.ridecontrol_modes.eco.low,    ...raw.ridecontrol_modes.eco?.low },    mid: { ...d.ridecontrol_modes.eco.mid,    ...raw.ridecontrol_modes.eco?.mid },    high: { ...d.ridecontrol_modes.eco.high,    ...raw.ridecontrol_modes.eco?.high } },
+      tour:   { low: { ...d.ridecontrol_modes.tour.low,   ...raw.ridecontrol_modes.tour?.low },   mid: { ...d.ridecontrol_modes.tour.mid,   ...raw.ridecontrol_modes.tour?.mid },   high: { ...d.ridecontrol_modes.tour.high,   ...raw.ridecontrol_modes.tour?.high } },
+      active: { low: { ...d.ridecontrol_modes.active.low, ...raw.ridecontrol_modes.active?.low }, mid: { ...d.ridecontrol_modes.active.mid, ...raw.ridecontrol_modes.active?.mid }, high: { ...d.ridecontrol_modes.active.high, ...raw.ridecontrol_modes.active?.high } },
+      sport:  { low: { ...d.ridecontrol_modes.sport.low,  ...raw.ridecontrol_modes.sport?.low },  mid: { ...d.ridecontrol_modes.sport.mid,  ...raw.ridecontrol_modes.sport?.mid },  high: { ...d.ridecontrol_modes.sport.high,  ...raw.ridecontrol_modes.sport?.high } },
+    } : d.ridecontrol_modes,
     // Ensure new fields have defaults for old configs
     category: raw.category ?? (raw.bike_type === 'ebike' ? 'mtb' : 'other'),
     suspension: raw.suspension ?? 'rigid',

@@ -9,6 +9,7 @@ import { tuningIntelligence, type TuningInput } from '../services/motor/TuningIn
 import { setAdvancedTuning, isTuningAvailable } from '../services/bluetooth/BLEBridge';
 import { kromiEngine } from '../services/intelligence/KromiEngine';
 import { useNutritionStore } from '../store/nutritionStore';
+import { useTuningStore } from '../store/tuningStore';
 import { AssistMode } from '../types/bike.types';
 
 const TICK_INTERVAL_MS = 1000;
@@ -29,6 +30,12 @@ const LAUNCH_MAX = 7;
 
 // Track last sent values to avoid redundant writes
 let lastAdvancedTuning = { support: -1, torque: -1, launch: -1 };
+
+// Track last KROMI output for mode feedback learning
+let lastKromiOutput: {
+  supportPct: number; torqueNm: number; gradient: number;
+  speed: number; gear: number; hr_zone: number; wPrimePct: number;
+} | null = null;
 
 // Simple GPS-based gradient from altitude changes over time
 const gradientHistory: { alt: number; ts: number }[] = [];
@@ -82,6 +89,27 @@ export function useMotorControl() {
       // === Gate: KROMI only in POWER mode ===
       if (bike.assist_mode !== AssistMode.POWER) {
         if (intelligence.active) {
+          // ── MODE FEEDBACK: rider left POWER → capture WHY ──
+          if (lastKromiOutput && bike.assist_mode >= AssistMode.ECO && bike.assist_mode <= AssistMode.SPORT) {
+            // Read actual tuning level for the target mode
+            const tuning = useTuningStore.getState().current;
+            const modeKey = ['', 'eco', 'tour', 'active', 'sport'][bike.assist_mode] as keyof typeof tuning;
+            const tuningLevel = tuning[modeKey] ?? 2;
+
+            const feedback = kromiEngine.getLearning().recordModeExit({
+              targetMode: bike.assist_mode,
+              targetTuningLevel: tuningLevel,
+              gradient: lastKromiOutput.gradient,
+              hr_zone: lastKromiOutput.hr_zone,
+              speed_kmh: lastKromiOutput.speed,
+              gear: lastKromiOutput.gear,
+              w_prime_pct: lastKromiOutput.wPrimePct,
+              kromi_support_pct: lastKromiOutput.supportPct,
+              kromi_torque_nm: lastKromiOutput.torqueNm,
+            });
+            dlog?.(`[KROMI] MODE FEEDBACK: POWER→${['','ECO','TOUR','ACTV','SPRT'][bike.assist_mode]} | KROMI was S=${lastKromiOutput.supportPct.toFixed(0)}% grad=${lastKromiOutput.gradient.toFixed(1)} z${lastKromiOutput.hr_zone} | correction=${feedback.correction_pct > 0 ? '+' : ''}${feedback.correction_pct.toFixed(0)}%`);
+          }
+
           useIntelligenceStore.getState().setActive(false);
           useAutoAssistStore.getState().setLastDecision({
             action: 'none',
@@ -95,6 +123,12 @@ export function useMotorControl() {
       }
 
       if (!intelligence.active) {
+        // ── MODE FEEDBACK: rider returned to POWER ──
+        const returnEvent = kromiEngine.getLearning().recordModeReturn();
+        if (returnEvent) {
+          dlog?.(`[KROMI] MODE RETURN: stayed ${returnEvent.duration_s?.toFixed(0)}s in mode ${returnEvent.target_mode} | learned correction: ${returnEvent.correction_pct > 0 ? '+' : ''}${returnEvent.correction_pct.toFixed(0)}% for grad=${returnEvent.gradient_bucket} z${returnEvent.hr_zone}`);
+        }
+
         useIntelligenceStore.getState().setActive(true);
         dlog?.(`[KROMI] ACTIVATED v2 — 6-layer intelligence | gear=${bike.gear} ble=${bike.ble_status} tuning=${isTuningAvailable()}`);
       }
@@ -170,6 +204,17 @@ export function useMotorControl() {
       if (kromi.physiology) {
         useNutritionStore.getState().setPhysiology(kromi.physiology);
       }
+
+      // Cache output for mode feedback learning (used if rider switches mode)
+      lastKromiOutput = {
+        supportPct: kromi.supportPct,
+        torqueNm: kromi.torqueNm,
+        gradient: tuningInput.gradient,
+        speed: bike.speed_kmh,
+        gear: bike.gear,
+        hr_zone: kromi.physiology?.zone_current ?? 0,
+        wPrimePct: kromi.physiology ? kromi.physiology.w_prime_balance * 100 : 100,
+      };
 
       const support = toWire(kromi.supportPct, SUPPORT_MIN, SUPPORT_MAX);
       const torque = toWire(kromi.torqueNm, TORQUE_MIN, TORQUE_MAX);

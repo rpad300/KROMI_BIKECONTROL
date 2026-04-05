@@ -403,6 +403,13 @@ class KromiEngine {
       }
     }
 
+    // ── Mode Feedback Learning: apply rider preference correction ──
+    const riderCorrection = this.learning.getSupportCorrection(input.gradient_pct, physio.zone_current);
+    if (riderCorrection !== 0) {
+      supportPct += riderCorrection;
+      factors.push({ name: 'Rider Pref', value: riderCorrection, detail: `${riderCorrection > 0 ? '+' : ''}${riderCorrection.toFixed(0)}% from mode feedback` });
+    }
+
     // ── EMA Smoothing (support and torque) ──
     supportPct = this.prevSupport + EMA_ALPHA * (supportPct - this.prevSupport);
     torqueNm = this.prevTorque + EMA_ALPHA * (torqueNm - this.prevTorque);

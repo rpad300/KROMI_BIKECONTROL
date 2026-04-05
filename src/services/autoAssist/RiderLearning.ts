@@ -10,6 +10,7 @@
  */
 
 import { AssistMode } from '../../types/bike.types';
+import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -29,6 +30,67 @@ export interface OverrideEvent {
   timestamp: number;
   support_at_override: number;
   torque_at_override: number;
+}
+
+/**
+ * Mode Feedback Event — captured when rider switches FROM POWER to another mode.
+ * The target mode encodes what they actually wanted:
+ *   SPORT(4)=~280%, ACTIVE(3)=~180%, TOUR(2)=~120%, ECO(1)=~70%
+ * Combined with context, this teaches KROMI what support level the rider
+ * prefers for specific gradient × HR zone conditions.
+ */
+export interface ModeFeedbackEvent {
+  /** Context when rider left POWER */
+  gradient_bucket: number;     // rounded to nearest 2% (-inf, -4, -2, 0, 2, 4, 6, 8, 10+)
+  hr_zone: number;             // 0-5
+  speed_kmh: number;
+  gear: number;
+  w_prime_pct: number;         // 0-100
+  /** What KROMI was doing */
+  kromi_support_pct: number;   // 50-350
+  kromi_torque_nm: number;     // 20-85
+  /** What the rider switched to */
+  target_mode: AssistMode;     // 1-4 (ECO/TOUR/ACTIVE/SPORT)
+  target_approx_support: number; // estimated support % of target mode
+  /** Calculated correction: how much KROMI should adjust for this context */
+  correction_pct: number;      // negative = less, positive = more
+  timestamp: number;
+  /** Duration in non-POWER mode before returning (filled on return) */
+  duration_s: number | null;
+}
+
+/**
+ * Approximate support % for each Giant assist mode × tuning level.
+ * Source: Giant SyncDrive Pro specs + observed behavior.
+ * Key: `mode:tuning_level` where tuning 1=low, 2=mid, 3=high
+ * These are fallback values — real support is measured from motor current.
+ */
+const MODE_SUPPORT_APPROX: Record<number, Record<number, number>> = {
+  1: { 1: 50, 2: 70, 3: 100 },   // ECO
+  2: { 1: 100, 2: 120, 3: 150 },  // TOUR
+  3: { 1: 140, 2: 180, 3: 220 },  // ACTIVE
+  4: { 1: 220, 2: 280, 3: 340 },  // SPORT
+};
+
+/**
+ * Get support % for a mode. Uses rider's RideControl config if available,
+ * falls back to approximate table.
+ */
+function getModeSupportApprox(mode: number, tuningLevel?: number): number {
+  // Try to read from bike config (rider's actual RideControl values)
+  try {
+    const bike = safeBikeConfig(useSettingsStore.getState().bikeConfig);
+    const modeKey = ['', 'eco', 'tour', 'active', 'sport'][mode] as 'eco' | 'tour' | 'active' | 'sport' | undefined;
+    if (modeKey && bike.ridecontrol_modes[modeKey]) {
+      const levelKey = tuningLevel === 1 ? 'low' : tuningLevel === 3 ? 'high' : 'mid';
+      return bike.ridecontrol_modes[modeKey][levelKey].support_pct;
+    }
+  } catch { /* store not ready */ }
+
+  // Fallback to approximate table
+  const levels = MODE_SUPPORT_APPROX[mode];
+  if (!levels) return 150;
+  return levels[tuningLevel ?? 2] ?? levels[2] ?? 150;
 }
 
 interface CPDataPoint {
@@ -61,6 +123,17 @@ export class RiderLearning {
   // Override detection state
   private lastEngineCommand: { support: number; torque: number; launch: number; ts: number } | null = null;
   private lastAssistMode: AssistMode = AssistMode.POWER;
+
+  // Mode Feedback Learning
+  private modeFeedbackHistory: ModeFeedbackEvent[] = [];
+  /** Active feedback event (rider left POWER, hasn't returned yet) */
+  private pendingFeedback: ModeFeedbackEvent | null = null;
+  /**
+   * Learned support correction by context bucket.
+   * Key: `gradient_bucket:hr_zone` e.g. "4:3" = 4% gradient, HR zone 3
+   * Value: support correction in % (e.g. +30 means add 30% to KROMI's support)
+   */
+  private supportCorrections: Map<string, { correction: number; samples: number }> = new Map();
 
   constructor(initial?: Partial<CalibratedParams>) {
     this.params = {
@@ -337,10 +410,130 @@ export class RiderLearning {
     return null;
   }
 
-  /** Reset for new ride (keep calibrated params) */
+  // ── Mode Feedback Learning ──────────────────────────────────
+
+  /**
+   * Called when rider leaves POWER mode. Captures full context snapshot.
+   * The target mode tells us what support level they actually wanted.
+   */
+  recordModeExit(context: {
+    targetMode: AssistMode;
+    targetTuningLevel?: number;  // 1-3 from tuningStore, if available
+    gradient: number;
+    hr_zone: number;
+    speed_kmh: number;
+    gear: number;
+    w_prime_pct: number;
+    kromi_support_pct: number;
+    kromi_torque_nm: number;
+  }): ModeFeedbackEvent {
+    const gradBucket = this.gradientBucket(context.gradient);
+    const targetSupport = getModeSupportApprox(context.targetMode, context.targetTuningLevel);
+    const correction = targetSupport - context.kromi_support_pct;
+
+    const event: ModeFeedbackEvent = {
+      gradient_bucket: gradBucket,
+      hr_zone: context.hr_zone,
+      speed_kmh: context.speed_kmh,
+      gear: context.gear,
+      w_prime_pct: context.w_prime_pct,
+      kromi_support_pct: context.kromi_support_pct,
+      kromi_torque_nm: context.kromi_torque_nm,
+      target_mode: context.targetMode,
+      target_approx_support: targetSupport,
+      correction_pct: correction,
+      timestamp: Date.now(),
+      duration_s: null,
+    };
+
+    this.pendingFeedback = event;
+    return event;
+  }
+
+  /**
+   * Called when rider returns to POWER mode.
+   * Closes the pending feedback event and applies the learning.
+   */
+  recordModeReturn(): ModeFeedbackEvent | null {
+    if (!this.pendingFeedback) return null;
+
+    const event = this.pendingFeedback;
+    event.duration_s = (Date.now() - event.timestamp) / 1000;
+    this.pendingFeedback = null;
+
+    // Only learn from events where rider stayed > 30s in the other mode
+    // (< 30s might be accidental or just checking something)
+    if (event.duration_s < 30) return event;
+
+    this.modeFeedbackHistory.push(event);
+    if (this.modeFeedbackHistory.length > 200) {
+      this.modeFeedbackHistory = this.modeFeedbackHistory.slice(-200);
+    }
+
+    // Apply learning: blend correction into the context bucket
+    this.applySupportCorrection(event);
+
+    return event;
+  }
+
+  /**
+   * Get the learned support correction for current riding context.
+   * Returns a % adjustment to apply on top of KROMI's calculated support.
+   *
+   * Example: returns +25 → KROMI should add 25% to its support calculation.
+   * Example: returns -15 → KROMI should subtract 15%.
+   */
+  getSupportCorrection(gradient: number, hr_zone: number): number {
+    const key = `${this.gradientBucket(gradient)}:${hr_zone}`;
+    const entry = this.supportCorrections.get(key);
+    if (!entry || entry.samples < 2) return 0; // need at least 2 samples to trust
+    return entry.correction;
+  }
+
+  /** Get all learned corrections (for logging/debug) */
+  getAllCorrections(): Map<string, { correction: number; samples: number }> {
+    return new Map(this.supportCorrections);
+  }
+
+  /** Get feedback history for PostRideAnalysis */
+  getModeFeedbackHistory(): ModeFeedbackEvent[] {
+    return [...this.modeFeedbackHistory];
+  }
+
+  private applySupportCorrection(event: ModeFeedbackEvent): void {
+    const key = `${event.gradient_bucket}:${event.hr_zone}`;
+    const existing = this.supportCorrections.get(key);
+
+    if (!existing) {
+      // First observation for this context — start with reduced learning rate
+      this.supportCorrections.set(key, {
+        correction: event.correction_pct * 0.5, // 50% of first observation
+        samples: 1,
+      });
+    } else {
+      // Exponential moving average: more samples → slower change
+      const alpha = Math.max(0.05, 0.3 / Math.sqrt(existing.samples));
+      const blended = existing.correction * (1 - alpha) + event.correction_pct * alpha;
+      this.supportCorrections.set(key, {
+        correction: Math.round(blended),
+        samples: existing.samples + 1,
+      });
+    }
+  }
+
+  /** Round gradient to bucket: ...-4, -2, 0, 2, 4, 6, 8, 10+ */
+  private gradientBucket(gradient: number): number {
+    if (gradient <= -4) return -4;
+    if (gradient >= 10) return 10;
+    return Math.round(gradient / 2) * 2;
+  }
+
+  /** Reset for new ride (keep calibrated params AND learned corrections) */
   resetRide(): void {
     this.lastEngineCommand = null;
     this.lastAssistMode = AssistMode.POWER;
     this.consecutiveOverrides.clear();
+    this.pendingFeedback = null;
+    // NOTE: modeFeedbackHistory and supportCorrections persist across rides
   }
 }
