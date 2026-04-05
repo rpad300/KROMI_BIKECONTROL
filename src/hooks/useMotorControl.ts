@@ -57,6 +57,8 @@ export function useMotorControl() {
 
       if (!intelligence.active) {
         useIntelligenceStore.getState().setActive(true);
+        console.log('[KROMI] Intelligence ACTIVATED — mode=POWER, gear=%d, ble=%s, tuning=%s',
+          bike.gear, bike.ble_status, isTuningAvailable() ? 'available' : 'unavailable');
       }
 
       // === Gather inputs (personalized via settingsStore) ===

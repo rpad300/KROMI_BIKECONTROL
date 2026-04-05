@@ -72,14 +72,18 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     });
   },
 
-  stopTrip: () => {
+  stopTrip: async () => {
     // Capture session ID before stopSession clears it
     const sessionId = rideSessionManager.getSessionId();
-    set({ state: 'finished', lastSessionId: sessionId });
-    // Also stop ride data recording
-    rideSessionManager.stopSession().catch((err) => {
+    set({ lastSessionId: sessionId });
+    // Stop ride data recording — wait for flush to complete before showing summary
+    try {
+      await rideSessionManager.stopSession();
+    } catch (err) {
       console.error('[TripStore] Failed to stop ride session:', err);
-    });
+    }
+    // Set finished AFTER flush so summary modal can read snapshots
+    set({ state: 'finished' });
   },
 
   tick: () => {
