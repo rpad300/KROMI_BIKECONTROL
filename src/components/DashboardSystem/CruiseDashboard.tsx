@@ -13,7 +13,7 @@ import { ClockDisplay } from '../shared/ClockDisplay';
 export function CruiseDashboard() {
   const assistMode = useBikeStore((s) => s.assist_mode);
   const rangePerMode = useBikeStore((s) => s.range_per_mode);
-  const rearGear = useBikeStore((s) => s.rear_gear);
+  const gear = useBikeStore((s) => s.gear || s.rear_gear);
   const temp = useBikeStore((s) => s.temperature_c);
   const tripTime = useBikeStore((s) => s.trip_time_s);
   const isEBike = useIsEBike();
@@ -40,7 +40,7 @@ export function CruiseDashboard() {
 
       {/* Efficiency metrics — 12% */}
       <div style={{ height: '12%', flexShrink: 0 }}>
-        <MetricGrid cols={5} metrics={[METRIC.range, METRIC.power, METRIC.battery, METRIC.cadence, METRIC.gradient]} />
+        <MetricGrid cols={6} metrics={[METRIC.range, METRIC.power, METRIC.battery, METRIC.cadence, METRIC.gradient, METRIC.gear]} />
       </div>
 
       {/* KROMI Intelligence — 5% */}
@@ -61,7 +61,7 @@ export function CruiseDashboard() {
           </div>
         )}
         <span className="font-headline tabular-nums" style={{ fontSize: '11px', color: '#adaaaa' }}>{formatTime(tripTime)}</span>
-        {rearGear > 0 && <span className="font-headline font-bold" style={{ fontSize: '11px' }}>G{rearGear}</span>}
+        {gear > 0 && <span className="font-headline font-bold" style={{ fontSize: '11px' }}>G{gear}</span>}
       </div>
 
       {/* Assist mode buttons — 10% (e-bike only) */}

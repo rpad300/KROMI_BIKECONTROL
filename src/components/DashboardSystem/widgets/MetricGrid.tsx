@@ -79,5 +79,11 @@ export const METRIC = {
     },
   },
   altitude: { icon: 'landscape', iconColor: '#6e9bff', label: 'Alt', unit: 'm', getValue: () => '--' }, // needs mapStore
-  gear: { icon: 'settings', iconColor: '#adaaaa', label: 'Gear', unit: '', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.rear_gear > 0 ? String(s.rear_gear) : '--' },
+  gear: {
+    icon: 'settings', iconColor: '#6e9bff', label: 'Gear', unit: '',
+    getValue: (s: ReturnType<typeof useBikeStore.getState>) => {
+      const g = s.gear || s.rear_gear;
+      return g > 0 ? `${g}/${s.total_gears}` : '--';
+    },
+  },
 } as const;

@@ -29,7 +29,7 @@ export function MapDashboard() {
 
       {/* Key metrics — 12% */}
       <div style={{ height: '12%', flexShrink: 0 }}>
-        <MetricGrid cols={4} metrics={[METRIC.speed, METRIC.power, METRIC.cadence, METRIC.range]} />
+        <MetricGrid cols={5} metrics={[METRIC.speed, METRIC.power, METRIC.cadence, METRIC.range, METRIC.gear]} />
       </div>
 
       {/* Assist buttons — 10% */}

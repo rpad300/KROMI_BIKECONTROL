@@ -28,7 +28,7 @@ export function ClimbDashboard() {
 
       {/* Cadence + HR row — 12% */}
       <div style={{ height: '12%', flexShrink: 0 }}>
-        <MetricGrid cols={2} metrics={[METRIC.cadence, METRIC.hr]} />
+        <MetricGrid cols={3} metrics={[METRIC.cadence, METRIC.hr, METRIC.gear]} />
       </div>
 
       {/* Elevation Profile — 22% */}
