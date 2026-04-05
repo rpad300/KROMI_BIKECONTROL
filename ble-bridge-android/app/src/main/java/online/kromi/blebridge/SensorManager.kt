@@ -162,6 +162,7 @@ class SensorManager(private val context: Context) {
         Log.i(TAG, "Connecting $sensorKey: ${device.name ?: address}")
 
         device.connectGatt(context, true, createGattCallback(sensorKey), BluetoothDevice.TRANSPORT_LE)
+        Log.i(TAG, "$sensorKey connectGatt with autoConnect=true")
     }
 
     fun disconnectSensor(sensorKey: String) {

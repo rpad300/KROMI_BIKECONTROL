@@ -213,7 +213,7 @@ class ShimanoProtocol(private val context: Context) {
         Log.i(TAG, "Connecting to ${device.name ?: address}...")
         emitStatus("connecting")
 
-        device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        device.connectGatt(context, true, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
     fun disconnect() {

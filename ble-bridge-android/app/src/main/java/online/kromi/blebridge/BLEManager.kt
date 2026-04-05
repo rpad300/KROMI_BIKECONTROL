@@ -163,12 +163,20 @@ class BLEManager(private val context: Context) {
         connectGatt(device)
     }
 
+    private var lastConnectedDevice: BluetoothDevice? = null
+    private var shouldAutoReconnect = true
+    private val reconnectHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
     private fun connectGatt(device: BluetoothDevice) {
-        // RideControl uses TRANSPORT_LE explicitly
-        gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        lastConnectedDevice = device
+        shouldAutoReconnect = true
+        // autoConnect=true lets Android reconnect automatically when device comes back in range
+        gatt = device.connectGatt(context, true, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
     fun disconnect() {
+        shouldAutoReconnect = false
+        lastConnectedDevice = null
         gatt?.disconnect()
         gatt?.close()
         gatt = null
@@ -200,7 +208,7 @@ class BLEManager(private val context: Context) {
                     g.requestMtu(247)
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    Log.i(TAG, "GATT disconnected")
+                    Log.i(TAG, "GATT disconnected (status=$status, autoReconnect=$shouldAutoReconnect)")
                     gatt?.close()
                     gatt = null
                     gevChar = null
@@ -208,6 +216,18 @@ class BLEManager(private val context: Context) {
                     sgWriteChar = null
                     onDataReceived?.invoke(JSONObject().put("type", "disconnected"))
                     onStatusChanged?.invoke("Disconnected")
+
+                    // Auto-reconnect after 3s if not intentionally disconnected
+                    if (shouldAutoReconnect && lastConnectedDevice != null) {
+                        Log.i(TAG, "★ Auto-reconnect in 3s to ${lastConnectedDevice?.name}")
+                        onStatusChanged?.invoke("Reconnecting...")
+                        reconnectHandler.postDelayed({
+                            if (shouldAutoReconnect && lastConnectedDevice != null && gatt == null) {
+                                Log.i(TAG, "★ Reconnecting to ${lastConnectedDevice?.name}...")
+                                connectGatt(lastConnectedDevice!!)
+                            }
+                        }, 3000)
+                    }
                 }
             }
         }
