@@ -391,7 +391,7 @@ export class WebSocketBLEClient {
 
         case 'sensorConnected': {
           const sensorServiceMap: Record<string, string> = {
-            hr: 'heartRate', di2: 'di2', sram: 'sram', power: 'power',
+            hr: 'heartRate', di2: 'di2', sram: 'sram', power: 'power', cadence: 'cadence',
           };
           const serviceKey = sensorServiceMap[msg.sensor as string];
           if (serviceKey) {
@@ -408,12 +408,13 @@ export class WebSocketBLEClient {
 
         case 'sensorDisconnected': {
           const svcMap: Record<string, string> = {
-            hr: 'heartRate', di2: 'di2', sram: 'sram', power: 'power',
+            hr: 'heartRate', di2: 'di2', sram: 'sram', power: 'power', cadence: 'cadence',
           };
           const svcKey = svcMap[msg.sensor as string];
           if (svcKey) {
-            store.setServiceConnected(svcKey as 'heartRate' | 'di2' | 'sram' | 'power', false);
+            store.setServiceConnected(svcKey as 'heartRate' | 'di2' | 'sram' | 'power' | 'cadence', false);
             if (msg.sensor === 'hr') store.setHR(0, 0);
+            if (msg.sensor === 'cadence') { this.hasExternalCadence = false; }
           }
           break;
         }

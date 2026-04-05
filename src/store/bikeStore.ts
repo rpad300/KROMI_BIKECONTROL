@@ -218,6 +218,7 @@ export const useBikeStore = create<BikeState>((set) => ({
     sram: false,
     heartRate: false,
     di2: false,
+    cadence: false,
   },
   last_update_ms: 0,
 

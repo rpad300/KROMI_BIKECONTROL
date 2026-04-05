@@ -62,6 +62,7 @@ export interface BLEServiceStatus {
   sram: boolean;
   heartRate: boolean;
   di2: boolean;
+  cadence: boolean;
 }
 
 // === Bike Constants ===

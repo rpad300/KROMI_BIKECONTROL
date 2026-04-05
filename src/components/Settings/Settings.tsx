@@ -724,9 +724,10 @@ function RideControlConfig() {
 function BluetoothPage() {
   const bleStatus = useBikeStore((s) => s.ble_status);
   const services = useBikeStore((s) => s.ble_services);
-
   return (
     <div className="space-y-4">
+      {/* Bike Connection */}
+      <SectionLabel>Bike (Smart Gateway)</SectionLabel>
       <Card>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ color: '#adaaaa', fontSize: '13px' }}>Estado</span>
@@ -757,6 +758,63 @@ function BluetoothPage() {
           {bleStatus === 'connected' ? 'Desligar' : 'Ligar'}
         </button>
       </Card>
+
+      {/* External Sensors */}
+      <SectionLabel>Sensores Externos</SectionLabel>
+      <Card>
+        <div style={{ fontSize: '10px', color: '#777575', marginBottom: '8px' }}>
+          Sensores independentes da bike. Ligam-se em paralelo via BLE.
+        </div>
+        <SensorRow icon="favorite" color="#ff716c" label="Heart Rate" sensorKey="hr" />
+        <SensorRow icon="speed" color="#e966ff" label="Cadência" sensorKey="cadence" />
+        <SensorRow icon="bolt" color="#fbbf24" label="Power Meter" sensorKey="power" />
+      </Card>
+    </div>
+  );
+}
+
+/** Sensor connect/disconnect row */
+function SensorRow({ icon, color, label, sensorKey }: { icon: string; color: string; label: string; sensorKey: string }) {
+  const serviceKey = sensorKey === 'hr' ? 'heartRate' : sensorKey;
+  const connected = useBikeStore((s) => s.ble_services[serviceKey as keyof typeof s.ble_services] ?? false);
+  const [scanning, setScanning] = useState(false);
+  const status = connected ? 'connected' : scanning ? 'scanning' : 'disconnected';
+
+  const handleToggle = async () => {
+    if (connected) {
+      const { disconnectHR, disconnectExtPower, disconnectExtCadence } = await import('../../services/bluetooth/BLEBridge');
+      if (sensorKey === 'hr') disconnectHR();
+      else if (sensorKey === 'cadence') disconnectExtCadence();
+      else if (sensorKey === 'power') disconnectExtPower();
+    } else {
+      setScanning(true);
+      try {
+        const { connectHR, connectExtPower, connectExtCadence } = await import('../../services/bluetooth/BLEBridge');
+        if (sensorKey === 'hr') await connectHR();
+        else if (sensorKey === 'cadence') await connectExtCadence();
+        else if (sensorKey === 'power') await connectExtPower();
+      } catch { /* scan timeout or user cancel */ }
+      setScanning(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #262626' }}>
+      <span className="material-symbols-outlined" style={{ fontSize: '20px', color: connected ? color : '#494847', fontVariationSettings: "'FILL' 1" }}>{icon}</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: '13px', fontWeight: 600, color: connected ? 'white' : '#adaaaa' }}>{label}</div>
+      </div>
+      <button
+        onClick={handleToggle}
+        style={{
+          padding: '6px 16px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '11px',
+          backgroundColor: status === 'connected' ? '#ff716c' : status === 'scanning' ? '#262626' : color + '30',
+          color: status === 'connected' ? 'white' : status === 'scanning' ? '#777575' : color,
+          borderRadius: '4px',
+        }}
+      >
+        {status === 'connected' ? 'Desligar' : status === 'scanning' ? 'A procurar...' : 'Ligar'}
+      </button>
     </div>
   );
 }
