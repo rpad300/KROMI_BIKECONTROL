@@ -17,7 +17,6 @@ export function CruiseDashboard() {
   const temp = useBikeStore((s) => s.temperature_c);
   const tripTime = useBikeStore((s) => s.trip_time_s);
   const isEBike = useIsEBike();
-  // Show KROMI intelligence whenever bike is connected and motor is in an active mode
   const bleConnected = useBikeStore((s) => s.ble_status === 'connected');
   const motorActive = assistMode >= 1 && assistMode <= 6;
   const showIntelligence = isEBike && bleConnected && motorActive;
@@ -38,21 +37,26 @@ export function CruiseDashboard() {
       {/* Speed Hero — 20% */}
       <div style={{ height: '20%', flexShrink: 0 }}><SpeedHero /></div>
 
-      {/* Efficiency metrics — 12% */}
-      <div style={{ height: '12%', flexShrink: 0 }}>
-        <MetricGrid cols={6} metrics={[METRIC.range, METRIC.power, METRIC.battery, METRIC.cadence, METRIC.gradient, METRIC.gear]} />
+      {/* Key metrics — 10% */}
+      <div style={{ height: '10%', flexShrink: 0 }}>
+        <MetricGrid cols={5} metrics={[METRIC.power, METRIC.cadence, METRIC.gradient, METRIC.gear, METRIC.range]} />
+      </div>
+
+      {/* Battery strip — all batteries at a glance — 6% */}
+      <div style={{ height: '6%', flexShrink: 0 }}>
+        <BatteryStrip />
       </div>
 
       {/* KROMI Intelligence — 5% */}
       <div style={{ height: '5%', flexShrink: 0 }}><CompactIntelligence /></div>
 
-      {/* Elevation profile — 15% */}
-      <div style={{ height: '15%', flexShrink: 0, padding: '4px', backgroundColor: '#131313' }}>
+      {/* Elevation profile — 14% */}
+      <div style={{ height: '14%', flexShrink: 0, padding: '4px', backgroundColor: '#131313' }}>
         <ElevationProfile />
       </div>
 
-      {/* Clock + Weather + Trip strip — 6% */}
-      <div style={{ height: '6%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-around', backgroundColor: '#1a1919', borderTop: '1px solid rgba(73,72,71,0.1)', borderBottom: '1px solid rgba(73,72,71,0.1)' }}>
+      {/* Clock + Weather + Trip strip — 5% */}
+      <div style={{ height: '5%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-around', backgroundColor: '#1a1919', borderTop: '1px solid rgba(73,72,71,0.1)', borderBottom: '1px solid rgba(73,72,71,0.1)' }}>
         <ClockDisplay />
         {temp > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
@@ -98,3 +102,63 @@ export function CruiseDashboard() {
   );
 }
 
+/** Compact battery strip — shows all batteries in one row */
+function BatteryStrip() {
+  const soc = useBikeStore((s) => s.battery_percent);
+  const bat1 = useBikeStore((s) => s.battery_main_pct);
+  const bat2 = useBikeStore((s) => s.battery_sub_pct);
+  const di2Bat = useBikeStore((s) => s.di2_battery);
+  const rangeKm = useBikeStore((s) => s.range_km);
+
+  const hasDual = bat1 > 0 || bat2 > 0;
+  const mainSoc = bat1 > 0 ? bat1 : soc;
+  const subSoc = bat2 > 0 ? bat2 : 0;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '100%', padding: '0 8px', backgroundColor: '#131313' }}>
+      {/* Main battery (or combined) */}
+      {hasDual ? (
+        <>
+          <BatBar label="800" pct={mainSoc} wh={800} />
+          <BatBar label="250" pct={subSoc} wh={250} />
+        </>
+      ) : (
+        <BatBar label="Bike" pct={soc} wh={0} />
+      )}
+
+      {/* Di2 battery */}
+      {di2Bat > 0 && <BatBar label="Di2" pct={di2Bat} wh={0} />}
+
+      {/* Total SOC + Range */}
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+        <span className="font-headline font-bold tabular-nums" style={{ fontSize: '16px', color: barTextColor(soc) }}>{soc}%</span>
+        {rangeKm > 0 && (
+          <span className="font-label tabular-nums" style={{ fontSize: '10px', color: '#777575' }}>{Math.round(rangeKm)}km</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BatBar({ label, pct, wh }: { label: string; pct: number; wh: number }) {
+  const color = pct > 50 ? '#3fff8b' : pct > 30 ? '#fbbf24' : pct > 15 ? '#fbbf24' : '#ff716c';
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '1px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span className="font-label" style={{ fontSize: '8px', color: '#777575' }}>{label}</span>
+        <span className="font-label tabular-nums" style={{ fontSize: '8px', color }}>{pct}%</span>
+      </div>
+      <div style={{ height: '4px', backgroundColor: '#262626', borderRadius: '2px', overflow: 'hidden' }}>
+        <div style={{ height: '100%', borderRadius: '2px', backgroundColor: color, width: `${Math.max(pct, 1)}%`, transition: 'width 700ms' }} />
+      </div>
+      {wh > 0 && (
+        <span className="font-label tabular-nums" style={{ fontSize: '7px', color: '#555', textAlign: 'center' }}>{Math.round(wh * pct / 100)}Wh</span>
+      )}
+    </div>
+  );
+}
+
+function barTextColor(pct: number): string {
+  return pct > 50 ? '#3fff8b' : pct > 30 ? '#fbbf24' : pct > 15 ? '#fbbf24' : '#ff716c';
+}
