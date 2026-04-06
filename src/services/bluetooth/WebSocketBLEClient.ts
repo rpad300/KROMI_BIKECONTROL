@@ -490,6 +490,13 @@ export class WebSocketBLEClient {
           break;
         }
 
+        case 'sensorError': {
+          const dlog = (window as unknown as Record<string, unknown>).__dlog as ((msg: string) => void) | undefined;
+          dlog?.(`sensorError: ${msg.sensor} — ${msg.error}`);
+          console.warn(`[WSClient] Sensor error: ${msg.sensor} — ${msg.error}`);
+          break;
+        }
+
         case 'sensorDisconnected': {
           const svcMap: Record<string, string> = {
             hr: 'heartRate', di2: 'di2', sram: 'sram', power: 'power', cadence: 'cadence',

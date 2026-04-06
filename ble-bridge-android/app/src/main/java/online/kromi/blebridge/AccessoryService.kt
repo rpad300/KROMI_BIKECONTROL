@@ -173,6 +173,11 @@ class AccessoryService(private val context: Context) {
     // ═══════════════════════════════════════
 
     fun connectAccessory(key: String, address: String) {
+        // Skip if already connecting/connected to same address
+        if (addresses[key] == address && connections.containsKey(key)) {
+            Log.i(TAG, "$key already connecting to $address — skipping")
+            return
+        }
         if (connections.containsKey(key)) {
             disconnectAccessory(key)
             handler.postDelayed({ connectAccessory(key, address) }, 500)
@@ -235,6 +240,15 @@ class AccessoryService(private val context: Context) {
     private fun createGattCallback(key: String) = object : BluetoothGattCallback() {
 
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            Log.i(TAG, "$key onConnectionStateChange: status=$status newState=$newState")
+            if (status != BluetoothGatt.GATT_SUCCESS && status != 0) {
+                Log.e(TAG, "$key GATT error: status=$status — will retry")
+                onData?.invoke(JSONObject().apply {
+                    put("type", "sensorError")
+                    put("sensor", key)
+                    put("error", "GATT status $status")
+                })
+            }
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     Log.i(TAG, "$key connected: ${gatt.device.name ?: gatt.device.address}")
@@ -242,7 +256,7 @@ class AccessoryService(private val context: Context) {
                     gatt.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    Log.i(TAG, "$key disconnected")
+                    Log.i(TAG, "$key disconnected (status=$status)")
                     connections.remove(key)
                     txChars.remove(key)
                     onData?.invoke(JSONObject().apply {
