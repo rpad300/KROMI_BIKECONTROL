@@ -5,7 +5,7 @@
  * Replaces the old Connections.tsx with its per-type sections.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import {
   useDeviceStore,
@@ -132,17 +132,19 @@ export function ConnectionsPage() {
   const [connecting, setConnecting] = useState<string | null>(null);
   const [phoneSensorsOn, setPhoneSensorsOn] = useState(webSensorService.isRunning);
   // Track devices that are in the process of connecting (just added from scanner)
-  const pendingConnections = useRef<Set<string>>(new Set());
+  const [pendingIds, setPendingIds] = useState<string[]>([]);
 
-  // Clear pending when ble_services updates (device actually connected)
+  // Clear pending when ble_services confirms connection
   useEffect(() => {
-    for (const id of pendingConnections.current) {
+    if (pendingIds.length === 0) return;
+    const stillPending = pendingIds.filter((id) => {
       const device = devices.find((d) => d.id === id);
-      if (device && isRoleConnected(device.role, services, bleStatus)) {
-        pendingConnections.current.delete(id);
-      }
+      return device && !isRoleConnected(device.role, services, bleStatus);
+    });
+    if (stillPending.length !== pendingIds.length) {
+      setPendingIds(stillPending);
     }
-  }, [services, bleStatus, devices]);
+  }, [services, bleStatus, devices, pendingIds]);
 
   // Show scanner for websocket mode
   if (view === 'scanner') {
@@ -162,7 +164,7 @@ export function ConnectionsPage() {
               brandColor: info.brandColor,
             });
             // Mark as pending connection (bridge is connecting it)
-            pendingConnections.current.add(saved.id);
+            setPendingIds((prev) => [...prev, saved.id]);
           }
           setPendingRole(null);
           setView('list');
@@ -354,7 +356,7 @@ export function ConnectionsPage() {
           <div className="flex flex-col gap-1.5">
             {group.devices.map((device) => {
               const connected = isRoleConnected(device.role, services, bleStatus);
-              const isPending = pendingConnections.current.has(device.id);
+              const isPending = pendingIds.includes(device.id);
               const isConnecting = connecting === device.id || isPending;
               return (
                 <DeviceCard
