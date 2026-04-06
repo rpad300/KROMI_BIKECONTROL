@@ -830,7 +830,29 @@ function AccessoriesSection({
               {lightMode > 0 ? 'flashlight_on' : 'flashlight_off'}
             </span>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-bold text-white">Rear Light</div>
+              <div className="text-sm font-bold text-white flex items-center gap-1.5">
+                {(() => {
+                  const name = lightDeviceName || BLE.getLightDeviceName() || '';
+                  const saved = !name ? BLE.getSavedSensorDevice('light') : null;
+                  const deviceName = name || saved?.name || '';
+                  const brand = deviceName ? identifyByName(deviceName) : null;
+                  // Detect position: VS1800S/VS1200 = front, LR60/LR40 = rear
+                  const isFront = /^VS\d/i.test(deviceName) || /front/i.test(deviceName);
+                  const isRear = /^LR\d/i.test(deviceName) || /rear/i.test(deviceName);
+                  const posLabel = isFront ? 'Front Light' : isRear ? 'Rear Light' : 'Light';
+                  return (
+                    <>
+                      {posLabel}
+                      {brand?.brandLabel && (
+                        <span className="text-[9px] font-bold px-1 py-0.5 rounded"
+                          style={{ color: brand.color, backgroundColor: `${brand.color}20` }}>
+                          {brand.brandLabel}
+                        </span>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
               <div className="text-xs text-gray-500 truncate">
                 {lightConnected
                   ? `${lightDeviceName || BLE.getLightDeviceName() || 'Connected'}${lightBattery > 0 ? ` — ${lightBattery}%` : ''}`
@@ -924,7 +946,19 @@ function AccessoriesSection({
             radar
           </span>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-bold text-white">Rear Radar</div>
+            <div className="text-sm font-bold text-white flex items-center gap-1.5">
+              Radar
+              {(() => {
+                const saved = BLE.getSavedSensorDevice('radar');
+                const brand = saved ? identifyByName(saved.name) : null;
+                return brand?.brandLabel ? (
+                  <span className="text-[9px] font-bold px-1 py-0.5 rounded"
+                    style={{ color: brand.color, backgroundColor: `${brand.color}20` }}>
+                    {brand.brandLabel}
+                  </span>
+                ) : null;
+              })()}
+            </div>
             <div className="text-xs text-gray-500 truncate">
               {radarConnected
                 ? radarThreat > 0 ? `Vehicle detected — threat ${radarThreat}/3` : 'Clear'

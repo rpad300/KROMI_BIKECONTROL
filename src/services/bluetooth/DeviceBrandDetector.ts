@@ -211,7 +211,7 @@ const CATEGORY_RULES: CategoryRule[] = [
     category: 'light',
     label: 'Light',
     icon: 'flashlight_on',
-    namePatterns: [/^vs1[0-9]/i, /^lr[0-9]/i, /light/i, /^ion/i, /^flare/i, /^bontrager.*light/i],
+    namePatterns: [/^vs\d/i, /^lr\d/i, /light/i, /^ion/i, /^flare/i, /^bontrager.*light/i, /^volt/i, /^ampp/i, /^viz/i],
     uuids: ['e50e24dcca8e'],
   },
   {
