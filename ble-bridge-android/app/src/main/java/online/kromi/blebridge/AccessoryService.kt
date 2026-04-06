@@ -184,11 +184,52 @@ class AccessoryService(private val context: Context) {
             return
         }
 
-        val device = adapter?.getRemoteDevice(address) ?: return
         addresses[key] = address
         autoReconnect[key] = true
-        Log.i(TAG, "Connecting $key: ${device.name ?: address}")
+        Log.i(TAG, "Connecting $key: scan-then-connect to $address")
 
+        // Scan first to resolve the device (handles random/private BLE addresses)
+        val scanner = adapter?.bluetoothLeScanner
+        if (scanner == null) {
+            Log.e(TAG, "$key: no scanner available, trying direct connect")
+            directConnect(key, address)
+            return
+        }
+
+        val addressFilter = ScanFilter.Builder().setDeviceAddress(address).build()
+        val settings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+
+        val callback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) {
+                scanner.stopScan(this)
+                val device = result.device
+                Log.i(TAG, "$key found via scan: ${device.name ?: address} RSSI=${result.rssi}")
+                device.connectGatt(context, false, createGattCallback(key), BluetoothDevice.TRANSPORT_LE)
+            }
+            override fun onScanFailed(errorCode: Int) {
+                Log.e(TAG, "$key scan-to-connect failed ($errorCode), trying direct")
+                directConnect(key, address)
+            }
+        }
+
+        scanner.startScan(listOf(addressFilter), settings, callback)
+
+        // Timeout: if scan doesn't find device in 5s, try direct connect
+        handler.postDelayed({
+            try { scanner.stopScan(callback) } catch (_: Exception) {}
+            if (!connections.containsKey(key)) {
+                Log.i(TAG, "$key scan timeout, trying direct connect")
+                directConnect(key, address)
+            }
+        }, 5000)
+    }
+
+    /** Direct connect by MAC — fallback when scan doesn't find the device */
+    private fun directConnect(key: String, address: String) {
+        val device = adapter?.getRemoteDevice(address) ?: return
+        Log.i(TAG, "Direct connecting $key: ${device.name ?: address}")
         device.connectGatt(context, true, createGattCallback(key), BluetoothDevice.TRANSPORT_LE)
     }
 
