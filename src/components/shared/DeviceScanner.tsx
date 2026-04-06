@@ -3,8 +3,16 @@ import { wsClient, type ScanResultDevice } from '../../services/bluetooth/WebSoc
 import { connectDevice, saveDevice, saveSensorDevice, startScan, stopScan } from '../../services/bluetooth/BLEBridge';
 import { identifyDevice, getCategoryGroup } from '../../services/bluetooth/DeviceBrandDetector';
 
+export interface ScanConnectedInfo {
+  name: string;
+  address: string;
+  sensorType: string | null; // 'hr', 'di2', 'sram', 'power', 'cadence', 'light', 'radar', or null for bike
+  brand: string;
+  brandColor: string;
+}
+
 interface DeviceScannerProps {
-  onConnected: () => void;
+  onConnected: (info?: ScanConnectedInfo) => void;
   onCancel: () => void;
 }
 
@@ -82,7 +90,14 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
       connectDevice(device.address);
     }
 
-    setTimeout(() => onConnected(), 500);
+    const info: ScanConnectedInfo = {
+      name: device.name,
+      address: device.address,
+      sensorType,
+      brand: identity.brandLabel || '',
+      brandColor: identity.color || '',
+    };
+    setTimeout(() => onConnected(info), 500);
   }, [onConnected]);
 
   const handleRescan = useCallback(() => {

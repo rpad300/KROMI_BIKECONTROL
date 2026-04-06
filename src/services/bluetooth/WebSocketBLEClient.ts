@@ -450,7 +450,10 @@ export class WebSocketBLEClient {
               });
             }
             // Auto-add to deviceStore for unified device management
-            import('../../store/deviceStore').then(({ useDeviceStore }) => {
+            Promise.all([
+              import('../../store/deviceStore'),
+              import('../bluetooth/DeviceBrandDetector'),
+            ]).then(([{ useDeviceStore }, { identifyByName }]) => {
               const sensorToRole: Record<string, { category: string; role: string }> = {
                 hr: { category: 'body', role: 'heart_rate' },
                 di2: { category: 'drivetrain', role: 'di2' },
@@ -462,22 +465,17 @@ export class WebSocketBLEClient {
               };
               const mapping = sensorToRole[msg.sensor as string];
               if (mapping) {
-                const brand = (() => {
-                  try {
-                    const { identifyByName } = require('../bluetooth/DeviceBrandDetector');
-                    const id = identifyByName((msg.name as string) || '');
-                    return { brand: id?.brandLabel || '', brandColor: id?.color || '' };
-                  } catch { return { brand: '', brandColor: '' }; }
-                })();
+                const id = identifyByName((msg.name as string) || '');
                 useDeviceStore.getState().addDevice({
                   name: (msg.name as string) || msg.sensor,
                   address: (msg.address as string) || '',
                   category: mapping.category as 'body' | 'drivetrain' | 'performance' | 'light' | 'radar',
                   role: mapping.role as 'heart_rate' | 'di2' | 'sram_axs' | 'power_meter' | 'cadence' | 'light_front' | 'light_rear' | 'radar',
-                  ...brand,
+                  brand: id?.brandLabel || '',
+                  brandColor: id?.color || '',
                 });
               }
-            });
+            }).catch(() => { /* deviceStore not available */ });
           }
           break;
         }

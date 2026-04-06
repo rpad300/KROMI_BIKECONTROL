@@ -16,8 +16,37 @@ import {
   type SavedDevice,
 } from '../../store/deviceStore';
 import * as BLE from '../../services/bluetooth/BLEBridge';
-import { DeviceScanner } from '../shared/DeviceScanner';
+import { DeviceScanner, type ScanConnectedInfo } from '../shared/DeviceScanner';
 import { webSensorService } from '../../services/sensors/WebSensorService';
+
+// ── Helpers ────────────────────────────────────────────────────
+
+/** Map scanner sensorType string to DeviceRole */
+function sensorTypeToRole(sensorType: string | null, name: string): DeviceRole {
+  switch (sensorType) {
+    case 'hr': return 'heart_rate';
+    case 'di2': return 'di2';
+    case 'sram': return 'sram_axs';
+    case 'power': return 'power_meter';
+    case 'cadence': return 'cadence';
+    case 'light': return /^VS\d/i.test(name) || /front/i.test(name) ? 'light_front' : 'light_rear';
+    case 'radar': return 'radar';
+    default: return 'motor';
+  }
+}
+
+/** Map DeviceRole to DeviceCategory */
+function roleToCategory(role: DeviceRole): DeviceCategory {
+  switch (role) {
+    case 'motor': return 'bike';
+    case 'di2': case 'sram_axs': return 'drivetrain';
+    case 'heart_rate': case 'cadence': return 'body';
+    case 'power_meter': return 'performance';
+    case 'light_front': case 'light_rear': return 'light';
+    case 'radar': return 'radar';
+    case 'tpms_front': case 'tpms_rear': return 'tpms';
+  }
+}
 
 // ── Role → BLE connect/disconnect mapping ──────────────────────
 
@@ -96,9 +125,10 @@ export function ConnectionsPage() {
   const removeDevice = useDeviceStore((s) => s.removeDevice);
   const bleStatus = useBikeStore((s) => s.ble_status);
   const services = useBikeStore((s) => s.ble_services) as unknown as Record<string, boolean>;
+  const addDevice = useDeviceStore((s) => s.addDevice);
   const [view, setView] = useState<'list' | 'add-category' | 'add-role' | 'scanner'>('list');
   const [selectedCategory, setSelectedCategory] = useState<DeviceCategory | null>(null);
-  const [, setSelectedRole] = useState<DeviceRole | null>(null);
+  const [pendingRole, setPendingRole] = useState<DeviceRole | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
   const [phoneSensorsOn, setPhoneSensorsOn] = useState(webSensorService.isRunning);
 
@@ -106,8 +136,24 @@ export function ConnectionsPage() {
   if (view === 'scanner') {
     return (
       <DeviceScanner
-        onConnected={() => setView('list')}
-        onCancel={() => setView('list')}
+        onConnected={(info?: ScanConnectedInfo) => {
+          // Add device to deviceStore when selected from scanner
+          if (info) {
+            const role = pendingRole ?? sensorTypeToRole(info.sensorType, info.name);
+            const category = pendingRole ? (selectedCategory ?? roleToCategory(role)) : roleToCategory(role);
+            addDevice({
+              name: info.name,
+              address: info.address,
+              category,
+              role,
+              brand: info.brand,
+              brandColor: info.brandColor,
+            });
+          }
+          setPendingRole(null);
+          setView('list');
+        }}
+        onCancel={() => { setPendingRole(null); setView('list'); }}
       />
     );
   }
@@ -132,7 +178,7 @@ export function ConnectionsPage() {
                 const roles = CATEGORY_ROLES[cat.id];
                 if (roles.length === 1) {
                   // Single role — skip role picker
-                  setSelectedRole(roles[0]!.role);
+                  setPendingRole(roles[0]!.role);
                   handleStartScan(roles[0]!.role);
                 } else {
                   setView('add-role');
@@ -175,7 +221,7 @@ export function ConnectionsPage() {
               <button
                 key={r.role}
                 onClick={() => {
-                  setSelectedRole(r.role);
+                  setPendingRole(r.role);
                   handleStartScan(r.role);
                 }}
                 className="flex items-center gap-3 p-4 bg-[#1a1919] rounded-lg active:bg-[#262626] transition-colors"
@@ -198,6 +244,7 @@ export function ConnectionsPage() {
 
   // ── Start scan for a role ────────────────────────────────────
   function handleStartScan(role: DeviceRole) {
+    setPendingRole(role);
     if (BLE.bleMode === 'websocket') {
       // WebSocket mode — show device scanner
       setView('scanner');
