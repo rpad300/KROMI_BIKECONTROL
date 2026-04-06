@@ -182,7 +182,15 @@ const DESKTOP_NAV: NavItem[] = [
   ]},
   { screen: 'settings', label: 'Sistema', icon: 'settings', color: '#adaaaa', subs: [
     { id: 'routes', label: 'Rotas', icon: 'route' },
+    { id: 'drive-storage', label: 'Google Drive', icon: 'cloud' },
     { id: 'account', label: 'Conta', icon: 'account_circle' },
+  ]},
+];
+
+// Super-admin-only entries — injected dynamically in DesktopApp
+const ADMIN_NAV: NavItem[] = [
+  { screen: 'settings', label: 'Super Admin', icon: 'admin_panel_settings', color: '#ff9f43', subs: [
+    { id: 'super-admin', label: 'Painel Admin', icon: 'admin_panel_settings' },
   ]},
 ];
 
@@ -192,6 +200,8 @@ function DesktopApp() {
   const [expanded, setExpanded] = useState<string | null>('Volta Live');
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const isSuperAdmin = !!user?.is_super_admin;
+  const navItems = isSuperAdmin ? [...DESKTOP_NAV, ...ADMIN_NAV] : DESKTOP_NAV;
 
   const handleNav = (item: NavItem, subId?: string) => {
     setScreen(item.screen);
@@ -217,7 +227,7 @@ function DesktopApp() {
 
         {/* Nav items with submenus */}
         <nav style={{ flex: 1, padding: '8px' }}>
-          {DESKTOP_NAV.map((item) => {
+          {navItems.map((item) => {
             const isExpanded = expanded === item.label && item.subs;
             const hasActiveSub = item.subs?.some((s) => s.id === sub) && screen === item.screen;
             const isActive = (!item.subs && screen === item.screen) || hasActiveSub;
@@ -285,7 +295,7 @@ function DesktopApp() {
         ) : (
           <div className="py-4 px-6">
             {screen === 'live' && <DesktopLiveView activeTab={sub} />}
-            {screen === 'settings' && <Settings initialPage={sub as 'rider' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account'} />}
+            {screen === 'settings' && <Settings initialPage={sub as 'rider' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account' | 'drive-storage' | 'super-admin'} />}
             {screen === 'history' && <RideHistory />}
           </div>
         )}
