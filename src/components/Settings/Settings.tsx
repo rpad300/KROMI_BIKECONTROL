@@ -11,7 +11,6 @@ import { BikeFitPage } from './BikeFitPage';
 import { BikesPage } from './BikesPage';
 import { ServiceBookPage } from '../ServiceBook/ServiceBookPage';
 import { ShopManagementPage } from '../Shop/ShopManagementPage';
-import { DriveStoragePage } from './DriveStoragePage';
 import { AdminPanel } from '../Admin/AdminPanel';
 import { useIsSuperAdmin } from '../../hooks/usePermission';
 const AccessoriesSettingsContent = lazy(() => import('./AccessoriesSettings').then(m => ({ default: m.AccessoriesSettingsContent })));
@@ -28,7 +27,7 @@ import { analyzeRoute } from '../../services/routes/PreRideAnalysis';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
-type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'emergency' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'accessories' | 'routes' | 'account' | 'service-book' | 'shop' | 'drive-storage' | 'super-admin';
+type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'emergency' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'accessories' | 'routes' | 'account' | 'service-book' | 'shop' | 'super-admin';
 
 // ── Grouped menu matching desktop 9-category sidebar ────────
 interface MenuCategory {
@@ -72,7 +71,6 @@ const MENU_CATEGORIES: MenuCategory[] = [
   ]},
   { label: 'Sistema', icon: 'settings', color: '#adaaaa', items: [
     { id: 'routes', icon: 'route', label: 'Rotas', desc: 'Import Komoot, histórico' },
-    { id: 'drive-storage', icon: 'cloud', label: 'Google Drive', desc: 'Backend de ficheiros, quota, estado' },
     { id: 'account', icon: 'account_circle', label: 'Conta', desc: 'Email, sessão, versão' },
   ]},
 ];
@@ -123,7 +121,6 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
         {activePage === 'bluetooth' && <BluetoothPage />}
         {activePage === 'accessories' && <Suspense fallback={<div className="text-[#777575] text-center py-8">A carregar...</div>}><AccessoriesSettingsContent /></Suspense>}
         {activePage === 'routes' && <RoutesPage onNavigate={onNavigate} />}
-        {activePage === 'drive-storage' && <DriveStoragePage />}
         {activePage === 'super-admin' && <AdminPanel />}
         {activePage === 'account' && <AccountPage />}
       </div>

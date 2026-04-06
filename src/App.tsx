@@ -182,7 +182,6 @@ const DESKTOP_NAV: NavItem[] = [
   ]},
   { screen: 'settings', label: 'Sistema', icon: 'settings', color: '#adaaaa', subs: [
     { id: 'routes', label: 'Rotas', icon: 'route' },
-    { id: 'drive-storage', label: 'Google Drive', icon: 'cloud' },
     { id: 'account', label: 'Conta', icon: 'account_circle' },
   ]},
 ];
@@ -295,7 +294,7 @@ function DesktopApp() {
         ) : (
           <div className="py-4 px-6">
             {screen === 'live' && <DesktopLiveView activeTab={sub} />}
-            {screen === 'settings' && <Settings initialPage={sub as 'rider' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account' | 'drive-storage' | 'super-admin'} />}
+            {screen === 'settings' && <Settings initialPage={sub as 'rider' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account' | 'super-admin'} />}
             {screen === 'history' && <RideHistory />}
           </div>
         )}
