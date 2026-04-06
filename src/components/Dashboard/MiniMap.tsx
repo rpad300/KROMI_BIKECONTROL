@@ -122,6 +122,12 @@ export function MiniMap() {
     });
   }, [navProgress, navActive]);
 
+  // Radar threat — hooks MUST be before any conditional returns
+  const radarThreat = useBikeStore((s) => s.radar_threat_level);
+  const radarDistance = useBikeStore((s) => s.radar_distance_m);
+  const radarSpeed = useBikeStore((s) => s.radar_speed_kmh);
+  const radarConnected = useBikeStore((s) => s.ble_services.radar);
+
   if (error) {
     return (
       <div className="bg-[#1a1919] rounded-sm p-3 h-16 flex items-center justify-center gap-2">
@@ -152,12 +158,6 @@ export function MiniMap() {
   const cycleMapType = () => {
     setMapType((t) => t === 'hybrid' ? 'terrain' : t === 'terrain' ? 'roadmap' : 'hybrid');
   };
-
-  // Radar threat
-  const radarThreat = useBikeStore((s) => s.radar_threat_level);
-  const radarDistance = useBikeStore((s) => s.radar_distance_m);
-  const radarSpeed = useBikeStore((s) => s.radar_speed_kmh);
-  const radarConnected = useBikeStore((s) => s.ble_services.radar);
 
   const mapTypeLabel = mapType === 'hybrid' ? 'Satelite' : mapType === 'terrain' ? 'Terreno' : 'Mapa';
 
