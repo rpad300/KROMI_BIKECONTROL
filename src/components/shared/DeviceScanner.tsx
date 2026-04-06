@@ -102,36 +102,33 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
   return (
     <div className="fixed inset-0 bg-[#0e0e0e]/98 z-50 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-4 border-b border-[#494847]">
-        <div>
-          <h2 className="text-lg font-bold text-white">Seleccionar Dispositivo</h2>
-          <p className="text-xs text-[#777575]">
+      <div className="flex-none flex items-center justify-between px-4 py-3 border-b border-[#494847]">
+        <button onClick={onCancel} className="p-1 active:scale-90">
+          <span className="material-symbols-outlined text-[#adaaaa] text-xl">arrow_back</span>
+        </button>
+        <div className="flex-1 text-center">
+          <h2 className="text-sm font-bold text-white">Seleccionar Dispositivo</h2>
+          <p className="text-[10px] text-[#777575]">
             {scanning
               ? `A procurar... (${devices.length} encontrados)`
               : `${devices.length} dispositivos — toca para ligar`}
           </p>
         </div>
-        <div className="flex gap-2">
-          {!scanning && (
-            <button
-              onClick={handleRescan}
-              className="bg-[#262626] text-white text-sm px-3 py-2 rounded-lg active:scale-95"
-            >
-              Scan
-            </button>
-          )}
+        {!scanning ? (
           <button
-            onClick={onCancel}
-            className="bg-[#1a1919] text-[#adaaaa] text-sm px-3 py-2 rounded-lg active:scale-95"
+            onClick={handleRescan}
+            className="bg-[#262626] text-white text-[11px] font-bold px-3 py-1.5 rounded active:scale-95"
           >
-            Cancelar
+            Scan
           </button>
-        </div>
+        ) : (
+          <div className="w-12" />
+        )}
       </div>
 
       {/* Scanning indicator */}
       {scanning && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-blue-900/30">
+        <div className="flex-none flex items-center gap-2 px-4 py-2 bg-blue-900/30">
           <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
           <span className="text-xs text-[#6e9bff]">A procurar dispositivos BLE...</span>
         </div>
@@ -160,6 +157,16 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Fixed bottom cancel button — always visible */}
+      <div className="flex-none px-4 py-3 border-t border-[#262626] bg-[#0e0e0e]">
+        <button
+          onClick={onCancel}
+          className="w-full h-12 rounded-lg bg-[#262626] text-[#adaaaa] text-sm font-bold active:scale-95 transition-transform"
+        >
+          Cancelar
+        </button>
       </div>
     </div>
   );
