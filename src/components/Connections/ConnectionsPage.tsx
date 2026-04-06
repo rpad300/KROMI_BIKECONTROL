@@ -5,7 +5,7 @@
  * Replaces the old Connections.tsx with its per-type sections.
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import {
   useDeviceStore,
@@ -131,6 +131,18 @@ export function ConnectionsPage() {
   const [pendingRole, setPendingRole] = useState<DeviceRole | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
   const [phoneSensorsOn, setPhoneSensorsOn] = useState(webSensorService.isRunning);
+  // Track devices that are in the process of connecting (just added from scanner)
+  const pendingConnections = useRef<Set<string>>(new Set());
+
+  // Clear pending when ble_services updates (device actually connected)
+  useEffect(() => {
+    for (const id of pendingConnections.current) {
+      const device = devices.find((d) => d.id === id);
+      if (device && isRoleConnected(device.role, services, bleStatus)) {
+        pendingConnections.current.delete(id);
+      }
+    }
+  }, [services, bleStatus, devices]);
 
   // Show scanner for websocket mode
   if (view === 'scanner') {
@@ -141,7 +153,7 @@ export function ConnectionsPage() {
           if (info) {
             const role = pendingRole ?? sensorTypeToRole(info.sensorType, info.name);
             const category = pendingRole ? (selectedCategory ?? roleToCategory(role)) : roleToCategory(role);
-            addDevice({
+            const saved = addDevice({
               name: info.name,
               address: info.address,
               category,
@@ -149,6 +161,8 @@ export function ConnectionsPage() {
               brand: info.brand,
               brandColor: info.brandColor,
             });
+            // Mark as pending connection (bridge is connecting it)
+            pendingConnections.current.add(saved.id);
           }
           setPendingRole(null);
           setView('list');
@@ -340,7 +354,8 @@ export function ConnectionsPage() {
           <div className="flex flex-col gap-1.5">
             {group.devices.map((device) => {
               const connected = isRoleConnected(device.role, services, bleStatus);
-              const isConnecting = connecting === device.id;
+              const isPending = pendingConnections.current.has(device.id);
+              const isConnecting = connecting === device.id || isPending;
               return (
                 <DeviceCard
                   key={device.id}
