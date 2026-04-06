@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { DashboardController } from './components/DashboardSystem/DashboardController';
 import { MapView } from './components/Map/MapView';
 import { ClimbApproach } from './components/Climb/ClimbApproach';
-import { Connections } from './components/Connections/Connections';
+import { ConnectionsPage as Connections } from './components/Connections/ConnectionsPage';
 import { Settings } from './components/Settings/Settings';
 import { RideHistory } from './components/History/RideHistory';
 import { LoginPage } from './components/Auth/LoginPage';

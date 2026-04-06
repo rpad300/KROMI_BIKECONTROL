@@ -317,6 +317,17 @@ export class WebSocketBLEClient {
             console.log(`[WSClient] Bike brand: ${msg.brand}`);
           }
           console.log('[WSClient] Bike connected:', msg.device, 'bonded:', msg.bonded);
+          // Auto-add to deviceStore
+          import('../../store/deviceStore').then(({ useDeviceStore }) => {
+            useDeviceStore.getState().addDevice({
+              name: (msg.device as string) || 'Bike',
+              address: (msg.address as string) || '',
+              category: 'bike',
+              role: 'motor',
+              brand: (msg.brand as string) || 'Giant',
+              brandColor: '#3fff8b',
+            });
+          });
           // Auto-read tuning on connect
           setTimeout(() => this.readTuning(), 1000);
           // Read battery details + range AFTER GEV session (needs ~4s to be active)
@@ -414,15 +425,59 @@ export class WebSocketBLEClient {
             import('./BLEBridge').then(({ saveSensorDevice }) => {
               saveSensorDevice(msg.sensor, { name: msg.name || msg.sensor, address: msg.address });
               console.log(`[WSClient] ${msg.sensor} saved: ${msg.name} (${msg.address})`);
-              // Sync to Supabase so other devices pick it up
               import('../sync/SettingsSyncService').then(({ scheduleSave }) => scheduleSave());
             });
+            // Light: populate bikeStore.lights[] for multi-light support
+            if (msg.sensor === 'light') {
+              const name = (msg.name as string) || 'Light';
+              const isFront = /^VS\d/i.test(name) || /front/i.test(name);
+              const position: 'front' | 'rear' = isFront ? 'front' : 'rear';
+              store.addLight({
+                id: (msg.address as string) || crypto.randomUUID(),
+                name,
+                position,
+                brand: /igpsport/i.test(name) || /^(VS|LR)\d/i.test(name) ? 'igpsport' : /varia/i.test(name) ? 'garmin' : 'unknown',
+                battery_pct: 0,
+                mode: 0,
+                connected: true,
+              });
+              store.setLightDeviceName(name);
+            }
             // Auto-start AccessoriesManager when light or radar connects
             if (msg.sensor === 'light' || msg.sensor === 'radar') {
               import('../accessories/AccessoriesManager').then(({ accessoriesManager }) => {
                 if (!accessoriesManager.isRunning) accessoriesManager.start();
               });
             }
+            // Auto-add to deviceStore for unified device management
+            import('../../store/deviceStore').then(({ useDeviceStore }) => {
+              const sensorToRole: Record<string, { category: string; role: string }> = {
+                hr: { category: 'body', role: 'heart_rate' },
+                di2: { category: 'drivetrain', role: 'di2' },
+                sram: { category: 'drivetrain', role: 'sram_axs' },
+                power: { category: 'performance', role: 'power_meter' },
+                cadence: { category: 'body', role: 'cadence' },
+                light: { category: 'light', role: /^VS\d/i.test((msg.name as string) || '') ? 'light_front' : 'light_rear' },
+                radar: { category: 'radar', role: 'radar' },
+              };
+              const mapping = sensorToRole[msg.sensor as string];
+              if (mapping) {
+                const brand = (() => {
+                  try {
+                    const { identifyByName } = require('../bluetooth/DeviceBrandDetector');
+                    const id = identifyByName((msg.name as string) || '');
+                    return { brand: id?.brandLabel || '', brandColor: id?.color || '' };
+                  } catch { return { brand: '', brandColor: '' }; }
+                })();
+                useDeviceStore.getState().addDevice({
+                  name: (msg.name as string) || msg.sensor,
+                  address: (msg.address as string) || '',
+                  category: mapping.category as 'body' | 'drivetrain' | 'performance' | 'light' | 'radar',
+                  role: mapping.role as 'heart_rate' | 'di2' | 'sram_axs' | 'power_meter' | 'cadence' | 'light_front' | 'light_rear' | 'radar',
+                  ...brand,
+                });
+              }
+            });
           }
           break;
         }
@@ -437,7 +492,12 @@ export class WebSocketBLEClient {
             store.setServiceConnected(svcKey as 'heartRate' | 'di2' | 'sram' | 'power' | 'cadence', false);
             if (msg.sensor === 'hr') store.setHR(0, 0);
             if (msg.sensor === 'cadence') { this.hasExternalCadence = false; }
-            if (msg.sensor === 'light') { store.setLightMode(0); store.setLightBattery(0); store.setLightDeviceName(''); }
+            if (msg.sensor === 'light') {
+              store.setLightMode(0); store.setLightBattery(0); store.setLightDeviceName('');
+              // Clear from multi-light array
+              const connLight = store.lights.find((x) => x.connected);
+              if (connLight) store.updateLight(connLight.id, { connected: false });
+            }
             if (msg.sensor === 'radar') { store.setRadarTarget(0, 0, 0); }
             // Stop AccessoriesManager when both light and radar disconnected
             if ((msg.sensor === 'light' || msg.sensor === 'radar') && !store.ble_services.light && !store.ble_services.radar) {
@@ -558,16 +618,27 @@ export class WebSocketBLEClient {
         // === Accessories: Light ===
         case 'lightMode':
           store.setLightMode(msg.mode as number);
+          // Update multi-light array too
+          { const l = store.lights.find((x) => x.connected); if (l) store.updateLight(l.id, { mode: msg.mode as number }); }
           break;
 
         case 'lightBattery':
           store.setLightBattery(msg.pct as number);
+          { const l = store.lights.find((x) => x.connected); if (l) store.updateLight(l.id, { battery_pct: msg.pct as number }); }
           break;
 
         case 'lightStatus':
           if (msg.mode !== undefined) store.setLightMode(msg.mode as number);
           if (msg.battery !== undefined) store.setLightBattery(msg.battery as number);
           if (msg.name) store.setLightDeviceName(msg.name as string);
+          // Sync to multi-light array
+          { const l = store.lights.find((x) => x.connected); if (l) {
+            const u: Record<string, unknown> = {};
+            if (msg.mode !== undefined) u.mode = msg.mode;
+            if (msg.battery !== undefined) u.battery_pct = msg.battery;
+            if (msg.name) u.name = msg.name;
+            store.updateLight(l.id, u as { mode?: number; battery_pct?: number; name?: string });
+          }}
           break;
 
         // === Accessories: Radar ===
