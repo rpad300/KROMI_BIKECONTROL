@@ -61,7 +61,7 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
   const handleSelect = useCallback((device: ScanResultDevice) => {
     setConnecting(device.address);
     stopScan();
-    ((window as Record<string, unknown>).__dlog as ((msg: string) => void) | undefined)?.(`Scanner: selected ${device.name} (${device.address}) tags=[${device.tags}]`);
+    ((window as unknown as Record<string, unknown>).__dlog as ((msg: string) => void) | undefined)?.(`Scanner: selected ${device.name} (${device.address}) tags=[${device.tags}]`);
 
     // Route to correct manager based on device identity
     const identity = identifyDevice(device.name, device.tags, device.uuids);
