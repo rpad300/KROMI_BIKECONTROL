@@ -155,7 +155,14 @@ function CompactHeader() {
   const power = useBikeStore((s) => s.power_watts);
   const battery = useBikeStore((s) => s.battery_percent);
   const assistMode = useBikeStore((s) => s.assist_mode);
-  const modeLabels: Record<number, string> = { 0: 'OFF', 1: 'ECO', 2: 'TOUR', 3: 'ACTV', 4: 'SPRT', 5: 'PWR', 6: 'SMART' };
+  const brand = useBikeStore((s) => s.bike_brand);
+  const brandModeLabels: Record<string, Record<number, string>> = {
+    giant: { 0: 'OFF', 1: 'ECO', 2: 'TOUR', 3: 'ACTV', 4: 'SPRT', 5: 'PWR', 6: 'SMART' },
+    bosch: { 0: 'OFF', 1: 'ECO', 2: 'TOUR', 3: 'SPORT', 4: 'TURBO' },
+    shimano: { 0: 'OFF', 1: 'ECO', 2: 'TRAIL', 3: 'BOOST' },
+    specialized: { 0: 'OFF', 1: 'ECO', 2: 'TRAIL', 3: 'TURBO' },
+  };
+  const modeLabels = brandModeLabels[brand] ?? brandModeLabels.giant!;
 
   return (
     <div className="flex items-center justify-between bg-black px-4 py-2">
@@ -302,15 +309,30 @@ function AssistBar() {
   const autoAssist = useAutoAssistStore((s) => s.enabled);
   const rearGear = useBikeStore((s) => s.rear_gear);
   const rangePerMode = useBikeStore((s) => s.range_per_mode);
+  const brand = useBikeStore((s) => s.bike_brand);
 
-  const modes = [
-    { mode: AssistMode.ECO, label: 'ECO', key: 'eco' },
-    { mode: AssistMode.TOUR, label: 'TOUR', key: 'tour' },
-    { mode: AssistMode.ACTIVE, label: 'ACTV', key: 'active' },
-    { mode: AssistMode.SPORT, label: 'SPRT', key: 'sport' },
-    { mode: AssistMode.POWER, label: 'PWR', key: 'power' },
-    { mode: AssistMode.SMART, label: 'AUTO', key: 'smart' },
+  // Brand-aware mode list — show only modes this brand supports
+  const allModes = [
+    { mode: AssistMode.ECO, key: 'eco' },
+    { mode: AssistMode.TOUR, key: 'tour' },
+    { mode: AssistMode.ACTIVE, key: 'active' },
+    { mode: AssistMode.SPORT, key: 'sport' },
+    { mode: AssistMode.POWER, key: 'power' },
+    { mode: AssistMode.SMART, key: 'smart' },
   ];
+
+  const brandLabels: Record<string, Record<number, string>> = {
+    giant: { 1: 'ECO', 2: 'TOUR', 3: 'ACTV', 4: 'SPRT', 5: 'PWR', 6: 'AUTO' },
+    bosch: { 1: 'ECO', 2: 'TOUR', 3: 'SPORT', 4: 'TURBO' },
+    shimano: { 1: 'ECO', 2: 'TRAIL', 4: 'BOOST' },
+    specialized: { 1: 'ECO', 2: 'TRAIL', 4: 'TURBO' },
+  };
+
+  const maxMode = ({ giant: 6, bosch: 4, shimano: 4, specialized: 4 } as Record<string, number>)[brand] ?? 6;
+  const labels = brandLabels[brand] ?? brandLabels.giant!;
+  const modes = allModes.filter(m => m.mode <= maxMode && labels[m.mode]).map(m => ({
+    ...m, label: labels[m.mode] ?? `M${m.mode}`,
+  }));
 
   return (
     <section className="h-[10%] flex-none bg-black px-2 py-1 flex flex-col justify-center">

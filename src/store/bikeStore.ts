@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AssistMode, type BLEConnectionStatus, type BLEServiceStatus } from '../types/bike.types';
+import { AssistMode, type BLEConnectionStatus, type BLEServiceStatus, type BikeBrand } from '../types/bike.types';
 
 interface BikeState {
   // Real-time data
@@ -94,6 +94,9 @@ interface BikeState {
   crash_magnitude: number;
   last_crash_at: number;
 
+  // Bike brand (detected on connect)
+  bike_brand: BikeBrand;
+
   // BLE state
   ble_status: BLEConnectionStatus;
   ble_services: BLEServiceStatus;
@@ -144,6 +147,7 @@ interface BikeState {
   setDi2Battery: (pct: number) => void;
   setShiftCount: (n: number) => void;
   setTotalGears: (n: number) => void;
+  setBikeBrand: (brand: BikeBrand) => void;
   setBLEStatus: (status: BLEConnectionStatus) => void;
   setServiceConnected: (service: keyof BLEServiceStatus, connected: boolean) => void;
   resetSession: () => void;
@@ -227,6 +231,7 @@ export const useBikeStore = create<BikeState>((set) => ({
   gyro_z: 0,
   crash_magnitude: 0,
   last_crash_at: 0,
+  bike_brand: 'giant' as BikeBrand,
   ble_status: 'disconnected',
   ble_services: {
     battery: false,
@@ -321,6 +326,7 @@ export const useBikeStore = create<BikeState>((set) => ({
   setShiftCount: (n) => set({ shift_count: n }),
   setTotalGears: (n) => set({ total_gears: n }),
 
+  setBikeBrand: (brand) => set({ bike_brand: brand }),
   setBLEStatus: (status) => set({ ble_status: status }),
 
   setServiceConnected: (service, connected) =>

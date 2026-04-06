@@ -311,6 +311,11 @@ export class WebSocketBLEClient {
         case 'connected':
           this._bikeConnected = true;
           store.setBLEStatus('connected');
+          // Set bike brand from bridge detection
+          if (msg.brand) {
+            store.setBikeBrand(msg.brand as 'giant' | 'bosch' | 'shimano' | 'specialized');
+            console.log(`[WSClient] Bike brand: ${msg.brand}`);
+          }
           console.log('[WSClient] Bike connected:', msg.device, 'bonded:', msg.bonded);
           // Auto-read tuning on connect
           setTimeout(() => this.readTuning(), 1000);
@@ -373,9 +378,18 @@ export class WebSocketBLEClient {
           }
           break;
 
-        case 'assistMode':
-          store.setAssistMode(msg.value);
+        case 'assistMode': {
+          // Normalize brand-native mode to our universal AssistMode enum
+          const brand = store.bike_brand;
+          if (brand !== 'giant') {
+            import('../../types/bike.types').then(({ mapNativeToAssistMode }) => {
+              store.setAssistMode(mapNativeToAssistMode(brand, msg.value as number));
+            });
+          } else {
+            store.setAssistMode(msg.value);
+          }
           break;
+        }
 
         case 'hr': {
           const bpm = msg.bpm as number;
@@ -586,6 +600,27 @@ export class WebSocketBLEClient {
           store.setRadarTarget(0, 0, 0);
           break;
 
+        // === Multi-brand motor telemetry (Bosch, Shimano STEPS, Specialized) ===
+        case 'boschTelemetry':
+        case 'specializedTelemetry':
+          // Raw telemetry for analysis — individual fields handled by type-specific cases
+          console.log(`[WSClient] ${msg.type}: ${msg.hex}`);
+          break;
+
+        case 'stepsStatus': {
+          // Shimano STEPS motor status (from ShimanoMotorManager)
+          const stepsErr = msg.error as number;
+          if (stepsErr >= 0 && stepsErr !== 0xFF) store.setErrorCode(stepsErr);
+          if (msg.lightOn !== undefined) console.log(`[WSClient] STEPS light: ${msg.lightOn}`);
+          if (msg.nominalCapacity !== undefined && (msg.nominalCapacity as number) > 0) {
+            const cap = msg.nominalCapacity as number;
+            // Rough SOC from nominal capacity (motor-specific scaling)
+            const soc = Math.min(100, Math.round((cap / 500) * 100));
+            store.setBatteryPercent(soc);
+          }
+          break;
+        }
+
         case 'gevRaw':
         case 'protoRaw':
           console.log(`[WSClient] ${msg.type}:`, msg.hex);
@@ -632,11 +667,16 @@ export class WebSocketBLEClient {
 
         case 'rangePerMode': {
           // Range calculated by motor for each assist mode (in km)
-          // GEV protocol uses uint8 per mode — bridge sends -1 for overflow (≥245)
+          // Giant GEV: eco/tour/active/sport/power/smart
+          // Shimano STEPS: eco/trail/boost
+          // Bosch: eco/tour/sport/turbo
           const raw = {
-            eco: msg.eco as number, tour: msg.tour as number,
-            active: msg.active as number, sport: msg.sport as number,
-            power: msg.power as number, smart: msg.smart as number,
+            eco: (msg.eco as number) || 0,
+            tour: (msg.tour as number) || (msg.trail as number) || 0,
+            active: (msg.active as number) || 0,
+            sport: (msg.sport as number) || (msg.boost as number) || (msg.turbo as number) || 0,
+            power: (msg.power as number) || 0,
+            smart: (msg.smart as number) || 0,
           };
 
           // First calibrate from valid (non-overflow) modes

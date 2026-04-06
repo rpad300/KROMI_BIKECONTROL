@@ -160,17 +160,28 @@ export function disconnectBike(): void {
   }
 }
 
-/** Send assist mode command */
+/** Send assist mode command (brand-aware routing) */
 export async function sendAssistMode(mode: number): Promise<boolean> {
   switch (bleMode) {
-    case 'websocket':
-      wsClient.sendAssistMode(mode);
+    case 'websocket': {
+      // Route to correct brand's command via bridge
+      const { useBikeStore } = await import('../../store/bikeStore');
+      const brand = useBikeStore.getState().bike_brand;
+      const { mapAssistToNative } = await import('../../types/bike.types');
+      const nativeMode = mapAssistToNative(brand, mode);
+      switch (brand) {
+        case 'bosch': wsClient.send({ type: 'boschAssist', mode: nativeMode }); break;
+        case 'shimano': wsClient.send({ type: 'shimanoMotorAssist', mode: nativeMode }); break;
+        case 'specialized': wsClient.send({ type: 'specializedAssist', mode: nativeMode }); break;
+        default: wsClient.sendAssistMode(mode); // Giant (native values match)
+      }
       return true;
+    }
     case 'native':
       return capacitorBLEService.sendAssistMode(mode);
     case 'web':
       await giantBLEService.sendAssistMode(mode);
-      return false; // Web BLE can't control motor
+      return false;
   }
 }
 
