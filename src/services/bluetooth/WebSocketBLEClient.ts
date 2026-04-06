@@ -69,6 +69,7 @@ export class WebSocketBLEClient {
 
       this.ws.onopen = () => {
         console.log('[WSClient] Connected to BLE Bridge');
+        ((window as unknown as Record<string, unknown>).__dlog as ((msg: string) => void) | undefined)?.('WS connected to bridge');
         this._connected = true;
         this._bridgeAvailable = true;
         this.stopReconnect();
@@ -136,7 +137,14 @@ export class WebSocketBLEClient {
 
   /** Send a command to the bridge */
   send(data: Record<string, unknown>): void {
-    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    const dlog = (window as unknown as Record<string, unknown>).__dlog as ((msg: string) => void) | undefined;
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      dlog?.(`WS.send DROPPED (ws=${this.ws?.readyState ?? 'null'}): ${data.type}`);
+      return;
+    }
+    if (data.type === 'connectSensor' || data.type === 'scanSensor') {
+      dlog?.(`WS.send OK: ${JSON.stringify(data)}`);
+    }
     this.ws.send(JSON.stringify(data));
   }
 
