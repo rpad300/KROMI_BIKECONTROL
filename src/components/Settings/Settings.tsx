@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import QRCode from 'qrcode';
 import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import { calculateZones, calculatePowerZones } from '../../types/athlete.types';
@@ -11,7 +11,7 @@ import { BikeFitPage } from './BikeFitPage';
 import { BikesPage } from './BikesPage';
 import { ServiceBookPage } from '../ServiceBook/ServiceBookPage';
 import { ShopManagementPage } from '../Shop/ShopManagementPage';
-import { AccessoriesSettingsContent } from './AccessoriesSettings';
+const AccessoriesSettingsContent = lazy(() => import('./AccessoriesSettings').then(m => ({ default: m.AccessoriesSettingsContent })));
 // TuningPreview removed — config is now read-only from motor telemetry
 import { importKomootRoute } from '../../services/maps/KomootService';
 import { useRouteStore } from '../../store/routeStore';
@@ -113,7 +113,7 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
         {activePage === 'shop' && <ShopManagementPage />}
         {activePage === 'kromi' && <KromiPage />}
         {activePage === 'bluetooth' && <BluetoothPage />}
-        {activePage === 'accessories' && <AccessoriesSettingsContent />}
+        {activePage === 'accessories' && <Suspense fallback={<div className="text-[#777575] text-center py-8">A carregar...</div>}><AccessoriesSettingsContent /></Suspense>}
         {activePage === 'routes' && <RoutesPage onNavigate={onNavigate} />}
         {activePage === 'account' && <AccountPage />}
       </div>

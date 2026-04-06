@@ -305,7 +305,7 @@ export function suspensionLabel(s: SuspensionType): string {
   return labels[s] ?? s;
 }
 
-// ── Accessories config ───────────────────��──────────────────
+// ── Accessories config ──────────────────────────────────────
 
 export interface AccessoriesConfig {
   // Smart Light

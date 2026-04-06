@@ -30,7 +30,7 @@ export const DEVICE_INFO_SERVICE_UUID = 0x180a;
 // ── Protocol Constants ──────────────────────────────────────────
 
 /** Peripheral Service Types (from PeripheralCommon.java) */
-export const enum PeripheralServiceType {
+export enum PeripheralServiceType {
   RADAR = 104,       // 0x68
   BLE_LIGHT = 106,   // 0x6A
   BLE_LIGHT_INBIKE = 107,
@@ -38,7 +38,7 @@ export const enum PeripheralServiceType {
 }
 
 /** Peripheral Operate Types */
-export const enum PeripheralOperateType {
+export enum PeripheralOperateType {
   UNSPECIFIED = 0,
   SET = 1,
   GET = 2,
@@ -50,7 +50,7 @@ export const enum PeripheralOperateType {
 }
 
 /** Light Sub-Service Types (BLE_LIGHT_SERVICE enum) */
-export const enum LightSubService {
+export enum LightSubService {
   LIGHT_CFG = 0,
   MODE_SUP = 1,       // Supported modes list
   MODE_CUR = 2,       // Current mode
