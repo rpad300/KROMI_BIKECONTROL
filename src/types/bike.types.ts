@@ -63,6 +63,8 @@ export interface BLEServiceStatus {
   heartRate: boolean;
   di2: boolean;
   cadence: boolean;
+  light: boolean;
+  radar: boolean;
 }
 
 // === Bike Constants ===

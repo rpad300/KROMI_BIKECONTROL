@@ -73,6 +73,14 @@ interface BikeState {
   tpms_front_psi: number;
   tpms_rear_psi: number;
 
+  // Accessories (light + radar)
+  light_battery_pct: number;
+  light_mode: number;         // LightMode enum value
+  light_device_name: string;
+  radar_threat_level: number; // 0=none, 1=low, 2=mid, 3=high
+  radar_distance_m: number;
+  radar_speed_kmh: number;
+
   // Phone sensors
   barometric_altitude_m: number;
   pressure_hpa: number;
@@ -128,6 +136,10 @@ interface BikeState {
   setSoftwareVersion: (v: string) => void;
   setTPMSFront: (psi: number) => void;
   setTPMSRear: (psi: number) => void;
+  setLightBattery: (pct: number) => void;
+  setLightMode: (mode: number) => void;
+  setLightDeviceName: (name: string) => void;
+  setRadarTarget: (level: number, distanceM: number, speedKmh: number) => void;
   setShifting: (v: boolean) => void;
   setDi2Battery: (pct: number) => void;
   setShiftCount: (n: number) => void;
@@ -198,6 +210,12 @@ export const useBikeStore = create<BikeState>((set) => ({
   software_version: '',
   tpms_front_psi: 0,
   tpms_rear_psi: 0,
+  light_battery_pct: 0,
+  light_mode: 0,
+  light_device_name: '',
+  radar_threat_level: 0,
+  radar_distance_m: 0,
+  radar_speed_kmh: 0,
   barometric_altitude_m: 0,
   pressure_hpa: 0,
   lean_angle_deg: 0,
@@ -219,6 +237,8 @@ export const useBikeStore = create<BikeState>((set) => ({
     heartRate: false,
     di2: false,
     cadence: false,
+    light: false,
+    radar: false,
   },
   last_update_ms: 0,
 
@@ -287,6 +307,14 @@ export const useBikeStore = create<BikeState>((set) => ({
   setSoftwareVersion: (v) => set({ software_version: v }),
   setTPMSFront: (psi) => set({ tpms_front_psi: Math.round(psi * 10) / 10 }),
   setTPMSRear: (psi) => set({ tpms_rear_psi: Math.round(psi * 10) / 10 }),
+  setLightBattery: (pct) => set({ light_battery_pct: pct }),
+  setLightMode: (mode) => set({ light_mode: mode }),
+  setLightDeviceName: (name) => set({ light_device_name: name }),
+  setRadarTarget: (level, distanceM, speedKmh) => set({
+    radar_threat_level: level,
+    radar_distance_m: Math.round(distanceM * 10) / 10,
+    radar_speed_kmh: Math.round(speedKmh),
+  }),
 
   setShifting: (v) => set({ is_shifting: v }),
   setDi2Battery: (pct) => set({ di2_battery: pct }),

@@ -3,6 +3,8 @@ import { useBikeStore } from '../../store/bikeStore';
 import * as BLE from '../../services/bluetooth/BLEBridge';
 import { webSensorService } from '../../services/sensors/WebSensorService';
 import { DeviceScanner } from '../shared/DeviceScanner';
+import { LightMode, LIGHT_MODE_LABELS } from '../../services/bluetooth/iGPSportLightService';
+import { identifyByName } from '../../services/bluetooth/DeviceBrandDetector';
 
 // ── Section 2: Gateway services (auto-detected) ──────────────
 const GATEWAY_SERVICES = [
@@ -12,7 +14,7 @@ const GATEWAY_SERVICES = [
   { key: 'gev' as const, name: 'GEV', icon: 'electric_bike' },
 ] as const;
 
-// ── Section 3: External sensors ──────────────────────────────
+// ── Sensor groups (organized by function) ───────────────────
 import type { BLEServiceStatus } from '../../types/bike.types';
 
 interface ExternalSensor {
@@ -23,18 +25,11 @@ interface ExternalSensor {
   onConnect: () => Promise<void>;
   onDisconnect: () => void;
   getDeviceName: () => string | null;
+  group: 'drivetrain' | 'body' | 'performance';
+  groupColor: string;
 }
 
 const EXTERNAL_SENSORS: ExternalSensor[] = [
-  {
-    key: 'hr',
-    name: 'Heart Rate Monitor',
-    icon: 'monitor_heart',
-    serviceKey: 'heartRate',
-    onConnect: () => BLE.connectHR(),
-    onDisconnect: () => BLE.disconnectHR(),
-    getDeviceName: () => BLE.getHRDeviceName(),
-  },
   {
     key: 'di2',
     name: 'Shimano Di2',
@@ -43,6 +38,8 @@ const EXTERNAL_SENSORS: ExternalSensor[] = [
     onConnect: () => BLE.connectDi2(),
     onDisconnect: () => BLE.disconnectDi2(),
     getDeviceName: () => BLE.getDi2DeviceName(),
+    group: 'drivetrain',
+    groupColor: '#6e9bff',
   },
   {
     key: 'sram',
@@ -52,26 +49,49 @@ const EXTERNAL_SENSORS: ExternalSensor[] = [
     onConnect: () => BLE.connectSRAM(),
     onDisconnect: () => BLE.disconnectSRAM(),
     getDeviceName: () => BLE.getSRAMDeviceName(),
+    group: 'drivetrain',
+    groupColor: '#6e9bff',
+  },
+  {
+    key: 'hr',
+    name: 'Heart Rate Monitor',
+    icon: 'monitor_heart',
+    serviceKey: 'heartRate',
+    onConnect: () => BLE.connectHR(),
+    onDisconnect: () => BLE.disconnectHR(),
+    getDeviceName: () => BLE.getHRDeviceName(),
+    group: 'body',
+    groupColor: '#ff716c',
   },
   {
     key: 'cadence',
-    name: 'External Cadence Sensor',
+    name: 'Cadence Sensor',
     icon: 'speed',
     serviceKey: 'cadence',
     onConnect: () => BLE.connectExtCadence(),
     onDisconnect: () => BLE.disconnectExtCadence(),
-    getDeviceName: () => null, // TODO: persist cadence device name
+    getDeviceName: () => null,
+    group: 'performance',
+    groupColor: '#fbbf24',
   },
   {
     key: 'extPower',
-    name: 'External Power Meter',
+    name: 'Power Meter',
     icon: 'bolt',
     serviceKey: 'power',
     onConnect: () => BLE.connectExtPower(),
     onDisconnect: () => BLE.disconnectExtPower(),
     getDeviceName: () => BLE.getExtPowerDeviceName(),
+    group: 'performance',
+    groupColor: '#fbbf24',
   },
 ];
+
+const SENSOR_GROUPS = [
+  { id: 'drivetrain', label: 'Drivetrain', icon: 'settings_suggest', color: '#6e9bff' },
+  { id: 'body', label: 'Body Sensors', icon: 'monitor_heart', color: '#ff716c' },
+  { id: 'performance', label: 'Performance', icon: 'bolt', color: '#fbbf24' },
+] as const;
 
 export function Connections() {
   const bleStatus = useBikeStore((s) => s.ble_status);
@@ -293,79 +313,100 @@ export function Connections() {
         </div>
       </div>
 
-      {/* ── Section 3: External Sensors ─────────────────────── */}
-      <div>
-        <div className="text-xs text-gray-500 uppercase tracking-wide mb-2 px-1">External Sensors</div>
-        <div className="space-y-2">
-          {EXTERNAL_SENSORS.map((sensor) => {
-            const connected = services[sensor.serviceKey as keyof typeof services];
-            const isScanning = sensorScanning === sensor.key;
+      {/* ── Section 3: External Sensors (grouped) ────────────── */}
+      {SENSOR_GROUPS.map((group) => {
+        const groupSensors = EXTERNAL_SENSORS.filter((s) => s.group === group.id);
+        if (groupSensors.length === 0) return null;
+        return (
+          <div key={group.id}>
+            <div className="flex items-center gap-1.5 mb-2 px-1">
+              <span className="material-symbols-outlined text-sm" style={{ color: group.color }}>{group.icon}</span>
+              <span className="text-xs text-gray-500 uppercase tracking-wide">{group.label}</span>
+            </div>
+            <div className="space-y-2">
+              {groupSensors.map((sensor) => {
+                const connected = services[sensor.serviceKey as keyof typeof services];
+                const isScanning = sensorScanning === sensor.key;
+                const sensorType = sensor.key === 'extPower' ? 'power' : sensor.key;
+                const saved = BLE.getSavedSensorDevice(sensorType as 'hr' | 'di2' | 'sram' | 'power' | 'light' | 'radar');
+                const brand = saved ? identifyByName(saved.name) : null;
 
-            return (
-              <div
-                key={sensor.key}
-                className={`bg-gray-800/60 rounded-xl p-3 flex items-center gap-3 border ${
-                  connected ? 'border-emerald-500/20' : 'border-gray-700/50'
-                }`}
-              >
-                <span
-                  className={`material-symbols-outlined text-2xl ${
-                    connected ? 'text-emerald-400' : 'text-gray-600'
-                  }`}
-                >
-                  {sensor.icon}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-white">{sensor.name}</div>
-                  <div className="text-xs text-gray-500 truncate">
-                    {connected
-                      ? sensor.getDeviceName() ?? 'Connected'
-                      : isScanning
-                        ? 'Scanning...'
-                        : (() => {
-                            const sensorType = sensor.key === 'extPower' ? 'power' : sensor.key;
-                            const saved = BLE.getSavedSensorDevice(sensorType as 'hr' | 'di2' | 'sram' | 'power');
-                            return saved ? `Auto: ${saved.name}` : 'Not connected';
-                          })()}
-                  </div>
-                </div>
-                <div className="flex gap-1">
-                  {!connected && (() => {
-                    const sType = sensor.key === 'extPower' ? 'power' : sensor.key;
-                    const saved = BLE.getSavedSensorDevice(sType as 'hr' | 'di2' | 'sram' | 'power');
-                    return saved ? (
-                      <button
-                        onClick={() => BLE.clearSensorDevice(sType as 'hr' | 'di2' | 'sram' | 'power')}
-                        className="h-10 px-2 rounded-lg text-[10px] font-bold bg-gray-700 text-gray-500 active:scale-95"
-                        title="Esquecer"
-                      >
-                        X
-                      </button>
-                    ) : null;
-                  })()}
-                  <button
-                    onClick={() =>
-                      connected ? sensor.onDisconnect() : handleSensorConnect(sensor)
-                    }
-                    disabled={isScanning}
-                    className={`h-10 px-4 rounded-lg text-xs font-bold active:scale-95 transition-transform ${
-                      connected
-                        ? 'bg-red-600/20 text-red-400'
-                        : isScanning
-                          ? 'bg-gray-700 text-gray-500'
-                          : 'bg-emerald-500/20 text-emerald-400'
+                return (
+                  <div
+                    key={sensor.key}
+                    className={`bg-gray-800/60 rounded-xl p-3 flex items-center gap-3 border ${
+                      connected ? 'border-emerald-500/20' : 'border-gray-700/50'
                     }`}
                   >
-                    {connected ? 'Off' : isScanning ? '...' : 'Scan'}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+                    <span
+                      className={`material-symbols-outlined text-2xl ${
+                        connected ? 'text-emerald-400' : 'text-gray-600'
+                      }`}
+                    >
+                      {sensor.icon}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold text-white flex items-center gap-1.5">
+                        {sensor.name}
+                        {brand && brand.brandLabel && (
+                          <span
+                            className="text-[9px] font-bold px-1 py-0.5 rounded"
+                            style={{ color: brand.color, backgroundColor: `${brand.color}20` }}
+                          >
+                            {brand.brandLabel}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">
+                        {connected
+                          ? sensor.getDeviceName() ?? 'Connected'
+                          : isScanning
+                            ? 'Scanning...'
+                            : saved ? `Auto: ${saved.name}` : 'Not connected'}
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      {!connected && saved && (
+                        <button
+                          onClick={() => BLE.clearSensorDevice(sensorType as 'hr' | 'di2' | 'sram' | 'power' | 'light' | 'radar')}
+                          className="h-10 px-2 rounded-lg text-[10px] font-bold bg-gray-700 text-gray-500 active:scale-95"
+                          title="Esquecer"
+                        >
+                          X
+                        </button>
+                      )}
+                      <button
+                        onClick={() =>
+                          connected ? sensor.onDisconnect() : handleSensorConnect(sensor)
+                        }
+                        disabled={isScanning}
+                        className={`h-10 px-4 rounded-lg text-xs font-bold active:scale-95 transition-transform ${
+                          connected
+                            ? 'bg-red-600/20 text-red-400'
+                            : isScanning
+                              ? 'bg-gray-700 text-gray-500'
+                              : 'bg-emerald-500/20 text-emerald-400'
+                        }`}
+                      >
+                        {connected ? 'Off' : isScanning ? '...' : 'Scan'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
 
-      {/* ── Section 3b: TPMS Sensors ──────────────────────────── */}
+      {/* ── Section 3b: Accessories (Light + Radar) ─────────────── */}
+      <AccessoriesSection
+        sensorScanning={sensorScanning}
+        setSensorScanning={setSensorScanning}
+        onOpenScanner={() => setShowDevicePicker(true)}
+      />
+
+      {/* ── Section 3c: TPMS Sensors ──────────────────────────── */}
       <div>
         <div className="text-xs text-gray-500 uppercase tracking-wide mb-2 px-1">Tire Pressure (TPMS)</div>
         <div className="space-y-2">
@@ -473,6 +514,8 @@ function DeviceDetails() {
   const savedDi2 = BLE.getSavedSensorDevice('di2');
   const savedSRAM = BLE.getSavedSensorDevice('sram');
   const savedPower = BLE.getSavedSensorDevice('power');
+  const savedLight = BLE.getSavedSensorDevice('light');
+  const savedRadar = BLE.getSavedSensorDevice('radar');
 
   const [phoneInfo, setPhoneInfo] = useState<{ userAgent: string; platform: string; language: string } | null>(null);
   useEffect(() => {
@@ -507,6 +550,8 @@ function DeviceDetails() {
     savedDi2 && { label: 'Shimano Di2', ...savedDi2 },
     savedSRAM && { label: 'SRAM AXS', ...savedSRAM },
     savedPower && { label: 'Power Meter', ...savedPower },
+    savedLight && { label: 'Light', ...savedLight },
+    savedRadar && { label: 'Radar', ...savedRadar },
   ].filter(Boolean) as { label: string; name: string; address: string }[];
 
   return (
@@ -699,6 +744,213 @@ function TPMSSensorCard({
       >
         {connected ? 'Off' : scanning ? '...' : 'Scan'}
       </button>
+    </div>
+  );
+}
+
+// ── Accessories Section (Light + Radar) ────────────────────────
+
+function AccessoriesSection({
+  sensorScanning,
+  setSensorScanning,
+  onOpenScanner,
+}: {
+  sensorScanning: string | null;
+  setSensorScanning: (v: string | null) => void;
+  onOpenScanner: () => void;
+}) {
+  const lightConnected = useBikeStore((s) => s.ble_services.light);
+  const radarConnected = useBikeStore((s) => s.ble_services.radar);
+  const lightBattery = useBikeStore((s) => s.light_battery_pct);
+  const lightMode = useBikeStore((s) => s.light_mode);
+  const lightDeviceName = useBikeStore((s) => s.light_device_name);
+  const radarThreat = useBikeStore((s) => s.radar_threat_level);
+
+  const [showModePicker, setShowModePicker] = useState(false);
+
+  const handleLightConnect = async () => {
+    if (BLE.bleMode === 'websocket') {
+      onOpenScanner();
+      return;
+    }
+    setSensorScanning('light');
+    try {
+      await BLE.connectLight();
+    } catch { /* cancelled */ }
+    setSensorScanning(null);
+  };
+
+  const handleRadarConnect = async () => {
+    if (BLE.bleMode === 'websocket') {
+      onOpenScanner();
+      return;
+    }
+    setSensorScanning('radar');
+    try {
+      await BLE.connectRadar();
+    } catch { /* cancelled */ }
+    setSensorScanning(null);
+  };
+
+  const handleSwitchMode = (mode: LightMode) => {
+    if (BLE.bleMode === 'websocket') {
+      import('../../services/bluetooth/WebSocketBLEClient').then(({ wsClient }) => {
+        wsClient.send({ type: 'lightSetMode', mode });
+      });
+    } else {
+      import('../../services/bluetooth/iGPSportLightService').then(({ iGPSportLightService }) => {
+        iGPSportLightService.setMode(mode);
+      });
+    }
+    setShowModePicker(false);
+  };
+
+  // Quick modes for the inline picker
+  const QUICK_MODES = [
+    LightMode.OFF, LightMode.LOW_STEADY, LightMode.MID_STEADY,
+    LightMode.HIGH_STEADY, LightMode.LOW_BLINK, LightMode.HIGH_BLINK, LightMode.SOS,
+  ];
+
+  return (
+    <div>
+      <div className="text-xs text-gray-500 uppercase tracking-wide mb-2 px-1">Accessories</div>
+      <div className="space-y-2">
+        {/* Light */}
+        <div
+          className={`bg-gray-800/60 rounded-xl p-3 border ${
+            lightConnected ? 'border-yellow-500/20' : 'border-gray-700/50'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <span
+              className={`material-symbols-outlined text-2xl ${
+                lightConnected && lightMode > 0 ? 'text-yellow-400' : lightConnected ? 'text-gray-400' : 'text-gray-600'
+              }`}
+            >
+              {lightMode > 0 ? 'flashlight_on' : 'flashlight_off'}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-white">Rear Light</div>
+              <div className="text-xs text-gray-500 truncate">
+                {lightConnected
+                  ? `${lightDeviceName || BLE.getLightDeviceName() || 'Connected'}${lightBattery > 0 ? ` — ${lightBattery}%` : ''}`
+                  : sensorScanning === 'light'
+                    ? 'Scanning...'
+                    : (() => {
+                        const saved = BLE.getSavedSensorDevice('light');
+                        return saved ? `Auto: ${saved.name}` : 'Not connected';
+                      })()}
+              </div>
+              {lightConnected && (
+                <div className="text-xs text-yellow-400/80 mt-0.5">
+                  Mode: {LIGHT_MODE_LABELS[lightMode] ?? `#${lightMode}`}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-1">
+              {lightConnected && (
+                <button
+                  onClick={() => setShowModePicker(!showModePicker)}
+                  className="h-10 px-3 rounded-lg text-xs font-bold bg-yellow-500/20 text-yellow-400 active:scale-95 transition-transform"
+                >
+                  Mode
+                </button>
+              )}
+              <button
+                onClick={() => lightConnected ? BLE.disconnectLight() : handleLightConnect()}
+                disabled={sensorScanning === 'light'}
+                className={`h-10 px-4 rounded-lg text-xs font-bold active:scale-95 transition-transform ${
+                  lightConnected
+                    ? 'bg-red-600/20 text-red-400'
+                    : sensorScanning === 'light'
+                      ? 'bg-gray-700 text-gray-500'
+                      : 'bg-emerald-500/20 text-emerald-400'
+                }`}
+              >
+                {lightConnected ? 'Off' : sensorScanning === 'light' ? '...' : 'Scan'}
+              </button>
+            </div>
+          </div>
+
+          {/* Mode picker (inline) */}
+          {showModePicker && lightConnected && (
+            <div className="mt-3 pt-3 border-t border-gray-700/50">
+              <div className="grid grid-cols-4 gap-1.5">
+                {QUICK_MODES.map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => handleSwitchMode(mode)}
+                    className={`h-9 rounded-lg text-[11px] font-bold active:scale-95 transition-transform ${
+                      lightMode === mode
+                        ? 'bg-yellow-500 text-black'
+                        : 'bg-gray-700 text-gray-300'
+                    }`}
+                  >
+                    {LIGHT_MODE_LABELS[mode] ?? `#${mode}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Battery bar */}
+          {lightConnected && lightBattery > 0 && (
+            <div className="mt-2">
+              <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    lightBattery > 30 ? 'bg-yellow-400' : lightBattery > 15 ? 'bg-orange-400' : 'bg-red-500'
+                  }`}
+                  style={{ width: `${lightBattery}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Radar */}
+        <div
+          className={`bg-gray-800/60 rounded-xl p-3 flex items-center gap-3 border ${
+            radarConnected ? 'border-orange-500/20' : 'border-gray-700/50'
+          }`}
+        >
+          <span
+            className={`material-symbols-outlined text-2xl ${
+              radarConnected
+                ? radarThreat >= 2 ? 'text-red-400 animate-pulse' : radarThreat >= 1 ? 'text-orange-400' : 'text-emerald-400'
+                : 'text-gray-600'
+            }`}
+          >
+            radar
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-white">Rear Radar</div>
+            <div className="text-xs text-gray-500 truncate">
+              {radarConnected
+                ? radarThreat > 0 ? `Vehicle detected — threat ${radarThreat}/3` : 'Clear'
+                : sensorScanning === 'radar'
+                  ? 'Scanning...'
+                  : (() => {
+                      const saved = BLE.getSavedSensorDevice('radar');
+                      return saved ? `Auto: ${saved.name}` : 'Not connected';
+                    })()}
+            </div>
+          </div>
+          <button
+            onClick={() => radarConnected ? BLE.disconnectRadar() : handleRadarConnect()}
+            disabled={sensorScanning === 'radar'}
+            className={`h-10 px-4 rounded-lg text-xs font-bold active:scale-95 transition-transform ${
+              radarConnected
+                ? 'bg-red-600/20 text-red-400'
+                : sensorScanning === 'radar'
+                  ? 'bg-gray-700 text-gray-500'
+                  : 'bg-emerald-500/20 text-emerald-400'
+            }`}
+          >
+            {radarConnected ? 'Off' : sensorScanning === 'radar' ? '...' : 'Scan'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

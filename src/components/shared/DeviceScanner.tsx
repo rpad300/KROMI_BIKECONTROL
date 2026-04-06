@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { wsClient, type ScanResultDevice } from '../../services/bluetooth/WebSocketBLEClient';
 import { connectDevice, saveDevice, saveSensorDevice, startScan, stopScan } from '../../services/bluetooth/BLEBridge';
+import { identifyDevice, getCategoryGroup } from '../../services/bluetooth/DeviceBrandDetector';
 
 interface DeviceScannerProps {
   onConnected: () => void;
@@ -53,16 +54,22 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
     setConnecting(device.address);
     stopScan();
 
-    // Route to correct manager based on device tags
-    const sensorType = device.tags.includes('HR') ? 'hr'
-      : device.tags.includes('DI2') ? 'di2'
-      : device.tags.includes('SRAM') ? 'sram'
-      : device.tags.includes('POWER') && !device.tags.includes('GIANT') ? 'power'
+    // Route to correct manager based on device identity
+    const identity = identifyDevice(device.name, device.tags, device.uuids);
+    const sensorType = device.tags.includes('HR') || identity.category === 'heart_rate' ? 'hr'
+      : device.tags.includes('DI2') || (identity.category === 'drivetrain' && identity.brand === 'shimano') ? 'di2'
+      : device.tags.includes('SRAM') || (identity.category === 'drivetrain' && identity.brand === 'sram') ? 'sram'
+      : (device.tags.includes('POWER') && !device.tags.includes('GIANT')) || identity.category === 'power' ? 'power'
+      : identity.category === 'cadence' ? 'cadence'
+      : identity.category === 'light' ? 'light'
+      : identity.category === 'radar' ? 'radar'
       : null;
 
     if (sensorType) {
-      // External sensor
-      saveSensorDevice(sensorType, { name: device.name, address: device.address });
+      // External sensor — save for auto-connect (cadence uses bridge-only, no localStorage)
+      if (sensorType !== 'cadence') {
+        saveSensorDevice(sensorType as 'hr' | 'di2' | 'sram' | 'power' | 'light' | 'radar', { name: device.name, address: device.address });
+      }
       if (sensorType === 'di2') {
         // Di2 → ShimanoProtocol (needs auth, not generic SensorManager)
         wsClient.send({ type: 'shimanoConnect', address: device.address });
@@ -163,9 +170,9 @@ function DeviceRow({ device, connecting, onSelect }: {
   connecting: boolean;
   onSelect: () => void;
 }) {
-  const isBike = device.tags.includes('GIANT') || device.tags.includes('GEV') || device.tags.includes('BIKE');
-  const isHR = device.tags.includes('HR');
-  const isSRAM = device.tags.includes('SRAM');
+  const identity = identifyDevice(device.name, device.tags, device.uuids);
+  const group = getCategoryGroup(identity.category);
+  const isBike = identity.category === 'bike';
 
   const rssiColor =
     device.rssi > -60 ? 'text-[#3fff8b]' :
@@ -185,23 +192,29 @@ function DeviceRow({ device, connecting, onSelect }: {
       `}
     >
       {/* Icon */}
-      <span className={`material-symbols-outlined text-2xl ${
-        isBike ? 'text-[#3fff8b]' : isHR ? 'text-[#ff716c]' : isSRAM ? 'text-[#fbbf24]' : 'text-[#777575]'
-      }`}>
-        {isBike ? 'pedal_bike' : isHR ? 'favorite' : 'bluetooth'}
+      <span className="material-symbols-outlined text-2xl" style={{ color: identity.color }}>
+        {identity.icon}
       </span>
 
       {/* Info */}
       <div className="flex-1 text-left">
-        <div className="text-white font-bold text-sm">
+        <div className="text-white font-bold text-sm flex items-center gap-1.5">
           {device.name}
-          {isBike && <span className="ml-2 text-[#3fff8b] text-xs font-normal">BIKE</span>}
-          {isHR && !isBike && <span className="ml-2 text-[#ff716c] text-xs font-normal">HR</span>}
-          {isSRAM && <span className="ml-2 text-[#fbbf24] text-xs font-normal">SRAM</span>}
-          {device.tags.includes('DI2') && <span className="ml-2 text-[#6e9bff] text-xs font-normal">Di2</span>}
-          {device.tags.includes('POWER') && !isBike && <span className="ml-2 text-[#fbbf24] text-xs font-normal">POWER</span>}
+          {identity.badge && (
+            <span
+              className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+              style={{ color: identity.color, backgroundColor: `${identity.color}20` }}
+            >
+              {identity.badge}
+            </span>
+          )}
         </div>
-        <div className="text-[#777575] text-[10px]">{device.address}</div>
+        <div className="text-[#777575] text-[10px] flex items-center gap-2">
+          <span>{device.address}</span>
+          {identity.categoryLabel && identity.categoryLabel !== identity.badge && (
+            <span style={{ color: group.color }}>{identity.categoryLabel}</span>
+          )}
+        </div>
       </div>
 
       {/* RSSI + connecting */}

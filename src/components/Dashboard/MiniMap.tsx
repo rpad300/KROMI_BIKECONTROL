@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMapStore } from '../../store/mapStore';
 import { useRouteStore } from '../../store/routeStore';
+import { useBikeStore } from '../../store/bikeStore';
 import { initGoogleMaps, isMapsLoaded } from '../../services/maps/GoogleMapsService';
 
 /**
@@ -152,11 +153,49 @@ export function MiniMap() {
     setMapType((t) => t === 'hybrid' ? 'terrain' : t === 'terrain' ? 'roadmap' : 'hybrid');
   };
 
+  // Radar threat
+  const radarThreat = useBikeStore((s) => s.radar_threat_level);
+  const radarDistance = useBikeStore((s) => s.radar_distance_m);
+  const radarSpeed = useBikeStore((s) => s.radar_speed_kmh);
+  const radarConnected = useBikeStore((s) => s.ble_services.radar);
+
   const mapTypeLabel = mapType === 'hybrid' ? 'Satelite' : mapType === 'terrain' ? 'Terreno' : 'Mapa';
+
+  const threatColor = radarThreat >= 3 ? '#ff4444' : radarThreat >= 2 ? '#fbbf24' : '#ff9f43';
 
   return (
     <div className="bg-[#1a1919] rounded-sm overflow-hidden relative">
       <div ref={mapRef} className="h-36 w-full" />
+
+      {/* Radar threat overlay */}
+      {radarConnected && radarThreat > 0 && (
+        <div className={`absolute bottom-10 left-0 right-0 flex justify-center z-10 ${radarThreat >= 3 ? 'animate-pulse' : ''}`}>
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md"
+            style={{ backgroundColor: `${threatColor}33`, border: `1px solid ${threatColor}66` }}
+          >
+            <span className="material-symbols-outlined text-base" style={{ color: threatColor }}>radar</span>
+            <span className="text-xs font-bold" style={{ color: threatColor }}>
+              {radarDistance > 0 ? `${radarDistance.toFixed(0)}m` : 'CLOSE'}
+            </span>
+            {radarSpeed > 0 && (
+              <span className="text-[10px]" style={{ color: `${threatColor}cc` }}>
+                {radarSpeed} km/h
+              </span>
+            )}
+            <div className="flex gap-0.5">
+              {[1, 2, 3].map((l) => (
+                <div
+                  key={l}
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: radarThreat >= l ? threatColor : '#333' }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <button
         onClick={cycleMapType}
         className="absolute top-2 right-2 bg-[#131313]/80 text-[9px] text-[#adaaaa] px-2 py-1 rounded font-bold active:scale-95"

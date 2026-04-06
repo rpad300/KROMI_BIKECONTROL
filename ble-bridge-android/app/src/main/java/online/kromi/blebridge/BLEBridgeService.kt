@@ -22,6 +22,7 @@ class BLEBridgeService : Service() {
     lateinit var bleManager: BLEManager
     lateinit var sensorManager: SensorManager
     lateinit var shimanoProtocol: ShimanoProtocol
+    lateinit var accessoryService: AccessoryService
     var wsServer: BridgeWebSocketServer? = null
     var phoneSensorService: PhoneSensorService? = null
     lateinit var kromiCore: KromiCore
@@ -52,6 +53,11 @@ class BLEBridgeService : Service() {
 
         shimanoProtocol = ShimanoProtocol(this)
         shimanoProtocol.onData = { json ->
+            wsServer?.broadcastData(json)
+        }
+
+        accessoryService = AccessoryService(this)
+        accessoryService.onData = { json ->
             wsServer?.broadcastData(json)
         }
 
@@ -89,6 +95,7 @@ class BLEBridgeService : Service() {
         kromiCore.stop()
         phoneSensorService?.stop()
         shimanoProtocol.destroy()
+        accessoryService.destroy()
         sensorManager.destroy()
         wsServer?.stop()
         bleManager.disconnect()
@@ -153,6 +160,14 @@ class BLEBridgeService : Service() {
                             || uuids.contains("18FF", true)            // E-Tube service
                             || uuids.contains("18EF", true))           // Realtime service
                             tags.add("DI2")
+                        // iGPSPORT / NUS-based accessories (light, radar)
+                        if (uuids.contains("DCCA8E", true) || uuids.contains("dcca8e", true)) {
+                            // NUS User Control channel — identify as light or radar
+                            val isRadar = name.lowercase().contains("radar")
+                            if (isRadar) tags.add("RADAR") else tags.add("LIGHT")
+                        }
+                        if (name.startsWith("VS1", true) || name.startsWith("LR", true)) tags.add("LIGHT")
+                        if (name.lowercase().contains("varia") && name.lowercase().contains("r")) tags.add("RADAR")
 
                         val result = JSONObject().apply {
                             put("type", "scanResult")
@@ -205,43 +220,64 @@ class BLEBridgeService : Service() {
                 }
             }
 
-            // === External sensor management (hr, power, di2, sram) ===
+            // === External sensor management (hr, power, di2, sram, light, radar) ===
             "scanSensor" -> {
                 val sensor = json.optString("sensor", "")
-                // Redirect Di2 to ShimanoProtocol (needs auth)
-                if (sensor == "di2") {
-                    shimanoProtocol.excludeAddress = bleManager.connectedAddress
-                    shimanoProtocol.scan()
-                } else {
-                    sensorManager.excludeAddress = bleManager.connectedAddress
-                    sensorManager.scanFor(sensor)
+                when (sensor) {
+                    "di2" -> {
+                        shimanoProtocol.excludeAddress = bleManager.connectedAddress
+                        shimanoProtocol.scan()
+                    }
+                    "light", "radar" -> {
+                        accessoryService.excludeAddress = bleManager.connectedAddress
+                        accessoryService.scanFor(sensor)
+                    }
+                    else -> {
+                        sensorManager.excludeAddress = bleManager.connectedAddress
+                        sensorManager.scanFor(sensor)
+                    }
                 }
             }
 
             "connectSensor" -> {
                 val sensor = json.optString("sensor", "")
                 val address = json.optString("address", "")
-                // Redirect Di2 to ShimanoProtocol (needs auth)
-                if (sensor == "di2") {
-                    if (address.isNotEmpty()) {
-                        shimanoProtocol.connect(address)
-                    } else {
-                        shimanoProtocol.excludeAddress = bleManager.connectedAddress
-                        shimanoProtocol.scan()
+                when (sensor) {
+                    "di2" -> {
+                        if (address.isNotEmpty()) shimanoProtocol.connect(address)
+                        else { shimanoProtocol.excludeAddress = bleManager.connectedAddress; shimanoProtocol.scan() }
                     }
-                } else {
-                    sensorManager.excludeAddress = bleManager.connectedAddress
-                    if (address.isNotEmpty()) {
-                        sensorManager.connectSensor(sensor, address)
-                    } else {
-                        sensorManager.scanFor(sensor)
+                    "light", "radar" -> {
+                        accessoryService.excludeAddress = bleManager.connectedAddress
+                        if (address.isNotEmpty()) accessoryService.connectAccessory(sensor, address)
+                        else accessoryService.scanFor(sensor)
+                    }
+                    else -> {
+                        sensorManager.excludeAddress = bleManager.connectedAddress
+                        if (address.isNotEmpty()) sensorManager.connectSensor(sensor, address)
+                        else sensorManager.scanFor(sensor)
                     }
                 }
             }
 
             "disconnectSensor" -> {
                 val sensor = json.optString("sensor", "")
-                sensorManager.disconnectSensor(sensor)
+                when (sensor) {
+                    "light", "radar" -> accessoryService.disconnectAccessory(sensor)
+                    else -> sensorManager.disconnectSensor(sensor)
+                }
+            }
+
+            // === Light accessory commands ===
+            "lightSetMode" -> {
+                val mode = json.optInt("mode", 0)
+                accessoryService.setLightMode(mode)
+            }
+            "lightReadBattery" -> {
+                accessoryService.readLightBattery()
+            }
+            "lightReadMode" -> {
+                accessoryService.readLightMode()
             }
 
             "readBattery" -> bleManager.readBatteryDetails()

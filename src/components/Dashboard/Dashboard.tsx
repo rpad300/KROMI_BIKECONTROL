@@ -14,6 +14,9 @@ import { HRWidget } from './HRWidget';
 import { RideSessionWidget } from './RideSessionWidget';
 import { NutritionWidget } from './NutritionWidget';
 import { WPrimeWidget } from './WPrimeWidget';
+import { LightRadarWidget } from './LightRadarWidget';
+import { DeviceBatteryPanel } from './DeviceBatteryPanel';
+import { RadarPanel } from './RadarPanel';
 import { useNutritionStore } from '../../store/nutritionStore';
 import { kromiEngine } from '../../services/intelligence/KromiEngine';
 
@@ -49,47 +52,100 @@ export function Dashboard() {
           </button>
         </main>
       ) : (
-        /* === EXPANDED VIEW (scrollable, all widgets) === */
-        <main className="flex-1 min-h-0 overflow-y-auto">
-          <div className="flex flex-col gap-2 p-3 pb-4">
-            {/* Collapse button */}
-            <button
-              onClick={() => setExpanded(false)}
-              className="h-8 bg-[#1a1919] flex items-center justify-center gap-1"
-            >
-              <span className="material-symbols-outlined text-[#777575] text-sm">expand_more</span>
-              <span className="text-[9px] text-[#777575] font-label uppercase tracking-widest">Ride View</span>
-            </button>
-
-            {/* Compact speed + metrics */}
-            <CompactHeader />
-
-            {/* All widgets from old layout */}
-            <IntelligenceWidget />
-
-            <div className="flex gap-2">
-              <BatteryWidget />
-              <HRWidget />
-            </div>
-
-            <div className="flex gap-2">
-              <div className="flex-1"><WPrimeWidget /></div>
-              <div className="flex-1"><NutritionWidget /></div>
-            </div>
-
-            <WeatherWidget />
-            <TrailWidget />
-
-            <MiniMap />
-            <ElevationProfile />
-
-            {autoAssistEnabled && <AutoAssistWidget />}
-
-            <RideSessionWidget />
-          </div>
-        </main>
+        /* === EXPANDED VIEW (tabbed panels) === */
+        <ExpandedView onCollapse={() => setExpanded(false)} autoAssistEnabled={autoAssistEnabled} />
       )}
     </div>
+  );
+}
+
+/** Expanded view with tabbed panels */
+function ExpandedView({ onCollapse, autoAssistEnabled }: { onCollapse: () => void; autoAssistEnabled: boolean }) {
+  const [activeTab, setActiveTab] = useState<'ride' | 'radar' | 'battery'>('ride');
+  const radarConnected = useBikeStore((s) => s.ble_services.radar);
+  const lightConnected = useBikeStore((s) => s.ble_services.light);
+  const hasAccessories = radarConnected || lightConnected;
+
+  const tabs = [
+    { id: 'ride' as const, label: 'Ride', icon: 'pedal_bike' },
+    ...(hasAccessories ? [{ id: 'radar' as const, label: 'Radar', icon: 'radar' }] : []),
+    { id: 'battery' as const, label: 'Baterias', icon: 'battery_full' },
+  ];
+
+  return (
+    <main className="flex-1 min-h-0 flex flex-col">
+      {/* Tab bar + collapse */}
+      <div className="flex-none flex items-center bg-[#131313] border-b border-[#494847]/20">
+        <button
+          onClick={onCollapse}
+          className="h-10 px-3 flex items-center gap-1"
+        >
+          <span className="material-symbols-outlined text-[#777575] text-sm">expand_more</span>
+        </button>
+
+        <div className="flex-1 flex items-center justify-center gap-1">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                activeTab === tab.id
+                  ? 'text-[#3fff8b] border-b-2 border-[#3fff8b]'
+                  : 'text-[#777575]'
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">{tab.icon}</span>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="w-10" /> {/* Balance spacing */}
+      </div>
+
+      {/* Panel content (scrollable) */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-2 p-3 pb-4">
+          {activeTab === 'ride' && (
+            <>
+              <CompactHeader />
+              <IntelligenceWidget />
+              <div className="flex gap-2">
+                <BatteryWidget />
+                <HRWidget />
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1"><WPrimeWidget /></div>
+                <div className="flex-1"><NutritionWidget /></div>
+              </div>
+              <LightRadarWidget />
+              <WeatherWidget />
+              <TrailWidget />
+              <MiniMap />
+              <ElevationProfile />
+              {autoAssistEnabled && <AutoAssistWidget />}
+              <RideSessionWidget />
+            </>
+          )}
+
+          {activeTab === 'radar' && (
+            <>
+              <CompactHeader />
+              <RadarPanel />
+              <LightRadarWidget />
+              <MiniMap />
+            </>
+          )}
+
+          {activeTab === 'battery' && (
+            <>
+              <CompactHeader />
+              <DeviceBatteryPanel />
+            </>
+          )}
+        </div>
+      </div>
+    </main>
   );
 }
 

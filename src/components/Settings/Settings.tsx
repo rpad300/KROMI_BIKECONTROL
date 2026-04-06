@@ -11,6 +11,7 @@ import { BikeFitPage } from './BikeFitPage';
 import { BikesPage } from './BikesPage';
 import { ServiceBookPage } from '../ServiceBook/ServiceBookPage';
 import { ShopManagementPage } from '../Shop/ShopManagementPage';
+import { AccessoriesSettingsContent } from './AccessoriesSettings';
 // TuningPreview removed — config is now read-only from motor telemetry
 import { importKomootRoute } from '../../services/maps/KomootService';
 import { useRouteStore } from '../../store/routeStore';
@@ -20,7 +21,7 @@ import { analyzeRoute } from '../../services/routes/PreRideAnalysis';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
-type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'emergency' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'routes' | 'account' | 'service-book' | 'shop';
+type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'emergency' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'accessories' | 'routes' | 'account' | 'service-book' | 'shop';
 
 // ── Grouped menu matching desktop 9-category sidebar ────────
 interface MenuCategory {
@@ -55,6 +56,7 @@ const MENU_CATEGORIES: MenuCategory[] = [
   ]},
   { label: 'Dispositivos', icon: 'bluetooth', color: '#6e9bff', items: [
     { id: 'bluetooth', icon: 'bluetooth', label: 'BLE + Sensores', desc: 'Ligação, sensores, estado' },
+    { id: 'accessories', icon: 'flashlight_on', label: 'Acessorios', desc: 'Luz traseira, radar, auto-controlo' },
   ]},
   { label: 'Atividades', icon: 'timeline', color: '#e966ff', items: [], navigateTo: 'history' },
   { label: 'Mapa', icon: 'map', color: '#6e9bff', items: [], navigateTo: 'map' },
@@ -111,6 +113,7 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
         {activePage === 'shop' && <ShopManagementPage />}
         {activePage === 'kromi' && <KromiPage />}
         {activePage === 'bluetooth' && <BluetoothPage />}
+        {activePage === 'accessories' && <AccessoriesSettingsContent />}
         {activePage === 'routes' && <RoutesPage onNavigate={onNavigate} />}
         {activePage === 'account' && <AccountPage />}
       </div>

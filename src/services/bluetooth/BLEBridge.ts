@@ -19,6 +19,7 @@ import { wsClient } from './WebSocketBLEClient';
 import { isCapacitorNative, capacitorBLEService } from './CapacitorBLEService';
 import { giantBLEService } from './GiantBLEService';
 import { tpmsService } from './TPMSService';
+import { iGPSportLightService } from './iGPSportLightService';
 import type { TuningLevels, TuningMode } from '../../store/tuningStore';
 
 export type BLEMode = 'websocket' | 'native' | 'web';
@@ -217,6 +218,26 @@ export const disconnectSRAM = () => disconnectSensorBridge('sram', () => giantBL
 export const disconnectExtPower = () => disconnectSensorBridge('power', () => giantBLEService.disconnectExtPower());
 export const disconnectExtCadence = () => disconnectSensorBridge('cadence', () => {});
 
+// === Light Accessory ===
+export const connectLight = () => connectSensor('light', () => iGPSportLightService.connect().then(() => {}));
+export const disconnectLight = () => {
+  if (bleMode === 'websocket') {
+    wsClient.send({ type: 'disconnectSensor', sensor: 'light' });
+  } else {
+    iGPSportLightService.disconnect();
+  }
+};
+export function getLightDeviceName(): string | null {
+  return iGPSportLightService.getDeviceName();
+}
+
+// === Radar Accessory ===
+export const connectRadar = () => connectSensor('radar', () => Promise.resolve()); // radar via bridge only for now
+export const disconnectRadar = () => disconnectSensorBridge('radar', () => {});
+export function getRadarDeviceName(): string | null {
+  return null; // radar device name comes via WS messages
+}
+
 /** Get HR device name */
 export function getHRDeviceName(): string | null {
   return giantBLEService.getHRDeviceName();
@@ -365,7 +386,7 @@ export function clearSavedDevice(): void {
 
 // === Saved sensors (generic) ===
 
-const SENSOR_TYPES = ['hr', 'di2', 'sram', 'power'] as const;
+const SENSOR_TYPES = ['hr', 'di2', 'sram', 'power', 'light', 'radar'] as const;
 type SensorType = typeof SENSOR_TYPES[number];
 
 /** Save sensor device for auto-connect */

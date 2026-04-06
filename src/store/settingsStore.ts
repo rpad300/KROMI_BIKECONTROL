@@ -305,6 +305,40 @@ export function suspensionLabel(s: SuspensionType): string {
   return labels[s] ?? s;
 }
 
+// ── Accessories config ───────────────────��──────────────────
+
+export interface AccessoriesConfig {
+  // Smart Light
+  smart_light_enabled: boolean;
+  auto_on_lux: number;           // Auto-on when lux < this
+  auto_off_lux: number;          // Auto-off when lux > this
+  brake_flash_enabled: boolean;
+  brake_decel_threshold: number; // km/h per second
+  radar_flash_enabled: boolean;
+  radar_flash_threat: number;    // Min threat level (1-3)
+  speed_adaptive: boolean;
+  turn_signal_duration_ms: number;
+  // Radar
+  radar_enabled: boolean;
+  radar_vibrate: boolean;
+  radar_vibrate_min_threat: number;
+}
+
+export const DEFAULT_ACCESSORIES_CONFIG: AccessoriesConfig = {
+  smart_light_enabled: true,
+  auto_on_lux: 200,
+  auto_off_lux: 500,
+  brake_flash_enabled: true,
+  brake_decel_threshold: 3,
+  radar_flash_enabled: true,
+  radar_flash_threat: 1,
+  speed_adaptive: false,
+  turn_signal_duration_ms: 5000,
+  radar_enabled: true,
+  radar_vibrate: true,
+  radar_vibrate_min_threat: 2,
+};
+
 interface AutoAssistConfig {
   enabled: boolean;
   lookahead_m: number;
@@ -323,11 +357,13 @@ interface SettingsState {
   bikes: BikeConfig[];
   activeBikeId: string;
   autoAssist: AutoAssistConfig;
+  accessories: AccessoriesConfig;
   simulation_mode: boolean;
 
   updateRiderProfile: (partial: Partial<RiderProfile>) => void;
   updateBikeConfig: (partial: Partial<BikeConfig>) => void;
   updateAutoAssist: (partial: Partial<AutoAssistConfig>) => void;
+  updateAccessories: (partial: Partial<AccessoriesConfig>) => void;
   setSimulationMode: (v: boolean) => void;
   addBike: (config: Partial<BikeConfig> & { name: string; bike_type: BikeConfig['bike_type'] }) => void;
   removeBike: (id: string) => void;
@@ -354,6 +390,8 @@ export const useSettingsStore = create<SettingsState>()(
         descent_threshold_pct: -4,
       },
 
+      accessories: { ...DEFAULT_ACCESSORIES_CONFIG },
+
       simulation_mode: false,
 
       updateRiderProfile: (partial) =>
@@ -373,6 +411,11 @@ export const useSettingsStore = create<SettingsState>()(
       updateAutoAssist: (partial) =>
         set((state) => ({
           autoAssist: { ...state.autoAssist, ...partial },
+        })),
+
+      updateAccessories: (partial) =>
+        set((state) => ({
+          accessories: { ...state.accessories, ...partial },
         })),
 
       setSimulationMode: (v) => set({ simulation_mode: v }),
@@ -407,6 +450,7 @@ export const useSettingsStore = create<SettingsState>()(
           bikeConfig: safeBikeConfig(p.bikeConfig),
           riderProfile: { ...(current as SettingsState).riderProfile, ...(p.riderProfile ?? {}) },
           autoAssist: { ...(current as SettingsState).autoAssist, ...(p.autoAssist ?? {}) },
+          accessories: { ...DEFAULT_ACCESSORIES_CONFIG, ...(p.accessories ?? {}) },
         };
       },
     }

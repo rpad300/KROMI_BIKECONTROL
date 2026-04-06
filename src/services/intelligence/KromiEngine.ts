@@ -716,6 +716,22 @@ class KromiEngine {
     }
   }
 
+  // ── Accessories (smart light + radar) ─────────────────────
+
+  /** Start accessories manager when light/radar connects */
+  startAccessories(): void {
+    import('../accessories/AccessoriesManager').then(({ accessoriesManager }) => {
+      if (!accessoriesManager.isRunning) accessoriesManager.start();
+    });
+  }
+
+  /** Stop accessories manager */
+  stopAccessories(): void {
+    import('../accessories/AccessoriesManager').then(({ accessoriesManager }) => {
+      accessoriesManager.stop();
+    });
+  }
+
   // ── Accessors ────────────────────────────────────────────
 
   getPhysiology(): PhysiologyEngine { return this.physiology; }

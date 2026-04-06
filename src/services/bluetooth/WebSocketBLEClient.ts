@@ -392,16 +392,23 @@ export class WebSocketBLEClient {
         case 'sensorConnected': {
           const sensorServiceMap: Record<string, string> = {
             hr: 'heartRate', di2: 'di2', sram: 'sram', power: 'power', cadence: 'cadence',
+            light: 'light', radar: 'radar',
           };
           const serviceKey = sensorServiceMap[msg.sensor as string];
           if (serviceKey) {
-            store.setServiceConnected(serviceKey as 'heartRate' | 'di2' | 'sram' | 'power', true);
+            store.setServiceConnected(serviceKey as 'heartRate' | 'di2' | 'sram' | 'power' | 'light' | 'radar', true);
             import('./BLEBridge').then(({ saveSensorDevice }) => {
               saveSensorDevice(msg.sensor, { name: msg.name || msg.sensor, address: msg.address });
               console.log(`[WSClient] ${msg.sensor} saved: ${msg.name} (${msg.address})`);
               // Sync to Supabase so other devices pick it up
               import('../sync/SettingsSyncService').then(({ scheduleSave }) => scheduleSave());
             });
+            // Auto-start AccessoriesManager when light or radar connects
+            if (msg.sensor === 'light' || msg.sensor === 'radar') {
+              import('../accessories/AccessoriesManager').then(({ accessoriesManager }) => {
+                if (!accessoriesManager.isRunning) accessoriesManager.start();
+              });
+            }
           }
           break;
         }
@@ -409,12 +416,21 @@ export class WebSocketBLEClient {
         case 'sensorDisconnected': {
           const svcMap: Record<string, string> = {
             hr: 'heartRate', di2: 'di2', sram: 'sram', power: 'power', cadence: 'cadence',
+            light: 'light', radar: 'radar',
           };
           const svcKey = svcMap[msg.sensor as string];
           if (svcKey) {
             store.setServiceConnected(svcKey as 'heartRate' | 'di2' | 'sram' | 'power' | 'cadence', false);
             if (msg.sensor === 'hr') store.setHR(0, 0);
             if (msg.sensor === 'cadence') { this.hasExternalCadence = false; }
+            if (msg.sensor === 'light') { store.setLightMode(0); store.setLightBattery(0); store.setLightDeviceName(''); }
+            if (msg.sensor === 'radar') { store.setRadarTarget(0, 0, 0); }
+            // Stop AccessoriesManager when both light and radar disconnected
+            if ((msg.sensor === 'light' || msg.sensor === 'radar') && !store.ble_services.light && !store.ble_services.radar) {
+              import('../accessories/AccessoriesManager').then(({ accessoriesManager }) => {
+                accessoriesManager.stop();
+              });
+            }
           }
           break;
         }
@@ -523,6 +539,51 @@ export class WebSocketBLEClient {
 
         case 'tpmsRear':
           store.setTPMSRear(msg.psi);
+          break;
+
+        // === Accessories: Light ===
+        case 'lightMode':
+          store.setLightMode(msg.mode as number);
+          break;
+
+        case 'lightBattery':
+          store.setLightBattery(msg.pct as number);
+          break;
+
+        case 'lightStatus':
+          if (msg.mode !== undefined) store.setLightMode(msg.mode as number);
+          if (msg.battery !== undefined) store.setLightBattery(msg.battery as number);
+          if (msg.name) store.setLightDeviceName(msg.name as string);
+          break;
+
+        // === Accessories: Radar ===
+        case 'radarTarget': {
+          const level = msg.level as number ?? 0;
+          const distCm = msg.range as number ?? 0;
+          const speed = msg.speed as number ?? 0;
+          // Forward to RadarService for proper tracking + hysteresis
+          import('../accessories/RadarService').then(({ radarService }) => {
+            radarService.processSingleTarget(level, distCm, speed);
+          });
+          break;
+        }
+
+        case 'radarTargets': {
+          // Batch targets from radar device (multiple vehicles)
+          const targets = (msg.targets as { range: number; speed: number; level: number }[]) ?? [];
+          import('../accessories/RadarService').then(({ radarService }) => {
+            radarService.processTargets(targets.map(t => ({
+              range_cm: t.range, speed_kmh: t.speed, level: t.level,
+            })));
+          });
+          break;
+        }
+
+        case 'radarClear':
+          import('../accessories/RadarService').then(({ radarService }) => {
+            radarService.clear();
+          });
+          store.setRadarTarget(0, 0, 0);
           break;
 
         case 'gevRaw':
