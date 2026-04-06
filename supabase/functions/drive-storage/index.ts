@@ -56,7 +56,7 @@ const SCOPE = 'https://www.googleapis.com/auth/drive';
 // ─── CORS ────────────────────────────────────────────────────
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-kromi-session, content-type, x-kromi-meta',
+  'Access-Control-Allow-Headers': 'authorization, apikey, x-kromi-session, content-type, x-kromi-meta',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
