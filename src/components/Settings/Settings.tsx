@@ -13,6 +13,10 @@ import { ServiceBookPage } from '../ServiceBook/ServiceBookPage';
 import { ShopManagementPage } from '../Shop/ShopManagementPage';
 const AccessoriesSettingsContent = lazy(() => import('./AccessoriesSettings').then(m => ({ default: m.AccessoriesSettingsContent })));
 // TuningPreview removed — config is now read-only from motor telemetry
+
+// App version from git tag (injected at build time by Vite)
+declare const __APP_VERSION__: string;
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
 import { importKomootRoute } from '../../services/maps/KomootService';
 import { useRouteStore } from '../../store/routeStore';
 import { parseGPXFile } from '../../services/routes/GPXParser';
@@ -1402,7 +1406,7 @@ function AccountPage() {
         style={{ width: '100%', height: '48px', backgroundColor: '#262626', color: '#ff716c', border: '1px solid rgba(255,113,108,0.3)', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}>
         Terminar Sessão
       </button>
-      <div style={{ textAlign: 'center', fontSize: '10px', color: '#494847', marginTop: '16px' }}>KROMI BikeControl v0.9.5</div>
+      <div style={{ textAlign: 'center', fontSize: '10px', color: '#494847', marginTop: '16px' }}>KROMI BikeControl {APP_VERSION}</div>
     </div>
   );
 }

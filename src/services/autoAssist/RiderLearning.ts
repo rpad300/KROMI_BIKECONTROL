@@ -131,7 +131,7 @@ export class RiderLearning {
     this.params = {
       cp_watts: initial?.cp_watts ?? 150,
       w_prime_joules: initial?.w_prime_joules ?? 15000,
-      tau_seconds: initial?.tau_seconds ?? 300,
+      tau_seconds: initial?.tau_seconds ?? 400, // 400s for recreational riders (was 300s — too aggressive)
       crr_adjustments: initial?.crr_adjustments ?? {},
       ef_baselines: initial?.ef_baselines ?? {},
       confidence: initial?.confidence ?? 0,

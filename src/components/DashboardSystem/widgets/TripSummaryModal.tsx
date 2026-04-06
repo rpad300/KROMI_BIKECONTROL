@@ -86,6 +86,30 @@ export function TripSummaryModal({ onClose }: { onClose: () => void }) {
 
   const batteryUsed = Math.max(0, trip.batteryStart - battery);
 
+  const buildShareText = () => {
+    const date = new Date().toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' });
+    const lines = [
+      `KROMI BikeControl — ${date}`,
+      `${trip.tripKm.toFixed(1)}km · ${fmt(trip.movingTime)} · ${trip.avgSpeed.toFixed(1)}km/h avg`,
+      elevGain > 0 ? `${elevGain}m D+ · Max ${trip.maxSpeed.toFixed(1)}km/h` : `Max ${trip.maxSpeed.toFixed(1)}km/h`,
+      batteryUsed > 0 ? `Bateria: ${batteryUsed}% usada (${trip.batteryStart}% → ${battery}%)` : '',
+      avgHr > 0 ? `HR avg ${avgHr} · max ${maxHr} bpm` : '',
+      gearStats.shiftCount > 0 ? `${gearStats.shiftCount} shifts` : '',
+    ].filter(Boolean);
+    return lines.join('\n');
+  };
+
+  const handleShare = async () => {
+    const text = buildShareText();
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'KROMI Ride', text });
+      } catch { /* user cancelled */ }
+    } else {
+      await navigator.clipboard.writeText(text);
+    }
+  };
+
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 100,
@@ -100,9 +124,15 @@ export function TripSummaryModal({ onClose }: { onClose: () => void }) {
             {new Date().toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' })} · {snapshots.length} snapshots
           </span>
         </div>
-        <button onClick={onClose} style={{ padding: '8px 20px', backgroundColor: '#262626', color: '#adaaaa', border: 'none', fontWeight: 900, fontSize: '11px', cursor: 'pointer' }}>
-          FECHAR
-        </button>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button onClick={handleShare} style={{ padding: '8px 16px', backgroundColor: '#262626', color: '#e966ff', border: '1px solid rgba(233,102,255,0.3)', fontWeight: 900, fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>share</span>
+            PARTILHAR
+          </button>
+          <button onClick={onClose} style={{ padding: '8px 20px', backgroundColor: '#262626', color: '#adaaaa', border: 'none', fontWeight: 900, fontSize: '11px', cursor: 'pointer' }}>
+            FECHAR
+          </button>
+        </div>
       </div>
 
       {/* Hero stats */}

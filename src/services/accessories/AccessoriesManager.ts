@@ -3,7 +3,7 @@
  *
  * Runs on a 1-second tick loop when accessories are connected.
  * Reads state from bikeStore + settingsStore, sends commands to light/radar.
- * Integrates with KromiEngine via the tick() call.
+ * Multi-light aware: routes brake flash to rear, headlight to front, turn signals to all.
  */
 
 import { useBikeStore } from '../../store/bikeStore';
@@ -66,7 +66,7 @@ class AccessoriesManager {
   /** Trigger turn signal */
   triggerTurnSignal(direction: 'left' | 'right'): void {
     const mode = this.smartLight.triggerTurnSignal(direction);
-    this.sendLightMode(mode);
+    this.sendLightMode(mode, 'all'); // Turn signals go to ALL lights
   }
 
   /** Cancel turn signal */
@@ -103,23 +103,37 @@ class AccessoriesManager {
 
       // Send mode change to light if needed
       if (output.targetMode !== null && output.targetMode !== store.light_mode) {
-        this.sendLightMode(output.targetMode);
+        // Route by reason: brake/radar → rear, headlight → front, else → all
+        const target = this.routeTarget(output.reason);
+        this.sendLightMode(output.targetMode, target);
         store.setLightMode(output.targetMode);
       }
     }
   }
 
-  /** Send light mode command via BLE bridge or direct */
-  private sendLightMode(mode: LightMode): void {
-    // Dynamic import to avoid circular dependency
+  /** Determine which light(s) should receive the command based on reason */
+  private routeTarget(reason: string): 'front' | 'rear' | 'all' {
+    if (reason === 'braking' || reason === 'brake_end') return 'rear';
+    if (reason.startsWith('radar_')) return 'rear';
+    if (reason.startsWith('turn_')) return 'all';
+    if (reason === 'speed_adaptive' || reason === 'auto_on_dark' || reason === 'auto_off_bright') return 'all';
+    return 'all';
+  }
+
+  /** Send light mode command via BLE bridge or direct — multi-light aware */
+  private sendLightMode(mode: LightMode, target: 'front' | 'rear' | 'all'): void {
     import('../bluetooth/BLEBridge').then(({ bleMode }) => {
       if (bleMode === 'websocket') {
         import('../bluetooth/WebSocketBLEClient').then(({ wsClient }) => {
-          wsClient.send({ type: 'lightSetMode', mode });
+          wsClient.send({ type: 'lightSetMode', mode, target });
         });
       } else {
-        import('../bluetooth/iGPSportLightService').then(({ iGPSportLightService }) => {
-          iGPSportLightService.setMode(mode);
+        import('../bluetooth/LightRegistry').then(({ lightRegistry }) => {
+          if (target === 'all') {
+            lightRegistry.setModeAll(mode);
+          } else {
+            lightRegistry.setMode(target, mode);
+          }
         });
       }
     });

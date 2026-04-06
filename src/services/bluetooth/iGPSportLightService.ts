@@ -586,6 +586,11 @@ export class IGPSportLightService {
 
   private async sendCommand(cmd: Uint8Array): Promise<void> {
     if (!this.txChar) return;
+    const hex = Array.from(cmd).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    const svc = PeripheralServiceType[cmd[1]!] ?? `0x${(cmd[1] ?? 0).toString(16)}`;
+    const sub = LightSubService[cmd[2]!] ?? `0x${(cmd[2] ?? 0).toString(16)}`;
+    const op = PeripheralOperateType[cmd[4]!] ?? `0x${(cmd[4] ?? 0).toString(16)}`;
+    console.log(`[Light:TX] ${svc}.${sub} op=${op} ${cmd.length}B: ${hex}`);
     try {
       // BLE has 20-byte MTU typically, but NUS can handle larger packets
       // Send in chunks of 20 bytes if needed
@@ -595,11 +600,14 @@ export class IGPSportLightService {
         await this.txChar.writeValueWithoutResponse(chunk);
       }
     } catch (err) {
-      console.warn('[Light] Send failed:', err);
+      console.warn('[Light:TX] Send failed:', err);
     }
   }
 
   private handleNotification(data: Uint8Array): void {
+    const hex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    console.log(`[Light:RX] ${data.length}B: ${hex}`);
+
     // Accumulate data (responses may span multiple notifications)
     const merged = new Uint8Array(this.responseBuffer.length + data.length);
     merged.set(this.responseBuffer);
@@ -607,15 +615,21 @@ export class IGPSportLightService {
     this.responseBuffer = merged;
 
     // Need at least 20-byte header to parse
-    if (this.responseBuffer.length < 20) return;
+    if (this.responseBuffer.length < 20) {
+      console.log(`[Light:RX] Buffered ${this.responseBuffer.length}/20 header bytes`);
+      return;
+    }
 
     const header = parseResponseHeader(this.responseBuffer);
     if (!header) {
+      console.warn('[Light:RX] Header parse failed — flushing buffer');
       this.responseBuffer = new Uint8Array(0);
       return;
     }
 
     const totalExpected = 20 + header.dataSize;
+    console.log(`[Light:RX] Header: svc=${header.serviceType} sub=${header.subService} op=${header.operateType} dataSize=${header.dataSize} valid=${header.valid} | have=${this.responseBuffer.length}/${totalExpected}`);
+
     if (this.responseBuffer.length < totalExpected) return; // Wait for more data
 
     // Extract protobuf payload
@@ -624,7 +638,8 @@ export class IGPSportLightService {
     this.responseBuffer = this.responseBuffer.slice(totalExpected);
 
     if (!header.valid) {
-      console.warn('[Light] Invalid CRC in response');
+      const headerHex = Array.from(this.responseBuffer.subarray(0, 20)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+      console.warn(`[Light:RX] CRC mismatch — header: ${headerHex}`);
       return;
     }
 
@@ -634,19 +649,28 @@ export class IGPSportLightService {
   private handleResponse(
     serviceType: number,
     subService: number,
-    _operateType: number,
+    operateType: number,
     protoData: Uint8Array,
   ): void {
-    if (serviceType !== PeripheralServiceType.BLE_LIGHT) return;
+    const hex = Array.from(protoData).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    const svcName = PeripheralServiceType[serviceType] ?? `0x${serviceType.toString(16)}`;
+    const subName = LightSubService[subService] ?? `0x${subService.toString(16)}`;
+    const opName = PeripheralOperateType[operateType] ?? `0x${operateType.toString(16)}`;
+
+    if (serviceType !== PeripheralServiceType.BLE_LIGHT) {
+      console.log(`[Light:RESP] Non-light service: ${svcName} sub=${subName} op=${opName} | ${hex}`);
+      return;
+    }
 
     const fields = parseProtoFields(protoData);
-    const hex = Array.from(protoData).map(b => b.toString(16).padStart(2, '0')).join(' ');
-    console.log(`[Light] Response sub=${subService} fields:`, Object.fromEntries(fields), `raw: ${hex}`);
+    console.log(`[Light:RESP] ${subName} op=${opName} fields:`, Object.fromEntries(fields), `| ${hex}`);
 
     switch (subService) {
       case LightSubService.MODE_CUR: {
         const mode = fields.get(PROTO_FIELDS.CUR_MODE) ?? fields.get(10);
         if (mode !== undefined) {
+          const modeName = LightMode[mode] ?? `unknown(${mode})`;
+          console.log(`[Light:RESP] Current mode: ${modeName} (${mode})`);
           this.state.currentMode = mode as LightMode;
           this.notifyStateChange();
         }
@@ -656,6 +680,7 @@ export class IGPSportLightService {
       case LightSubService.BAT_PCT: {
         const pct = fields.get(PROTO_FIELDS.BAT_PCT) ?? fields.get(5);
         if (pct !== undefined) {
+          console.log(`[Light:RESP] Battery: ${pct}%`);
           this.state.batteryPct = pct;
           this.notifyStateChange();
         }
@@ -665,6 +690,7 @@ export class IGPSportLightService {
       case LightSubService.LEFT_TIME: {
         const time = fields.get(PROTO_FIELDS.LEFT_TIME) ?? fields.get(6);
         if (time !== undefined) {
+          console.log(`[Light:RESP] Remaining time: ${time}ms (${Math.round(time / 60000)}min)`);
           this.state.remainingTimeMs = time;
           this.notifyStateChange();
         }
@@ -672,15 +698,37 @@ export class IGPSportLightService {
       }
 
       case LightSubService.MODE_SUP: {
-        // Supported modes come as repeated fields — collect all unique mode values
-        // In simple protobuf, repeated varints may be packed or individual
-        // For now, store any mode values we find
-        console.log('[Light] Supported modes response — raw fields:', Object.fromEntries(fields));
+        // Supported modes: try all field numbers as potential mode values
+        const modes: LightMode[] = [];
+        for (const [fieldNum, value] of fields) {
+          if (fieldNum >= 5 && value >= 0 && value <= 20) {
+            modes.push(value as LightMode);
+          }
+        }
+        // Also scan raw bytes for mode values (packed repeated varint)
+        if (modes.length === 0 && protoData.length > 0) {
+          console.log(`[Light:RESP] MODE_SUP: no modes in fields, scanning raw bytes...`);
+          for (let i = 0; i < protoData.length; i++) {
+            const b = protoData[i]!;
+            if (b <= 20) console.log(`  byte[${i}]=${b} → ${LightMode[b] ?? '?'}`);
+          }
+        }
+        if (modes.length > 0) {
+          this.state.supportedModes = modes;
+          this.notifyStateChange();
+          console.log(`[Light:RESP] Supported modes: [${modes.map(m => LightMode[m] ?? m).join(', ')}]`);
+        } else {
+          console.log(`[Light:RESP] MODE_SUP: raw fields:`, Object.fromEntries(fields));
+        }
         break;
       }
 
+      case LightSubService.SMT_CONFIG:
+        console.log(`[Light:RESP] Smart config fields:`, Object.fromEntries(fields));
+        break;
+
       default:
-        console.log(`[Light] Unhandled sub-service: ${subService}`);
+        console.log(`[Light:RESP] Unhandled sub=${subName} op=${opName} fields:`, Object.fromEntries(fields));
     }
   }
 

@@ -17,6 +17,7 @@ import { WPrimeWidget } from './WPrimeWidget';
 import { LightRadarWidget } from './LightRadarWidget';
 import { DeviceBatteryPanel } from './DeviceBatteryPanel';
 import { RadarPanel } from './RadarPanel';
+import { LightsPanel } from './LightsPanel';
 import { useNutritionStore } from '../../store/nutritionStore';
 import { kromiEngine } from '../../services/intelligence/KromiEngine';
 
@@ -61,14 +62,14 @@ export function Dashboard() {
 
 /** Expanded view with tabbed panels */
 function ExpandedView({ onCollapse, autoAssistEnabled }: { onCollapse: () => void; autoAssistEnabled: boolean }) {
-  const [activeTab, setActiveTab] = useState<'ride' | 'radar' | 'battery'>('ride');
+  const [activeTab, setActiveTab] = useState<'ride' | 'lights' | 'radar' | 'battery'>('ride');
   const radarConnected = useBikeStore((s) => s.ble_services.radar);
   const lightConnected = useBikeStore((s) => s.ble_services.light);
-  const hasAccessories = radarConnected || lightConnected;
 
   const tabs = [
     { id: 'ride' as const, label: 'Ride', icon: 'pedal_bike' },
-    ...(hasAccessories ? [{ id: 'radar' as const, label: 'Radar', icon: 'radar' }] : []),
+    ...(lightConnected ? [{ id: 'lights' as const, label: 'Luzes', icon: 'flashlight_on' }] : []),
+    ...(radarConnected ? [{ id: 'radar' as const, label: 'Radar', icon: 'radar' }] : []),
     { id: 'battery' as const, label: 'Baterias', icon: 'battery_full' },
   ];
 
@@ -125,6 +126,13 @@ function ExpandedView({ onCollapse, autoAssistEnabled }: { onCollapse: () => voi
               <ElevationProfile />
               {autoAssistEnabled && <AutoAssistWidget />}
               <RideSessionWidget />
+            </>
+          )}
+
+          {activeTab === 'lights' && (
+            <>
+              <CompactHeader />
+              <LightsPanel />
             </>
           )}
 

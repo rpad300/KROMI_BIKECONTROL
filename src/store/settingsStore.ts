@@ -404,6 +404,13 @@ export const useSettingsStore = create<SettingsState>()(
       updateBikeConfig: (partial) =>
         set((state) => {
           const updated = safeBikeConfig({ ...state.bikeConfig, ...partial });
+          // Sync motor_brand to bikeStore when changed
+          if (partial.motor_brand && partial.motor_brand !== state.bikeConfig.motor_brand) {
+            import('./bikeStore').then(({ useBikeStore }) => {
+              const brand = partial.motor_brand === 'other' ? 'unknown' : partial.motor_brand;
+              useBikeStore.getState().setBikeBrand(brand as 'giant' | 'bosch' | 'shimano' | 'specialized' | 'unknown');
+            });
+          }
           return {
             bikeConfig: updated,
             bikes: state.bikes.map((b) => b.id === state.activeBikeId ? updated : b),

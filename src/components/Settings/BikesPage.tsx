@@ -27,6 +27,7 @@ export function BikesPage() {
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<'ebike' | 'mechanical'>('ebike');
   const [newCategory, setNewCategory] = useState<BikeCategory>('mtb');
+  const [newMotorBrand, setNewMotorBrand] = useState<BikeConfig['motor_brand']>('giant');
 
   // Edit a specific bike — select it first so store is in sync
   if (editingId) {
@@ -199,11 +200,34 @@ export function BikesPage() {
             </div>
           </div>
 
+          {/* Motor Brand (only for e-bikes) */}
+          {newType === 'ebike' && (
+            <div style={{ marginTop: '8px' }}>
+              <div style={{ fontSize: '10px', color: '#777575', marginBottom: '4px' }}>Motor</div>
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                {([
+                  ['giant', 'Giant'],
+                  ['bosch', 'Bosch'],
+                  ['shimano', 'Shimano'],
+                  ['specialized', 'Specialized'],
+                  ['fazua', 'Fazua'],
+                  ['brose', 'Brose'],
+                  ['yamaha', 'Yamaha'],
+                  ['other', 'Outro'],
+                ] as [BikeConfig['motor_brand'], string][]).map(([brand, label]) => (
+                  <ChipButton key={brand} active={newMotorBrand === brand} color="#fbbf24" onClick={() => setNewMotorBrand(brand)}>
+                    {label}
+                  </ChipButton>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
             <button
               onClick={() => {
                 if (!newName.trim()) return;
-                addBike({ name: newName.trim(), bike_type: newType, category: newCategory });
+                addBike({ name: newName.trim(), bike_type: newType, category: newCategory, ...(newType === 'ebike' ? { motor_brand: newMotorBrand } : {}) });
                 setShowAdd(false);
                 setNewName('');
                 // Open the detail page for the newly added bike
@@ -674,6 +698,27 @@ function EBikeSection({ bike, update }: { bike: BikeConfig; update: (p: Partial<
       {/* Motor config */}
       <Card>
         <SubLabel>Motor</SubLabel>
+        {/* Motor brand selector */}
+        <div style={{ marginBottom: '8px' }}>
+          <div style={{ fontSize: '10px', color: '#777575', marginBottom: '4px' }}>Marca do motor</div>
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            {([
+              ['giant', 'Giant'],
+              ['bosch', 'Bosch'],
+              ['shimano', 'Shimano'],
+              ['specialized', 'Specialized'],
+              ['fazua', 'Fazua'],
+              ['brose', 'Brose'],
+              ['yamaha', 'Yamaha'],
+              ['other', 'Outro'],
+            ] as [BikeConfig['motor_brand'], string][]).map(([brand, label]) => (
+              <ChipButton key={brand} active={bike.motor_brand === brand} color="#fbbf24" onClick={() => update({ motor_brand: brand })}>
+                {label}
+              </ChipButton>
+            ))}
+          </div>
+          <div style={{ fontSize: '8px', color: '#494847', marginTop: '2px' }}>Auto-detectado ao ligar. Altera se necessario.</div>
+        </div>
         <AutocompleteField
           category="motor" label="Modelo do motor" value={bike.motor_name}
           onChange={(v) => update({ motor_name: v })} placeholder="SyncDrive Pro, Bosch CX..."

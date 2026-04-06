@@ -1,6 +1,17 @@
 import { create } from 'zustand';
 import { AssistMode, type BLEConnectionStatus, type BLEServiceStatus, type BikeBrand } from '../types/bike.types';
 
+/** Individual light state (front or rear) */
+export interface LightInfo {
+  id: string;                 // Unique ID (device address or generated)
+  name: string;               // Device name (e.g. "VS1800S", "LR60")
+  position: 'front' | 'rear'; // Light position
+  brand: 'igpsport' | 'garmin' | 'unknown';
+  battery_pct: number;        // 0-100
+  mode: number;               // LightMode enum value
+  connected: boolean;
+}
+
 interface BikeState {
   // Real-time data
   battery_percent: number;
@@ -73,10 +84,11 @@ interface BikeState {
   tpms_front_psi: number;
   tpms_rear_psi: number;
 
-  // Accessories (light + radar)
-  light_battery_pct: number;
-  light_mode: number;         // LightMode enum value
-  light_device_name: string;
+  // Accessories (lights + radar)
+  lights: LightInfo[];                 // Multi-light: front + rear
+  light_battery_pct: number;           // Legacy: first light battery (compat)
+  light_mode: number;                  // Legacy: first light mode (compat)
+  light_device_name: string;           // Legacy: first light name (compat)
   radar_threat_level: number; // 0=none, 1=low, 2=mid, 3=high
   radar_distance_m: number;
   radar_speed_kmh: number;
@@ -142,6 +154,10 @@ interface BikeState {
   setLightBattery: (pct: number) => void;
   setLightMode: (mode: number) => void;
   setLightDeviceName: (name: string) => void;
+  // Multi-light actions
+  addLight: (light: LightInfo) => void;
+  removeLight: (id: string) => void;
+  updateLight: (id: string, partial: Partial<LightInfo>) => void;
   setRadarTarget: (level: number, distanceM: number, speedKmh: number) => void;
   setShifting: (v: boolean) => void;
   setDi2Battery: (pct: number) => void;
@@ -214,6 +230,7 @@ export const useBikeStore = create<BikeState>((set) => ({
   software_version: '',
   tpms_front_psi: 0,
   tpms_rear_psi: 0,
+  lights: [],
   light_battery_pct: 0,
   light_mode: 0,
   light_device_name: '',
@@ -315,6 +332,41 @@ export const useBikeStore = create<BikeState>((set) => ({
   setLightBattery: (pct) => set({ light_battery_pct: pct }),
   setLightMode: (mode) => set({ light_mode: mode }),
   setLightDeviceName: (name) => set({ light_device_name: name }),
+
+  // Multi-light actions
+  addLight: (light) => set((s) => {
+    // Replace if same position already exists
+    const filtered = s.lights.filter((l) => l.position !== light.position);
+    const lights = [...filtered, light];
+    // Sync legacy fields from first connected light
+    const first = lights.find((l) => l.connected) ?? lights[0];
+    return {
+      lights,
+      ...(first ? { light_battery_pct: first.battery_pct, light_mode: first.mode, light_device_name: first.name } : {}),
+    };
+  }),
+
+  removeLight: (id) => set((s) => {
+    const lights = s.lights.filter((l) => l.id !== id);
+    const first = lights.find((l) => l.connected) ?? lights[0];
+    return {
+      lights,
+      light_battery_pct: first?.battery_pct ?? 0,
+      light_mode: first?.mode ?? 0,
+      light_device_name: first?.name ?? '',
+    };
+  }),
+
+  updateLight: (id, partial) => set((s) => {
+    const lights = s.lights.map((l) => l.id === id ? { ...l, ...partial } : l);
+    // Sync legacy fields
+    const first = lights.find((l) => l.connected) ?? lights[0];
+    return {
+      lights,
+      ...(first ? { light_battery_pct: first.battery_pct, light_mode: first.mode, light_device_name: first.name } : {}),
+    };
+  }),
+
   setRadarTarget: (level, distanceM, speedKmh) => set({
     radar_threat_level: level,
     radar_distance_m: Math.round(distanceM * 10) / 10,

@@ -26,7 +26,7 @@ export interface PhysiologyInput {
   target_zone: number;        // 1-5
   cp_watts: number;           // Critical Power (≈FTP), from profile or calibrated
   w_prime_joules: number;     // W' total capacity (default 15000 J for recreational)
-  tau_seconds: number;        // W' recovery time constant (default 300s)
+  tau_seconds: number;        // W' recovery time constant (default 400s recreational)
 }
 
 export interface PhysiologyOutput {
@@ -271,21 +271,24 @@ export class PhysiologyEngine {
   }
 
   /**
-   * W' Balance — Skiba differential model.
-   * Above CP: deplete. Below CP: recover exponentially.
+   * W' Balance — Skiba differential model with dead zone.
+   * Above CP+margin: deplete. Below CP: recover exponentially.
+   * Dead zone (CP to CP+5%) prevents false drain from noise around CP boundary.
    */
   private updateWPrime(P_human: number, cp: number, tau: number, dt: number): void {
-    if (P_human > cp) {
-      // Depletion
-      const drain = (P_human - cp) * dt;
+    const deadZone = cp * 0.05; // 5% of CP — filter noise around threshold
+    if (P_human > cp + deadZone) {
+      // Depletion — only count excess above the dead zone
+      const drain = (P_human - cp - deadZone) * dt;
       this.wPrimeBalance = Math.max(0, this.wPrimeBalance - drain);
       this.timeBelowCpMs = 0;
-    } else {
+    } else if (P_human <= cp) {
       // Recovery: W'_recovered = (W'_total - W'_bal) × (1 - e^(-dt/τ))
       this.timeBelowCpMs += dt * 1000;
       const recovery = (this.wPrimeTotal - this.wPrimeBalance) * (1 - Math.exp(-dt / tau));
       this.wPrimeBalance = Math.min(this.wPrimeTotal, this.wPrimeBalance + recovery);
     }
+    // In dead zone (CP < P_human <= CP+5%): neither drain nor recover
   }
 
   /**

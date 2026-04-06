@@ -19,7 +19,8 @@ import { wsClient } from './WebSocketBLEClient';
 import { isCapacitorNative, capacitorBLEService } from './CapacitorBLEService';
 import { giantBLEService } from './GiantBLEService';
 import { tpmsService } from './TPMSService';
-import { iGPSportLightService, NUS_SERVICE_UUID } from './iGPSportLightService';
+import { IGPSportLightService, NUS_SERVICE_UUID } from './iGPSportLightService';
+import { lightRegistry, LightRegistry } from './LightRegistry';
 import { VARIA_RTL_SERVICE, VARIA_HL_SERVICE } from './GarminVariaService';
 import { BOSCH_MCSP_SERVICE } from './BoschEBikeService';
 import { SPEC_MCSP_SERVICE, BES3_SERVICE } from './SpecializedFlowService';
@@ -274,9 +275,9 @@ export const disconnectSRAM = () => disconnectSensorBridge('sram', () => giantBL
 export const disconnectExtPower = () => disconnectSensorBridge('power', () => giantBLEService.disconnectExtPower());
 export const disconnectExtCadence = () => disconnectSensorBridge('cadence', () => {});
 
-// === Light Accessory (iGPSPORT NUS + Garmin Varia) ===
+// === Light Accessory (iGPSPORT NUS + Garmin Varia) — multi-light ===
 export const connectLight = () => connectSensor('light', async () => {
-  // Web BLE: try to show picker with both iGPSPORT and Garmin filters
+  // Web BLE: show picker with both iGPSPORT and Garmin filters
   try {
     const device = await navigator.bluetooth.requestDevice({
       filters: [
@@ -286,26 +287,37 @@ export const connectLight = () => connectSensor('light', async () => {
       ],
       optionalServices: [0x180f, 0x180a], // Battery + Device Info
     });
-    // Detect which protocol to use based on device name/services
+    const name = device.name ?? 'Light';
+    const id = device.id ?? crypto.randomUUID();
+    const position = LightRegistry.detectPosition(name);
+
+    // Detect which protocol to use
     const { isGarminVaria } = await import('./GarminVariaService');
-    if (isGarminVaria(device.name ?? '', '')) {
+    if (isGarminVaria(name, '')) {
+      // Garmin lights use their own service but we wrap in a compatible instance
       const { garminVariaService } = await import('./GarminVariaService');
       await garminVariaService.connectToDevice(device);
+      // Garmin updates bikeStore directly via its own callbacks
     } else {
-      await iGPSportLightService.connectToDevice(device);
+      // iGPSPORT — create NEW instance for each light (not singleton)
+      const service = new IGPSportLightService();
+      await service.connectToDevice(device);
+      lightRegistry.register(id, position, 'igpsport', service);
     }
   } catch { /* user cancelled */ }
 });
-export const disconnectLight = () => {
+export const disconnectLight = (lightId?: string) => {
   if (bleMode === 'websocket') {
     wsClient.send({ type: 'disconnectSensor', sensor: 'light' });
+  } else if (lightId) {
+    lightRegistry.unregister(lightId);
   } else {
-    iGPSportLightService.disconnect();
+    lightRegistry.disconnectAll();
     import('./GarminVariaService').then(({ garminVariaService }) => garminVariaService.disconnect());
   }
 };
 export function getLightDeviceName(): string | null {
-  return iGPSportLightService.getDeviceName(); // Garmin name comes via bikeStore.light_device_name
+  return lightRegistry.getAnyDeviceName();
 }
 
 // === Radar Accessory (Garmin Varia RTL via Web BLE or bridge) ===
