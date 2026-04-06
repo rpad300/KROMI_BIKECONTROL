@@ -415,6 +415,8 @@ export class WebSocketBLEClient {
         }
 
         case 'sensorConnected': {
+          // Remote diag log for debugging
+          ((window as Record<string, unknown>).__dlog as ((msg: string) => void) | undefined)?.(`sensorConnected: ${msg.sensor} name=${msg.name} addr=${msg.address}`);
           const sensorServiceMap: Record<string, string> = {
             hr: 'heartRate', di2: 'di2', sram: 'sram', power: 'power', cadence: 'cadence',
             light: 'light', radar: 'radar',
@@ -615,6 +617,7 @@ export class WebSocketBLEClient {
 
         // === Accessories: Light ===
         case 'lightMode':
+          ((window as Record<string, unknown>).__dlog as ((msg: string) => void) | undefined)?.(`lightMode: ${msg.mode}`);
           store.setLightMode(msg.mode as number);
           // Update multi-light array too
           { const l = store.lights.find((x) => x.connected); if (l) store.updateLight(l.id, { mode: msg.mode as number }); }
