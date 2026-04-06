@@ -226,9 +226,9 @@ class SensorManager(private val context: Context) {
 
             Log.i(TAG, "$sensorKey notifications enabled")
 
-            // Read extra info for cadence sensors (battery, location, firmware)
-            if (sensorKey == "cadence") {
-                readSensorExtras(gatt)
+            // Read extra info (battery, location, firmware) for sensors that support it
+            if (sensorKey == "cadence" || sensorKey == "hr") {
+                readSensorExtras(gatt, sensorKey)
             }
 
             onData?.invoke(JSONObject().apply {
@@ -260,6 +260,17 @@ class SensorManager(private val context: Context) {
                     val loc = data[0].toInt() and 0xFF
                     val name = locations.getOrElse(loc) { "Unknown ($loc)" }
                     Log.i(TAG, "$sensorKey location: $name")
+                    onData?.invoke(JSONObject().apply {
+                        put("type", "sensorInfo")
+                        put("sensor", sensorKey)
+                        put("location", name)
+                    })
+                }
+                "2A38" -> { // Body Sensor Location (HR)
+                    val locations = arrayOf("Other","Chest","Wrist","Finger","Hand","Ear Lobe","Foot")
+                    val loc = data[0].toInt() and 0xFF
+                    val name = locations.getOrElse(loc) { "Unknown ($loc)" }
+                    Log.i(TAG, "$sensorKey body location: $name")
                     onData?.invoke(JSONObject().apply {
                         put("type", "sensorInfo")
                         put("sensor", sensorKey)
@@ -299,22 +310,34 @@ class SensorManager(private val context: Context) {
     // ═══════════════════════════════════════
 
     @SuppressLint("MissingPermission")
-    private fun readSensorExtras(gatt: BluetoothGatt) {
+    private fun readSensorExtras(gatt: BluetoothGatt, sensorKey: String) {
         val reads = mutableListOf<BluetoothGattCharacteristic>()
 
-        // Battery Level (0x180F → 0x2A19)
-        val batService = gatt.getService(UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb"))
-        batService?.getCharacteristic(UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb"))?.let { reads.add(it) }
+        // Battery Level (0x180F → 0x2A19) — most sensors have this
+        gatt.getService(UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb"))
+            ?.getCharacteristic(UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb"))
+            ?.let { reads.add(it) }
 
-        // Sensor Location (0x1816 → 0x2A5D)
-        val cscService = gatt.getService(CSC_SERVICE)
-        cscService?.getCharacteristic(UUID.fromString("00002a5d-0000-1000-8000-00805f9b34fb"))?.let { reads.add(it) }
+        // Sensor-specific reads
+        if (sensorKey == "cadence") {
+            // CSC Sensor Location (0x2A5D) — "Left Crank", "Right Pedal", etc.
+            gatt.getService(CSC_SERVICE)
+                ?.getCharacteristic(UUID.fromString("00002a5d-0000-1000-8000-00805f9b34fb"))
+                ?.let { reads.add(it) }
+        }
+        if (sensorKey == "hr") {
+            // HR Body Sensor Location (0x2A38) — "Chest", "Wrist", etc.
+            gatt.getService(HR_SERVICE)
+                ?.getCharacteristic(UUID.fromString("00002a38-0000-1000-8000-00805f9b34fb"))
+                ?.let { reads.add(it) }
+        }
 
-        // Firmware Revision (0x180A → 0x2A26)
-        val diService = gatt.getService(UUID.fromString("0000180a-0000-1000-8000-00805f9b34fb"))
-        diService?.getCharacteristic(UUID.fromString("00002a26-0000-1000-8000-00805f9b34fb"))?.let { reads.add(it) }
+        // Firmware Revision (0x180A → 0x2A26) — if available
+        gatt.getService(UUID.fromString("0000180a-0000-1000-8000-00805f9b34fb"))
+            ?.getCharacteristic(UUID.fromString("00002a26-0000-1000-8000-00805f9b34fb"))
+            ?.let { reads.add(it) }
 
-        // Queue reads with delay (BLE can only handle one at a time)
+        // Queue reads with delay (BLE serial GATT)
         reads.forEachIndexed { i, char ->
             handler.postDelayed({ gatt.readCharacteristic(char) }, (i + 1) * 500L)
         }
