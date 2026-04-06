@@ -25,6 +25,7 @@ class BLEBridgeService : Service() {
     lateinit var accessoryService: AccessoryService
     lateinit var boschManager: BoschBikeManager
     lateinit var specializedManager: SpecializedBikeManager
+    lateinit var shimanoMotorManager: ShimanoMotorManager
     var wsServer: BridgeWebSocketServer? = null
     var phoneSensorService: PhoneSensorService? = null
     lateinit var kromiCore: KromiCore
@@ -75,6 +76,12 @@ class BLEBridgeService : Service() {
             feedKromiCore(json)
         }
 
+        shimanoMotorManager = ShimanoMotorManager(this)
+        shimanoMotorManager.onData = { json ->
+            wsServer?.broadcastData(json)
+            feedKromiCore(json)
+        }
+
         // Start phone sensors and forward data to WebSocket
         phoneSensorService = PhoneSensorService(this) { sensorJson ->
             wsServer?.broadcastData(sensorJson)
@@ -112,6 +119,7 @@ class BLEBridgeService : Service() {
         accessoryService.destroy()
         boschManager.destroy()
         specializedManager.destroy()
+        shimanoMotorManager.destroy()
         sensorManager.destroy()
         wsServer?.stop()
         bleManager.disconnect()
@@ -178,6 +186,13 @@ class BLEBridgeService : Service() {
                             uuids.contains("C0B1", true) || name.contains("Turbo", true) || name.contains("Levo", true) ||
                             name.contains("Creo", true) || name.contains("Vado", true) || name.contains("Como", true)
                         if (isSpecialized) { tags.add("SPECIALIZED"); tags.add("BIKE") }
+
+                        // Shimano STEPS motor (0x18EF service — NOT the Di2 0x18FF gear service)
+                        val isShimanoMotor = uuids.contains("18EF", true) ||
+                            name.startsWith("EP", true) || name.startsWith("E8", true) ||
+                            name.startsWith("E7", true) || name.startsWith("E6", true) ||
+                            name.startsWith("E5", true) || name.contains("STEPS", true)
+                        if (isShimanoMotor && !tags.contains("DI2")) { tags.add("SHIMANO_STEPS"); tags.add("BIKE") }
                         if (!isGiantDevice && uuids.contains("1816")) tags.add("CAD") // standalone cadence sensor
                         if (uuids.contains("180D", true)) tags.add("HR")
                         if (uuids.contains("1818", true) && !tags.contains("GIANT")) tags.add("POWER")
@@ -346,6 +361,17 @@ class BLEBridgeService : Service() {
             "boschAssist" -> boschManager.setAssistMode(json.optInt("mode", 1))
             "specializedAssist" -> specializedManager.setAssistMode(json.optInt("mode", 0))
             "specializedLight" -> specializedManager.toggleLight(json.optBoolean("on", true))
+
+            // === Shimano STEPS motor (EP800/EP600/E8000) ===
+            "connectShimanoMotor" -> {
+                val address = json.optString("address", "")
+                if (address.isNotEmpty()) shimanoMotorManager.connect(address)
+                else shimanoMotorManager.scan { device -> shimanoMotorManager.connect(device.address) }
+            }
+            "disconnectShimanoMotor" -> shimanoMotorManager.disconnect()
+            "shimanoMotorAssist" -> shimanoMotorManager.setAssistMode(json.optInt("mode", 1))
+            "shimanoMotorLight" -> shimanoMotorManager.setLight(json.optBoolean("on", true))
+            "shimanoMotorStatus" -> shimanoMotorManager.requestStatus()
 
             "readBattery" -> bleManager.readBatteryDetails()
             "disconnect" -> bleManager.disconnect()

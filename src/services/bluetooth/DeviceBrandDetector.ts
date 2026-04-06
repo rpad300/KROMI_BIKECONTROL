@@ -71,8 +71,8 @@ const BRAND_RULES: BrandRule[] = [
     brand: 'shimano',
     label: 'Shimano',
     color: '#6e9bff',
-    namePatterns: [/^shimano/i, /^di2/i, /^ep[0-9]/i, /^ew-/i, /^sc-/i, /^steps/i, /^sm-/i],
-    uuidPatterns: ['6e40fec1'],
+    namePatterns: [/^shimano/i, /^di2/i, /^ep[0-9]/i, /^ew-/i, /^sc-/i, /^steps/i, /^sm-/i, /^e[5-8]\d{3}/i],
+    uuidPatterns: ['6e40fec1', '18ef', '5348-494d-414e'],
   },
   {
     brand: 'sram',
