@@ -23,6 +23,9 @@
 //   delete            → trash a file by Drive ID
 //   list              → list files in a folder
 //   getFile           → metadata for a single file
+//   checkUserFolders  → batch: for each user slug, check which top-level
+//                       sub-folders exist under users/{slug}/
+//   bootstrapUser     → create the 6 sub-folders for users/{slug}/
 //
 // Required env (Edge Function secrets):
 //   GOOGLE_OAUTH_CLIENT_ID     — OAuth 2.0 client id
@@ -332,6 +335,53 @@ Deno.serve(async (req) => {
         const { file_id } = await req.json() as { file_id: string };
         const file = await getFile(token, file_id);
         return json({ file });
+      }
+
+      case 'checkUserFolders': {
+        // Batch: returns { [slug]: { exists: bool, missing: string[] } }.
+        // Used by admin UI to show Drive status per user.
+        const { slugs } = await req.json() as { slugs: string[] };
+        if (!Array.isArray(slugs)) return json({ error: 'slugs must be string[]' }, 400);
+        const expected = ['bikes', 'bikefits', 'activities', 'routes', 'profile', 'other'];
+        const result: Record<string, { exists: boolean; missing: string[] }> = {};
+        // First find/create the 'users' parent folder ID once (cached implicitly via Drive)
+        let usersParent: string | null = null;
+        try {
+          usersParent = await findFolderByName(token, 'users', ROOT_FOLDER_ID);
+        } catch {
+          usersParent = null;
+        }
+        if (!usersParent) {
+          // 'users' top-level doesn't exist → all user folders are missing
+          for (const slug of slugs) result[slug] = { exists: false, missing: expected };
+          return json({ result });
+        }
+        for (const slug of slugs) {
+          const userFolder = await findFolderByName(token, slug, usersParent);
+          if (!userFolder) {
+            result[slug] = { exists: false, missing: expected };
+            continue;
+          }
+          const missing: string[] = [];
+          for (const sub of expected) {
+            const f = await findFolderByName(token, sub, userFolder);
+            if (!f) missing.push(sub);
+          }
+          result[slug] = { exists: missing.length === 0, missing };
+        }
+        return json({ result });
+      }
+
+      case 'bootstrapUser': {
+        const { slug } = await req.json() as { slug: string };
+        if (!slug) return json({ error: 'slug required' }, 400);
+        const subs = ['bikes', 'bikefits', 'activities', 'routes', 'profile', 'other'];
+        const created: { folder: string; folder_id: string }[] = [];
+        for (const sub of subs) {
+          const id = await ensureFolderPath(token, ['users', slug, sub]);
+          created.push({ folder: `users/${slug}/${sub}`, folder_id: id });
+        }
+        return json({ created });
       }
 
       default:

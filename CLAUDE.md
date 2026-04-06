@@ -119,6 +119,30 @@ Paths:
 NUNCA implementes um sistema sem primeiro ler o blueprint e skill correspondentes.
 Se nao existe blueprint para o pedido, implementa com base nas convencoes deste CLAUDE.md.
 
+## RBAC + Super Admin
+
+**Schema:** `permissions` (catalog), `roles`, `role_permissions`, `user_roles`, `user_feature_flags` (per-user overrides), `impersonation_log`. View `effective_user_permissions` computes the final set.
+
+**Super admin:** `app_users.is_super_admin = true` bypasses all checks. Currently only `rdias300@gmail.com`.
+
+**Frontend:**
+- `usePermission(key)` — synchronous check, super admins always return true
+- `useIsSuperAdmin()` — direct flag
+- `useAuthStore.user` — the *viewer* (real user normally, impersonated user during admin impersonation)
+- `useAuthStore.realUser` — always the actual logged-in user
+
+**Admin panel:** Settings → Super Admin (visible only if `is_super_admin`). Tabs: Users, Roles, Drive, System.
+
+**Impersonation:** super admin clicks "Entrar como" in user detail → `beginImpersonation(target)`. Banner shows persistent orange bar via `ImpersonationBanner` mounted at App root. Session token stays the admin's. Logged in `impersonation_log`.
+
+**Adding permissions to a feature:**
+```typescript
+const canSeeShop = usePermission('features.shop_management');
+if (!canSeeShop) return null;
+```
+
+To hide menu items by permission, wrap or filter. Core perms (`core.*`) are always granted and cannot be revoked.
+
 ## File Storage (Google Drive)
 
 **Backend:** Google Drive folder `KROMI PLATFORM` (id `1fjb2tKtZ14PaofV573ScoeZDra95ubua`).

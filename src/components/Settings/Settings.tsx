@@ -12,6 +12,8 @@ import { BikesPage } from './BikesPage';
 import { ServiceBookPage } from '../ServiceBook/ServiceBookPage';
 import { ShopManagementPage } from '../Shop/ShopManagementPage';
 import { DriveStoragePage } from './DriveStoragePage';
+import { AdminPanel } from '../Admin/AdminPanel';
+import { useIsSuperAdmin } from '../../hooks/usePermission';
 const AccessoriesSettingsContent = lazy(() => import('./AccessoriesSettings').then(m => ({ default: m.AccessoriesSettingsContent })));
 // TuningPreview removed — config is now read-only from motor telemetry
 
@@ -26,7 +28,7 @@ import { analyzeRoute } from '../../services/routes/PreRideAnalysis';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
 type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'history';
-type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'emergency' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'accessories' | 'routes' | 'account' | 'service-book' | 'shop' | 'drive-storage';
+type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'emergency' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'accessories' | 'routes' | 'account' | 'service-book' | 'shop' | 'drive-storage' | 'super-admin';
 
 // ── Grouped menu matching desktop 9-category sidebar ────────
 interface MenuCategory {
@@ -122,6 +124,7 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
         {activePage === 'accessories' && <Suspense fallback={<div className="text-[#777575] text-center py-8">A carregar...</div>}><AccessoriesSettingsContent /></Suspense>}
         {activePage === 'routes' && <RoutesPage onNavigate={onNavigate} />}
         {activePage === 'drive-storage' && <DriveStoragePage />}
+        {activePage === 'super-admin' && <AdminPanel />}
         {activePage === 'account' && <AccountPage />}
       </div>
     </div>
@@ -130,12 +133,28 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
 
 function SettingsMenu({ onSelect, onNavigate }: { onSelect: (p: SettingsPage) => void; onNavigate?: (s: Screen) => void }) {
   const [expanded, setExpanded] = useState<string | null>(null);
+  const isSuperAdmin = useIsSuperAdmin();
+
+  // Inject Super Admin category dynamically (visible only to super admins)
+  const categories: MenuCategory[] = isSuperAdmin
+    ? [
+        ...MENU_CATEGORIES,
+        {
+          label: 'Super Admin',
+          icon: 'admin_panel_settings',
+          color: '#ff9f43',
+          items: [
+            { id: 'super-admin', icon: 'admin_panel_settings', label: 'Painel Admin', desc: 'Utilizadores, roles, Drive, sistema' },
+          ],
+        },
+      ]
+    : MENU_CATEGORIES;
 
   return (
     <div style={{ padding: '12px', backgroundColor: '#0e0e0e', minHeight: '100%' }}>
       <h1 className="font-headline font-bold" style={{ fontSize: '22px', color: '#3fff8b', marginBottom: '16px', paddingLeft: '4px' }}>Setup</h1>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        {MENU_CATEGORIES.map((cat) => {
+        {categories.map((cat) => {
           // Direct navigation (Atividades, Mapa) — no sub-items
           if (cat.navigateTo && onNavigate) {
             return (

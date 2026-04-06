@@ -15,6 +15,7 @@ import { NavigationBar } from './components/Dashboard/NavigationBar';
 import { useAuthStore } from './store/authStore';
 import { usePlatform } from './hooks/usePlatform';
 import { useDriveBootstrap } from './hooks/useDriveBootstrap';
+import { ImpersonationBanner } from './components/Admin/ImpersonationBanner';
 import { DesktopLiveView } from './components/Desktop/DesktopLiveView';
 import { GlobalMapView } from './components/Map/GlobalMapView';
 import { startSettingsSync } from './services/sync/SettingsSyncService';
@@ -51,7 +52,12 @@ export function App() {
 
   if (!user) return <LoginPage />;
 
-  return <MainApp />;
+  return (
+    <>
+      <ImpersonationBanner />
+      <MainApp />
+    </>
+  );
 }
 
 function MainApp() {

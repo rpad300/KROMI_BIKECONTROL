@@ -115,3 +115,30 @@ export async function getDriveFile(fileId: string): Promise<DriveFile> {
   const r = await callJson<{ file: DriveFile }>('getFile', { file_id: fileId });
   return r.file;
 }
+
+// ─── Admin: per-user folder status ──────────────────────────
+export interface UserFolderStatus {
+  exists: boolean;
+  missing: string[];
+}
+
+/** Batch-check whether the 6 sub-folders exist for each user slug. */
+export async function checkUserFolders(
+  slugs: string[],
+): Promise<Record<string, UserFolderStatus>> {
+  const r = await callJson<{ result: Record<string, UserFolderStatus> }>('checkUserFolders', {
+    slugs,
+  });
+  return r.result;
+}
+
+/** Force-create the 6 sub-folders for users/{slug}/. Idempotent. */
+export async function bootstrapUserOnDrive(
+  slug: string,
+): Promise<{ folder: string; folder_id: string }[]> {
+  const r = await callJson<{ created: { folder: string; folder_id: string }[] }>(
+    'bootstrapUser',
+    { slug },
+  );
+  return r.created;
+}

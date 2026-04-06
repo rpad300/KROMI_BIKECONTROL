@@ -20,6 +20,7 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string | null;
+  is_super_admin?: boolean;
 }
 
 export interface LoginResult {
@@ -89,6 +90,18 @@ export async function loginByDevice(): Promise<LoginResult> {
     if (rows.length === 0) return { success: false, error: 'Device not registered' };
 
     const row = rows[0];
+    // Fetch the latest super admin flag from app_users (device_tokens cache may be stale)
+    let isSuperAdmin = false;
+    try {
+      const adminRes = await fetch(
+        `${getBaseUrl()}/rest/v1/app_users?id=eq.${row.user_id}&select=is_super_admin&limit=1`,
+        { headers: { 'apikey': SUPABASE_KEY ?? '' } },
+      );
+      const adminRows = await adminRes.json();
+      isSuperAdmin = !!adminRows[0]?.is_super_admin;
+    } catch {
+      // ignore — defaults to false
+    }
     // Update last_seen
     fetch(`${getBaseUrl()}/rest/v1/device_tokens?device_id=eq.${deviceId}`, {
       method: 'PATCH',
@@ -98,7 +111,12 @@ export async function loginByDevice(): Promise<LoginResult> {
 
     return {
       success: true,
-      user: { id: row.user_id, email: row.user_email ?? '', name: row.user_name },
+      user: {
+        id: row.user_id,
+        email: row.user_email ?? '',
+        name: row.user_name,
+        is_super_admin: isSuperAdmin,
+      },
       session_token: `device:${deviceId}`,
       expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year
     };
