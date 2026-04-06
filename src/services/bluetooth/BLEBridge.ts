@@ -21,6 +21,10 @@ import { giantBLEService } from './GiantBLEService';
 import { tpmsService } from './TPMSService';
 import { iGPSportLightService, NUS_SERVICE_UUID } from './iGPSportLightService';
 import { VARIA_RTL_SERVICE, VARIA_HL_SERVICE } from './GarminVariaService';
+import { BOSCH_MCSP_SERVICE } from './BoschEBikeService';
+import { SPEC_MCSP_SERVICE, BES3_SERVICE } from './SpecializedFlowService';
+import { TURBO_SERVICE_1 } from './SpecializedTurboService';
+import { SBI_SERVICE } from './ShimanoMotorService';
 import type { TuningLevels, TuningMode } from '../../store/tuningStore';
 
 export type BLEMode = 'websocket' | 'native' | 'web';
@@ -96,7 +100,47 @@ export async function connectBike(): Promise<void> {
         wsClient.connectBike();
         return;
       }
-      await giantBLEService.connect();
+      // Multi-brand: Web BLE picker shows all supported e-bike services
+      try {
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [
+            { services: ['0000fc23-0000-1000-8000-00805f9b34fb'] }, // Giant GEV
+            { services: [BOSCH_MCSP_SERVICE] },                     // Bosch
+            { services: [SPEC_MCSP_SERVICE] },                      // Specialized Flow
+            { services: [BES3_SERVICE] },                            // Specialized BES3
+            { services: [TURBO_SERVICE_1] },                         // Specialized Turbo
+            { services: [SBI_SERVICE] },                              // Shimano STEPS
+          ],
+          optionalServices: [0x180f, 0x180a, 0x1816, 0x1818],
+        });
+        // Route to correct service based on device
+        const { isBoschEBike } = await import('./BoschEBikeService');
+        const { isSpecializedBike } = await import('./SpecializedFlowService');
+        const { isSpecializedTurbo } = await import('./SpecializedTurboService');
+        const { isShimanoMotor } = await import('./ShimanoMotorService');
+        const name = device.name ?? '';
+        const uuids = ''; // Web BLE doesn't expose ad UUIDs pre-connect
+
+        if (isBoschEBike(name, uuids)) {
+          const { boschEBikeService } = await import('./BoschEBikeService');
+          await boschEBikeService.connectToDevice(device);
+        } else if (isSpecializedBike(name, uuids)) {
+          const { specializedFlowService } = await import('./SpecializedFlowService');
+          await specializedFlowService.connectToDevice(device);
+        } else if (isSpecializedTurbo(name, uuids)) {
+          const { specializedTurboService } = await import('./SpecializedTurboService');
+          await specializedTurboService.connectToDevice(device);
+        } else if (isShimanoMotor(name, uuids)) {
+          const { shimanoMotorService } = await import('./ShimanoMotorService');
+          await shimanoMotorService.connectToDevice(device);
+        } else {
+          // Default: Giant (uses its own scanner)
+          await giantBLEService.connect();
+        }
+      } catch {
+        // Fallback: Giant-only picker
+        await giantBLEService.connect();
+      }
       break;
   }
 }

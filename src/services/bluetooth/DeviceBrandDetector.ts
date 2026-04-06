@@ -72,7 +72,7 @@ const BRAND_RULES: BrandRule[] = [
     brand: 'fazua',
     label: 'Fazua',
     color: '#8b5cf6',
-    namePatterns: [/fazua/i, /avinox/i, /^evation/i, /^ride\s?[56]0/i],
+    namePatterns: [/fazua/i, /avinox/i, /^evation/i, /^ride\s?[56]0/i, /porsche.*ebike/i],
   },
   {
     brand: 'brose',
