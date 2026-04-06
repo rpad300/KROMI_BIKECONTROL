@@ -63,8 +63,10 @@ export const useAthleteStore = create<AthleteState>()(
       },
 
       /** Sync physiology from rider profile when user edits settings */
-      syncFromRiderProfile: () => {
-        const settings = (require('./settingsStore') as { useSettingsStore: typeof import('./settingsStore').useSettingsStore }).useSettingsStore.getState();
+      syncFromRiderProfile: async () => {
+        // Dynamic import to avoid circular dependency — useSettingsStore is always loaded by this point
+        const { useSettingsStore } = await import('./settingsStore');
+        const settings = useSettingsStore.getState();
         const rp = settings.riderProfile;
         set((s) => ({
           profile: {

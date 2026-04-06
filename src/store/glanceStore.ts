@@ -1,5 +1,12 @@
 import { create } from 'zustand';
 
+// Lazy import to avoid circular dependency (glanceStore ↔ tripStore)
+let _tripStore: typeof import('./tripStore') | null = null;
+function getTripStore() {
+  if (!_tripStore) { import('./tripStore').then(m => { _tripStore = m; }); }
+  return _tripStore;
+}
+
 interface GlanceState {
   enabled: boolean;
   idleTimeoutS: number;
@@ -22,10 +29,9 @@ export const useGlanceStore = create<GlanceState>()((set, get) => ({
     const s = get();
     if (!s.enabled) return;
 
-    // Only tick during active ride
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { useTripStore } = require('./tripStore') as typeof import('./tripStore');
-    if (useTripStore.getState().state !== 'running') {
+    // Only tick during active ride — lazy import to avoid circular dependency
+    const tripMod = getTripStore();
+    if (!tripMod || tripMod.useTripStore.getState().state !== 'running') {
       if (s.idleCounterS !== 0 || s.isGlanceActive) {
         set({ idleCounterS: 0, isGlanceActive: false });
       }
