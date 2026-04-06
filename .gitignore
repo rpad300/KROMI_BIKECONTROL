@@ -3,6 +3,15 @@
 .env.local
 .env.*.local
 
+# Google credentials (NEVER commit — secrets must live in env/edge function only)
+client_secret_*.json
+*_client_secret.json
+google-credentials*.json
+kromi-drive-sa.json
+*-sa.json
+*-service-account*.json
+service-account*.json
+
 # Node
 node_modules/
 dist/

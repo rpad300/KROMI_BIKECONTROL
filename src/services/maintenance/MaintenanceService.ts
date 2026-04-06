@@ -145,7 +145,11 @@ export async function addComment(comment: Partial<ServiceComment>): Promise<Serv
 // ── Photos ──────────────────────────────────────────────────
 
 export async function getPhotos(serviceId: string): Promise<ServicePhoto[]> {
-  return query(`/service_photos?service_id=eq.${serviceId}&order=created_at.asc`);
+  // Embed the joined kromi_files row so PhotoGrid can render Drive thumbnails
+  // without an extra round-trip. Falls back to storage_path for legacy rows.
+  return query(
+    `/service_photos?service_id=eq.${serviceId}&order=created_at.asc&select=*,kromi_file:kromi_files(drive_view_link,drive_thumbnail_link,drive_download_link)`,
+  );
 }
 
 export async function addPhoto(photo: Partial<ServicePhoto>): Promise<ServicePhoto | null> {

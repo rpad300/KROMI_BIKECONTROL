@@ -1,71 +1,79 @@
 import { useState, useRef } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { addPhoto } from '../../services/maintenance/MaintenanceService';
+import { uploadFile, slugify, userFolderSlug, type KromiFile } from '../../services/storage/KromiFileStore';
 import type { PhotoType } from '../../types/service.types';
-
-const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 interface PhotoUploaderProps {
   serviceId: string;
   itemId?: string;
+  /** Bike slug used to route the upload to KROMI PLATFORM/bikes/{slug}/services/{id}/. */
+  bikeSlug?: string;
+  /** Display name for slug fallback (e.g. "Giant Trance X E+ 2"). */
+  bikeName?: string;
   onUploaded?: () => void;
 }
 
-export function PhotoUploader({ serviceId, itemId, onUploaded }: PhotoUploaderProps) {
-  const userId = useAuthStore((s) => s.user?.id);
+export function PhotoUploader({ serviceId, itemId, bikeSlug, bikeName, onUploaded }: PhotoUploaderProps) {
+  const user = useAuthStore((s) => s.user);
+  const userId = user?.id;
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [photoType, setPhotoType] = useState<PhotoType>('general');
   const [caption, setCaption] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const resolvedBikeSlug = bikeSlug ?? (bikeName ? slugify(bikeName) : 'unknown');
 
   const handleFile = async (file: File) => {
-    if (!userId || !SB_URL || !SB_KEY) return;
+    if (!user || !userId) {
+      setError('Não autenticado');
+      return;
+    }
+    setError(null);
 
-    // Preview
+    // Local preview
     const reader = new FileReader();
     reader.onload = (e) => setPreview(e.target?.result as string);
     reader.readAsDataURL(file);
 
     setUploading(true);
     try {
-      // Upload to Supabase Storage
-      const ext = file.name.split('.').pop() ?? 'jpg';
-      const path = `service-photos/${serviceId}/${crypto.randomUUID()}.${ext}`;
-
-      const uploadRes = await fetch(`${SB_URL}/storage/v1/object/${path}`, {
-        method: 'POST',
-        headers: {
-          apikey: SB_KEY,
-          Authorization: `Bearer ${SB_KEY}`,
-          'Content-Type': file.type,
-          'x-upsert': 'true',
-        },
-        body: file,
+      // 1. Upload via KromiFileStore → goes to Google Drive, registers in kromi_files
+      const kromiFile: KromiFile = await uploadFile(file, {
+        ownerUserId: userId,
+        ownerUserSlug: userFolderSlug(user),
+        category: photoType === 'receipt' ? 'receipt' : 'service_photo',
+        subcategory: photoType,
+        entityType: 'service_request',
+        entityId: serviceId,
+        bikeSlug: resolvedBikeSlug,
+        serviceId,
+        caption: caption || undefined,
       });
 
-      if (uploadRes.ok) {
-        // Save photo record
-        await addPhoto({
-          service_id: serviceId,
-          item_id: itemId ?? null,
-          uploaded_by: userId,
-          storage_path: path,
-          file_name: file.name,
-          file_size_bytes: file.size,
-          mime_type: file.type,
-          caption: caption || null,
-          photo_type: photoType,
-        });
-        setPreview(null);
-        setCaption('');
-        onUploaded?.();
-      }
-    } catch {
-      // Upload failed silently
+      // 2. Also create the service_photos row that links to kromi_files for backwards compat
+      await addPhoto({
+        service_id: serviceId,
+        item_id: itemId ?? null,
+        uploaded_by: userId,
+        file_id: kromiFile.id,
+        file_name: kromiFile.file_name,
+        file_size_bytes: kromiFile.size_bytes,
+        mime_type: kromiFile.mime_type,
+        caption: caption || null,
+        photo_type: photoType,
+      });
+
+      setPreview(null);
+      setCaption('');
+      onUploaded?.();
+    } catch (err) {
+      setError((err as Error).message ?? 'Falha no upload');
+    } finally {
+      setUploading(false);
     }
-    setUploading(false);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,6 +120,16 @@ export function PhotoUploader({ serviceId, itemId, onUploaded }: PhotoUploaderPr
         </div>
       )}
 
+      {/* Error */}
+      {error && (
+        <div style={{
+          padding: '6px 8px', marginBottom: '6px', borderRadius: '3px',
+          backgroundColor: 'rgba(255,113,108,0.08)', color: '#ff716c', fontSize: '10px',
+        }}>
+          {error}
+        </div>
+      )}
+
       {/* Upload buttons */}
       <div style={{ display: 'flex', gap: '4px' }}>
         <input ref={fileRef} type="file" accept="image/*,video/*" onChange={handleInputChange} style={{ display: 'none' }} />
@@ -130,32 +148,73 @@ export function PhotoUploader({ serviceId, itemId, onUploaded }: PhotoUploaderPr
   );
 }
 
-/** Display a grid of uploaded photos */
-export function PhotoGrid({ photos }: {
-  photos: { id: string; storage_path: string; caption: string | null; photo_type: string; created_at: string }[];
-}) {
+// ─── Photo display ──────────────────────────────────────────
+//
+// PhotoGrid handles BOTH new (Google Drive via kromi_files) and legacy
+// (Supabase Storage via storage_path) photos. New photos have file_id set
+// and the embedded kromi_file from a PostgREST join. Legacy photos
+// fall back to the public Supabase Storage URL.
+
+const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+
+export interface DisplayPhoto {
+  id: string;
+  caption: string | null;
+  photo_type: string;
+  created_at: string;
+  // Legacy
+  storage_path?: string | null;
+  // New
+  file_id?: string | null;
+  kromi_file?: {
+    drive_view_link: string | null;
+    drive_thumbnail_link: string | null;
+    drive_download_link: string | null;
+  } | null;
+}
+
+function photoUrl(p: DisplayPhoto): string {
+  if (p.kromi_file?.drive_thumbnail_link) return p.kromi_file.drive_thumbnail_link;
+  if (p.kromi_file?.drive_view_link) return p.kromi_file.drive_view_link;
+  if (p.storage_path && SB_URL) return `${SB_URL}/storage/v1/object/public/${p.storage_path}`;
+  return '';
+}
+
+/** Display a grid of uploaded photos. Supports legacy + Drive-backed. */
+export function PhotoGrid({ photos }: { photos: DisplayPhoto[] }) {
   if (photos.length === 0) return null;
-  const typeColors: Record<string, string> = { before: '#fbbf24', after: '#3fff8b', damage: '#ff716c', receipt: '#e966ff', general: '#6e9bff' };
+  const typeColors: Record<string, string> = {
+    before: '#fbbf24', after: '#3fff8b', damage: '#ff716c', receipt: '#e966ff', general: '#6e9bff',
+  };
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
-      {photos.map((p) => (
-        <div key={p.id} style={{ position: 'relative', borderRadius: '4px', overflow: 'hidden', aspectRatio: '1' }}>
-          <img
-            src={`${SB_URL}/storage/v1/object/public/${p.storage_path}`}
-            alt={p.caption ?? ''}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            loading="lazy"
-          />
-          <span style={{
-            position: 'absolute', top: '2px', left: '2px', fontSize: '7px', padding: '1px 4px',
-            backgroundColor: `${typeColors[p.photo_type] ?? '#494847'}cc`, color: 'white',
-            borderRadius: '2px', fontWeight: 700,
-          }}>
-            {p.photo_type}
-          </span>
-        </div>
-      ))}
+      {photos.map((p) => {
+        const url = photoUrl(p);
+        return (
+          <div key={p.id} style={{ position: 'relative', borderRadius: '4px', overflow: 'hidden', aspectRatio: '1' }}>
+            {url ? (
+              <img
+                src={url}
+                alt={p.caption ?? ''}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                loading="lazy"
+              />
+            ) : (
+              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0e0e0e' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '20px', color: '#494847' }}>broken_image</span>
+              </div>
+            )}
+            <span style={{
+              position: 'absolute', top: '2px', left: '2px', fontSize: '7px', padding: '1px 4px',
+              backgroundColor: `${typeColors[p.photo_type] ?? '#494847'}cc`, color: 'white',
+              borderRadius: '2px', fontWeight: 700,
+            }}>
+              {p.photo_type}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

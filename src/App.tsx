@@ -14,6 +14,7 @@ import { useRouteNavigation } from './hooks/useRouteNavigation';
 import { NavigationBar } from './components/Dashboard/NavigationBar';
 import { useAuthStore } from './store/authStore';
 import { usePlatform } from './hooks/usePlatform';
+import { useDriveBootstrap } from './hooks/useDriveBootstrap';
 import { DesktopLiveView } from './components/Desktop/DesktopLiveView';
 import { GlobalMapView } from './components/Map/GlobalMapView';
 import { startSettingsSync } from './services/sync/SettingsSyncService';
@@ -55,6 +56,9 @@ export function App() {
 
 function MainApp() {
   const platform = usePlatform();
+
+  // Bootstrap KROMI Drive folders for this user (idempotent, fire-and-forget)
+  useDriveBootstrap();
 
   // Sync settings from/to DB + track login (once on mount)
   useEffect(() => {

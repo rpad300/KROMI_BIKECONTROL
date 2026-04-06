@@ -44,6 +44,8 @@ src/
     Settings/                  # 3 screens (AutoAssist, Bluetooth, RiderProfile)
     shared/                    # BigButton, MetricCard, ConnectionStatus
   services/
+    storage/                   # KromiFileStore (unified file uploads → Google Drive)
+      googleDrive/             # driveClient (HTTP client → drive-storage edge fn)
     bluetooth/                 # 6 files (GiantBLE, GEVProtocol, GEVCrypto, CSCParser, PowerParser, SRAMAXSService)
     maps/                      # 3 files (GoogleMaps, Elevation, Navigation)
     autoAssist/                # 4 files (Engine, ElevationPredictor, BatteryOptimizer, RiderLearning)
@@ -84,6 +86,7 @@ M11 Bike & Athlete Config — full bike specs, cassette, wheels, rider physiolog
 ## Conventions
 - CSS: Tailwind dark-first, min 24px text, 64px touch targets, portrait layout
 - BLE: ALL subscriptions via GiantBLEService, NEVER direct navigator.bluetooth in components
+- **Files: ALL uploads via `KromiFileStore.uploadFile()` (src/services/storage/KromiFileStore.ts), NEVER direct Supabase Storage REST or Drive API. Backend = Google Drive (KROMI PLATFORM folder) via `drive-storage` Supabase Edge Function. Metadata = `kromi_files` table. Folder taxonomy lives in one place (`resolveFolderPath`).**
 - State: Zustand stores ONLY, NEVER React Context for real-time data
 - GEV: ALL motor commands via GEVProtocol.buildCommand(), AES key as config placeholder
 - Elevation: Cache 30s, throttle 3s, max 15 points per lookahead
@@ -115,6 +118,53 @@ Paths:
 
 NUNCA implementes um sistema sem primeiro ler o blueprint e skill correspondentes.
 Se nao existe blueprint para o pedido, implementa com base nas convencoes deste CLAUDE.md.
+
+## File Storage (Google Drive)
+
+**Backend:** Google Drive folder `KROMI PLATFORM` (id `1fjb2tKtZ14PaofV573ScoeZDra95ubua`).
+**Auth:** OAuth refresh token (acts as `rdias300@gmail.com`) — secrets in Supabase Edge Function only.
+**Edge function:** `supabase/functions/drive-storage` — actions: `ping`, `ensureFolderPath`, `upload`, `delete`, `list`, `getFile`.
+**Metadata:** `kromi_files` table (Supabase) — polymorphic `entity_type` + `entity_id` + `category`.
+
+### Folder taxonomy (under KROMI PLATFORM)
+```
+users/{user-slug}/                          ← {user-slug} = slugify(email)
+  bikes/{bike-slug}/photos/
+  bikes/{bike-slug}/components/
+  bikes/{bike-slug}/services/{service-id}/{before|after|damage|receipts}/
+  bikefits/{bike-slug}/{YYYY-MM-DD}/
+  activities/{YYYY-MM}/{ride-id}/
+  routes/
+  profile/
+  other/{YYYY-MM}/
+
+shops/{shop-slug}/                          ← shared (multiple users access one shop)
+```
+
+User folders are auto-created on first login by `useDriveBootstrap` (mounted in App.tsx). Top-level (`users/`, `shops/`) can be pre-created via Settings → Google Drive → "Inicializar estrutura".
+
+### How to use
+```typescript
+import { uploadFile, slugify, userFolderSlug } from '../services/storage/KromiFileStore';
+import { useAuthStore } from '../store/authStore';
+
+const user = useAuthStore.getState().user!;
+const file: File = ...;
+const kromiFile = await uploadFile(file, {
+  ownerUserId: user.id,
+  ownerUserSlug: userFolderSlug(user),  // → users/{slug}/ prefix
+  category: 'bike_photo',
+  entityType: 'bike',
+  entityId: bikeId,
+  bikeSlug: slugify(bikeName),
+  caption: 'Front view',
+});
+// kromiFile.drive_view_link / .drive_thumbnail_link
+```
+
+`ownerUserSlug` is **mandatory for personal categories** (everything except `shop_*`). Without it, files get dumped at root level — never do this. Use `userFolderSlug(user)` always.
+
+Sub-folders within `users/{slug}/` (per-bike, per-service-id, etc.) are created lazily on first upload via `ensureFolderPath` in the edge function.
 
 ## Memory & Obsidian
 - Claude memory: .claude/projects/.../memory/MEMORY.md

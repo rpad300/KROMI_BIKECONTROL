@@ -119,7 +119,10 @@ export interface ServicePhoto {
   item_id: string | null;
   comment_id: string | null;
   uploaded_by: string;
-  storage_path: string;
+  /** Legacy: Supabase Storage path. New uploads use file_id (Google Drive). */
+  storage_path: string | null;
+  /** FK to kromi_files (Google Drive backend). */
+  file_id: string | null;
   file_name: string | null;
   file_size_bytes: number | null;
   mime_type: string | null;
@@ -127,6 +130,12 @@ export interface ServicePhoto {
   caption: string | null;
   photo_type: PhotoType;
   created_at: string;
+  /** Embedded kromi_files row when joined via PostgREST. */
+  kromi_file?: {
+    drive_view_link: string | null;
+    drive_thumbnail_link: string | null;
+    drive_download_link: string | null;
+  } | null;
 }
 
 export interface MaintenanceSchedule {

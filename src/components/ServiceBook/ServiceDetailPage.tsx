@@ -5,7 +5,7 @@ import {
   updateService, updateServiceStatus, addComment, addServiceItem,
   approveItem, rejectItem, deleteServiceItem, deleteService,
 } from '../../services/maintenance/MaintenanceService';
-import { PhotoUploader, PhotoGrid } from '../shared/PhotoUploader';
+import { PhotoUploader, PhotoGrid, type DisplayPhoto } from '../shared/PhotoUploader';
 import {
   SERVICE_STATUS_LABELS, SERVICE_STATUS_COLORS, SERVICE_TYPE_LABELS,
   URGENCY_LABELS, URGENCY_COLORS,
@@ -17,7 +17,7 @@ export function ServiceDetailPage({ serviceId, onBack }: { serviceId: string; on
   const [service, setService] = useState<ServiceRequest | null>(null);
   const [items, setItems] = useState<ServiceItem[]>([]);
   const [comments, setComments] = useState<ServiceComment[]>([]);
-  const [photos, setPhotos] = useState<{ id: string; storage_path: string; caption: string | null; photo_type: string; created_at: string }[]>([]);
+  const [photos, setPhotos] = useState<DisplayPhoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState('');
   const [showAddItem, setShowAddItem] = useState(false);
@@ -175,7 +175,13 @@ export function ServiceDetailPage({ serviceId, onBack }: { serviceId: string; on
           </button>
         </div>
         <PhotoGrid photos={photos} />
-        {showPhotoUpload && <PhotoUploader serviceId={serviceId} onUploaded={() => { setShowPhotoUpload(false); load(); }} />}
+        {showPhotoUpload && (
+          <PhotoUploader
+            serviceId={serviceId}
+            bikeName={service.bike_name ?? (`${service.bike_brand ?? ''} ${service.bike_model ?? ''}`.trim() || undefined)}
+            onUploaded={() => { setShowPhotoUpload(false); load(); }}
+          />
+        )}
       </div>
 
       {/* Service note */}
