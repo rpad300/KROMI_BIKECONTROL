@@ -23,6 +23,8 @@ class BLEBridgeService : Service() {
     lateinit var sensorManager: SensorManager
     lateinit var shimanoProtocol: ShimanoProtocol
     lateinit var accessoryService: AccessoryService
+    lateinit var boschManager: BoschBikeManager
+    lateinit var specializedManager: SpecializedBikeManager
     var wsServer: BridgeWebSocketServer? = null
     var phoneSensorService: PhoneSensorService? = null
     lateinit var kromiCore: KromiCore
@@ -61,6 +63,18 @@ class BLEBridgeService : Service() {
             wsServer?.broadcastData(json)
         }
 
+        boschManager = BoschBikeManager(this)
+        boschManager.onData = { json ->
+            wsServer?.broadcastData(json)
+            feedKromiCore(json)
+        }
+
+        specializedManager = SpecializedBikeManager(this)
+        specializedManager.onData = { json ->
+            wsServer?.broadcastData(json)
+            feedKromiCore(json)
+        }
+
         // Start phone sensors and forward data to WebSocket
         phoneSensorService = PhoneSensorService(this) { sensorJson ->
             wsServer?.broadcastData(sensorJson)
@@ -96,6 +110,8 @@ class BLEBridgeService : Service() {
         phoneSensorService?.stop()
         shimanoProtocol.destroy()
         accessoryService.destroy()
+        boschManager.destroy()
+        specializedManager.destroy()
         sensorManager.destroy()
         wsServer?.stop()
         bleManager.disconnect()
@@ -151,6 +167,17 @@ class BLEBridgeService : Service() {
                         if (isGiantDevice) tags.add("GIANT")
                         if (uuids.contains("F0BA", true)) tags.add("GEV")
                         if (isGiantDevice && (uuids.contains("1816") || uuids.contains("1818"))) tags.add("BIKE")
+
+                        // Bosch eBike (MCSP service "424F5343" = ASCII "BOSC")
+                        val isBosch = uuids.contains("424F5343", true) || uuids.contains("DC435FBE", true) ||
+                            name.contains("Nyon", true) || name.contains("Kiox", true) || name.contains("Bosch", true)
+                        if (isBosch) { tags.add("BOSCH"); tags.add("BIKE") }
+
+                        // Specialized / Brose (MCSP EAA2 or BES3 FE02)
+                        val isSpecialized = uuids.contains("EAA2-11E9", true) || uuids.contains("FE02", true) ||
+                            uuids.contains("C0B1", true) || name.contains("Turbo", true) || name.contains("Levo", true) ||
+                            name.contains("Creo", true) || name.contains("Vado", true) || name.contains("Como", true)
+                        if (isSpecialized) { tags.add("SPECIALIZED"); tags.add("BIKE") }
                         if (!isGiantDevice && uuids.contains("1816")) tags.add("CAD") // standalone cadence sensor
                         if (uuids.contains("180D", true)) tags.add("HR")
                         if (uuids.contains("1818", true) && !tags.contains("GIANT")) tags.add("POWER")
@@ -292,6 +319,33 @@ class BLEBridgeService : Service() {
             "lightReadMode" -> {
                 accessoryService.readLightMode()
             }
+
+            // === Multi-brand bike connection ===
+            "connectBosch" -> {
+                val address = json.optString("address", "")
+                if (address.isNotEmpty()) {
+                    boschManager.connect(address)
+                } else {
+                    boschManager.scan { device ->
+                        boschManager.connect(device.address)
+                    }
+                }
+            }
+            "connectSpecialized" -> {
+                val address = json.optString("address", "")
+                if (address.isNotEmpty()) {
+                    specializedManager.connect(address)
+                } else {
+                    specializedManager.scan { device ->
+                        specializedManager.connect(device.address)
+                    }
+                }
+            }
+            "disconnectBosch" -> boschManager.disconnect()
+            "disconnectSpecialized" -> specializedManager.disconnect()
+            "boschAssist" -> boschManager.setAssistMode(json.optInt("mode", 1))
+            "specializedAssist" -> specializedManager.setAssistMode(json.optInt("mode", 0))
+            "specializedLight" -> specializedManager.toggleLight(json.optBoolean("on", true))
 
             "readBattery" -> bleManager.readBatteryDetails()
             "disconnect" -> bleManager.disconnect()

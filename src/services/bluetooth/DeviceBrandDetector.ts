@@ -11,7 +11,7 @@
 // ── Types ───────────────────────────────────────────────────────
 
 export type DeviceBrand =
-  | 'giant' | 'shimano' | 'sram' | 'igpsport' | 'garmin'
+  | 'giant' | 'bosch' | 'specialized' | 'shimano' | 'sram' | 'igpsport' | 'garmin'
   | 'wahoo' | 'polar' | 'magene' | 'stages' | 'quarq'
   | 'favero' | 'elite' | 'tacx' | 'bryton' | 'sigma'
   | 'lezyne' | 'bontrager' | 'cateye' | 'huawei' | 'xiaomi'
@@ -52,6 +52,20 @@ const BRAND_RULES: BrandRule[] = [
     color: '#3fff8b',
     namePatterns: [/^GBH/i, /^giant/i, /trance/i, /reign/i, /anthem/i, /defy/i, /tcr/i, /propel/i],
     uuidPatterns: ['f0ba3012', '0000fc23'],
+  },
+  {
+    brand: 'bosch',
+    label: 'Bosch',
+    color: '#e11d48',
+    namePatterns: [/bosch/i, /^nyon/i, /^kiox/i, /^intuvia/i, /^smartphonehub/i],
+    uuidPatterns: ['424f5343', 'dc435fbe'], // "BOSC" prefix + fake DIS
+  },
+  {
+    brand: 'specialized',
+    label: 'Specialized',
+    color: '#ef4444',
+    namePatterns: [/specialized/i, /^turbo/i, /^levo/i, /^creo/i, /^vado/i, /^como/i, /^kenevo/i, /^tero/i],
+    uuidPatterns: ['eaa2-11e9', '0000fe02', 'c0b11800'], // MCSP + BES3 + COBI
   },
   {
     brand: 'shimano',
@@ -168,8 +182,9 @@ const CATEGORY_RULES: CategoryRule[] = [
     category: 'bike',
     label: 'E-Bike',
     icon: 'electric_bike',
-    tags: ['GIANT', 'GEV', 'BIKE'],
-    uuids: ['f0ba3012'],
+    tags: ['GIANT', 'GEV', 'BIKE', 'BOSCH', 'SPECIALIZED'],
+    uuids: ['f0ba3012', '424f5343', 'eaa2-11e9', '0000fe02', 'c0b11800'],
+    namePatterns: [/^GBH/i, /bosch/i, /^nyon/i, /^kiox/i, /turbo/i, /^levo/i, /^creo/i, /^vado/i, /^como/i],
   },
   {
     category: 'drivetrain',
