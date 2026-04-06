@@ -162,12 +162,25 @@ class BLEBridgeService : Service() {
                             tags.add("DI2")
                         // iGPSPORT / NUS-based accessories (light, radar)
                         if (uuids.contains("DCCA8E", true) || uuids.contains("dcca8e", true)) {
-                            // NUS User Control channel — identify as light or radar
                             val isRadar = name.lowercase().contains("radar")
                             if (isRadar) tags.add("RADAR") else tags.add("LIGHT")
                         }
-                        if (name.startsWith("VS1", true) || name.startsWith("LR", true)) tags.add("LIGHT")
-                        if (name.lowercase().contains("varia") && name.lowercase().contains("r")) tags.add("RADAR")
+                        if (name.startsWith("VS", true) || name.startsWith("LR", true)) tags.add("LIGHT")
+
+                        // Garmin Varia accessories
+                        val isGarminAccessory = uuids.contains("6A4E", true) || uuids.contains("16AA8022", true)
+                        if (isGarminAccessory) {
+                            tags.add("GARMIN")
+                            // RTL = Radar + Tail Light, HL/UT = Head Light
+                            if (uuids.contains("6A4E8022", true) || name.startsWith("RTL", true) ||
+                                (name.contains("Varia", true) && (name.contains("R", true) || name.contains("Radar", true)))) {
+                                tags.add("RADAR")
+                                tags.add("LIGHT") // RTL is both radar AND light
+                            } else {
+                                tags.add("LIGHT")
+                            }
+                        }
+                        if (name.startsWith("HL", true) || name.startsWith("UT", true)) tags.add("LIGHT")
 
                         val result = JSONObject().apply {
                             put("type", "scanResult")

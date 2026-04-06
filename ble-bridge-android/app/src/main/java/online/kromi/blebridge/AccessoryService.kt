@@ -16,14 +16,17 @@ import org.json.JSONObject
 import java.util.UUID
 
 /**
- * AccessoryService — manages BLE connections to iGPSPORT lights and radar.
+ * AccessoryService — manages BLE connections to cycling lights and radar.
  *
- * Uses Nordic UART Service (NUS) with 20-byte binary header + protobuf payload.
- * Protocol reverse-engineered from iGPSPORT Ride APK (jadx decompile).
+ * Supports two protocol families:
+ *   1. iGPSPORT — NUS (Nordic UART) with 20-byte header + protobuf
+ *   2. Garmin Varia — GFDI (Garmin Fitness Device Interface) protobuf over GATT
  *
  * Supported accessories:
- *   - iGPSPORT lights (VS1800S, LR series) — mode switch, battery, brake flash
- *   - iGPSPORT radar — vehicle detection, distance, speed, threat level
+ *   - iGPSPORT lights (VS1800S, LR series) — NUS protocol
+ *   - iGPSPORT radar — NUS protocol
+ *   - Garmin Varia RTL (Radar + Tail Light) — GFDI protocol
+ *   - Garmin Varia HL / UT (Head Light) — GFDI protocol
  */
 @SuppressLint("MissingPermission")
 class AccessoryService(private val context: Context) {
@@ -31,10 +34,20 @@ class AccessoryService(private val context: Context) {
     companion object {
         const val TAG = "AccessoryService"
 
-        // Nordic UART Service — User Control channel (CA8E)
+        // ── iGPSPORT: Nordic UART Service — User Control channel (CA8E) ──
         val NUS_SERVICE = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca8e")
-        val NUS_TX = UUID.fromString("6e400003-b5a3-f393-e0a9-e50e24dcca8e") // Write TO device
-        val NUS_RX = UUID.fromString("6e400002-b5a3-f393-e0a9-e50e24dcca8e") // Notify FROM device
+        val NUS_TX = UUID.fromString("6e400003-b5a3-f393-e0a9-e50e24dcca8e")
+        val NUS_RX = UUID.fromString("6e400002-b5a3-f393-e0a9-e50e24dcca8e")
+
+        // ── Garmin Varia RTL (Radar + Tail Light) — GFDI 6A4E family ──
+        val GARMIN_RTL_SERVICE = UUID.fromString("6a4e8022-667b-11e3-949a-0800200c9a66")
+        val GARMIN_RTL_NOTIFY  = UUID.fromString("6a4ecd28-667b-11e3-949a-0800200c9a66")
+        val GARMIN_RTL_WRITE   = UUID.fromString("6a4e4c80-667b-11e3-949a-0800200c9a66")
+
+        // ── Garmin Varia HL / UT (Head Light) — GFDI 16AA family ──
+        val GARMIN_HL_SERVICE = UUID.fromString("16aa8022-3769-4c74-a755-877dde3a2930")
+        val GARMIN_HL_NOTIFY  = UUID.fromString("4acbcd28-7425-868e-f447-915c8f00d0cb")
+        val GARMIN_HL_WRITE   = UUID.fromString("df334c80-e6a7-d082-274d-78fc66f85e16")
 
         // Standard BLE services
         val BATTERY_SERVICE = UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb")
@@ -74,6 +87,9 @@ class AccessoryService(private val context: Context) {
     private val autoReconnect = mutableMapOf<String, Boolean>()
     private var activeScanCallback: ScanCallback? = null
 
+    // Track which protocol each connected device uses
+    private val deviceProtocol = mutableMapOf<String, String>() // "igpsport" or "garmin"
+
     // Light state
     private var lightMode = 0
     private var lightBattery = 0
@@ -91,9 +107,12 @@ class AccessoryService(private val context: Context) {
 
         Log.i(TAG, "Scanning for $key accessory (exclude: $excludeAddress)...")
 
-        val filter = ScanFilter.Builder()
-            .setServiceUuid(ParcelUuid(NUS_SERVICE))
-            .build()
+        // Scan for BOTH iGPSPORT NUS AND Garmin Varia services
+        val filters = listOf(
+            ScanFilter.Builder().setServiceUuid(ParcelUuid(NUS_SERVICE)).build(),
+            ScanFilter.Builder().setServiceUuid(ParcelUuid(GARMIN_RTL_SERVICE)).build(),
+            ScanFilter.Builder().setServiceUuid(ParcelUuid(GARMIN_HL_SERVICE)).build(),
+        )
 
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
@@ -105,19 +124,27 @@ class AccessoryService(private val context: Context) {
                 if (device.address == excludeAddress) return
 
                 val name = device.name ?: ""
-                // Classify: light vs radar based on name pattern
-                val isLight = name.contains("VS1", true) || name.contains("LR", true) ||
-                    name.lowercase().contains("light")
-                val isRadar = name.lowercase().contains("radar")
+                val uuids = result.scanRecord?.serviceUuids?.joinToString(",") { it.toString() } ?: ""
+                val uuidsUpper = uuids.uppercase()
+
+                // Detect brand
+                val isGarmin = uuidsUpper.contains("6A4E") || uuidsUpper.contains("16AA") || name.contains("Varia", true)
+                val isIGPS = uuidsUpper.contains("DCCA8E") || name.startsWith("VS", true) || name.startsWith("LR", true) || name.startsWith("CAD", true)
+
+                // Classify: light vs radar
+                val isRadar = name.lowercase().contains("radar") || name.startsWith("RTL", true) ||
+                    (isGarmin && uuidsUpper.contains("6A4E8022")) // Garmin RTL = radar+light combo
+                val isLight = !isRadar && (isIGPS || isGarmin ||
+                    name.lowercase().contains("light") || name.startsWith("HL", true) || name.startsWith("UT", true))
 
                 val matchesKey = when (key) {
-                    "light" -> isLight || (!isRadar) // Default NUS devices to light
+                    "light" -> isLight || (!isRadar && (isIGPS || isGarmin))
                     "radar" -> isRadar
                     else -> true
                 }
 
                 if (matchesKey) {
-                    Log.i(TAG, "$key found: $name (${device.address}) — auto-connecting")
+                    Log.i(TAG, "$key found: $name (${device.address}) brand=${if (isGarmin) "Garmin" else "iGPSPORT"} — auto-connecting")
                     scanner.stopScan(this)
                     activeScanCallback = null
                     connectAccessory(key, device.address)
@@ -130,7 +157,7 @@ class AccessoryService(private val context: Context) {
         }
 
         activeScanCallback = callback
-        scanner.startScan(listOf(filter), settings, callback)
+        scanner.startScan(filters, settings, callback)
 
         handler.postDelayed({
             if (activeScanCallback === callback) {
@@ -178,11 +205,15 @@ class AccessoryService(private val context: Context) {
     fun setLightMode(mode: Int) {
         val txChar = txChars["light"] ?: return
         val gatt = connections["light"] ?: return
+        val proto = deviceProtocol["light"] ?: "igpsport"
 
-        val cmd = buildSwitchModeCommand(mode)
+        val cmd = when (proto) {
+            "garmin" -> buildGarminChangeModeCommand(mode)
+            else -> buildSwitchModeCommand(mode)
+        }
         writeNUS(gatt, txChar, cmd)
         lightMode = mode
-        Log.i(TAG, "Light mode → $mode")
+        Log.i(TAG, "Light mode → $mode ($proto)")
     }
 
     fun readLightBattery() {
@@ -231,25 +262,59 @@ class AccessoryService(private val context: Context) {
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status != BluetoothGatt.GATT_SUCCESS) return
 
-            // Subscribe to NUS RX notifications
+            var notifyChar: BluetoothGattCharacteristic? = null
+            var writeChar: BluetoothGattCharacteristic? = null
+            var protocol = "unknown"
+
+            // Try iGPSPORT NUS first
             val nusService = gatt.getService(NUS_SERVICE)
             if (nusService != null) {
-                val rxChar = nusService.getCharacteristic(NUS_RX)
-                val txChar = nusService.getCharacteristic(NUS_TX)
+                notifyChar = nusService.getCharacteristic(NUS_RX)
+                writeChar = nusService.getCharacteristic(NUS_TX)
+                protocol = "igpsport"
+                Log.i(TAG, "$key detected: iGPSPORT (NUS)")
+            }
 
-                if (rxChar != null) {
-                    gatt.setCharacteristicNotification(rxChar, true)
-                    rxChar.getDescriptor(CCC_DESCRIPTOR)?.let { desc ->
-                        desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                        gatt.writeDescriptor(desc)
-                    }
-                    Log.i(TAG, "$key NUS RX notifications enabled")
+            // Try Garmin RTL (6A4E)
+            if (notifyChar == null) {
+                val rtlService = gatt.getService(GARMIN_RTL_SERVICE)
+                if (rtlService != null) {
+                    notifyChar = rtlService.getCharacteristic(GARMIN_RTL_NOTIFY)
+                    writeChar = rtlService.getCharacteristic(GARMIN_RTL_WRITE)
+                    protocol = "garmin"
+                    Log.i(TAG, "$key detected: Garmin Varia RTL (GFDI)")
                 }
+            }
 
-                if (txChar != null) {
-                    txChars[key] = txChar
-                    Log.i(TAG, "$key NUS TX ready")
+            // Try Garmin HL (16AA)
+            if (notifyChar == null) {
+                val hlService = gatt.getService(GARMIN_HL_SERVICE)
+                if (hlService != null) {
+                    notifyChar = hlService.getCharacteristic(GARMIN_HL_NOTIFY)
+                    writeChar = hlService.getCharacteristic(GARMIN_HL_WRITE)
+                    protocol = "garmin"
+                    Log.i(TAG, "$key detected: Garmin Varia HL (GFDI)")
                 }
+            }
+
+            if (notifyChar == null) {
+                Log.e(TAG, "$key: no supported service found!")
+                return
+            }
+
+            deviceProtocol[key] = protocol
+
+            // Subscribe to notifications
+            gatt.setCharacteristicNotification(notifyChar, true)
+            notifyChar.getDescriptor(CCC_DESCRIPTOR)?.let { desc ->
+                desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                gatt.writeDescriptor(desc)
+            }
+            Log.i(TAG, "$key notify enabled ($protocol)")
+
+            if (writeChar != null) {
+                txChars[key] = writeChar
+                Log.i(TAG, "$key write ready ($protocol)")
             }
 
             // Read standard battery service
@@ -278,12 +343,16 @@ class AccessoryService(private val context: Context) {
         @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             val data = characteristic.value ?: return
-            val uuid = characteristic.uuid
+            val proto = deviceProtocol[key] ?: "igpsport"
 
-            if (uuid == NUS_RX) {
-                when (key) {
+            when (proto) {
+                "igpsport" -> when (key) {
                     "light" -> handleLightResponse(data)
                     "radar" -> handleRadarResponse(data)
+                }
+                "garmin" -> when (key) {
+                    "light" -> handleGarminLightResponse(data)
+                    "radar" -> handleGarminRadarResponse(data)
                 }
             }
         }
@@ -604,6 +673,71 @@ class AccessoryService(private val context: Context) {
             }
         }
         return fields
+    }
+
+    // ═══════════════════════════════════════
+    // Garmin GFDI Protocol
+    // ═══════════════════════════════════════
+
+    /** Build Garmin GFDI command to change light mode */
+    private fun buildGarminChangeModeCommand(mode: Int): ByteArray {
+        // Simple GFDI envelope: field 1 = service type, field 2 = sub-command, field 3+ = data
+        val proto = encodeField(1, mode)
+        val envelope = encodeField(1, 5003) + // BikeLight service ID
+            encodeField(2, 1) + // ChangeCurrentLightMode
+            proto
+        return envelope
+    }
+
+    /** Handle Garmin light response (GFDI protobuf) */
+    private fun handleGarminLightResponse(data: ByteArray) {
+        val hex = data.joinToString(" ") { "%02x".format(it) }
+        Log.d(TAG, "Garmin light response: $hex (${data.size}B)")
+
+        // Look for light mode values (100-106) in the GFDI response
+        val fields = parseProtoFields(data)
+        for ((_, value) in fields) {
+            if (value in 100..106) {
+                lightMode = value
+                onData?.invoke(JSONObject().apply {
+                    put("type", "lightMode")
+                    put("mode", value)
+                })
+                onData?.invoke(JSONObject().apply {
+                    put("type", "lightStatus")
+                    put("mode", value)
+                    put("battery", lightBattery)
+                    put("name", connections["light"]?.device?.name ?: "Garmin Varia")
+                    put("brand", "garmin")
+                })
+                return
+            }
+        }
+    }
+
+    /** Handle Garmin radar response (GFDI protobuf) */
+    private fun handleGarminRadarResponse(data: ByteArray) {
+        val hex = data.joinToString(" ") { "%02x".format(it) }
+        Log.d(TAG, "Garmin radar response: $hex (${data.size}B)")
+
+        val fields = parseProtoFields(data)
+
+        // Garmin radar sends incident_detected (bool) and status fields
+        // Map to our threat level system: incident = threat level 2, no incident = 0
+        val incidentDetected = fields.values.any { it == 1 }
+
+        if (incidentDetected) {
+            onData?.invoke(JSONObject().apply {
+                put("type", "radarTarget")
+                put("level", 2) // Garmin doesn't differentiate levels — use mid threat
+                put("range", 5000) // ~50m default (Garmin doesn't report exact distance via BLE)
+                put("speed", 0) // Speed not available via BLE
+            })
+        } else {
+            onData?.invoke(JSONObject().apply {
+                put("type", "radarClear")
+            })
+        }
     }
 
     fun destroy() {

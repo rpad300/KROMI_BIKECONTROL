@@ -78,7 +78,8 @@ const BRAND_RULES: BrandRule[] = [
     brand: 'garmin',
     label: 'Garmin',
     color: '#00b4d8',
-    namePatterns: [/^garmin/i, /^varia/i, /^edge/i, /^vector/i, /^rally/i, /^hrm/i, /^fenix/i, /^forerunner/i, /^vivosmart/i, /^instinct/i, /^enduro/i, /^epix/i],
+    namePatterns: [/^garmin/i, /^varia/i, /^edge/i, /^vector/i, /^rally/i, /^hrm/i, /^fenix/i, /^forerunner/i, /^vivosmart/i, /^instinct/i, /^enduro/i, /^epix/i, /^rtl\d/i, /^ut\s?\d/i, /^hl\s?\d/i, /^tl\d/i],
+    uuidPatterns: ['6a4e8022', '6a4e', '16aa8022'],
   },
   {
     brand: 'wahoo',
@@ -218,7 +219,8 @@ const CATEGORY_RULES: CategoryRule[] = [
     category: 'radar',
     label: 'Radar',
     icon: 'radar',
-    namePatterns: [/^varia.*r/i, /radar/i, /^bryton.*radar/i],
+    namePatterns: [/^varia.*r/i, /radar/i, /^bryton.*radar/i, /^rtl\d/i],
+    uuids: ['6a4e8022'], // Garmin Varia RTL service
   },
   {
     category: 'tpms',
