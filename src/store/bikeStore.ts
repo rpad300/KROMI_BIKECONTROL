@@ -326,7 +326,17 @@ export const useBikeStore = create<BikeState>((set) => ({
   setShiftCount: (n) => set({ shift_count: n }),
   setTotalGears: (n) => set({ total_gears: n }),
 
-  setBikeBrand: (brand) => set({ bike_brand: brand }),
+  setBikeBrand: (brand) => {
+    set({ bike_brand: brand });
+    // Also persist to active bike config
+    import('./settingsStore').then(({ useSettingsStore }) => {
+      const motorBrand = brand === 'unknown' ? 'other' : brand;
+      const current = useSettingsStore.getState().bikeConfig.motor_brand;
+      if (current !== motorBrand && motorBrand !== 'other') {
+        useSettingsStore.getState().updateBikeConfig({ motor_brand: motorBrand as typeof current });
+      }
+    });
+  },
   setBLEStatus: (status) => set({ ble_status: status }),
 
   setServiceConnected: (service, connected) =>

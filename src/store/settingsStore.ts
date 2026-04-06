@@ -110,6 +110,7 @@ export interface BikeConfig {
   has_rack: boolean;
 
   // ── E-Bike specific ───────────────────────────────────────
+  motor_brand: 'giant' | 'bosch' | 'shimano' | 'specialized' | 'fazua' | 'brose' | 'yamaha' | 'other';
   main_battery_wh: number;
   has_range_extender: boolean;
   sub_battery_wh: number;
@@ -240,6 +241,7 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   has_rack: false,
 
   // E-Bike
+  motor_brand: 'giant',
   main_battery_wh: 800,
   has_range_extender: true,
   sub_battery_wh: 250,
@@ -436,6 +438,11 @@ export const useSettingsStore = create<SettingsState>()(
       selectBike: (id) => set((s) => {
         const bike = s.bikes.find((b) => b.id === id);
         if (!bike) return {};
+        // Sync motor brand to bikeStore so Dashboard shows correct modes
+        import('./bikeStore').then(({ useBikeStore }) => {
+          const brand = bike.motor_brand === 'other' ? 'unknown' : bike.motor_brand;
+          useBikeStore.getState().setBikeBrand(brand as 'giant' | 'bosch' | 'shimano' | 'specialized' | 'unknown');
+        });
         return { activeBikeId: id, bikeConfig: bike };
       }),
     }),
@@ -444,7 +451,7 @@ export const useSettingsStore = create<SettingsState>()(
       // Deep merge on hydration — ensures new fields (tuning_max etc) get defaults
       merge: (persisted, current) => {
         const p = persisted as Partial<SettingsState> ?? {};
-        return {
+        const merged = {
           ...current,
           ...p,
           bikeConfig: safeBikeConfig(p.bikeConfig),
@@ -452,6 +459,16 @@ export const useSettingsStore = create<SettingsState>()(
           autoAssist: { ...(current as SettingsState).autoAssist, ...(p.autoAssist ?? {}) },
           accessories: { ...DEFAULT_ACCESSORIES_CONFIG, ...(p.accessories ?? {}) },
         };
+        // Sync motor brand to bikeStore on hydration
+        const brand = merged.bikeConfig.motor_brand;
+        if (brand && brand !== 'other') {
+          setTimeout(() => {
+            import('./bikeStore').then(({ useBikeStore }) => {
+              useBikeStore.getState().setBikeBrand(brand as 'giant' | 'bosch' | 'shimano' | 'specialized' | 'unknown');
+            });
+          }, 100);
+        }
+        return merged;
       },
     }
   )
