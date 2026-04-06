@@ -193,6 +193,18 @@ class BLEBridgeService : Service() {
                             name.startsWith("E7", true) || name.startsWith("E6", true) ||
                             name.startsWith("E5", true) || name.contains("STEPS", true)
                         if (isShimanoMotor && !tags.contains("DI2")) { tags.add("SHIMANO_STEPS"); tags.add("BIKE") }
+
+                        // Specialized TurboConnect (3-service proprietary protocol)
+                        val isSpecTurbo = uuids.contains("3731-3032-494D", true) || uuids.contains("4B49-4E4F-5254", true)
+                        if (isSpecTurbo) { tags.add("SPECIALIZED"); tags.add("TURBO_CONNECT"); tags.add("BIKE") }
+
+                        // Fazua / Avinox (detected by name only — protocol in Dart bytecode)
+                        val isFazua = name.contains("Avinox", true) || name.contains("Fazua", true) || name.contains("Evation", true)
+                        if (isFazua) { tags.add("FAZUA"); tags.add("BIKE") }
+
+                        // Yamaha PW series
+                        val isYamaha = name.contains("Yamaha", true) || name.startsWith("PW-", true) || name.startsWith("PWSeries", true)
+                        if (isYamaha) { tags.add("YAMAHA"); tags.add("BIKE") }
                         if (!isGiantDevice && uuids.contains("1816")) tags.add("CAD") // standalone cadence sensor
                         if (uuids.contains("180D", true)) tags.add("HR")
                         if (uuids.contains("1818", true) && !tags.contains("GIANT")) tags.add("POWER")

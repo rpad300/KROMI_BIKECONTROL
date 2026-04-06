@@ -12,6 +12,7 @@
 
 export type DeviceBrand =
   | 'giant' | 'bosch' | 'specialized' | 'shimano' | 'sram' | 'igpsport' | 'garmin'
+  | 'fazua' | 'brose' | 'yamaha' | 'panasonic'
   | 'wahoo' | 'polar' | 'magene' | 'stages' | 'quarq'
   | 'favero' | 'elite' | 'tacx' | 'bryton' | 'sigma'
   | 'lezyne' | 'bontrager' | 'cateye' | 'huawei' | 'xiaomi'
@@ -64,8 +65,26 @@ const BRAND_RULES: BrandRule[] = [
     brand: 'specialized',
     label: 'Specialized',
     color: '#ef4444',
-    namePatterns: [/specialized/i, /^turbo/i, /^levo/i, /^creo/i, /^vado/i, /^como/i, /^kenevo/i, /^tero/i],
-    uuidPatterns: ['eaa2-11e9', '0000fe02', 'c0b11800'], // MCSP + BES3 + COBI
+    namePatterns: [/specialized/i, /^turbo/i, /^levo/i, /^creo/i, /^vado/i, /^como/i, /^kenevo/i, /^tero/i, /^pluto/i],
+    uuidPatterns: ['eaa2-11e9', '0000fe02', 'c0b11800', '3731-3032-494d', '4b49-4e4f-5254'],
+  },
+  {
+    brand: 'fazua',
+    label: 'Fazua',
+    color: '#8b5cf6',
+    namePatterns: [/fazua/i, /avinox/i, /^evation/i, /^ride\s?[56]0/i],
+  },
+  {
+    brand: 'brose',
+    label: 'Brose',
+    color: '#f97316',
+    namePatterns: [/brose/i, /^drive\s?[sctp]/i],
+  },
+  {
+    brand: 'yamaha',
+    label: 'Yamaha',
+    color: '#0066cc',
+    namePatterns: [/yamaha/i, /^pw-[scx]/i, /^pwseries/i],
   },
   {
     brand: 'shimano',
@@ -182,9 +201,9 @@ const CATEGORY_RULES: CategoryRule[] = [
     category: 'bike',
     label: 'E-Bike',
     icon: 'electric_bike',
-    tags: ['GIANT', 'GEV', 'BIKE', 'BOSCH', 'SPECIALIZED'],
-    uuids: ['f0ba3012', '424f5343', 'eaa2-11e9', '0000fe02', 'c0b11800'],
-    namePatterns: [/^GBH/i, /bosch/i, /^nyon/i, /^kiox/i, /turbo/i, /^levo/i, /^creo/i, /^vado/i, /^como/i],
+    tags: ['GIANT', 'GEV', 'BIKE', 'BOSCH', 'SPECIALIZED', 'SHIMANO_STEPS', 'FAZUA', 'YAMAHA'],
+    uuids: ['f0ba3012', '424f5343', 'eaa2-11e9', '0000fe02', 'c0b11800', '18ef', '3731-3032-494d'],
+    namePatterns: [/^GBH/i, /bosch/i, /^nyon/i, /^kiox/i, /turbo/i, /^levo/i, /^creo/i, /^vado/i, /^como/i, /^ep[0-9]/i, /avinox/i, /fazua/i, /yamaha/i, /^pw-/i, /^pluto/i],
   },
   {
     category: 'drivetrain',
