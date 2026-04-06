@@ -112,8 +112,10 @@ class BLEBridgeService : Service() {
                 bleManager.startScan(
                     onFound = { device, _, uuids ->
                         val name = device.name ?: ""
-                        val isBike = name.contains("GBHA", true) || name.contains("Giant", true)
-                            || uuids.contains("F0BA", true) || uuids.contains("1816") || uuids.contains("1818")
+                        // Bike MUST have Giant identifier (name or GEV service).
+                        // CSC (1816) or Power (1818) alone are NOT enough — could be external sensor.
+                        val isGiant = name.contains("GBHA", true) || name.contains("Giant", true) || uuids.contains("F0BA", true)
+                        val isBike = isGiant && (uuids.contains("1816") || uuids.contains("1818") || uuids.contains("F0BA", true))
                         if (isBike && !bleManager.isConnected) {
                             bleManager.stopScan()
                             bleManager.connectToDevice(device)
@@ -138,9 +140,11 @@ class BLEBridgeService : Service() {
                     onFound = { device, rssi, uuids ->
                         val name = device.name ?: "(unnamed)"
                         val tags = mutableListOf<String>()
-                        if (name.contains("GBHA", true) || name.contains("Giant", true)) tags.add("GIANT")
+                        val isGiantDevice = name.contains("GBHA", true) || name.contains("Giant", true) || uuids.contains("F0BA", true)
+                        if (isGiantDevice) tags.add("GIANT")
                         if (uuids.contains("F0BA", true)) tags.add("GEV")
-                        if (uuids.contains("1816") || uuids.contains("1818")) tags.add("BIKE")
+                        if (isGiantDevice && (uuids.contains("1816") || uuids.contains("1818"))) tags.add("BIKE")
+                        if (!isGiantDevice && uuids.contains("1816")) tags.add("CAD") // standalone cadence sensor
                         if (uuids.contains("180D", true)) tags.add("HR")
                         if (uuids.contains("1818", true) && !tags.contains("GIANT")) tags.add("POWER")
                         if (name.contains("SRAM", true) || uuids.contains("4D50", true)) tags.add("SRAM")
