@@ -225,12 +225,57 @@ class SensorManager(private val context: Context) {
             }
 
             Log.i(TAG, "$sensorKey notifications enabled")
+
+            // Read extra info for cadence sensors (battery, location, firmware)
+            if (sensorKey == "cadence") {
+                readSensorExtras(gatt)
+            }
+
             onData?.invoke(JSONObject().apply {
                 put("type", "sensorConnected")
                 put("sensor", sensorKey)
                 put("name", gatt.device.name ?: sensorKey.uppercase())
                 put("address", gatt.device.address)
             })
+        }
+
+        @Suppress("DEPRECATION")
+        override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            if (status != BluetoothGatt.GATT_SUCCESS) return
+            val data = characteristic.value ?: return
+            val uuid = characteristic.uuid.toString().substring(4, 8).uppercase()
+
+            when (uuid) {
+                "2A19" -> { // Battery Level
+                    val pct = data[0].toInt() and 0xFF
+                    Log.i(TAG, "$sensorKey battery: $pct%")
+                    onData?.invoke(JSONObject().apply {
+                        put("type", "sensorBattery")
+                        put("sensor", sensorKey)
+                        put("percent", pct)
+                    })
+                }
+                "2A5D" -> { // Sensor Location
+                    val locations = arrayOf("Other","Top of Shoe","In Shoe","Hip","Front Wheel","Left Crank","Right Crank","Left Pedal","Right Pedal","Front Hub","Rear Dropout","Chainstay","Rear Wheel","Rear Hub","Chest","Spider","Chain Ring")
+                    val loc = data[0].toInt() and 0xFF
+                    val name = locations.getOrElse(loc) { "Unknown ($loc)" }
+                    Log.i(TAG, "$sensorKey location: $name")
+                    onData?.invoke(JSONObject().apply {
+                        put("type", "sensorInfo")
+                        put("sensor", sensorKey)
+                        put("location", name)
+                    })
+                }
+                "2A26" -> { // Firmware Revision
+                    val fw = String(data).trim()
+                    Log.i(TAG, "$sensorKey firmware: $fw")
+                    onData?.invoke(JSONObject().apply {
+                        put("type", "sensorInfo")
+                        put("sensor", sensorKey)
+                        put("firmware", fw)
+                    })
+                }
+            }
         }
 
         @Suppress("DEPRECATION")
@@ -246,6 +291,32 @@ class SensorManager(private val context: Context) {
                 "di2" -> parseDi2(data)
                 "sram" -> parseSRAM(data)
             }
+        }
+    }
+
+    // ═══════════════════════════════════════
+    // Extra reads for sensors with additional data
+    // ═══════════════════════════════════════
+
+    @SuppressLint("MissingPermission")
+    private fun readSensorExtras(gatt: BluetoothGatt) {
+        val reads = mutableListOf<BluetoothGattCharacteristic>()
+
+        // Battery Level (0x180F → 0x2A19)
+        val batService = gatt.getService(UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb"))
+        batService?.getCharacteristic(UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb"))?.let { reads.add(it) }
+
+        // Sensor Location (0x1816 → 0x2A5D)
+        val cscService = gatt.getService(CSC_SERVICE)
+        cscService?.getCharacteristic(UUID.fromString("00002a5d-0000-1000-8000-00805f9b34fb"))?.let { reads.add(it) }
+
+        // Firmware Revision (0x180A → 0x2A26)
+        val diService = gatt.getService(UUID.fromString("0000180a-0000-1000-8000-00805f9b34fb"))
+        diService?.getCharacteristic(UUID.fromString("00002a26-0000-1000-8000-00805f9b34fb"))?.let { reads.add(it) }
+
+        // Queue reads with delay (BLE can only handle one at a time)
+        reads.forEachIndexed { i, char ->
+            handler.postDelayed({ gatt.readCharacteristic(char) }, (i + 1) * 500L)
         }
     }
 
