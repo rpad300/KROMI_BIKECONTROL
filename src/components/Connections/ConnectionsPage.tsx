@@ -134,7 +134,7 @@ export function ConnectionsPage() {
   // Track devices that are in the process of connecting (just added from scanner)
   const [pendingIds, setPendingIds] = useState<string[]>([]);
 
-  // Clear pending when ble_services confirms connection
+  // Clear pending when ble_services confirms connection OR after timeout
   useEffect(() => {
     if (pendingIds.length === 0) return;
     const stillPending = pendingIds.filter((id) => {
@@ -145,6 +145,13 @@ export function ConnectionsPage() {
       setPendingIds(stillPending);
     }
   }, [services, bleStatus, devices, pendingIds]);
+
+  // Timeout: clear all pending after 8 seconds (bridge may not support this device type)
+  useEffect(() => {
+    if (pendingIds.length === 0) return;
+    const timer = setTimeout(() => setPendingIds([]), 8000);
+    return () => clearTimeout(timer);
+  }, [pendingIds.length > 0]); // only re-arm when going from 0→N
 
   // Show scanner for websocket mode
   if (view === 'scanner') {
