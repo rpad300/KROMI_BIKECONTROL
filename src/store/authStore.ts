@@ -157,13 +157,41 @@ export const useAuthStore = create<AuthState>()(
           return false;
         }
 
-        // If we have a local user from persist, trust it immediately
+        // If we have a local user from persist, trust it immediately —
+        // BUT only mark loading: false AFTER the JWT is in place. Users
+        // upgrading from a pre-JWT build have `realUser` persisted but
+        // `jwt: null`; if we set loading: false before the refresh, any
+        // subscriber that fires a REST write on boot (SettingsSync,
+        // LoginTracker, etc.) will race the verify and hit an RLS 401.
         if (localUser) {
-          // Restore viewer (consider any persisted impersonation)
-          set((s) => ({ user: viewerOf(localUser, s.impersonatedUser), loading: false }));
+          const needsJwtRefresh = !persistedJwt;
 
-          // Background verify — refreshes the JWT so the next REST call
-          // has a full TTL window. Only logout if server explicitly rejects.
+          if (!needsJwtRefresh) {
+            // Happy path: we already have a JWT, render immediately and
+            // refresh in the background for a longer TTL.
+            set((s) => ({ user: viewerOf(localUser, s.impersonatedUser), loading: false }));
+            try {
+              const verified = await verifySession(sessionToken);
+              if (verified) {
+                publishJwtGlobal(verified.jwt);
+                set((s) => ({
+                  realUser: verified.user,
+                  jwt: verified.jwt,
+                  jwtExpiresAt: verified.jwt_expires_at,
+                  user: viewerOf(verified.user, s.impersonatedUser),
+                }));
+              }
+            } catch {
+              // Network error — keep local session (offline-first)
+            }
+            return true;
+          }
+
+          // Upgrade path: no JWT yet. Block the boot on verify-session
+          // so the rest of the app only starts rendering once a JWT is
+          // attached. If the server is unreachable, fall through to a
+          // best-effort render with no JWT — REST writes will 401 but
+          // reads hit the anon key and degrade gracefully.
           try {
             const verified = await verifySession(sessionToken);
             if (verified) {
@@ -173,12 +201,30 @@ export const useAuthStore = create<AuthState>()(
                 jwt: verified.jwt,
                 jwtExpiresAt: verified.jwt_expires_at,
                 user: viewerOf(verified.user, s.impersonatedUser),
+                loading: false,
               }));
+              return true;
             }
+            // Server said "invalid session" — treat as logged out so the
+            // user re-authenticates with fresh credentials (= fresh JWT).
+            publishJwtGlobal(null);
+            set({
+              realUser: null,
+              impersonatedUser: null,
+              user: null,
+              sessionToken: null,
+              jwt: null,
+              jwtExpiresAt: null,
+              expiresAt: null,
+              loading: false,
+            });
+            return false;
           } catch {
-            // Network error — keep local session (offline-first)
+            // Network failure — render what we have so the app isn't
+            // frozen. Writes will fail until the next successful verify.
+            set((s) => ({ user: viewerOf(localUser, s.impersonatedUser), loading: false }));
+            return true;
           }
-          return true;
         }
 
         // No local user — must verify with server
