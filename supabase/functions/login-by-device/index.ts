@@ -95,7 +95,7 @@ Deno.serve(async (req: Request) => {
     });
 
     // Mint the PostgREST JWT. Null during the S18 migration window.
-    const minted = await mintKromiJwt(user.id);
+    const minted = await mintKromiJwt(user.id, { isSuperAdmin: !!user.is_super_admin });
     const jwt = minted?.jwt ?? null;
     const jwtExpiresAt = minted?.expires_at ?? null;
 

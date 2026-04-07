@@ -64,6 +64,11 @@ tsconfig.tsbuildinfo
 APKRIDECONTROL/
 screen_*.png
 
+# Release artifacts (built via CI, never commit ~30MB each)
+*.apk
+*.aab
+*.ipa
+
 # kromi-doc generated artefacts
 .kromi-doc-index.json
 .kromi-doc-index-st.npz

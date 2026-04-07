@@ -4,6 +4,8 @@ import {
   exportMyData,
   downloadExport,
   deleteMyAccount,
+  cancelMyAccountDeletion,
+  getMyDeletionSchedule,
   listMySessions,
   revokeMySession,
   type ExportProgress,
@@ -28,6 +30,8 @@ export function PrivacyPage() {
   const [deleteEmail, setDeleteEmail] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [scheduledAt, setScheduledAt] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   const [sessions, setSessions] = useState<MySession[] | null>(null);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -39,6 +43,7 @@ export function PrivacyPage() {
     listMySessions()
       .then((rows) => setSessions(rows))
       .finally(() => setSessionsLoading(false));
+    void getMyDeletionSchedule().then((at) => setScheduledAt(at));
   }, [user]);
 
   if (!user) return null;
@@ -88,13 +93,30 @@ export function PrivacyPage() {
         setDeleting(false);
         return;
       }
-      // Success — logout and navigate to login.
-      logout();
-      // Full reload clears every persisted store + IndexedDB tab state.
-      window.location.href = '/';
+      // Success — deletion is now SCHEDULED, not executed. The user
+      // stays logged in during the 30-day grace window so they can
+      // cancel if this was a mistake. We just refresh the schedule
+      // banner and close the form.
+      setScheduledAt(result.scheduled_at ?? null);
+      setDeleteOpen(false);
+      setDeleting(false);
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : 'Erro inesperado');
       setDeleting(false);
+    }
+  };
+
+  const handleCancelDeletion = async () => {
+    setCancelling(true);
+    try {
+      const result = await cancelMyAccountDeletion();
+      if (result.success) {
+        setScheduledAt(null);
+      } else {
+        alert(result.error ?? 'Falha ao cancelar eliminação');
+      }
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -260,18 +282,58 @@ export function PrivacyPage() {
           <span className="material-symbols-outlined" style={{ fontSize: '20px', color: '#ff716c' }}>delete_forever</span>
           <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>Apagar a minha conta</h3>
         </div>
+
+        {scheduledAt ? (
+          <div style={{
+            padding: '12px 14px',
+            backgroundColor: 'rgba(255,159,67,0.1)',
+            border: '1px solid rgba(255,159,67,0.4)',
+            borderRadius: '6px',
+            marginBottom: '10px',
+          }}>
+            <div style={{ fontSize: '11px', color: '#ff9f43', fontWeight: 700, marginBottom: '6px' }}>
+              Eliminação agendada
+            </div>
+            <p style={{ fontSize: '10px', color: '#adaaaa', lineHeight: 1.5, marginBottom: '10px' }}>
+              A tua conta vai ser apagada em{' '}
+              <strong style={{ color: '#fbbf24' }}>
+                {new Date(scheduledAt).toLocaleDateString('pt-PT', { dateStyle: 'long' })}
+              </strong>.
+              Podes cancelar a qualquer momento antes dessa data e a tua conta
+              continua intacta. Depois dessa data, os dados são apagados
+              permanentemente e a acção não pode ser revertida.
+            </p>
+            <button
+              onClick={() => void handleCancelDeletion()}
+              disabled={cancelling || isImpersonating}
+              style={{
+                ...buttonStyle,
+                backgroundColor: 'rgba(63,255,139,0.15)',
+                border: '1px solid rgba(63,255,139,0.4)',
+                color: '#3fff8b',
+                opacity: cancelling || isImpersonating ? 0.5 : 1,
+                cursor: cancelling || isImpersonating ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {cancelling ? 'A cancelar…' : 'Cancelar eliminação'}
+            </button>
+          </div>
+        ) : (
+          <>
         <p style={{ fontSize: '10px', color: '#777575', lineHeight: 1.5, marginBottom: '10px' }}>
-          Apaga permanentemente a tua conta KROMI e todos os dados associados:
-          perfil, bikes, bike fits, atividades, rotas, pedidos de serviço e
-          metadados de ficheiros. Esta acção é <strong style={{ color: '#ff716c' }}>irreversível</strong>.
-          Os ficheiros no Google Drive ficam na trash da conta KROMI por 30 dias
-          antes de serem removidos definitivamente.
+          Agenda a eliminação da tua conta KROMI. Tens{' '}
+          <strong style={{ color: '#fbbf24' }}>30 dias</strong> para cancelar antes
+          que os dados sejam apagados definitivamente — perfil, bikes, bike fits,
+          atividades, rotas, pedidos de serviço e metadados de ficheiros. Os
+          ficheiros no Google Drive vão imediatamente para a trash da conta KROMI
+          (ficam recuperáveis durante os 30 dias).
         </p>
         <p style={{ fontSize: '10px', color: '#777575', lineHeight: 1.5, marginBottom: '10px' }}>
           Recomendamos que exportes os teus dados primeiro (acima).
         </p>
-
-        {!deleteOpen ? (
+          </>
+        )}
+        {!scheduledAt && (!deleteOpen ? (
           <button
             onClick={() => { setDeleteOpen(true); setDeleteEmail(''); setDeleteError(null); }}
             disabled={isImpersonating}
@@ -329,11 +391,11 @@ export function PrivacyPage() {
                   cursor: (deleting || deleteEmail.trim().toLowerCase() !== user.email.toLowerCase()) ? 'not-allowed' : 'pointer',
                 }}
               >
-                {deleting ? 'A apagar…' : 'Apagar conta permanentemente'}
+                {deleting ? 'A agendar…' : 'Agendar eliminação (30 dias grace)'}
               </button>
             </div>
           </div>
-        )}
+        ))}
       </section>
     </div>
   );

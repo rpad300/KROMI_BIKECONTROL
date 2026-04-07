@@ -18,8 +18,10 @@
 
 import { create, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
 
-/** 30 days — matches the opaque session_token lifetime. */
+/** 30 days — default for normal users, matches the opaque session_token lifetime. */
 export const KROMI_JWT_TTL_SECONDS = 30 * 24 * 60 * 60;
+/** 1 hour — tighter TTL for super admins to reduce blast radius of token theft. */
+export const KROMI_JWT_TTL_SUPER_ADMIN_SECONDS = 60 * 60;
 
 let cachedKey: CryptoKey | null = null;
 
@@ -52,11 +54,25 @@ async function getJwtKey(): Promise<CryptoKey | null> {
  * The `sub` claim is the app_users.id (UUID) — this becomes
  * `auth.uid()` in RLS policies. Returns `null` when the project
  * JWT secret has not been configured yet (see isJwtConfigured).
+ *
+ * Pass `{ isSuperAdmin: true }` to auto-pick the shorter TTL
+ * (1h instead of 30d) — this reduces the blast radius of a
+ * stolen super-admin token. Normal users keep 30d.
  */
 export async function mintKromiJwt(
   userId: string,
-  ttlSeconds: number = KROMI_JWT_TTL_SECONDS,
+  optsOrTtl?: number | { ttlSeconds?: number; isSuperAdmin?: boolean },
 ): Promise<{ jwt: string; expires_at: string } | null> {
+  let ttlSeconds: number;
+  if (typeof optsOrTtl === "number") {
+    ttlSeconds = optsOrTtl;
+  } else if (optsOrTtl?.ttlSeconds !== undefined) {
+    ttlSeconds = optsOrTtl.ttlSeconds;
+  } else if (optsOrTtl?.isSuperAdmin) {
+    ttlSeconds = KROMI_JWT_TTL_SUPER_ADMIN_SECONDS;
+  } else {
+    ttlSeconds = KROMI_JWT_TTL_SECONDS;
+  }
   const key = await getJwtKey();
   if (!key) {
     console.warn(

@@ -131,11 +131,18 @@ export function AdminUserDetail({ userId, onBack }: { userId: string; onBack: ()
 
   const handleSuperAdmin = async () => {
     if (!user) return;
-    if (user.is_super_admin) {
-      if (!confirm('Remover privilégios de Super Admin a este utilizador?')) return;
+    const action = user.is_super_admin ? 'REMOVER' : 'CONCEDER';
+    const typed = prompt(
+      `${action} Super Admin a ${user.email}?\n\n` +
+      `Para confirmar, escreve o email exactamente:`,
+    );
+    if (!typed) return;
+    try {
+      await setUserSuperAdmin(userId, !user.is_super_admin, typed);
+      await load();
+    } catch (err) {
+      alert(`Falha: ${(err as Error).message}`);
     }
-    await setUserSuperAdmin(userId, !user.is_super_admin);
-    await load();
   };
 
   const handleBootstrap = async () => {

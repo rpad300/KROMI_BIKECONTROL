@@ -97,10 +97,14 @@ export function AdminRolesPage() {
       setError('Roles do sistema não podem ser apagadas.');
       return;
     }
-    if (!confirm(`Apagar role "${role.label}"? Todos os utilizadores que a têm vão perdê-la.`)) return;
+    const typed = prompt(
+      `Apagar role "${role.label}"? Todos os utilizadores que a têm vão perdê-la.\n\n` +
+      `Para confirmar, escreve o nome interno exacto da role: ${role.key}`,
+    );
+    if (!typed) return;
     setError(null);
     try {
-      await deleteRole(role.id);
+      await deleteRole(role.id, typed);
       await reload();
     } catch (e) {
       setError((e as Error).message);

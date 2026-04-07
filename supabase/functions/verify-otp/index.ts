@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { mintKromiJwt } from "../_shared/jwt.ts";
+import { checkRateLimit, clientIdentifier } from "../_shared/rateLimit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,6 +15,17 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // IP rate limit — generous (10/60s) because legit users may retry
+    // a typo once or twice, but hard cap on brute-force attempts.
+    const ip = clientIdentifier(req);
+    const rl = await checkRateLimit("verify-otp", ip, 60, 10);
+    if (!rl.allowed) {
+      return new Response(
+        JSON.stringify({ error: "Demasiados pedidos. Aguarda um minuto.", rate_limited: true }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const { email, code } = await req.json();
     if (!email || !code) {
       return new Response(JSON.stringify({ error: "Email e codigo obrigatorios" }), {
@@ -91,9 +103,9 @@ Deno.serve(async (req: Request) => {
     });
 
     // Mint PostgREST-compatible JWT (the new primary auth mechanism).
-    // Returns null during the Session 18 migration window if
-    // KROMI_JWT_SECRET hasn't been configured yet — login still works.
-    const minted = await mintKromiJwt(user.id);
+    // Super admins get a shorter TTL (1h) to reduce blast radius of
+    // token theft; normal users keep 30d.
+    const minted = await mintKromiJwt(user.id, { isSuperAdmin: !!user.is_super_admin });
     const jwt = minted?.jwt ?? null;
     const jwtExpiresAt = minted?.expires_at ?? null;
 

@@ -100,10 +100,11 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Mint a fresh JWT on every verification. During the S18 migration
-    // window this may return null — callers handle that by keeping the
-    // opaque token as the only credential until the secret is live.
-    const minted = await mintKromiJwt(user.id);
+    // Mint a fresh JWT on every verification. Super admins get a
+    // shorter TTL (1h) — the frontend calls verify-session on app
+    // bootstrap so the token auto-refreshes naturally. Normal users
+    // keep 30d to avoid forcing re-login.
+    const minted = await mintKromiJwt(user.id, { isSuperAdmin: !!user.is_super_admin });
     const jwt = minted?.jwt ?? null;
     const jwtExpiresAt = minted?.expires_at ?? null;
 

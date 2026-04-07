@@ -194,17 +194,21 @@ export interface DeleteAccountResult {
 }
 
 /**
- * Self-service account deletion. Requires the user to type their
- * own email for confirmation (checked server-side as well). The
- * RPC is SECURITY DEFINER and takes the current session token.
+ * Schedule self-service account deletion with a 30-day grace window.
  *
- * After success the caller should:
- *   1. useAuthStore.getState().logout()
- *   2. navigate to the login page
+ * The user's data is NOT deleted immediately. Instead we set
+ * `app_users.scheduled_deletion_at = now() + 30d` and log the intent.
+ * A daily pg_cron worker (`kromi_execute_scheduled_deletions`) runs the
+ * cascade hard-delete when the grace period expires. Until then, the
+ * user can cancel with `cancelMyAccountDeletion()`.
+ *
+ * Drive folder trash happens on SCHEDULING too so view links become
+ * inaccessible immediately — if the user cancels, the admin can
+ * restore from Drive Trash within the grace window.
  */
 export async function deleteMyAccount(
   confirmationEmail: string,
-): Promise<DeleteAccountResult> {
+): Promise<DeleteAccountResult & { scheduled_at?: string }> {
   const { user, sessionToken } = useAuthStore.getState();
   if (!user || !sessionToken) {
     return { success: false, error: 'not authenticated' };
@@ -214,13 +218,9 @@ export async function deleteMyAccount(
   }
 
   try {
-    // Step 1: trash the user's Drive folder FIRST so Drive links
-    // become inaccessible before the metadata rows are deleted.
-    // Fail-soft: Drive can fall over (OAuth expired, network, etc.)
-    // and that must not block the DB delete — GDPR compliance is
-    // measured on data inaccessibility in the app, not on physical
-    // erasure from blob storage. The service account retains Trash
-    // for 30 days so admin can restore in case of mistake.
+    // Step 1: trash the user's Drive folder FIRST so view links go
+    // dark immediately. Fail-soft — GDPR compliance is data
+    // inaccessibility, not physical erasure.
     try {
       const slug = userFolderSlug(user);
       await trashUserDriveFolder(slug);
@@ -228,19 +228,57 @@ export async function deleteMyAccount(
       console.warn('[GDPR] Drive folder trash failed (continuing):', err);
     }
 
-    // Step 2: DB RPC — this is the authoritative delete. Tombstones
-    // the app_users row, hard-deletes owned data, writes an entry to
-    // account_deletion_log.
-    const logId = await supaRpc<string>('kromi_delete_my_account', {
+    // Step 2: schedule the deletion (30-day grace window). The
+    // cascade hard-delete happens later via pg_cron. User can cancel.
+    const scheduledAt = await supaRpc<string>('kromi_schedule_my_account_deletion', {
       p_session_token: sessionToken,
       p_confirmation_email: confirmationEmail,
     });
-    return { success: true, log_id: logId ?? undefined };
+    return { success: true, scheduled_at: scheduledAt ?? undefined };
   } catch (err) {
     return {
       success: false,
       error: err instanceof Error ? err.message : 'Unknown error',
     };
+  }
+}
+
+/**
+ * Cancel a previously-scheduled account deletion. Clears
+ * `scheduled_deletion_at` and logs the cancellation in
+ * `account_deletion_log`.
+ */
+export async function cancelMyAccountDeletion(): Promise<DeleteAccountResult> {
+  const sessionToken = useAuthStore.getState().sessionToken;
+  if (!sessionToken) return { success: false, error: 'not authenticated' };
+  try {
+    await supaRpc<void>('kromi_cancel_my_account_deletion', {
+      p_session_token: sessionToken,
+    });
+    return { success: true };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Read the current deletion schedule from app_users (if any).
+ * Returns null when no deletion is scheduled.
+ */
+export async function getMyDeletionSchedule(): Promise<string | null> {
+  const user = useAuthStore.getState().user;
+  if (!user) return null;
+  try {
+    const rows = await supaGet<Array<{ scheduled_deletion_at: string | null }>>(
+      `/rest/v1/app_users?id=eq.${user.id}&select=scheduled_deletion_at`,
+    );
+    const row = Array.isArray(rows) ? rows[0] : null;
+    return row?.scheduled_deletion_at ?? null;
+  } catch {
+    return null;
   }
 }
 

@@ -236,13 +236,17 @@ export async function updateRole(
   });
 }
 
-/** Delete a custom role. The RPC blocks system roles + cascades cleanly. */
-export async function deleteRole(roleId: string): Promise<void> {
+/**
+ * Delete a custom role. The RPC blocks system roles + cascades cleanly.
+ * Step-up (S19): caller must type the role name as confirmation.
+ */
+export async function deleteRole(roleId: string, confirmationName: string): Promise<void> {
   const token = await getSessionToken();
   if (!token) throw new Error('not authenticated');
   await rpc('admin_delete_role', {
     p_session_token: token,
     p_role_id: roleId,
+    p_confirmation_name: confirmationName,
   });
 }
 
@@ -404,13 +408,22 @@ export async function listUserSuspensions(userId: string, limit = 50): Promise<U
   }));
 }
 
-export async function setUserSuperAdmin(userId: string, isSuper: boolean): Promise<void> {
+/**
+ * Toggle the super-admin flag on a target user.
+ * Step-up (S19): caller must type the target's email as confirmation.
+ */
+export async function setUserSuperAdmin(
+  userId: string,
+  isSuper: boolean,
+  confirmationEmail: string,
+): Promise<void> {
   const token = await getSessionToken();
   if (!token) throw new Error('not authenticated');
   await rpc('admin_set_super_admin', {
     p_session_token: token,
     p_target_user_id: userId,
     p_is_super: isSuper,
+    p_confirmation_email: confirmationEmail,
   });
   return;
 }
