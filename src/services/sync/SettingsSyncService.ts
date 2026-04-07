@@ -50,6 +50,7 @@ interface SavedSensors {
 
 interface DBSettings {
   bike_config: BikeConfig;
+  bikes?: Array<Partial<BikeConfig> & { id: string }>;
   rider_profile: RiderProfile;
   auto_assist: Record<string, unknown>;
   saved_device: SavedSensors | SavedDevice | null;
@@ -66,7 +67,7 @@ export async function loadSettingsFromDB(): Promise<boolean> {
 
   try {
     const res = await supabaseFetch(
-      `/user_settings?user_id=eq.${userId}&select=bike_config,rider_profile,auto_assist,saved_device,active_bike_id,dashboard_layouts,privacy_settings&limit=1`,
+      `/user_settings?user_id=eq.${userId}&select=bike_config,bikes,rider_profile,auto_assist,saved_device,active_bike_id,dashboard_layouts,privacy_settings&limit=1`,
       { headers: { 'Prefer': 'return=representation' } }
     );
     const data = await res.json();
@@ -169,12 +170,25 @@ export async function saveSettingsToDB(): Promise<boolean> {
     const { useLayoutStore } = await import('../../store/layoutStore');
     const layouts = useLayoutStore.getState().layouts;
 
+    // Slim bike list — keep server-side for admin stats + multi-device sync.
+    // Each entry is the minimal info needed to render in admin dashboards;
+    // the full active bike still lives in bike_config (singular).
+    const slimBikes = (settings.bikes ?? []).map((b) => ({
+      id: b.id,
+      name: b.name,
+      bike_type: b.bike_type,
+      brand: b.brand,
+      model: b.model,
+      year: b.year,
+    }));
+
     await supabaseFetch('/user_settings?on_conflict=user_id', {
       method: 'POST',
       headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({
         user_id: userId,
         bike_config: settings.bikeConfig,
+        bikes: slimBikes,
         rider_profile: settings.riderProfile,
         auto_assist: settings.autoAssist,
         saved_device: savedDevices,

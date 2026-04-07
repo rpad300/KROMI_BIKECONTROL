@@ -59,14 +59,21 @@ export function AdminRolesPage() {
     setSaving(null);
   };
 
-  const handleCreate = async (input: { key: string; label: string; description: string }) => {
+  const handleCreate = async (input: { key: string; label: string; description: string; copyFromRoleId?: string }) => {
     setError(null);
     try {
-      await createRole({
+      const created = await createRole({
         key: input.key,
         label: input.label,
         description: input.description || null,
       });
+      // Optional: seed permissions by copying from another role
+      if (created && input.copyFromRoleId) {
+        const sourceKeys = rolePerms[input.copyFromRoleId];
+        if (sourceKeys && sourceKeys.size > 0) {
+          await setRolePermissions(created.id, Array.from(sourceKeys));
+        }
+      }
       setCreating(false);
       await reload();
     } catch (e) {
@@ -147,6 +154,7 @@ export function AdminRolesPage() {
           title="Nova role"
           initial={{ key: '', label: '', description: '' }}
           allowKey
+          copySourceRoles={roles}
           onSave={(d) => void handleCreate(d)}
           onCancel={() => setCreating(false)}
         />
@@ -284,18 +292,22 @@ function RoleEditor({
   title,
   initial,
   allowKey,
+  copySourceRoles,
   onSave,
   onCancel,
 }: {
   title: string;
   initial: { key: string; label: string; description: string };
   allowKey: boolean;
-  onSave: (data: { key: string; label: string; description: string }) => void;
+  /** When set, shows a "copiar permissões de" dropdown for new-role creation. */
+  copySourceRoles?: Role[];
+  onSave: (data: { key: string; label: string; description: string; copyFromRoleId?: string }) => void;
   onCancel: () => void;
 }) {
   const [key, setKey] = useState(initial.key);
   const [label, setLabel] = useState(initial.label);
   const [description, setDescription] = useState(initial.description);
+  const [copyFromRoleId, setCopyFromRoleId] = useState<string>('');
 
   const valid = label.trim().length > 0 && (!allowKey || /^[a-z][a-z0-9_]*$/.test(key));
 
@@ -343,6 +355,23 @@ function RoleEditor({
           style={{ ...inputStyle, resize: 'vertical' as const }}
         />
       </div>
+      {copySourceRoles && copySourceRoles.length > 0 && (
+        <div style={{ marginBottom: '8px' }}>
+          <div style={{ fontSize: '9px', color: '#777575', marginBottom: '2px' }}>
+            Copiar permissões de (opcional)
+          </div>
+          <select
+            value={copyFromRoleId}
+            onChange={(e) => setCopyFromRoleId(e.target.value)}
+            style={{ ...inputStyle, cursor: 'pointer' }}
+          >
+            <option value="">— Começar vazia —</option>
+            {copySourceRoles.map((r) => (
+              <option key={r.id} value={r.id}>{r.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
         <button
           onClick={onCancel}
@@ -355,7 +384,7 @@ function RoleEditor({
           Cancelar
         </button>
         <button
-          onClick={() => onSave({ key, label, description })}
+          onClick={() => onSave({ key, label, description, copyFromRoleId: copyFromRoleId || undefined })}
           disabled={!valid}
           style={{
             padding: '5px 12px',

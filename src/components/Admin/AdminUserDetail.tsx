@@ -25,12 +25,14 @@ import {
   unsuspendUser,
   setUserSuperAdmin,
   getUserEnrichmentStats,
+  listUserSuspensions,
   type AdminUserRow,
   type Role,
   type Permission,
   type UserFeatureFlag,
   type FeatureFlagMode,
   type UserEnrichmentStats,
+  type UserSuspensionEvent,
 } from '../../services/rbac/RBACService';
 import { slugify } from '../../services/storage/KromiFileStore';
 import { bootstrapUserOnDrive } from '../../services/storage/googleDrive/driveClient';
@@ -61,18 +63,20 @@ export function AdminUserDetail({ userId, onBack }: { userId: string; onBack: ()
   const [userRoleIds, setUserRoleIds] = useState<Set<string>>(new Set());
   const [flags, setFlags] = useState<UserFeatureFlag[]>([]);
   const [stats, setStats] = useState<UserEnrichmentStats | null>(null);
+  const [suspensions, setSuspensions] = useState<UserSuspensionEvent[]>([]);
   const [busy, setBusy] = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
 
   const load = useCallback(async () => {
     setBusy(true);
-    const [u, roles, perms, urs, fs, st] = await Promise.all([
+    const [u, roles, perms, urs, fs, st, sus] = await Promise.all([
       getUserById(userId),
       listRoles(),
       listPermissions(),
       getUserRoles(userId),
       getUserFeatureFlags(userId),
       getUserEnrichmentStats(userId).catch(() => null),
+      listUserSuspensions(userId).catch(() => [] as UserSuspensionEvent[]),
     ]);
     setUser(u);
     setAllRoles(roles);
@@ -80,6 +84,7 @@ export function AdminUserDetail({ userId, onBack }: { userId: string; onBack: ()
     setUserRoleIds(new Set(urs));
     setFlags(fs);
     setStats(st);
+    setSuspensions(sus);
     setBusy(false);
   }, [userId]);
 
@@ -114,13 +119,13 @@ export function AdminUserDetail({ userId, onBack }: { userId: string; onBack: ()
       alert('Indica uma razão.');
       return;
     }
-    await suspendUser(userId, suspendReason);
+    await suspendUser(userId, suspendReason, adminId ?? null);
     setSuspendReason('');
     await load();
   };
 
   const handleUnsuspend = async () => {
-    await unsuspendUser(userId);
+    await unsuspendUser(userId, adminId ?? null);
     await load();
   };
 
@@ -200,7 +205,8 @@ export function AdminUserDetail({ userId, onBack }: { userId: string; onBack: ()
       {stats && (
         <div style={card}>
           <div style={sectionLabel}>Atividade</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+            <StatTile label="Bikes" value={stats.bikes_count.toString()} color="#3fff8b" icon="pedal_bike" />
             <StatTile label="Rides" value={stats.rides_count.toString()} color="#fbbf24" icon="route" />
             <StatTile label="Ficheiros" value={stats.files_count.toString()} color="#6e9bff" icon="folder" />
             <StatTile label="Storage" value={formatBytes(stats.storage_bytes)} color="#e966ff" icon="cloud" />
@@ -275,6 +281,57 @@ export function AdminUserDetail({ userId, onBack }: { userId: string; onBack: ()
               <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>block</span>
               Suspender utilizador
             </button>
+          </div>
+        )}
+
+        {suspensions.length > 0 && (
+          <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(73,72,71,0.2)' }}>
+            <div style={{
+              fontSize: '9px', color: '#777575', textTransform: 'uppercase',
+              letterSpacing: '0.5px', marginBottom: '6px',
+            }}>
+              Histórico ({suspensions.length})
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {suspensions.map((event) => {
+                const isSuspend = event.action === 'suspend';
+                return (
+                  <div key={event.id} style={{
+                    display: 'flex', gap: '8px', alignItems: 'flex-start',
+                    padding: '6px 8px',
+                    backgroundColor: '#0e0e0e',
+                    borderRadius: '3px',
+                    borderLeft: `2px solid ${isSuspend ? '#ff716c' : '#3fff8b'}`,
+                  }}>
+                    <span className="material-symbols-outlined" style={{
+                      fontSize: '14px', color: isSuspend ? '#ff716c' : '#3fff8b', marginTop: '1px',
+                    }}>
+                      {isSuspend ? 'block' : 'check_circle'}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: '11px',
+                        color: isSuspend ? '#ff716c' : '#3fff8b',
+                        fontWeight: 700,
+                      }}>
+                        {isSuspend ? 'Suspenso' : 'Reactivado'}
+                      </div>
+                      <div style={{ fontSize: '9px', color: '#777575', marginTop: '1px' }}>
+                        {new Date(event.performed_at).toLocaleString('pt-PT')}
+                        {event.performed_by_email && (
+                          <> · por <span style={{ color: '#adaaaa' }}>{event.performed_by_email}</span></>
+                        )}
+                      </div>
+                      {event.reason && (
+                        <div style={{ fontSize: '10px', color: '#adaaaa', marginTop: '3px', fontStyle: 'italic' }}>
+                          "{event.reason}"
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

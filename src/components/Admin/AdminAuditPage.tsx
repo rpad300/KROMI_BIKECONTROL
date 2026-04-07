@@ -2,11 +2,20 @@
 // AdminAuditPage — recent impersonation log entries
 // ═══════════════════════════════════════════════════════════
 //
-// Lists the most recent rows from `impersonation_log` joined to
-// admin + target user emails. Read-only audit view for super admins.
+// Lists the most recent rows from `impersonation_log` joined to admin +
+// target user emails. Supports filters (admin/target email, since, active
+// only) and load-more pagination via the cursor returned by listImpersonationLog.
 
-import { useEffect, useState } from 'react';
-import { listImpersonationLog, type ImpersonationLogEntry } from '../../services/rbac/RBACService';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import {
+  listImpersonationLog,
+  listAllUsers,
+  type ImpersonationLogEntry,
+  type ImpersonationLogFilter,
+  type AdminUserRow,
+} from '../../services/rbac/RBACService';
+
+const PAGE_SIZE = 50;
 
 function fmtDate(s: string): string {
   try {
@@ -32,34 +41,131 @@ function fmtDuration(start: string, end: string | null): string {
 }
 
 export function AdminAuditPage() {
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [entries, setEntries] = useState<ImpersonationLogEntry[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = () => {
+  // Filters
+  const [adminId, setAdminId] = useState<string>('');
+  const [targetId, setTargetId] = useState<string>('');
+  const [since, setSince] = useState<string>('');
+  const [until, setUntil] = useState<string>('');
+  const [activeOnly, setActiveOnly] = useState(false);
+
+  const filter: ImpersonationLogFilter = useMemo(() => ({
+    admin_user_id: adminId || undefined,
+    target_user_id: targetId || undefined,
+    since: since ? new Date(since).toISOString() : undefined,
+    until: until ? new Date(until + 'T23:59:59').toISOString() : undefined,
+    active_only: activeOnly || undefined,
+  }), [adminId, targetId, since, until, activeOnly]);
+
+  const loadFirstPage = useCallback(() => {
     setLoading(true);
     setError(null);
-    listImpersonationLog(100)
-      .then(setEntries)
+    listImpersonationLog(filter, { limit: PAGE_SIZE, offset: 0 })
+      .then((page) => {
+        setEntries(page.rows);
+        setTotal(page.total);
+        setHasMore(page.has_more);
+      })
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
+  }, [filter]);
+
+  const loadMore = useCallback(() => {
+    setLoading(true);
+    listImpersonationLog(filter, { limit: PAGE_SIZE, offset: entries.length })
+      .then((page) => {
+        setEntries((prev) => [...prev, ...page.rows]);
+        setHasMore(page.has_more);
+      })
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setLoading(false));
+  }, [filter, entries.length]);
+
+  // Initial: fetch users for the filter dropdowns
+  useEffect(() => {
+    listAllUsers().then(setUsers).catch(() => setUsers([]));
+  }, []);
+
+  // Re-fetch first page when filter changes
+  useEffect(() => {
+    loadFirstPage();
+  }, [loadFirstPage]);
+
+  const clearFilters = () => {
+    setAdminId('');
+    setTargetId('');
+    setSince('');
+    setUntil('');
+    setActiveOnly(false);
   };
 
-  useEffect(() => { load(); }, []);
+  const hasFilter = !!(adminId || targetId || since || until || activeOnly);
 
   return (
     <div style={{ padding: '4px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
         <h2 className="font-headline font-bold" style={{ fontSize: '16px', color: '#3fff8b', margin: 0 }}>
           Auditoria — Impersonation
+          {total !== null && <span style={{ color: '#777575', fontSize: '11px', fontWeight: 400, marginLeft: '6px' }}>({total})</span>}
         </h2>
-        <button onClick={load} disabled={loading} style={{
-          fontSize: '11px', padding: '4px 10px', backgroundColor: 'rgba(63,255,139,0.1)',
-          border: '1px solid rgba(63,255,139,0.3)', color: '#3fff8b', borderRadius: '4px',
-          cursor: loading ? 'wait' : 'pointer', fontWeight: 700,
-        }}>
-          {loading ? 'A carregar...' : 'Atualizar'}
+        <button onClick={loadFirstPage} disabled={loading} style={btnGreen(loading)}>
+          {loading ? '...' : 'Atualizar'}
         </button>
+      </div>
+
+      {/* Filters */}
+      <div style={{
+        backgroundColor: '#131313', padding: '10px', borderRadius: '6px',
+        border: '1px solid rgba(73,72,71,0.2)', marginBottom: '10px',
+      }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
+          <Field label="Admin">
+            <select value={adminId} onChange={(e) => setAdminId(e.target.value)} style={selectStyle}>
+              <option value="">Todos</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>{u.email}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Target">
+            <select value={targetId} onChange={(e) => setTargetId(e.target.value)} style={selectStyle}>
+              <option value="">Todos</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>{u.email}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Desde">
+            <input type="date" value={since} onChange={(e) => setSince(e.target.value)} style={selectStyle} />
+          </Field>
+          <Field label="Até">
+            <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} style={selectStyle} />
+          </Field>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#adaaaa', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={activeOnly}
+              onChange={(e) => setActiveOnly(e.target.checked)}
+              style={{ accentColor: '#ff9f43' }}
+            />
+            Só sessões ativas
+          </label>
+          {hasFilter && (
+            <button onClick={clearFilters} style={{
+              fontSize: '10px', color: '#777575', background: 'none', border: 'none', cursor: 'pointer',
+            }}>
+              Limpar filtros
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -74,7 +180,7 @@ export function AdminAuditPage() {
 
       {!loading && entries.length === 0 && (
         <div style={{ fontSize: '11px', color: '#777575', textAlign: 'center', padding: '24px' }}>
-          Sem registos de impersonation.
+          {hasFilter ? 'Nenhum registo corresponde aos filtros.' : 'Sem registos de impersonation.'}
         </div>
       )}
 
@@ -111,6 +217,58 @@ export function AdminAuditPage() {
           ))}
         </div>
       )}
+
+      {hasMore && (
+        <button
+          onClick={loadMore}
+          disabled={loading}
+          style={{
+            marginTop: '10px',
+            width: '100%',
+            padding: '10px',
+            backgroundColor: 'rgba(63,255,139,0.05)',
+            border: '1px solid rgba(63,255,139,0.2)',
+            borderRadius: '4px',
+            color: '#3fff8b',
+            fontSize: '11px',
+            fontWeight: 700,
+            cursor: loading ? 'wait' : 'pointer',
+          }}
+        >
+          {loading ? 'A carregar...' : `Carregar mais (${entries.length}${total !== null ? ` / ${total}` : ''})`}
+        </button>
+      )}
     </div>
   );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{ fontSize: '9px', color: '#777575', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+const selectStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '6px 8px',
+  backgroundColor: '#0e0e0e',
+  border: '1px solid rgba(73,72,71,0.3)',
+  borderRadius: '3px',
+  color: 'white',
+  fontSize: '11px',
+  outline: 'none',
+  fontFamily: 'inherit',
+};
+
+function btnGreen(disabled: boolean): React.CSSProperties {
+  return {
+    fontSize: '11px', padding: '4px 10px', backgroundColor: 'rgba(63,255,139,0.1)',
+    border: '1px solid rgba(63,255,139,0.3)', color: '#3fff8b', borderRadius: '4px',
+    cursor: disabled ? 'wait' : 'pointer', fontWeight: 700,
+  };
 }
