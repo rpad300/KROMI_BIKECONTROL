@@ -35,6 +35,9 @@ if [ -z "${OBSIDIAN_API_KEY:-}" ]; then
   exit 0
 fi
 
+# Force UTF-8 output on Windows
+export PYTHONIOENCODING=utf-8
+
 echo "[kromi-doc] post-commit: syncing vault..."
 kromi-doc sync --full 2>&1 | tail -3 || true
 """
@@ -59,6 +62,9 @@ fi
 if [ -z "${OBSIDIAN_API_KEY:-}" ]; then
   exit 0
 fi
+
+# Force UTF-8 output on Windows (Python prints unicode in summaries)
+export PYTHONIOENCODING=utf-8
 
 echo "[kromi-doc] pre-push: full vault sync + deps + embeddings..."
 kromi-doc sync --full 2>&1 | tail -5 || true

@@ -24,7 +24,7 @@ class ValidationReport:
         return not (self.broken_links or self.missing_frontmatter)
 
     def summary(self) -> str:
-        lines = ["", "── Validation report ──────────────────────────────"]
+        lines = ["", "-- Validation report ----------------------------"]
         lines.append(f"  Total notes:        {self.total_notes}")
         lines.append(f"  Broken wikilinks:   {len(self.broken_links)}")
         lines.append(f"  Missing frontmatter:{len(self.missing_frontmatter)}")
