@@ -1,6 +1,23 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { DEFAULT_RIDER_PROFILE, type RiderProfile } from '../types/athlete.types';
+
+/**
+ * When the URL carries `?as=<uuid>` the tab is an impersonation session.
+ * We isolate persisted data to sessionStorage so:
+ *   1. The admin's localStorage stays untouched (no cross-tab leak)
+ *   2. Closing the tab automatically clears the impersonated state
+ *   3. Refreshing the impersonation tab keeps it alive (sessionStorage
+ *      persists across tab reloads but not across tabs)
+ */
+const IS_IMPERSONATION_TAB = (() => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).has('as');
+  } catch {
+    return false;
+  }
+})();
 
 /** Motor tuning level characteristics — what each SET_TUNING level does */
 export interface TuningLevelSpec {
@@ -370,6 +387,8 @@ interface SettingsState {
   addBike: (config: Partial<BikeConfig> & { name: string; bike_type: BikeConfig['bike_type'] }) => void;
   removeBike: (id: string) => void;
   selectBike: (id: string) => void;
+  /** Replace the whole bikes array. Used by sync/impersonation loaders. */
+  setBikes: (bikes: BikeConfig[], activeBikeId: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -452,9 +471,22 @@ export const useSettingsStore = create<SettingsState>()(
         });
         return { activeBikeId: id, bikeConfig: bike };
       }),
+
+      setBikes: (bikes, activeBikeId) => set(() => {
+        const safe = bikes.length > 0 ? bikes.map(safeBikeConfig) : [DEFAULT_BIKE_CONFIG];
+        const active = safe.find((b) => b.id === activeBikeId) ?? safe[0]!;
+        return {
+          bikes: safe,
+          activeBikeId: active.id,
+          bikeConfig: active,
+        };
+      }),
     }),
     {
       name: 'bikecontrol-settings',
+      // Impersonation tabs: use sessionStorage so they don't clobber the
+      // admin's persisted settings in the original tab.
+      storage: IS_IMPERSONATION_TAB ? createJSONStorage(() => sessionStorage) : undefined,
       // Deep merge on hydration — ensures new fields (tuning_max etc) get defaults
       merge: (persisted, current) => {
         const p = persisted as Partial<SettingsState> ?? {};

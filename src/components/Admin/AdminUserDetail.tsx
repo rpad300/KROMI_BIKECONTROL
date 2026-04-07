@@ -156,9 +156,10 @@ export function AdminUserDetail({ userId, onBack }: { userId: string; onBack: ()
       alert('Não podes fazer impersonation de ti próprio.');
       return;
     }
-    if (!confirm(`Entrar como ${user.email}?\nVais ver a plataforma como ele. A tua sessão de admin é preservada.`)) return;
+    if (!confirm(`Entrar como ${user.email}?\nVai abrir numa nova tab. Fecha essa tab para sair.`)) return;
     await beginImpersonation(user, 'Admin debug session');
-    onBack();
+    // Stay on this page — the admin tab is unchanged, the new tab handles
+    // the impersonated session.
   };
 
   if (busy && !user) {

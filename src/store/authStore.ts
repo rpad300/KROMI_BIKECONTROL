@@ -6,7 +6,18 @@ import {
   logImpersonationStart,
   logImpersonationEnd,
   notifyImpersonationStart,
+  getUserById,
 } from '../services/rbac/RBACService';
+
+/** Detect whether this tab was opened as an impersonation session. */
+function isImpersonationTab(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).has('as');
+  } catch {
+    return false;
+  }
+}
 
 interface AuthState {
   /** The actual logged-in user (the admin during impersonation). */
@@ -31,9 +42,15 @@ interface AuthState {
   isLoggedIn: () => boolean;
   getUserId: () => string | null;
 
-  /** Begin impersonation. Only super admins can call this. */
+  /** Begin impersonation. Opens a new browser tab scoped to the target user. */
   beginImpersonation: (target: AuthUser, reason?: string) => Promise<void>;
-  /** End impersonation and restore the real admin user. */
+  /**
+   * Apply an impersonation intent from URL params (?as=<uuid>&log=<id>).
+   * Runs in the new tab during bootstrap. Mutates state AND reloads the
+   * target user's settings from the DB.
+   */
+  applyImpersonationFromUrl: () => Promise<boolean>;
+  /** End impersonation. In an impersonation tab this closes the window. */
   endImpersonation: () => Promise<void>;
   /** True if currently impersonating someone. */
   isImpersonating: () => boolean;
@@ -154,14 +171,10 @@ export const useAuthStore = create<AuthState>()(
         if (target.id === realUser.id) {
           throw new Error('Cannot impersonate yourself');
         }
+        // Log the audit row now (so the audit trail exists even if the
+        // user closes the new tab before it finishes loading) and send
+        // the alert email. Both are fire-and-forget w.r.t. UI flow.
         const logId = await logImpersonationStart(realUser.id, target.id, reason);
-        set({
-          impersonatedUser: target,
-          impersonationLogId: logId,
-          impersonationReadOnly: true,
-          user: target,
-        });
-        // Fire-and-forget audit email (no-op if SMTP secrets aren't set)
         void notifyImpersonationStart({
           admin_email: realUser.email,
           admin_name: realUser.name ?? null,
@@ -170,6 +183,60 @@ export const useAuthStore = create<AuthState>()(
           reason: reason ?? null,
           log_id: logId,
         });
+
+        // Open the impersonation session in a NEW tab. We deliberately do
+        // NOT mutate the current tab's state — the admin continues to see
+        // their own data, and the impersonated view is visually scoped to
+        // a separate window. Closing the tab = exiting impersonation.
+        const params = new URLSearchParams();
+        params.set('as', target.id);
+        if (logId) params.set('log', logId);
+        if (reason) params.set('reason', reason);
+        const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+        window.open(url, '_blank', 'noopener=no,noreferrer=no');
+      },
+
+      applyImpersonationFromUrl: async () => {
+        if (typeof window === 'undefined') return false;
+        const params = new URLSearchParams(window.location.search);
+        const targetId = params.get('as');
+        if (!targetId) return false;
+
+        const { realUser } = get();
+        if (!realUser?.is_super_admin) {
+          // Non-admin landed on an impersonation URL — ignore and clean
+          window.history.replaceState({}, '', window.location.pathname);
+          return false;
+        }
+        if (targetId === realUser.id) {
+          window.history.replaceState({}, '', window.location.pathname);
+          return false;
+        }
+
+        const target = await getUserById(targetId);
+        if (!target) {
+          window.history.replaceState({}, '', window.location.pathname);
+          return false;
+        }
+
+        const authTarget: AuthUser = {
+          id: target.id,
+          email: target.email,
+          name: target.name ?? null,
+          is_super_admin: target.is_super_admin ?? false,
+        };
+        set({
+          impersonatedUser: authTarget,
+          impersonationLogId: params.get('log'),
+          impersonationReadOnly: true,
+          user: authTarget,
+        });
+
+        // Clean the URL so a refresh doesn't re-trigger the apply logic
+        // against stale state. The sessionStorage-backed settingsStore
+        // will persist the target data across refreshes within this tab.
+        window.history.replaceState({}, '', window.location.pathname);
+        return true;
       },
 
       endImpersonation: async () => {
@@ -180,6 +247,16 @@ export const useAuthStore = create<AuthState>()(
           } catch {
             // best effort
           }
+        }
+        // If this tab was opened as an impersonation window, close it.
+        // Otherwise (legacy same-tab path) fall back to restoring realUser.
+        if (isImpersonationTab() && typeof window !== 'undefined') {
+          try {
+            window.close();
+          } catch {
+            // window.close() may silently fail if the tab wasn't script-opened
+          }
+          return;
         }
         set({
           impersonatedUser: null,

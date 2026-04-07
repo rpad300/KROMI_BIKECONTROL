@@ -50,7 +50,7 @@ interface SavedSensors {
 
 interface DBSettings {
   bike_config: BikeConfig;
-  bikes?: Array<Partial<BikeConfig> & { id: string }>;
+  bikes?: BikeConfig[];
   rider_profile: RiderProfile;
   auto_assist: Record<string, unknown>;
   saved_device: SavedSensors | SavedDevice | null;
@@ -98,8 +98,14 @@ export async function loadSettingsFromDB(): Promise<boolean> {
       }
     } catch { /* bike_configs may not exist yet */ }
 
-    // Merge DB settings into local stores
-    if (row.bike_config && Object.keys(row.bike_config).length > 0) {
+    // Merge DB settings into local stores. For bikes we use setBikes()
+    // because the row holds the full array — that's required when switching
+    // users (impersonation) so we actually replace the local bikes array
+    // rather than patch the active one.
+    if (Array.isArray(row.bikes) && row.bikes.length > 0) {
+      const activeId = row.active_bike_id ?? row.bikes[0]!.id;
+      settings.setBikes(row.bikes, activeId);
+    } else if (row.bike_config && Object.keys(row.bike_config).length > 0) {
       settings.updateBikeConfig(row.bike_config);
     }
     if (row.rider_profile && Object.keys(row.rider_profile).length > 0) {
@@ -170,17 +176,10 @@ export async function saveSettingsToDB(): Promise<boolean> {
     const { useLayoutStore } = await import('../../store/layoutStore');
     const layouts = useLayoutStore.getState().layouts;
 
-    // Slim bike list — keep server-side for admin stats + multi-device sync.
-    // Each entry is the minimal info needed to render in admin dashboards;
-    // the full active bike still lives in bike_config (singular).
-    const slimBikes = (settings.bikes ?? []).map((b) => ({
-      id: b.id,
-      name: b.name,
-      bike_type: b.bike_type,
-      brand: b.brand,
-      model: b.model,
-      year: b.year,
-    }));
+    // Store the FULL bikes array (not a slim mirror) so multi-device sync
+    // and impersonation can fully restore. The admin enrichment stats still
+    // work because they just call jsonb_array_length(bikes).
+    const bikes = settings.bikes ?? [];
 
     await supabaseFetch('/user_settings?on_conflict=user_id', {
       method: 'POST',
@@ -188,7 +187,7 @@ export async function saveSettingsToDB(): Promise<boolean> {
       body: JSON.stringify({
         user_id: userId,
         bike_config: settings.bikeConfig,
-        bikes: slimBikes,
+        bikes,
         rider_profile: settings.riderProfile,
         auto_assist: settings.autoAssist,
         saved_device: savedDevices,

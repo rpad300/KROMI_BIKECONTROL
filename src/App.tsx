@@ -25,7 +25,7 @@ import { useDriveBootstrap } from './hooks/useDriveBootstrap';
 import { ImpersonationBanner } from './components/Admin/ImpersonationBanner';
 import { DesktopLiveView } from './components/Desktop/DesktopLiveView';
 import { GlobalMapView } from './components/Map/GlobalMapView';
-import { startSettingsSync } from './services/sync/SettingsSyncService';
+import { startSettingsSync, loadSettingsFromDB } from './services/sync/SettingsSyncService';
 import { trackLogin } from './services/sync/LoginTracker';
 import { useGlanceStore } from './store/glanceStore';
 import { AmbientGlance } from './components/DashboardSystem/AmbientGlance';
@@ -46,10 +46,33 @@ export function App() {
   const user = useAuthStore((s) => s.user);
   const loading = useAuthStore((s) => s.loading);
   const checkSession = useAuthStore((s) => s.checkSession);
+  const applyImpersonationFromUrl = useAuthStore((s) => s.applyImpersonationFromUrl);
+  const [impersonationApplied, setImpersonationApplied] = useState(false);
 
   useEffect(() => { checkSession(); }, [checkSession]);
 
-  if (loading) {
+  // Once the admin session is loaded, look for ?as=<uuid> in the URL.
+  // If present, switch this tab's state to the target user and reload
+  // their settings from the DB so the UI actually reflects their data.
+  useEffect(() => {
+    if (loading || !user) return;
+    if (impersonationApplied) return;
+    if (typeof window === 'undefined') return;
+    if (!new URLSearchParams(window.location.search).has('as')) {
+      setImpersonationApplied(true);
+      return;
+    }
+    (async () => {
+      const ok = await applyImpersonationFromUrl();
+      if (ok) {
+        // Pull target user's bikes, bike_config, rider_profile, etc.
+        await loadSettingsFromDB();
+      }
+      setImpersonationApplied(true);
+    })();
+  }, [loading, user, applyImpersonationFromUrl, impersonationApplied]);
+
+  if (loading || !impersonationApplied) {
     return (
       <div className="h-full flex items-center justify-center bg-[#0e0e0e]">
         <div className="w-10 h-10 border-2 border-[#3fff8b] border-t-transparent rounded-full animate-spin" />
