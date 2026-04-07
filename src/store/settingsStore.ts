@@ -485,8 +485,13 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'bikecontrol-settings',
       // Impersonation tabs: use sessionStorage so they don't clobber the
-      // admin's persisted settings in the original tab.
-      storage: IS_IMPERSONATION_TAB ? createJSONStorage(() => sessionStorage) : undefined,
+      // admin's persisted settings in the original tab. Normal tabs fall
+      // through to zustand's default (localStorage) — we only set the
+      // `storage` option when we want to override it, because setting it
+      // to `undefined` trips the middleware's "storage unavailable" path.
+      ...(IS_IMPERSONATION_TAB
+        ? { storage: createJSONStorage(() => sessionStorage) }
+        : {}),
       // Deep merge on hydration — ensures new fields (tuning_max etc) get defaults
       merge: (persisted, current) => {
         const p = persisted as Partial<SettingsState> ?? {};
