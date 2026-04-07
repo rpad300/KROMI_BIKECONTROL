@@ -66,6 +66,48 @@ const json = (body: unknown, status = 200) =>
     headers: { ...CORS, 'Content-Type': 'application/json' },
   });
 
+// ─── Rate-limiting helper ────────────────────────────────────
+// Calls public.check_rate_limit() via PostgREST RPC. Fail-open on errors
+// so legitimate traffic is never blocked by an infra hiccup.
+async function checkRateLimit(
+  identifier: string,
+  windowSecs: number,
+  maxCalls: number,
+): Promise<{ allowed: boolean; current: number }> {
+  if (!SUPABASE_URL || !SERVICE_ROLE) return { allowed: true, current: 0 };
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/check_rate_limit`, {
+      method: 'POST',
+      headers: {
+        apikey: SERVICE_ROLE,
+        Authorization: `Bearer ${SERVICE_ROLE}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        p_function: 'drive-storage',
+        p_identifier: identifier,
+        p_window_secs: windowSecs,
+        p_max: maxCalls,
+      }),
+    });
+    if (!res.ok) return { allowed: true, current: 0 };
+    const rows = await res.json();
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    return { allowed: !!row?.allowed, current: row?.current_count ?? 0 };
+  } catch {
+    return { allowed: true, current: 0 };
+  }
+}
+
+function clientIdentifier(req: Request): string {
+  return (
+    req.headers.get('cf-connecting-ip') ??
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    req.headers.get('x-real-ip') ??
+    'anonymous'
+  );
+}
+
 // ─── Token cache (warm containers reuse this) ────────────────
 let cachedToken: { token: string; exp: number } | null = null;
 
@@ -259,6 +301,16 @@ async function authenticate(req: Request): Promise<{ user_id: string } | null> {
 // ─── Request router ──────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
+
+  // Rate limit per IP: 120 calls / 60s. Comfortable for normal usage
+  // (a user opening Settings hits ping + checkUserFolders + maybe 1-2
+  // uploads), restrictive enough to slow down a runaway client or
+  // someone scripting bulk uploads. Skipped for OPTIONS preflight.
+  const ip = clientIdentifier(req);
+  const rl = await checkRateLimit(ip, 60, 120);
+  if (!rl.allowed) {
+    return json({ error: 'rate_limited', current: rl.current }, 429);
+  }
 
   try {
     if (!OAUTH_CLIENT_ID || !OAUTH_CLIENT_SECRET || !OAUTH_REFRESH_TOKEN || !ROOT_FOLDER_ID) {
