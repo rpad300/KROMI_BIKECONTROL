@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts';
 import { useAuthStore } from '../../store/authStore';
+import { supaGet } from '../../lib/supaFetch';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 const POLL_INTERVAL = 5000;
 
@@ -45,25 +44,21 @@ export function LiveRideView() {
   const markerRef = useRef<google.maps.Marker | null>(null);
 
   const poll = useCallback(async () => {
-    if (!userId || !SUPABASE_URL || !SUPABASE_KEY) { setLoading(false); return; }
+    if (!userId) { setLoading(false); return; }
     try {
-      const sessRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/ride_sessions?user_id=eq.${userId}&status=eq.active&select=id,started_at,battery_start&limit=1&order=started_at.desc`,
-        { headers: { 'apikey': SUPABASE_KEY!, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+      const sessions = await supaGet<ActiveSession[]>(
+        `/rest/v1/ride_sessions?user_id=eq.${userId}&status=eq.active&select=id,started_at,battery_start&limit=1&order=started_at.desc`,
       );
-      const sessions = await sessRes.json();
       if (!Array.isArray(sessions) || sessions.length === 0) {
         setSession(null); setSnapshots([]); setLatest(null); setLoading(false);
         return;
       }
-      const active = sessions[0] as ActiveSession;
+      const active = sessions[0]!;
       setSession(active);
 
-      const snapRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/ride_snapshots?session_id=eq.${active.id}&select=elapsed_s,lat,lng,speed_kmh,power_watts,cadence_rpm,battery_pct,assist_mode,hr_bpm,altitude_m,gradient_pct,distance_km&order=elapsed_s.asc&limit=2000`,
-        { headers: { 'apikey': SUPABASE_KEY!, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+      const snaps = await supaGet<Snapshot[]>(
+        `/rest/v1/ride_snapshots?session_id=eq.${active.id}&select=elapsed_s,lat,lng,speed_kmh,power_watts,cadence_rpm,battery_pct,assist_mode,hr_bpm,altitude_m,gradient_pct,distance_km&order=elapsed_s.asc&limit=2000`,
       );
-      const snaps = (await snapRes.json()) as Snapshot[];
       setSnapshots(snaps);
       if (snaps.length > 0) setLatest(snaps[snaps.length - 1]!);
     } catch { /* silent */ }

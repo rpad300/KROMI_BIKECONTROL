@@ -30,9 +30,7 @@ import {
   ensureFolderPath as ensureDriveFolderPath,
   type DriveFile,
 } from './googleDrive/driveClient';
-
-const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaFetch, supaGet, SupaFetchError } from '../../lib/supaFetch';
 
 // ─── Types ───────────────────────────────────────────────────
 export type FileCategory =
@@ -197,41 +195,39 @@ export function resolveFolderPath(opts: FolderResolveOptions): string[] {
 }
 
 // ─── Supabase REST helpers ───────────────────────────────────
-function sbHeaders(): HeadersInit {
-  return {
-    apikey: SB_KEY ?? '',
-    Authorization: `Bearer ${SB_KEY ?? ''}`,
-    'Content-Type': 'application/json',
-  };
-}
 
 async function insertKromiFile(record: Partial<KromiFile>): Promise<KromiFile | null> {
-  if (!SB_URL || !SB_KEY) throw new Error('Supabase not configured');
-  const res = await fetch(`${SB_URL}/rest/v1/kromi_files`, {
-    method: 'POST',
-    headers: { ...sbHeaders(), Prefer: 'return=representation' },
-    body: JSON.stringify(record),
-  });
-  if (!res.ok) throw new Error(`kromi_files insert ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  return Array.isArray(data) ? (data[0] ?? null) : data;
+  try {
+    const res = await supaFetch('/rest/v1/kromi_files', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      body: JSON.stringify(record),
+    });
+    const data = await res.json();
+    return Array.isArray(data) ? (data[0] ?? null) : data;
+  } catch (err) {
+    if (err instanceof SupaFetchError) {
+      throw new Error(`kromi_files insert ${err.status}: ${err.body}`);
+    }
+    throw err;
+  }
 }
 
 async function selectKromiFiles(query: string): Promise<KromiFile[]> {
-  if (!SB_URL || !SB_KEY) return [];
-  const res = await fetch(`${SB_URL}/rest/v1/kromi_files?${query}`, {
-    headers: sbHeaders(),
-  });
-  const data = await res.json();
-  return Array.isArray(data) ? (data as KromiFile[]) : [];
+  try {
+    const data = await supaGet<KromiFile[]>(`/rest/v1/kromi_files?${query}`);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
 }
 
 async function deleteKromiFile(fileId: string): Promise<void> {
-  if (!SB_URL || !SB_KEY) return;
-  await fetch(`${SB_URL}/rest/v1/kromi_files?id=eq.${fileId}`, {
-    method: 'DELETE',
-    headers: sbHeaders(),
-  });
+  try {
+    await supaFetch(`/rest/v1/kromi_files?id=eq.${fileId}`, { method: 'DELETE' });
+  } catch {
+    // best-effort
+  }
 }
 
 // ─── Public API ──────────────────────────────────────────────

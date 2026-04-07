@@ -14,30 +14,16 @@ import { useSettingsStore, type BikeConfig } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
 import { getSavedDevice, saveDevice, getSavedSensorDevice, saveSensorDevice, type SavedDevice } from '../bluetooth/BLEBridge';
 import type { RiderProfile } from '../../types/athlete.types';
+import { supaFetch, supaGet, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../lib/supaFetch';
 
 const SENSOR_TYPES = ['hr', 'di2', 'sram', 'power'] as const;
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
 function isConfigured(): boolean {
-  return !!SUPABASE_URL && !!SUPABASE_KEY && !SUPABASE_URL.includes('your-project');
+  return !!SUPABASE_URL && !!SUPABASE_ANON_KEY && !SUPABASE_URL.includes('your-project');
 }
 
 function getUserId(): string | null {
   return useAuthStore.getState().user?.id ?? null;
-}
-
-async function supabaseFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  return fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-    ...options,
-    headers: {
-      'apikey': SUPABASE_KEY!,
-      'Authorization': `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
 }
 
 interface SavedSensors {
@@ -66,11 +52,10 @@ export async function loadSettingsFromDB(): Promise<boolean> {
   if (!userId) return false;
 
   try {
-    const res = await supabaseFetch(
-      `/user_settings?user_id=eq.${userId}&select=bike_config,bikes,rider_profile,auto_assist,saved_device,active_bike_id,dashboard_layouts,privacy_settings&limit=1`,
-      { headers: { 'Prefer': 'return=representation' } }
+    const data = await supaGet<DBSettings[]>(
+      `/rest/v1/user_settings?user_id=eq.${userId}&select=bike_config,bikes,rider_profile,auto_assist,saved_device,active_bike_id,dashboard_layouts,privacy_settings&limit=1`,
+      { headers: { Prefer: 'return=representation' } },
     );
-    const data = await res.json();
 
     if (!Array.isArray(data) || data.length === 0) {
       console.log('[Sync] No settings in DB — using local defaults');
@@ -84,13 +69,21 @@ export async function loadSettingsFromDB(): Promise<boolean> {
 
     // Load bike hardware profile (wheel circ, etc.) from bike_configs
     try {
-      const bikeRes = await supabaseFetch(
-        `/bike_configs?user_id=eq.${userId}&select=wheel_circumference_mm,total_odo_km,bat1_capacity_pct,bat1_health_pct,bat1_cycles,bat2_capacity_pct,bat2_health_pct,bat2_cycles&limit=1`,
-        { headers: { 'Prefer': 'return=representation' } }
+      const bikeData = await supaGet<Array<{
+        wheel_circumference_mm?: number;
+        total_odo_km?: number;
+        bat1_capacity_pct?: number;
+        bat1_health_pct?: number;
+        bat1_cycles?: number;
+        bat2_capacity_pct?: number;
+        bat2_health_pct?: number;
+        bat2_cycles?: number;
+      }>>(
+        `/rest/v1/bike_configs?user_id=eq.${userId}&select=wheel_circumference_mm,total_odo_km,bat1_capacity_pct,bat1_health_pct,bat1_cycles,bat2_capacity_pct,bat2_health_pct,bat2_cycles&limit=1`,
+        { headers: { Prefer: 'return=representation' } },
       );
-      const bikeData = await bikeRes.json();
       if (Array.isArray(bikeData) && bikeData.length > 0) {
-        const hw = bikeData[0];
+        const hw = bikeData[0]!;
         if (hw.wheel_circumference_mm) {
           settings.updateBikeConfig({ wheel_circumference_mm: hw.wheel_circumference_mm });
           console.log(`[Sync] Wheel circumference from DB: ${hw.wheel_circumference_mm}mm`);
@@ -181,9 +174,12 @@ export async function saveSettingsToDB(): Promise<boolean> {
     // work because they just call jsonb_array_length(bikes).
     const bikes = settings.bikes ?? [];
 
-    await supabaseFetch('/user_settings?on_conflict=user_id', {
+    await supaFetch('/rest/v1/user_settings?on_conflict=user_id', {
       method: 'POST',
-      headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      headers: {
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
       body: JSON.stringify({
         user_id: userId,
         bike_config: settings.bikeConfig,

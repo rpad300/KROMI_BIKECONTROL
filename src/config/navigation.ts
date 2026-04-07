@@ -24,6 +24,7 @@ export type SettingsPage =
   | 'accessories'
   | 'routes'
   | 'account'
+  | 'privacy'
   | 'service-book'
   | 'shop'
   | 'super-admin';
@@ -89,8 +90,9 @@ export const NAV_CATEGORIES: NavCategory[] = [
       permission: 'features.shop_management' },
   ]},
   { label: 'Sistema', icon: 'settings', color: '#adaaaa', items: [
-    { id: 'routes',  icon: 'route',           label: 'Rotas',  desc: 'Import Komoot, histórico' },
-    { id: 'account', icon: 'account_circle', label: 'Conta',  desc: 'Email, sessão, versão' },
+    { id: 'routes',  icon: 'route',           label: 'Rotas',    desc: 'Import Komoot, histórico' },
+    { id: 'account', icon: 'account_circle', label: 'Conta',    desc: 'Email, sessão, versão' },
+    { id: 'privacy', icon: 'shield_person',  label: 'Privacidade', desc: 'Exportar dados, apagar conta (GDPR)' },
   ]},
 ];
 

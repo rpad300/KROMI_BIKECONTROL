@@ -7,51 +7,49 @@ import type {
   MaintenanceSchedule, Shop, ShopMember, BikeQRCode,
   ServiceStatus, MaintenanceDefault,
 } from '../../types/service.types';
-
-const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaFetch, supaGet } from '../../lib/supaFetch';
 
 async function query<T>(path: string): Promise<T[]> {
-  if (!SB_URL || !SB_KEY) return [];
-  const res = await fetch(`${SB_URL}/rest/v1${path}`, {
-    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
-  });
-  const data = await res.json();
-  return Array.isArray(data) ? data : [];
+  try {
+    const data = await supaGet<T[]>(`/rest/v1${path}`);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
 }
 
 async function insert<T>(table: string, record: Partial<T>): Promise<T | null> {
-  if (!SB_URL || !SB_KEY) return null;
-  const res = await fetch(`${SB_URL}/rest/v1/${table}`, {
-    method: 'POST',
-    headers: {
-      apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`,
-      'Content-Type': 'application/json', Prefer: 'return=representation',
-    },
-    body: JSON.stringify(record),
-  });
-  const data = await res.json();
-  return Array.isArray(data) ? data[0] ?? null : data;
+  try {
+    const res = await supaFetch(`/rest/v1/${table}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      body: JSON.stringify(record),
+    });
+    const data = await res.json();
+    return Array.isArray(data) ? data[0] ?? null : data;
+  } catch {
+    return null;
+  }
 }
 
 async function update<T>(table: string, id: string, partial: Partial<T>): Promise<void> {
-  if (!SB_URL || !SB_KEY) return;
-  await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, {
-    method: 'PATCH',
-    headers: {
-      apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ ...partial, updated_at: new Date().toISOString() }),
-  });
+  try {
+    await supaFetch(`/rest/v1/${table}?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...partial, updated_at: new Date().toISOString() }),
+    });
+  } catch {
+    // best-effort
+  }
 }
 
 async function remove(table: string, id: string): Promise<void> {
-  if (!SB_URL || !SB_KEY) return;
-  await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, {
-    method: 'DELETE',
-    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
-  });
+  try {
+    await supaFetch(`/rest/v1/${table}?id=eq.${id}`, { method: 'DELETE' });
+  } catch {
+    // best-effort
+  }
 }
 
 // ── Service Requests ────────────────────────────────────────
@@ -197,20 +195,20 @@ export async function getSchedulesForBike(bikeId: string, userId: string): Promi
 export async function seedSchedulesForBike(
   bikeId: string, userId: string, defaults: MaintenanceDefault[],
 ): Promise<void> {
-  if (!SB_URL || !SB_KEY) return;
   for (const d of defaults) {
-    await fetch(`${SB_URL}/rest/v1/maintenance_schedules?on_conflict=bike_id,user_id,component_type`, {
-      method: 'POST',
-      headers: {
-        apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`,
-        'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates',
-      },
-      body: JSON.stringify({
-        bike_id: bikeId, user_id: userId,
-        component_type: d.component_type, component_name: d.label,
-        interval_km: d.interval_km, interval_hours: d.interval_hours, interval_months: d.interval_months,
-      }),
-    });
+    try {
+      await supaFetch('/rest/v1/maintenance_schedules?on_conflict=bike_id,user_id,component_type', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify({
+          bike_id: bikeId, user_id: userId,
+          component_type: d.component_type, component_name: d.label,
+          interval_km: d.interval_km, interval_hours: d.interval_hours, interval_months: d.interval_months,
+        }),
+      });
+    } catch {
+      // best-effort
+    }
   }
 }
 

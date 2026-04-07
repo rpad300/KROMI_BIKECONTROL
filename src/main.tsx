@@ -7,6 +7,7 @@ import { syncQueue } from './services/sync/SyncQueue';
 import { localRideStore } from './services/storage/LocalRideStore';
 import { rideSessionManager } from './services/storage/RideHistory';
 import { isKromiWebView } from './utils/platform';
+import { supaFetch } from './lib/supaFetch';
 import './index.css';
 
 // App version from git tag (injected at build time)
@@ -16,9 +17,6 @@ const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '
 // Remote diagnostic log — fire-and-forget, includes version + GPS
 function dlog(msg: string) {
   console.log('[DIAG]', msg);
-  const url = import.meta.env.VITE_SUPABASE_URL;
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !key) return;
 
   // Get current GPS from mapStore (lazy import to avoid circular deps)
   let lat = 0, lng = 0;
@@ -27,9 +25,9 @@ function dlog(msg: string) {
     if (mapState) { const m = mapState(); lat = m.latitude; lng = m.longitude; }
   } catch { /* no GPS yet */ }
 
-  fetch(`${url}/rest/v1/debug_logs`, {
+  supaFetch('/rest/v1/debug_logs', {
     method: 'POST',
-    headers: { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+    headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
     body: JSON.stringify({
       level: 'info',
       message: `[${APP_VERSION}] ${msg}`,
@@ -47,8 +45,17 @@ function dlog(msg: string) {
 dlog(`PWA boot — webview=${isKromiWebView()} online=${navigator.onLine}`);
 
 // Init LocalRideStore (bulletproof ride storage) + SyncQueue early
-localRideStore.init().then(() => {
+localRideStore.init().then(async () => {
   dlog('LocalRideStore init OK');
+  // Backfill user_id on legacy rows (Session 18 one-shot migration).
+  // Must run AFTER auth has been rehydrated so currentViewerId() resolves
+  // — the authStore.persist hydration is synchronous at import time.
+  try {
+    const n = await localRideStore.backfillUserIdOnLegacyRows();
+    if (n > 0) dlog(`LocalRideStore backfilled ${n} legacy rows`);
+  } catch (err) {
+    dlog(`LocalRideStore backfill FAILED: ${String(err)}`);
+  }
   localRideStore.startSyncLoop();
   localRideStore.purgeOldSyncedData().catch(() => {});
 }).catch((err) => {

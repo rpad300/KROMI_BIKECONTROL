@@ -6,9 +6,7 @@
 
 import { useAuthStore } from '../../store/authStore';
 import { getSavedDevice } from '../bluetooth/BLEBridge';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaFetch, supaGet } from '../../lib/supaFetch';
 
 interface BikeHardwareProfile {
   // Identity
@@ -152,7 +150,6 @@ function debounceSave(): void {
 }
 
 async function saveBikeProfile(): Promise<void> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return;
   const userId = useAuthStore.getState().user?.id;
   if (!userId) return;
 
@@ -165,10 +162,9 @@ async function saveBikeProfile(): Promise<void> {
     const deviceName = savedDevice?.name ?? profile.sg_type ?? 'Unknown';
 
     // Check if this specific bike exists for this user
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/bike_configs?user_id=eq.${userId}&ble_device_name=eq.${encodeURIComponent(deviceName)}&select=id&limit=1`, {
-      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
-    });
-    const existing = await res.json();
+    const existing = await supaGet<Array<{ id: string }>>(
+      `/rest/v1/bike_configs?user_id=eq.${userId}&ble_device_name=eq.${encodeURIComponent(deviceName)}&select=id&limit=1`,
+    );
 
     const data = {
       user_id: userId,
@@ -215,15 +211,15 @@ async function saveBikeProfile(): Promise<void> {
     };
 
     if (existing.length > 0) {
-      await fetch(`${SUPABASE_URL}/rest/v1/bike_configs?id=eq.${existing[0].id}`, {
+      await supaFetch(`/rest/v1/bike_configs?id=eq.${existing[0]!.id}`, {
         method: 'PATCH',
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify(data),
       });
     } else {
-      await fetch(`${SUPABASE_URL}/rest/v1/bike_configs`, {
+      await supaFetch('/rest/v1/bike_configs', {
         method: 'POST',
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify(data),
       });
     }

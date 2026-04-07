@@ -26,8 +26,18 @@ export function LoginPage() {
     setStep('loading');
     const result = await verifyOTP(email, otp);
     if (result.success && result.user && result.session_token && result.expires_at) {
-      setSession(result.user, result.session_token, result.expires_at);
-      registerDevice(result.user);
+      setSession(
+        result.user,
+        result.session_token,
+        result.expires_at,
+        result.jwt ?? null,
+        result.jwt_expires_at ?? null,
+      );
+      if (result.jwt) {
+        // registerDevice writes to device_tokens, which is RLS-locked
+        // to auth.uid() = user_id — so we need the fresh JWT.
+        void registerDevice(result.user, result.jwt);
+      }
     } else { setError(result.error ?? 'Codigo invalido'); setStep('otp'); }
   };
 

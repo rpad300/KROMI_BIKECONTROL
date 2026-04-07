@@ -1,24 +1,9 @@
 import type { AthleteProfile } from './AdaptiveLearningEngine';
 import type { RideSummary } from './RideDataCollector';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaFetch, supaGet, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../lib/supaFetch';
 
 function isConfigured(): boolean {
-  return !!SUPABASE_URL && !!SUPABASE_KEY && !SUPABASE_URL.includes('your-project');
-}
-
-async function supabaseFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  return fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-    ...options,
-    headers: {
-      'apikey': SUPABASE_KEY!,
-      'Authorization': `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=minimal',
-      ...options.headers,
-    },
-  });
+  return !!SUPABASE_URL && !!SUPABASE_ANON_KEY && !SUPABASE_URL.includes('your-project');
 }
 
 /** Generate a stable device ID for this browser */
@@ -36,9 +21,12 @@ export async function syncProfile(profile: AthleteProfile): Promise<void> {
 
   try {
     const deviceId = getDeviceId();
-    await supabaseFetch('/athlete_profiles?on_conflict=device_id', {
+    await supaFetch('/rest/v1/athlete_profiles?on_conflict=device_id', {
       method: 'POST',
-      headers: { 'Prefer': 'resolution=merge-duplicates' },
+      headers: {
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
       body: JSON.stringify({
         id: profile.id,
         device_id: deviceId,
@@ -56,13 +44,12 @@ export async function loadProfile(): Promise<AthleteProfile | null> {
 
   try {
     const deviceId = getDeviceId();
-    const res = await supabaseFetch(
-      `/athlete_profiles?device_id=eq.${deviceId}&select=profile_data&limit=1`,
-      { headers: { 'Prefer': 'return=representation' } }
+    const data = await supaGet<Array<{ profile_data: AthleteProfile }>>(
+      `/rest/v1/athlete_profiles?device_id=eq.${deviceId}&select=profile_data&limit=1`,
+      { headers: { Prefer: 'return=representation' } },
     );
-    const data = await res.json();
     if (Array.isArray(data) && data.length > 0) {
-      return data[0].profile_data as AthleteProfile;
+      return data[0]!.profile_data;
     }
   } catch (err) {
     console.warn('[Sync] Profile load failed:', err);
@@ -74,8 +61,12 @@ export async function syncRide(profile: AthleteProfile, ride: RideSummary): Prom
   if (!isConfigured()) return;
 
   try {
-    await supabaseFetch('/ride_summaries', {
+    await supaFetch('/rest/v1/ride_summaries', {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
       body: JSON.stringify({
         athlete_id: profile.id,
         duration_s: ride.duration_s,

@@ -19,8 +19,32 @@ const SYNC_BATCH_SIZE = 200;
 const REQUEST_TIMEOUT = 15_000;
 const PURGE_DAYS = 30;
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaFetch } from '../../lib/supaFetch';
+
+/**
+ * Resolve the current viewer's user_id lazily. IndexedDB is shared
+ * across impersonation tabs on the same origin, so every read that
+ * should be scoped to one user MUST filter on this value. A dynamic
+ * import is used to avoid a static cycle with authStore → services.
+ */
+async function currentViewerId(): Promise<string | null> {
+  try {
+    const mod = await import('../../store/authStore');
+    return mod.useAuthStore.getState().user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** True if this browser tab was opened as an impersonation target. */
+function isImpersonationTab(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).has('as');
+  } catch {
+    return false;
+  }
+}
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -145,26 +169,20 @@ export interface LocalOverrideEvent {
 // Helpers
 // ═══════════════════════════════════════════════════════════
 
-function supaHeaders(): Record<string, string> {
-  return {
-    'apikey': SUPABASE_KEY!,
-    'Authorization': `Bearer ${SUPABASE_KEY}`,
-    'Content-Type': 'application/json',
-    'Prefer': 'return=minimal',
-  };
+function supaPostHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return { 'Content-Type': 'application/json', 'Prefer': 'return=minimal', ...extra };
 }
 
-function fetchWithTimeout(url: string, opts: RequestInit): Promise<Response> {
+function supaFetchWithTimeout(path: string, opts: { method?: string; headers?: Record<string, string>; body?: string }): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-  return fetch(url, { ...opts, signal: controller.signal }).finally(() => clearTimeout(timer));
+  return supaFetch(path, { ...opts, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
 function remoteLog(level: string, message: string): void {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return;
-  fetch(`${SUPABASE_URL}/rest/v1/debug_logs`, {
+  supaFetch('/rest/v1/debug_logs', {
     method: 'POST',
-    headers: supaHeaders(),
+    headers: supaPostHeaders(),
     body: JSON.stringify({ level, message: message.slice(0, 1000), data: { ts: new Date().toISOString(), src: 'LocalRideStore' } }),
   }).catch(() => {});
 }
@@ -282,13 +300,19 @@ class LocalRideStore {
 
   async getActiveSession(): Promise<LocalSession | null> {
     await this.ensureDB();
+    // Scope to the current viewer. Without this filter, an
+    // impersonation tab would see the admin's in-progress ride
+    // because IndexedDB is shared per-origin across tabs.
+    const viewerId = await currentViewerId();
     return new Promise((resolve, reject) => {
       const tx = this.db!.transaction(STORE_SESSIONS, 'readonly');
       const idx = tx.objectStore(STORE_SESSIONS).index('status');
       const req = idx.getAll(IDBKeyRange.only('active'));
       req.onsuccess = () => {
-        const sessions = req.result as LocalSession[];
-        // Return the most recent active session
+        const sessions = (req.result as LocalSession[])
+          // Null user_id = legacy pre-migration row; treat as belonging
+          // to the current viewer so a single-user device still works.
+          .filter((s) => !viewerId || !s.user_id || s.user_id === viewerId);
         if (sessions.length === 0) { resolve(null); return; }
         sessions.sort((a, b) => b.started_at - a.started_at);
         resolve(sessions[0] ?? null);
@@ -299,6 +323,30 @@ class LocalRideStore {
 
   async getSessionList(): Promise<LocalSession[]> {
     await this.ensureDB();
+    const viewerId = await currentViewerId();
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(STORE_SESSIONS, 'readonly');
+      const req = tx.objectStore(STORE_SESSIONS).getAll();
+      req.onsuccess = () => {
+        const sessions = (req.result as LocalSession[])
+          .filter((s) => !viewerId || !s.user_id || s.user_id === viewerId)
+          .sort((a, b) => b.started_at - a.started_at);
+        resolve(sessions);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  /**
+   * Unfiltered variant used only by the sync loop, which must push
+   * every pending row regardless of who is currently logged in.
+   * Ownership is enforced at the REST layer via the JWT — sessions
+   * whose user_id doesn't match the current JWT's sub get a 403
+   * back from RLS and stay pending for next cycle (when the right
+   * user is logged in).
+   */
+  private async getAllSessionsRaw(): Promise<LocalSession[]> {
+    await this.ensureDB();
     return new Promise((resolve, reject) => {
       const tx = this.db!.transaction(STORE_SESSIONS, 'readonly');
       const req = tx.objectStore(STORE_SESSIONS).getAll();
@@ -307,6 +355,44 @@ class LocalRideStore {
         resolve(sessions);
       };
       req.onerror = () => reject(req.error);
+    });
+  }
+
+  /**
+   * One-shot backfill: stamp current viewer's user_id on every local
+   * row that has user_id=null. Runs on first boot after the Session 18
+   * upgrade so pre-migration sessions become queryable by the new
+   * filtered getters. Safe to call repeatedly — it's a no-op if there
+   * are no null rows.
+   */
+  async backfillUserIdOnLegacyRows(): Promise<number> {
+    await this.ensureDB();
+    const viewerId = await currentViewerId();
+    if (!viewerId) return 0;
+    let updated = 0;
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(STORE_SESSIONS, 'readwrite');
+      const store = tx.objectStore(STORE_SESSIONS);
+      const req = store.openCursor();
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (cursor) {
+          const s = cursor.value as LocalSession;
+          if (!s.user_id) {
+            s.user_id = viewerId;
+            // Re-mark as local so it syncs to the now-known user.
+            if (s.sync_status === 'synced') s.sync_status = 'local';
+            cursor.update(s);
+            updated++;
+          }
+          cursor.continue();
+        }
+      };
+      tx.oncomplete = () => {
+        if (updated > 0) console.log(`[LocalRideStore] Backfilled user_id on ${updated} legacy rows`);
+        resolve(updated);
+      };
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -464,6 +550,14 @@ class LocalRideStore {
 
   startSyncLoop(): void {
     if (this.syncTimerId) return;
+    // Impersonation tabs are read-only by design — never push local
+    // rides from them (they belong to the real admin, not the target
+    // whose session-scoped JWT is in this tab, so every write would
+    // get 403'd by RLS anyway).
+    if (isImpersonationTab()) {
+      console.log('[LocalRideStore] Sync loop disabled in impersonation tab');
+      return;
+    }
     this.syncTimerId = setInterval(() => this.syncToSupabase(), SYNC_INTERVAL);
 
     // Also sync immediately when coming online
@@ -482,10 +576,15 @@ class LocalRideStore {
   }
 
   async syncToSupabase(): Promise<void> {
-    if (!navigator.onLine || !SUPABASE_URL || !SUPABASE_KEY) return;
+    if (!navigator.onLine) return;
     if (this.syncing) return;
     if (!this.db) { try { await this.init(); } catch { return; } }
     this.syncing = true;
+
+    // supaFetch throws on non-2xx; we need to detect HTTP status to decide
+    // between log-and-continue (4xx) vs stop-and-retry (5xx). Pull the
+    // status off SupaFetchError when we catch.
+    const { SupaFetchError } = await import('../../lib/supaFetch');
 
     try {
       // Step 1: Sync unsynced sessions
@@ -493,69 +592,69 @@ class LocalRideStore {
       for (const session of sessions) {
         const supaSession = this.toSupabaseSession(session);
         try {
-          // Try INSERT first (new session)
-          const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/ride_sessions`, {
+          await supaFetchWithTimeout('/rest/v1/ride_sessions', {
             method: 'POST',
-            headers: { ...supaHeaders(), 'Prefer': 'return=minimal,resolution=merge-duplicates' },
+            headers: supaPostHeaders({ 'Prefer': 'return=minimal,resolution=merge-duplicates' }),
             body: JSON.stringify(supaSession),
           });
-
-          if (res.ok) {
-            await this.markSessionSynced(session.id);
-            console.log(`[LocalRideStore] Session synced: ${session.id}`);
-          } else if (res.status === 409) {
-            // Already exists — PATCH instead
-            const patchRes = await fetchWithTimeout(
-              `${SUPABASE_URL}/rest/v1/ride_sessions?id=eq.${session.id}`,
-              { method: 'PATCH', headers: supaHeaders(), body: JSON.stringify(supaSession) },
-            );
-            if (patchRes.ok) {
-              await this.markSessionSynced(session.id);
-              console.log(`[LocalRideStore] Session patched: ${session.id}`);
+          await this.markSessionSynced(session.id);
+          console.log(`[LocalRideStore] Session synced: ${session.id}`);
+        } catch (err) {
+          if (err instanceof SupaFetchError) {
+            if (err.status === 409) {
+              // Already exists — PATCH instead
+              try {
+                await supaFetchWithTimeout(`/rest/v1/ride_sessions?id=eq.${session.id}`, {
+                  method: 'PATCH',
+                  headers: supaPostHeaders(),
+                  body: JSON.stringify(supaSession),
+                });
+                await this.markSessionSynced(session.id);
+                console.log(`[LocalRideStore] Session patched: ${session.id}`);
+              } catch (patchErr) {
+                if (patchErr instanceof SupaFetchError) {
+                  console.error(`[LocalRideStore] Session patch failed (${patchErr.status}):`, patchErr.body);
+                  remoteLog('error', `Session patch ${patchErr.status}: ${patchErr.body.slice(0, 300)}`);
+                  if (patchErr.status >= 500) return;
+                } else {
+                  return;
+                }
+              }
             } else {
-              const err = await patchRes.text();
-              console.error(`[LocalRideStore] Session patch failed (${patchRes.status}):`, err);
-              remoteLog('error', `Session patch ${patchRes.status}: ${err.slice(0, 300)}`);
+              console.error(`[LocalRideStore] Session sync failed (${err.status}):`, err.body);
+              remoteLog('error', `Session sync ${err.status}: ${err.body.slice(0, 300)}`);
+              if (err.status >= 500) return;
             }
           } else {
-            const err = await res.text();
-            console.error(`[LocalRideStore] Session sync failed (${res.status}):`, err);
-            remoteLog('error', `Session sync ${res.status}: ${err.slice(0, 300)}`);
-            // 4xx: keep data, log, continue to next session
-            // 5xx: stop syncing, retry next cycle
-            if (res.status >= 500) return;
+            console.warn('[LocalRideStore] Session sync network error:', err);
+            return;
           }
-        } catch (err) {
-          console.warn('[LocalRideStore] Session sync network error:', err);
-          return; // Network error — stop, retry next cycle
         }
       }
 
       // Step 2: Sync unsynced snapshots (batched)
-      const allSessions = await this.getSessionList();
+      const allSessions = await this.getAllSessionsRaw();
       for (const session of allSessions) {
         let unsynced = await this.getUnsyncedSnapshots(session.id, SYNC_BATCH_SIZE);
         while (unsynced.length > 0) {
           const supaRows = unsynced.map(s => this.toSupabaseSnapshot(s));
           try {
-            const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/ride_snapshots`, {
+            await supaFetchWithTimeout('/rest/v1/ride_snapshots', {
               method: 'POST',
-              headers: supaHeaders(),
+              headers: supaPostHeaders(),
               body: JSON.stringify(supaRows),
             });
-
-            if (res.ok) {
-              await this.markSnapshotsSynced(unsynced.map(s => s.auto_id!));
-              console.log(`[LocalRideStore] ${unsynced.length} snapshots synced for ${session.id}`);
-            } else {
-              const err = await res.text();
-              console.error(`[LocalRideStore] Snapshot sync failed (${res.status}):`, err);
-              remoteLog('error', `Snap sync ${res.status} session=${session.id}: ${err.slice(0, 300)}`);
-              if (res.status >= 500) return;
+            await this.markSnapshotsSynced(unsynced.map(s => s.auto_id!));
+            console.log(`[LocalRideStore] ${unsynced.length} snapshots synced for ${session.id}`);
+          } catch (err) {
+            if (err instanceof SupaFetchError) {
+              console.error(`[LocalRideStore] Snapshot sync failed (${err.status}):`, err.body);
+              remoteLog('error', `Snap sync ${err.status} session=${session.id}: ${err.body.slice(0, 300)}`);
+              if (err.status >= 500) return;
               break; // 4xx for this session — skip to next
+            } else {
+              return; // Network error — retry next cycle
             }
-          } catch {
-            return; // Network error — retry next cycle
           }
 
           unsynced = await this.getUnsyncedSnapshots(session.id, SYNC_BATCH_SIZE);
@@ -569,18 +668,18 @@ class LocalRideStore {
 
         const supaRows = overrides.map(o => this.toSupabaseOverride(o));
         try {
-          const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/ride_override_events`, {
+          await supaFetchWithTimeout('/rest/v1/ride_override_events', {
             method: 'POST',
-            headers: supaHeaders(),
+            headers: supaPostHeaders(),
             body: JSON.stringify(supaRows),
           });
-          if (res.ok) {
-            await this.markOverridesSynced(overrides.map(o => o.auto_id!));
-          } else if (res.status >= 500) {
+          await this.markOverridesSynced(overrides.map(o => o.auto_id!));
+        } catch (err) {
+          if (err instanceof SupaFetchError) {
+            if (err.status >= 500) return;
+          } else {
             return;
           }
-        } catch {
-          return;
         }
       }
 

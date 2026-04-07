@@ -9,6 +9,7 @@ import { connectBike, disconnectBike } from '../../services/bluetooth/BLEBridge'
 import { ProfileInsightsWidget } from '../Dashboard/ProfileInsightsWidget';
 import { BikeFitPage } from './BikeFitPage';
 import { BikesPage } from './BikesPage';
+import { PrivacyPage } from './PrivacyPage';
 import { ServiceBookPage } from '../ServiceBook/ServiceBookPage';
 import { ShopManagementPage } from '../Shop/ShopManagementPage';
 import { AdminPanel } from '../Admin/AdminPanel';
@@ -33,6 +34,7 @@ import { importKomootRoute } from '../../services/maps/KomootService';
 import { useRouteStore } from '../../store/routeStore';
 import { parseGPXFile } from '../../services/routes/GPXParser';
 import { saveRoute, listRoutes, getRoute, deleteRoute } from '../../services/routes/RouteService';
+import { supaFetch, supaGet } from '../../lib/supaFetch';
 import { analyzeRoute } from '../../services/routes/PreRideAnalysis';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -84,6 +86,7 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
         {activePage === 'routes' && <RoutesPage onNavigate={onNavigate} />}
         {activePage === 'super-admin' && <AdminPanel />}
         {activePage === 'account' && <AccountPage />}
+        {activePage === 'privacy' && <PrivacyPage />}
       </div>
     </div>
   );
@@ -230,16 +233,12 @@ function PersonalPage() {
     const age = birthdate ? Math.floor((Date.now() - new Date(birthdate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : profile.age;
     updateProfile({ name: riderName, birthdate, gender, age });
     // Sync name to app_users
-    if (riderName) {
-      const SB = import.meta.env.VITE_SUPABASE_URL;
-      const SK = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      if (SB && SK && user?.id) {
-        fetch(`${SB}/rest/v1/app_users?id=eq.${user.id}`, {
-          method: 'PATCH',
-          headers: { 'apikey': SK, 'Authorization': `Bearer ${SK}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ name: riderName }),
-        }).catch(() => {});
-      }
+    if (riderName && user?.id) {
+      supaFetch(`/rest/v1/app_users?id=eq.${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ name: riderName }),
+      }).catch(() => {});
     }
   };
 
@@ -434,43 +433,57 @@ function ClubPage() {
   const [newDescription, setNewDescription] = useState('');
   const [clubDetail, setClubDetail] = useState<{ name: string; color: string; location: string; website?: string; description?: string; member_count: number } | null>(null);
 
-  const SB_URL = import.meta.env.VITE_SUPABASE_URL as string;
-  const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
   const userId = useAuthStore.getState().getUserId();
 
   // Load club details + members if user has a club
   useEffect(() => {
-    if (!profile.club_id || !SB_URL) return;
-    fetch(`${SB_URL}/rest/v1/clubs?id=eq.${profile.club_id}&select=name,color,location,website,description,member_count&limit=1`, { headers: { 'apikey': SB_KEY } })
-      .then((r) => r.json()).then((d) => { if (d[0]) setClubDetail(d[0]); }).catch(() => {});
-    fetch(`${SB_URL}/rest/v1/club_members?club_id=eq.${profile.club_id}&select=display_name,role,joined_at&order=joined_at.asc`, { headers: { 'apikey': SB_KEY } })
-      .then((r) => r.json()).then((d) => { if (Array.isArray(d)) setMembers(d); }).catch(() => {});
+    if (!profile.club_id) return;
+    supaGet<typeof clubs>(`/rest/v1/clubs?id=eq.${profile.club_id}&select=name,color,location,website,description,member_count&limit=1`)
+      .then((d) => { if (d[0]) setClubDetail(d[0] as unknown as typeof clubDetail); }).catch(() => {});
+    supaGet<typeof members>(`/rest/v1/club_members?club_id=eq.${profile.club_id}&select=display_name,role,joined_at&order=joined_at.asc`)
+      .then((d) => { if (Array.isArray(d)) setMembers(d); }).catch(() => {});
   }, [profile.club_id]);
 
   const searchClubs = async (q: string) => {
-    if (!SB_URL || q.length < 2) { setClubs([]); return; }
-    try { const r = await fetch(`${SB_URL}/rest/v1/clubs?name=ilike.*${encodeURIComponent(q)}*&select=id,name,color,location,member_count,website,description&limit=10`, { headers: { 'apikey': SB_KEY } }); if (r.ok) setClubs(await r.json()); } catch {}
+    if (q.length < 2) { setClubs([]); return; }
+    try {
+      const data = await supaGet<typeof clubs>(`/rest/v1/clubs?name=ilike.*${encodeURIComponent(q)}*&select=id,name,color,location,member_count,website,description&limit=10`);
+      setClubs(data);
+    } catch {}
   };
 
   const joinClub = async (club: { id: string; name: string }) => {
     updateProfile({ club_id: club.id, club_name: club.name });
-    if (SB_URL && userId) {
-      fetch(`${SB_URL}/rest/v1/club_members`, { method: 'POST', headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' }, body: JSON.stringify({ club_id: club.id, user_id: userId, display_name: profile.name ?? 'Rider' }) }).catch(() => {});
+    if (userId) {
+      supaFetch('/rest/v1/club_members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' },
+        body: JSON.stringify({ club_id: club.id, user_id: userId, display_name: profile.name ?? 'Rider' }),
+      }).catch(() => {});
     }
     setClubSearch(''); setClubs([]);
   };
 
   const createClub = async () => {
-    if (!SB_URL || !newName.trim()) return;
+    if (!newName.trim()) return;
     try {
-      const r = await fetch(`${SB_URL}/rest/v1/clubs`, { method: 'POST', headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' }, body: JSON.stringify({ name: newName.trim(), location: newLocation, color: newColor, website: newWebsite, description: newDescription, created_by: userId }) });
-      if (r.ok) { const [c] = await r.json(); await joinClub(c); setCreating(false); setNewName(''); }
+      const r = await supaFetch('/rest/v1/clubs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+        body: JSON.stringify({ name: newName.trim(), location: newLocation, color: newColor, website: newWebsite, description: newDescription, created_by: userId }),
+      });
+      const [c] = await r.json();
+      await joinClub(c);
+      setCreating(false);
+      setNewName('');
     } catch {}
   };
 
   const leaveClub = () => {
-    if (profile.club_id && SB_URL && userId) {
-      fetch(`${SB_URL}/rest/v1/club_members?club_id=eq.${profile.club_id}&user_id=eq.${userId}`, { method: 'DELETE', headers: { 'apikey': SB_KEY } }).catch(() => {});
+    if (profile.club_id && userId) {
+      supaFetch(`/rest/v1/club_members?club_id=eq.${profile.club_id}&user_id=eq.${userId}`, {
+        method: 'DELETE',
+      }).catch(() => {});
     }
     updateProfile({ club_id: undefined, club_name: undefined });
     setClubDetail(null); setMembers([]);
@@ -1104,8 +1117,6 @@ function PreRideElevationChart() {
   );
 }
 
-const SB_URL_EMG = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SB_KEY_EMG = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
 function EmergencyPage() {
@@ -1170,7 +1181,7 @@ function EmergencyPage() {
 
   // Generate & sync emergency profile to Supabase
   const syncEmergencyProfile = async () => {
-    if (!SB_URL_EMG || !SB_KEY_EMG || !user?.id) return;
+    if (!user?.id) return;
     setSyncing(true);
 
     const token = qrToken || crypto.randomUUID().slice(0, 12);
@@ -1200,13 +1211,12 @@ function EmergencyPage() {
     };
 
     try {
-      await fetch(`${SB_URL_EMG}/rest/v1/emergency_profiles?token=eq.${token}`, {
+      await supaFetch(`/rest/v1/emergency_profiles?token=eq.${token}`, {
         method: 'DELETE',
-        headers: { 'apikey': SB_KEY_EMG, 'Authorization': `Bearer ${SB_KEY_EMG}` },
       });
-      await fetch(`${SB_URL_EMG}/rest/v1/emergency_profiles`, {
+      await supaFetch('/rest/v1/emergency_profiles', {
         method: 'POST',
-        headers: { 'apikey': SB_KEY_EMG, 'Authorization': `Bearer ${SB_KEY_EMG}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify(body),
       });
     } catch { /* ignore */ }

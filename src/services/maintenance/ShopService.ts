@@ -2,36 +2,41 @@
  * ShopService — shop management: services catalog, calendar, availability, sharing
  */
 
-const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaFetch, supaGet } from '../../lib/supaFetch';
 
 async function query<T>(path: string): Promise<T[]> {
-  if (!SB_URL || !SB_KEY) return [];
-  const res = await fetch(`${SB_URL}/rest/v1${path}`, {
-    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
-  });
-  const data = await res.json();
-  return Array.isArray(data) ? data : [];
+  try {
+    const data = await supaGet<T[]>(`/rest/v1${path}`);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
 }
 
 async function insert<T>(table: string, record: Partial<T>): Promise<T | null> {
-  if (!SB_URL || !SB_KEY) return null;
-  const res = await fetch(`${SB_URL}/rest/v1/${table}`, {
-    method: 'POST',
-    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-    body: JSON.stringify(record),
-  });
-  const data = await res.json();
-  return Array.isArray(data) ? data[0] ?? null : data;
+  try {
+    const res = await supaFetch(`/rest/v1/${table}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      body: JSON.stringify(record),
+    });
+    const data = await res.json();
+    return Array.isArray(data) ? data[0] ?? null : data;
+  } catch {
+    return null;
+  }
 }
 
 async function update(table: string, id: string, partial: Record<string, unknown>): Promise<void> {
-  if (!SB_URL || !SB_KEY) return;
-  await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, {
-    method: 'PATCH',
-    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...partial, updated_at: new Date().toISOString() }),
-  });
+  try {
+    await supaFetch(`/rest/v1/${table}?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...partial, updated_at: new Date().toISOString() }),
+    });
+  } catch {
+    // best-effort
+  }
 }
 
 // ── Shop Services Catalog ───────────────────────────────────

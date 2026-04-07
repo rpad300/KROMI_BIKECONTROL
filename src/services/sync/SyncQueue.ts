@@ -15,8 +15,7 @@ const DB_VERSION = 2;
 const STORE_QUEUE = 'sync_queue';
 const REQUEST_TIMEOUT = 15_000; // 15s per request
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaFetch, SupaFetchError } from '../../lib/supaFetch';
 
 interface QueueItem {
   id?: number;
@@ -31,22 +30,21 @@ interface QueueItem {
   error: string | null;
 }
 
-/** Fetch with AbortController timeout */
-function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs = REQUEST_TIMEOUT): Promise<Response> {
+/** supaFetch with AbortController timeout */
+function supaFetchWithTimeout(
+  path: string,
+  init: { method?: string; headers?: Record<string, string>; body?: string },
+  timeoutMs = REQUEST_TIMEOUT,
+): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, { ...opts, signal: controller.signal }).finally(() => clearTimeout(timer));
+  return supaFetch(path, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
-/** Standard Supabase headers */
-function supaHeaders(): Record<string, string> {
-  return {
-    'apikey': SUPABASE_KEY!,
-    'Authorization': `Bearer ${SUPABASE_KEY}`,
-    'Content-Type': 'application/json',
-    'Prefer': 'return=minimal',
-  };
-}
+const SUPA_POST_HEADERS: Record<string, string> = {
+  'Content-Type': 'application/json',
+  'Prefer': 'return=minimal',
+};
 
 class SyncQueue {
   private db: IDBDatabase | null = null;
@@ -96,23 +94,24 @@ class SyncQueue {
   async push(table: string, data: Record<string, unknown>, method: 'POST' | 'PATCH' = 'POST', path?: string): Promise<void> {
     const restPath = path ?? `/${table}`;
 
-    if (navigator.onLine && SUPABASE_URL && SUPABASE_KEY) {
+    if (navigator.onLine) {
       try {
-        const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1${restPath}`, {
+        await supaFetchWithTimeout(`/rest/v1${restPath}`, {
           method,
-          headers: supaHeaders(),
+          headers: SUPA_POST_HEADERS,
           body: JSON.stringify(data),
         });
-        if (res.ok) return;
-        const errText = await res.text();
-        // 4xx = permanent error (FK violation, schema issue) — still queue for visibility but log
-        console.error(`[SyncQueue] ${method} ${restPath} failed (${res.status}):`, errText);
-        // Remote log critical failures so we can diagnose without USB debug
-        if (res.status >= 400 && res.status < 500) {
-          this.remoteLog('error', `SyncQueue ${method} ${restPath} → ${res.status}: ${errText.slice(0, 300)}`);
-        }
+        return;
       } catch (err) {
-        console.warn('[SyncQueue] Direct send failed, queueing:', err);
+        if (err instanceof SupaFetchError) {
+          // 4xx = permanent error (FK violation, schema issue) — still queue for visibility but log
+          console.error(`[SyncQueue] ${method} ${restPath} failed (${err.status}):`, err.body);
+          if (err.status >= 400 && err.status < 500) {
+            this.remoteLog('error', `SyncQueue ${method} ${restPath} → ${err.status}: ${err.body.slice(0, 300)}`);
+          }
+        } else {
+          console.warn('[SyncQueue] Direct send failed, queueing:', err);
+        }
       }
     }
 
@@ -124,17 +123,20 @@ class SyncQueue {
   async pushBatch(table: string, items: Record<string, unknown>[]): Promise<void> {
     if (items.length === 0) return;
 
-    if (navigator.onLine && SUPABASE_URL && SUPABASE_KEY) {
+    if (navigator.onLine) {
       try {
-        const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}`, {
+        await supaFetchWithTimeout(`/rest/v1/${table}`, {
           method: 'POST',
-          headers: supaHeaders(),
+          headers: SUPA_POST_HEADERS,
           body: JSON.stringify(items),
         });
-        if (res.ok) return;
-        console.error(`[SyncQueue] Batch /${table} failed (${res.status}):`, await res.text());
+        return;
       } catch (err) {
-        console.warn('[SyncQueue] Direct batch failed, queueing:', err);
+        if (err instanceof SupaFetchError) {
+          console.error(`[SyncQueue] Batch /${table} failed (${err.status}):`, err.body);
+        } else {
+          console.warn('[SyncQueue] Direct batch failed, queueing:', err);
+        }
       }
     }
 
@@ -163,7 +165,7 @@ class SyncQueue {
 
   /** Flush all pending IndexedDB items to Supabase */
   async flush(): Promise<number> {
-    if (this.flushing || !this.db || !SUPABASE_URL || !SUPABASE_KEY || !navigator.onLine) return 0;
+    if (this.flushing || !this.db || !navigator.onLine) return 0;
     this.flushing = true;
 
     let synced = 0;
@@ -184,35 +186,37 @@ class SyncQueue {
         try {
           // Batch POST
           if (first.method === 'POST' && items.length > 1) {
-            const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1${first.path}`, {
-              method: 'POST',
-              headers: supaHeaders(),
-              body: JSON.stringify(items.map((i) => i.data)),
-            });
-            if (res.ok) {
+            try {
+              await supaFetchWithTimeout(`/rest/v1${first.path}`, {
+                method: 'POST',
+                headers: SUPA_POST_HEADERS,
+                body: JSON.stringify(items.map((i) => i.data)),
+              });
               for (const item of items) { await this.markSynced(item.id!); synced++; }
-            } else {
-              const status = res.status;
-              const err = await res.text();
-              for (const item of items) { await this.markError(item.id!, err, status); }
+            } catch (err) {
+              if (err instanceof SupaFetchError) {
+                for (const item of items) { await this.markError(item.id!, err.body, err.status); }
+              } else {
+                for (const item of items) { await this.markError(item.id!, String(err), 0); }
+              }
             }
           } else {
             // Single items
             for (const item of items) {
               try {
-                const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1${item.path}`, {
+                await supaFetchWithTimeout(`/rest/v1${item.path}`, {
                   method: item.method,
-                  headers: supaHeaders(),
+                  headers: SUPA_POST_HEADERS,
                   body: JSON.stringify(item.data),
                 });
-                if (res.ok) {
-                  await this.markSynced(item.id!);
-                  synced++;
-                } else {
-                  await this.markError(item.id!, await res.text(), res.status);
-                }
+                await this.markSynced(item.id!);
+                synced++;
               } catch (err) {
-                await this.markError(item.id!, String(err), 0);
+                if (err instanceof SupaFetchError) {
+                  await this.markError(item.id!, err.body, err.status);
+                } else {
+                  await this.markError(item.id!, String(err), 0);
+                }
               }
             }
           }
@@ -312,10 +316,9 @@ class SyncQueue {
   }
   /** Send a log entry directly to debug_logs (fire-and-forget, never queued) */
   private remoteLog(level: string, message: string): void {
-    if (!SUPABASE_URL || !SUPABASE_KEY) return;
-    fetch(`${SUPABASE_URL}/rest/v1/debug_logs`, {
+    supaFetch('/rest/v1/debug_logs', {
       method: 'POST',
-      headers: supaHeaders(),
+      headers: SUPA_POST_HEADERS,
       body: JSON.stringify({ level, message: message.slice(0, 1000), data: { ts: new Date().toISOString(), ua: navigator.userAgent.slice(0, 200) } }),
     }).catch(() => {}); // truly fire-and-forget
   }

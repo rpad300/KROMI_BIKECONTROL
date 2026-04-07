@@ -5,9 +5,7 @@ import { exportRideAsGPX, type TrackPoint } from '../../services/export/GPXExpor
 import { FitImport } from '../Import/FitImport';
 import { simulateKromi, type SimulationSummary } from '../../services/simulation/KromiSimulator';
 import type { ImportedRecord } from '../../services/import/FitImportService';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaFetch, supaGet } from '../../lib/supaFetch';
 
 const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
@@ -80,11 +78,8 @@ interface Snapshot {
   gradient_pct: number;
 }
 
-async function fetchJSON(path: string) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-    headers: { 'apikey': SUPABASE_KEY!, 'Authorization': `Bearer ${SUPABASE_KEY}` },
-  });
-  return res.json();
+async function fetchJSON<T = unknown>(path: string): Promise<T> {
+  return supaGet<T>(`/rest/v1${path}`);
 }
 
 export function RideHistory() {
@@ -103,10 +98,11 @@ export function RideHistory() {
   const [dateTo, setDateTo] = useState('');
 
   const loadRides = useCallback(() => {
-    if (!userId || !SUPABASE_URL || !SUPABASE_KEY) { setLoading(false); return; }
+    if (!userId) { setLoading(false); return; }
     setLoading(true);
-    fetchJSON(`/ride_sessions?user_id=eq.${userId}&status=eq.completed&select=*&order=started_at.desc&limit=200`)
+    fetchJSON<RideSession[]>(`/ride_sessions?user_id=eq.${userId}&status=eq.completed&select=*&order=started_at.desc&limit=200`)
       .then((data) => { if (Array.isArray(data)) setRides(data); })
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, [userId]);
 
@@ -155,9 +151,9 @@ export function RideHistory() {
     setSelected(ride);
     setSnapshots([]);
     setSimulation(null);
-    const snaps = await fetchJSON(
+    const snaps = await fetchJSON<Snapshot[]>(
       `/ride_snapshots?session_id=eq.${ride.id}&select=elapsed_s,lat,lng,altitude_m,speed_kmh,power_watts,hr_bpm,cadence_rpm,distance_km,gradient_pct&order=elapsed_s.asc&limit=3000`
-    );
+    ).catch(() => [] as Snapshot[]);
     if (Array.isArray(snaps)) {
       setSnapshots(snaps);
       const records: ImportedRecord[] = snaps.map((s: Snapshot) => ({
@@ -170,14 +166,9 @@ export function RideHistory() {
   };
 
   const handleDelete = async (ride: RideSession) => {
-    if (!SUPABASE_URL || !SUPABASE_KEY) return;
     if (!confirm(`Apagar ride ${ride.total_km?.toFixed(1)}km de ${new Date(ride.started_at).toLocaleDateString()}?`)) return;
-    await fetch(`${SUPABASE_URL}/rest/v1/ride_snapshots?session_id=eq.${ride.id}`, {
-      method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
-    });
-    await fetch(`${SUPABASE_URL}/rest/v1/ride_sessions?id=eq.${ride.id}`, {
-      method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
-    });
+    await supaFetch(`/rest/v1/ride_snapshots?session_id=eq.${ride.id}`, { method: 'DELETE' }).catch(() => {});
+    await supaFetch(`/rest/v1/ride_sessions?id=eq.${ride.id}`, { method: 'DELETE' }).catch(() => {});
     setSelected(null);
     loadRides();
   };

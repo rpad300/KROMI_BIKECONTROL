@@ -13,9 +13,7 @@
  */
 
 import { useSettingsStore } from '../../store/settingsStore';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaGet } from '../../lib/supaFetch';
 
 export interface RideHistoryStats {
   totalRides: number;
@@ -53,18 +51,13 @@ export interface RangeEstimate {
 
 /** Fetch ride history stats from Supabase */
 export async function fetchRideHistoryStats(): Promise<RideHistoryStats | null> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
-
   try {
     const userId = (await import('../../store/authStore')).useAuthStore.getState().getUserId();
     if (!userId) return null;
 
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/ride_sessions?user_id=eq.${userId}&status=eq.completed&select=started_at,total_km,duration_s,avg_power_w,battery_start,battery_end&order=started_at.desc&limit=50`,
-      { headers: { 'apikey': SUPABASE_KEY } }
+    const rides = await supaGet<Array<Record<string, number | string>>>(
+      `/rest/v1/ride_sessions?user_id=eq.${userId}&status=eq.completed&select=started_at,total_km,duration_s,avg_power_w,battery_start,battery_end&order=started_at.desc&limit=50`,
     );
-    if (!res.ok) return null;
-    const rides = await res.json();
 
     if (!rides || rides.length === 0) return { totalRides: 0, totalKm: 0, totalHours: 0, avgWhPerKm: 0, avgSpeedKmh: 0, avgPowerW: 0, avgBatteryUsedPct: 0, recentRides: [] };
 

@@ -3,9 +3,7 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
 import { useReadOnlyGuard } from '../../hooks/useReadOnlyGuard';
 import { FIT_FIELD_GROUPS, type BikeFit, type BikeFitChange } from '../../types/bikefit.types';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+import { supaFetch, supaGet } from '../../lib/supaFetch';
 
 export function BikeFitPage() {
   const bikes = useSettingsStore((s) => s.bikes);
@@ -25,28 +23,25 @@ export function BikeFitPage() {
 
   // Load existing fit from Supabase
   useEffect(() => {
-    if (!SUPABASE_URL || !userId) { setLoaded(true); return; }
-    fetch(`${SUPABASE_URL}/rest/v1/bike_fits?user_id=eq.${userId}&bike_name=eq.${encodeURIComponent(bike.name)}&order=updated_at.desc&limit=1`, {
-      headers: { 'apikey': SUPABASE_KEY },
-    }).then((r) => r.json()).then((data) => {
-      if (Array.isArray(data) && data.length > 0) setFit(data[0]);
-      setLoaded(true);
-    }).catch(() => setLoaded(true));
+    if (!userId) { setLoaded(true); return; }
+    supaGet<BikeFit[]>(`/rest/v1/bike_fits?user_id=eq.${userId}&bike_name=eq.${encodeURIComponent(bike.name)}&order=updated_at.desc&limit=1`)
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) setFit(data[0]!);
+        setLoaded(true);
+      }).catch(() => setLoaded(true));
   }, [userId, bike.name]);
 
   // Load change history
   useEffect(() => {
-    if (!fit.id || !SUPABASE_URL) return;
-    fetch(`${SUPABASE_URL}/rest/v1/bike_fit_changes?bike_fit_id=eq.${fit.id}&order=changed_at.desc&limit=20`, {
-      headers: { 'apikey': SUPABASE_KEY },
-    }).then((r) => r.json()).then((data) => {
-      if (Array.isArray(data)) setHistory(data);
-    }).catch(() => {});
+    if (!fit.id) return;
+    supaGet<BikeFitChange[]>(`/rest/v1/bike_fit_changes?bike_fit_id=eq.${fit.id}&order=changed_at.desc&limit=20`)
+      .then((data) => { if (Array.isArray(data)) setHistory(data); })
+      .catch(() => {});
   }, [fit.id]);
 
   // Save fit to Supabase
   const saveFit = async (updatedFit: BikeFit, changedField?: string, oldValue?: string, newValue?: string) => {
-    if (!SUPABASE_URL || !userId) return;
+    if (!userId) return;
     if (!guard('Não é possível alterar bike fit em modo impersonation.')) return;
     setSaving(true);
 
@@ -56,16 +51,16 @@ export function BikeFitPage() {
     try {
       if (fit.id) {
         // Update existing
-        await fetch(`${SUPABASE_URL}/rest/v1/bike_fits?id=eq.${fit.id}`, {
+        await supaFetch(`/rest/v1/bike_fits?id=eq.${fit.id}`, {
           method: 'PATCH',
-          headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
           body: JSON.stringify(payload),
         });
       } else {
         // Create new
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/bike_fits`, {
+        const res = await supaFetch('/rest/v1/bike_fits', {
           method: 'POST',
-          headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+          headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
           body: JSON.stringify(payload),
         });
         const [created] = await res.json();
@@ -74,9 +69,9 @@ export function BikeFitPage() {
 
       // Record change in history
       if (changedField && fit.id) {
-        await fetch(`${SUPABASE_URL}/rest/v1/bike_fit_changes`, {
+        await supaFetch('/rest/v1/bike_fit_changes', {
           method: 'POST',
-          headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
           body: JSON.stringify({
             bike_fit_id: fit.id,
             field_name: changedField,
@@ -87,10 +82,9 @@ export function BikeFitPage() {
         });
         setChangeReason('');
         // Refresh history
-        const hRes = await fetch(`${SUPABASE_URL}/rest/v1/bike_fit_changes?bike_fit_id=eq.${fit.id}&order=changed_at.desc&limit=20`, {
-          headers: { 'apikey': SUPABASE_KEY },
-        });
-        const hData = await hRes.json();
+        const hData = await supaGet<BikeFitChange[]>(
+          `/rest/v1/bike_fit_changes?bike_fit_id=eq.${fit.id}&order=changed_at.desc&limit=20`,
+        );
         if (Array.isArray(hData)) setHistory(hData);
       }
     } catch { /* ignore */ }
@@ -109,13 +103,12 @@ export function BikeFitPage() {
     setFit({ id: '' });
     setHistory([]);
     setLoaded(false);
-    if (!SUPABASE_URL || !userId) { setLoaded(true); return; }
-    fetch(`${SUPABASE_URL}/rest/v1/bike_fits?user_id=eq.${userId}&bike_name=eq.${encodeURIComponent(bike.name)}&order=updated_at.desc&limit=1`, {
-      headers: { 'apikey': SUPABASE_KEY },
-    }).then((r) => r.json()).then((data) => {
-      if (Array.isArray(data) && data.length > 0) setFit(data[0]);
-      setLoaded(true);
-    }).catch(() => setLoaded(true));
+    if (!userId) { setLoaded(true); return; }
+    supaGet<BikeFit[]>(`/rest/v1/bike_fits?user_id=eq.${userId}&bike_name=eq.${encodeURIComponent(bike.name)}&order=updated_at.desc&limit=1`)
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) setFit(data[0]!);
+        setLoaded(true);
+      }).catch(() => setLoaded(true));
   }, [selectedBikeId, userId, bike.name]);
 
   if (!loaded) return <div style={{ padding: '20px', textAlign: 'center', color: '#777575' }}>A carregar bike fit...</div>;

@@ -6,9 +6,7 @@
  */
 
 import type { ParsedRoute, RoutePoint } from './GPXParser';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaFetch, supaGet, supaRpc } from '../../lib/supaFetch';
 
 export interface SavedRoute {
   id: string;
@@ -37,18 +35,7 @@ export interface SavedRoute {
   updated_at: string;
 }
 
-function headers(): Record<string, string> {
-  return {
-    'apikey': SUPABASE_KEY || '',
-    'Authorization': `Bearer ${SUPABASE_KEY}`,
-    'Content-Type': 'application/json',
-    'Prefer': 'return=representation',
-  };
-}
-
-function baseUrl(): string {
-  return `${SUPABASE_URL}/rest/v1/routes`;
-}
+const ROUTES_PATH = '/rest/v1/routes';
 
 /** Save a new route to Supabase. Returns the saved route with ID. */
 export async function saveRoute(
@@ -57,8 +44,6 @@ export async function saveRoute(
   sourceUrl?: string,
   estimates?: { wh: number; time_min: number; glycogen_g: number },
 ): Promise<SavedRoute | null> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
-
   const body = {
     name: parsed.name,
     description: parsed.description,
@@ -80,15 +65,11 @@ export async function saveRoute(
   };
 
   try {
-    const res = await fetch(baseUrl(), {
+    const res = await supaFetch(ROUTES_PATH, {
       method: 'POST',
-      headers: headers(),
+      headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
       body: JSON.stringify(body),
     });
-    if (!res.ok) {
-      console.error('[RouteService] Save failed:', res.status);
-      return null;
-    }
     const data = await res.json();
     return Array.isArray(data) ? data[0] : data;
   } catch (err) {
@@ -99,15 +80,10 @@ export async function saveRoute(
 
 /** List all saved routes, newest first. */
 export async function listRoutes(): Promise<SavedRoute[]> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return [];
-
   try {
-    const res = await fetch(
-      `${baseUrl()}?order=updated_at.desc&select=id,name,description,source,total_distance_km,total_elevation_gain_m,total_elevation_loss_m,max_gradient_pct,estimated_wh,estimated_time_min,is_favorite,ride_count,last_ridden_at,created_at,updated_at,bbox_north,bbox_south,bbox_east,bbox_west`,
-      { headers: headers() },
+    return await supaGet<SavedRoute[]>(
+      `${ROUTES_PATH}?order=updated_at.desc&select=id,name,description,source,total_distance_km,total_elevation_gain_m,total_elevation_loss_m,max_gradient_pct,estimated_wh,estimated_time_min,is_favorite,ride_count,last_ridden_at,created_at,updated_at,bbox_north,bbox_south,bbox_east,bbox_west`,
     );
-    if (!res.ok) return [];
-    return await res.json();
   } catch {
     return [];
   }
@@ -115,12 +91,8 @@ export async function listRoutes(): Promise<SavedRoute[]> {
 
 /** Get a single route with full points data. */
 export async function getRoute(id: string): Promise<SavedRoute | null> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
-
   try {
-    const res = await fetch(`${baseUrl()}?id=eq.${id}`, { headers: headers() });
-    if (!res.ok) return null;
-    const data = await res.json();
+    const data = await supaGet<SavedRoute[]>(`${ROUTES_PATH}?id=eq.${id}`);
     return data[0] ?? null;
   } catch {
     return null;
@@ -129,14 +101,9 @@ export async function getRoute(id: string): Promise<SavedRoute | null> {
 
 /** Delete a route. */
 export async function deleteRoute(id: string): Promise<boolean> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return false;
-
   try {
-    const res = await fetch(`${baseUrl()}?id=eq.${id}`, {
-      method: 'DELETE',
-      headers: headers(),
-    });
-    return res.ok;
+    await supaFetch(`${ROUTES_PATH}?id=eq.${id}`, { method: 'DELETE' });
+    return true;
   } catch {
     return false;
   }
@@ -144,15 +111,13 @@ export async function deleteRoute(id: string): Promise<boolean> {
 
 /** Toggle favorite status. */
 export async function toggleFavorite(id: string, isFavorite: boolean): Promise<boolean> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return false;
-
   try {
-    const res = await fetch(`${baseUrl()}?id=eq.${id}`, {
+    await supaFetch(`${ROUTES_PATH}?id=eq.${id}`, {
       method: 'PATCH',
-      headers: headers(),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_favorite: isFavorite, updated_at: new Date().toISOString() }),
     });
-    return res.ok;
+    return true;
   } catch {
     return false;
   }
@@ -163,12 +128,10 @@ export async function updateEstimates(
   id: string,
   estimates: { wh: number; time_min: number; glycogen_g: number },
 ): Promise<boolean> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return false;
-
   try {
-    const res = await fetch(`${baseUrl()}?id=eq.${id}`, {
+    await supaFetch(`${ROUTES_PATH}?id=eq.${id}`, {
       method: 'PATCH',
-      headers: headers(),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         estimated_wh: estimates.wh,
         estimated_time_min: estimates.time_min,
@@ -176,7 +139,7 @@ export async function updateEstimates(
         updated_at: new Date().toISOString(),
       }),
     });
-    return res.ok;
+    return true;
   } catch {
     return false;
   }
@@ -184,20 +147,18 @@ export async function updateEstimates(
 
 /** Link a ride session to a route + increment ride count. */
 export async function linkRideToRoute(sessionId: string, routeId: string): Promise<boolean> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return false;
-
   try {
     // Update ride_sessions
-    await fetch(`${SUPABASE_URL}/rest/v1/ride_sessions?id=eq.${sessionId}`, {
+    await supaFetch(`/rest/v1/ride_sessions?id=eq.${sessionId}`, {
       method: 'PATCH',
-      headers: headers(),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ route_id: routeId }),
     });
 
     // Increment ride_count + update last_ridden_at
-    await fetch(`${baseUrl()}?id=eq.${routeId}`, {
+    await supaFetch(`${ROUTES_PATH}?id=eq.${routeId}`, {
       method: 'PATCH',
-      headers: headers(),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ride_count: undefined, // will use RPC below
         last_ridden_at: new Date().toISOString(),
@@ -206,11 +167,7 @@ export async function linkRideToRoute(sessionId: string, routeId: string): Promi
     });
 
     // Increment ride_count via direct SQL (PATCH can't do increment)
-    await fetch(`${SUPABASE_URL}/rest/v1/rpc/increment_route_ride_count`, {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ route_uuid: routeId }),
-    }).catch(() => {
+    await supaRpc('increment_route_ride_count', { route_uuid: routeId }).catch(() => {
       // RPC might not exist yet — fallback: just update last_ridden_at
     });
 
@@ -225,15 +182,13 @@ export async function updateRoute(
   id: string,
   updates: { name?: string; description?: string },
 ): Promise<boolean> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return false;
-
   try {
-    const res = await fetch(`${baseUrl()}?id=eq.${id}`, {
+    await supaFetch(`${ROUTES_PATH}?id=eq.${id}`, {
       method: 'PATCH',
-      headers: headers(),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...updates, updated_at: new Date().toISOString() }),
     });
-    return res.ok;
+    return true;
   } catch {
     return false;
   }

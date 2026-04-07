@@ -14,9 +14,7 @@
 import type { ImportedRide, HRZoneDistribution } from './FitImportService';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaFetch, supaGet } from '../../lib/supaFetch';
 
 export interface AthleteStats {
   // HR
@@ -62,18 +60,15 @@ const DEFAULT_STATS: AthleteStats = {
 
 /** Load current athlete stats from Supabase */
 export async function loadAthleteStats(): Promise<AthleteStats> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return DEFAULT_STATS;
   const userId = useAuthStore.getState().user?.id;
   if (!userId) return DEFAULT_STATS;
 
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/athlete_profiles?user_id=eq.${userId}&select=profile_data&limit=1`,
-      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Prefer': 'return=representation' } }
+    const data = await supaGet<Array<{ profile_data?: { athlete_stats?: Partial<AthleteStats> } }>>(
+      `/rest/v1/athlete_profiles?user_id=eq.${userId}&select=profile_data&limit=1`,
     );
-    const data = await res.json();
-    if (Array.isArray(data) && data.length > 0 && data[0].profile_data?.athlete_stats) {
-      return { ...DEFAULT_STATS, ...data[0].profile_data.athlete_stats };
+    if (Array.isArray(data) && data.length > 0 && data[0]!.profile_data?.athlete_stats) {
+      return { ...DEFAULT_STATS, ...data[0]!.profile_data!.athlete_stats };
     }
   } catch { /* use defaults */ }
   return DEFAULT_STATS;
@@ -159,17 +154,14 @@ export async function updateStatsFromRide(ride: ImportedRide): Promise<AthleteSt
 }
 
 async function saveAthleteStats(stats: AthleteStats): Promise<void> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return;
   const userId = useAuthStore.getState().user?.id;
   if (!userId) return;
 
   try {
     // Upsert by user_id (not device_id — avoids duplicates across browsers)
-    await fetch(`${SUPABASE_URL}/rest/v1/athlete_profiles?on_conflict=user_id`, {
+    await supaFetch('/rest/v1/athlete_profiles?on_conflict=user_id', {
       method: 'POST',
       headers: {
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
         'Content-Type': 'application/json',
         'Prefer': 'resolution=merge-duplicates,return=minimal',
       },

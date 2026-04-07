@@ -4,9 +4,7 @@
  */
 
 import { useAuthStore } from '../../store/authStore';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaFetch } from '../../lib/supaFetch';
 
 function parseUserAgent(ua: string): { browser: string; os: string; deviceType: string } {
   let browser = 'unknown';
@@ -35,7 +33,6 @@ function parseUserAgent(ua: string): { browser: string; os: string; deviceType: 
 }
 
 export async function trackLogin(): Promise<void> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return;
   const userId = useAuthStore.getState().user?.id;
   if (!userId) return;
 
@@ -44,14 +41,9 @@ export async function trackLogin(): Promise<void> {
     const { browser, os, deviceType } = parseUserAgent(ua);
     const platform = /android|iphone|mobile/i.test(ua) ? 'mobile' : 'desktop';
 
-    await fetch(`${SUPABASE_URL}/rest/v1/login_history`, {
+    await supaFetch('/rest/v1/login_history', {
       method: 'POST',
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal',
-      },
+      headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
       body: JSON.stringify({
         user_id: userId,
         platform,

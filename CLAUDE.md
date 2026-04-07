@@ -86,6 +86,7 @@ M11 Bike & Athlete Config — full bike specs, cassette, wheels, rider physiolog
 ## Conventions
 - CSS: Tailwind dark-first, min 24px text, 64px touch targets, portrait layout
 - BLE: ALL subscriptions via GiantBLEService, NEVER direct navigator.bluetooth in components
+- **REST: ALL Supabase REST/RPC/edge function calls MUST go through `src/lib/supaFetch.ts` (supaFetch, supaGet, supaRpc, supaInvokeFunction). NEVER write raw `fetch(`${SB_URL}/rest/v1/...`)` — the helper is what injects the KROMI JWT so RLS sees the user. Session 18 lockdown depends on this.**
 - **Files: ALL uploads via `KromiFileStore.uploadFile()` (src/services/storage/KromiFileStore.ts), NEVER direct Supabase Storage REST or Drive API. Backend = Google Drive (KROMI PLATFORM folder) via `drive-storage` Supabase Edge Function. Metadata = `kromi_files` table. Folder taxonomy lives in one place (`resolveFolderPath`).**
 - State: Zustand stores ONLY, NEVER React Context for real-time data
 - GEV: ALL motor commands via GEVProtocol.buildCommand(), AES key as config placeholder
@@ -118,6 +119,23 @@ Paths:
 
 NUNCA implementes um sistema sem primeiro ler o blueprint e skill correspondentes.
 Se nao existe blueprint para o pedido, implementa com base nas convencoes deste CLAUDE.md.
+
+## Auth + JWT (Session 18)
+
+KROMI uses custom HS256 JWTs for PostgREST — NOT Supabase Auth. The edge functions `verify-otp`, `verify-session`, and `login-by-device` mint JWTs signed with `KROMI_JWT_SECRET` (which must equal the project's Supabase JWT Secret). Claims: `{sub: app_users.id, role: "authenticated", aud: "authenticated"}`. PostgREST verifies them transparently; `public.kromi_uid()` exposes `sub` for RLS policies (NOT `auth.uid()` — that hits auth.users which KROMI doesn't use).
+
+**Adding an RLS-gated table:**
+```sql
+ALTER TABLE t ENABLE ROW LEVEL SECURITY;
+CREATE POLICY t_sel ON t FOR SELECT USING (user_id = public.kromi_uid() OR public.is_super_admin_jwt());
+CREATE POLICY t_ins ON t FOR INSERT WITH CHECK (user_id = public.kromi_uid());
+CREATE POLICY t_upd ON t FOR UPDATE USING (user_id = public.kromi_uid()) WITH CHECK (user_id = public.kromi_uid());
+CREATE POLICY t_del ON t FOR DELETE USING (user_id = public.kromi_uid() OR public.is_super_admin_jwt());
+```
+
+**Frontend REST must use supaFetch** (`src/lib/supaFetch.ts`) — raw `fetch` to `/rest/v1/` goes out with the anon key and hits RLS as an anonymous user.
+
+**Impersonation tab isolation:** Any new persisted Zustand store holding user data MUST detect `?as=` and swap to sessionStorage (see settingsStore pattern). Never use `storage: cond ? x : undefined` — zustand treats explicit undefined as "broken". Use spread instead: `...(cond ? { storage: createJSONStorage(() => sessionStorage) } : {})`.
 
 ## RBAC + Super Admin
 

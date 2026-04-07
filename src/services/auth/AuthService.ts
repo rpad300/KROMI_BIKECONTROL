@@ -1,9 +1,4 @@
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-function getBaseUrl(): string {
-  return SUPABASE_URL ?? '';
-}
+import { supaInvokeFunction } from '../../lib/supaFetch';
 
 /** Get or create a persistent device ID (survives cache clears via localStorage) */
 export function getDeviceId(): string {
@@ -26,7 +21,11 @@ export interface AuthUser {
 export interface LoginResult {
   success: boolean;
   user?: AuthUser;
+  /** Opaque session token (kept for admin RPCs that call resolve_session_user_id). */
   session_token?: string;
+  /** PostgREST-compatible JWT — the primary auth credential for all REST calls. */
+  jwt?: string;
+  jwt_expires_at?: string;
   expires_at?: string;
   error?: string;
 }
@@ -34,107 +33,108 @@ export interface LoginResult {
 /** Send OTP code to email */
 export async function sendOTP(email: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const res = await fetch(`${getBaseUrl()}/functions/v1/send-otp`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_KEY ?? '',
-      },
-      body: JSON.stringify({ email }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error };
+    const data = await supaInvokeFunction<{ success?: boolean; error?: string }>(
+      'send-otp',
+      { email },
+      { anonOnly: true },
+    );
+    if (!data?.success) return { success: false, error: data?.error ?? 'unknown' };
     return { success: true };
   } catch (err) {
-    return { success: false, error: 'Falha na ligacao' };
+    // SupaFetchError carries the parsed error body
+    const msg = err instanceof Error ? err.message : 'Falha na ligacao';
+    return { success: false, error: msg };
   }
 }
 
-/** Verify OTP code and get session */
+/** Verify OTP code and get session + JWT */
 export async function verifyOTP(email: string, code: string): Promise<LoginResult> {
   try {
-    const res = await fetch(`${getBaseUrl()}/functions/v1/verify-otp`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_KEY ?? '',
-      },
-      body: JSON.stringify({ email, code }),
-    });
+    const data = await supaInvokeFunction<{
+      success?: boolean;
+      user?: AuthUser;
+      session_token?: string;
+      jwt?: string;
+      jwt_expires_at?: string;
+      expires_at?: string;
+      error?: string;
+    }>('verify-otp', { email, code }, { anonOnly: true });
 
-    const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error };
+    if (!data?.success) return { success: false, error: data?.error ?? 'invalid' };
 
     return {
       success: true,
       user: data.user,
       session_token: data.session_token,
+      jwt: data.jwt,
+      jwt_expires_at: data.jwt_expires_at,
       expires_at: data.expires_at,
     };
   } catch (err) {
-    return { success: false, error: 'Falha na ligacao' };
+    const msg = err instanceof Error ? err.message : 'Falha na ligacao';
+    return { success: false, error: msg };
   }
 }
 
-/** Try auto-login via device ID (no OTP needed after first login) */
+/**
+ * Try auto-login via device ID. Before Session 18 this used to read
+ * the `device_tokens` table directly via REST with the anon key; now
+ * that the table is RLS-locked, we go through the dedicated
+ * `login-by-device` edge function which validates the device and
+ * mints a fresh JWT.
+ */
 export async function loginByDevice(): Promise<LoginResult> {
   const deviceId = getDeviceId();
   try {
-    const res = await fetch(
-      `${getBaseUrl()}/rest/v1/device_tokens?device_id=eq.${deviceId}&select=user_id,user_email,user_name&limit=1`,
-      { headers: { 'apikey': SUPABASE_KEY ?? '' } }
-    );
-    if (!res.ok) return { success: false, error: 'Device lookup failed' };
-    const rows = await res.json();
-    if (rows.length === 0) return { success: false, error: 'Device not registered' };
+    const data = await supaInvokeFunction<{
+      success?: boolean;
+      user?: AuthUser;
+      session_token?: string;
+      jwt?: string;
+      jwt_expires_at?: string;
+      expires_at?: string;
+      error?: string;
+    }>('login-by-device', { device_id: deviceId }, { anonOnly: true });
 
-    const row = rows[0];
-    // Fetch the latest super admin flag from app_users (device_tokens cache may be stale)
-    let isSuperAdmin = false;
-    try {
-      const adminRes = await fetch(
-        `${getBaseUrl()}/rest/v1/app_users?id=eq.${row.user_id}&select=is_super_admin&limit=1`,
-        { headers: { 'apikey': SUPABASE_KEY ?? '' } },
-      );
-      const adminRows = await adminRes.json();
-      isSuperAdmin = !!adminRows[0]?.is_super_admin;
-    } catch {
-      // ignore — defaults to false
+    if (!data?.success || !data.user) {
+      return { success: false, error: data?.error ?? 'Device nao registado' };
     }
-    // Update last_seen
-    fetch(`${getBaseUrl()}/rest/v1/device_tokens?device_id=eq.${deviceId}`, {
-      method: 'PATCH',
-      headers: { 'apikey': SUPABASE_KEY ?? '', 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ last_seen_at: new Date().toISOString() }),
-    }).catch(() => {});
 
     return {
       success: true,
-      user: {
-        id: row.user_id,
-        email: row.user_email ?? '',
-        name: row.user_name,
-        is_super_admin: isSuperAdmin,
-      },
-      session_token: `device:${deviceId}`,
-      expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year
+      user: data.user,
+      session_token: data.session_token,
+      jwt: data.jwt,
+      jwt_expires_at: data.jwt_expires_at,
+      expires_at: data.expires_at ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     };
-  } catch {
-    return { success: false, error: 'Network error' };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Network error';
+    return { success: false, error: msg };
   }
 }
 
-/** Register device after successful OTP login */
-export async function registerDevice(user: AuthUser): Promise<void> {
+/**
+ * Register the current device after a successful OTP login. This is
+ * the ONLY place device_tokens is written to from the client, and it
+ * needs a valid JWT so RLS on device_tokens can check `user_id =
+ * auth.uid()`. The caller must pass a fresh jwt (e.g. from the
+ * verify-otp result) because authStore may not yet be updated when
+ * this runs.
+ */
+export async function registerDevice(user: AuthUser, jwt: string): Promise<void> {
   const deviceId = getDeviceId();
+  const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  if (!SB_URL || !SB_KEY) return;
   try {
-    await fetch(`${getBaseUrl()}/rest/v1/device_tokens`, {
+    await fetch(`${SB_URL}/rest/v1/device_tokens`, {
       method: 'POST',
       headers: {
-        'apikey': SUPABASE_KEY ?? '',
+        apikey: SB_KEY,
+        Authorization: `Bearer ${jwt}`,
         'Content-Type': 'application/json',
-        'Prefer': 'return=minimal,resolution=merge-duplicates',
+        Prefer: 'return=minimal,resolution=merge-duplicates',
       },
       body: JSON.stringify({
         device_id: deviceId,
@@ -149,21 +149,36 @@ export async function registerDevice(user: AuthUser): Promise<void> {
   }
 }
 
-/** Verify current session is still valid */
-export async function verifySession(token: string): Promise<AuthUser | null> {
+/** Verify current session is still valid. Returns a fresh JWT if so. */
+export async function verifySession(token: string): Promise<{
+  user: AuthUser;
+  jwt: string;
+  jwt_expires_at: string;
+} | null> {
+  const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  if (!SB_URL) return null;
   try {
-    const res = await fetch(`${getBaseUrl()}/functions/v1/verify-session`, {
+    // verify-session reads the opaque session_token from the
+    // Authorization header (NOT the JWT — on boot we may still only
+    // have the opaque token from a pre-JWT persisted session).
+    const res = await fetch(`${SB_URL}/functions/v1/verify-session`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'apikey': SUPABASE_KEY ?? '',
+        Authorization: `Bearer ${token}`,
+        apikey: SB_KEY ?? '',
       },
     });
 
     if (!res.ok) return null;
     const data = await res.json();
-    return data.user ?? null;
+    if (!data.user || !data.jwt) return null;
+    return {
+      user: data.user,
+      jwt: data.jwt,
+      jwt_expires_at: data.jwt_expires_at,
+    };
   } catch {
     return null;
   }

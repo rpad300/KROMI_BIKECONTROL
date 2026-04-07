@@ -18,6 +18,7 @@ import { autoAssistEngine } from '../autoAssist/AutoAssistEngine';
 import { batteryEfficiencyTracker } from '../learning/BatteryEfficiencyTracker';
 import { localRideStore, type LocalSession, type LocalSnapshot, type LocalOverrideEvent, type PersistedMetrics } from './LocalRideStore';
 import { di2Service } from '../di2/Di2Service';
+import { supaFetch } from '../../lib/supaFetch';
 
 interface SnapshotRow {
   session_id: string;
@@ -79,9 +80,6 @@ export interface RideSessionState {
 const FLUSH_INTERVAL = 10_000; // 10s — flush buffer to IndexedDB
 const CAPTURE_INTERVAL = 2_000; // 2s — fast capture for accurate ride data
 const METRICS_PERSIST_EVERY = 6; // persist metrics every 6 snapshots (30s)
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 class RideSessionManager {
   private static instance: RideSessionManager;
@@ -579,7 +577,6 @@ class RideSessionManager {
   }
 
   private async updatePresence(riding: boolean): Promise<void> {
-    if (!SUPABASE_URL || !SUPABASE_KEY) return;
     const userId = useAuthStore.getState().getUserId();
     if (!userId) return;
     const map = useMapStore.getState();
@@ -589,15 +586,14 @@ class RideSessionManager {
       const settingsMod = await import('../../store/settingsStore');
       const profile = settingsMod.useSettingsStore.getState().riderProfile;
 
-      await fetch(`${SUPABASE_URL}/rest/v1/rider_presence?user_id=eq.${userId}`, {
+      await supaFetch(`/rest/v1/rider_presence?user_id=eq.${userId}`, {
         method: 'DELETE',
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
       });
 
       if (riding && profile.rescue_available) {
-        await fetch(`${SUPABASE_URL}/rest/v1/rider_presence`, {
+        await supaFetch('/rest/v1/rider_presence', {
           method: 'POST',
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
           body: JSON.stringify({
             user_id: userId,
             name: profile.name || 'Ciclista',

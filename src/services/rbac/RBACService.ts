@@ -10,16 +10,7 @@
 // The single source of truth is the `effective_user_permissions` view
 // in Postgres. The frontend just queries it.
 
-const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-function headers(extra: Record<string, string> = {}): HeadersInit {
-  return {
-    apikey: SB_KEY ?? '',
-    Authorization: `Bearer ${SB_KEY ?? ''}`,
-    ...extra,
-  };
-}
+import { supaFetch, supaGet, supaRpc, supaInvokeFunction, SupaFetchError } from '../../lib/supaFetch';
 
 /**
  * Lazy-resolve the active KROMI session token from the auth store.
@@ -40,28 +31,27 @@ async function getSessionToken(): Promise<string | null> {
 }
 
 /**
- * Call a Postgres RPC via PostgREST. Adds the session token as a body
- * parameter (`p_session_token`) for admin RPCs that need it.
+ * Call a Postgres RPC via supaFetch. Wraps `supaRpc` and unwraps any
+ * structured error so the caller sees the same `${fn}: ${detail}` shape
+ * as before.
  */
 async function rpc<T = unknown>(
   fn: string,
   args: Record<string, unknown>,
 ): Promise<T> {
-  if (!SB_URL || !SB_KEY) throw new Error('supabase not configured');
-  const res = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
-    method: 'POST',
-    headers: headers({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(args),
-  });
-  if (!res.ok) {
-    let detail = await res.text();
-    try {
-      const parsed = JSON.parse(detail);
-      detail = parsed.message ?? parsed.error ?? detail;
-    } catch { /* not json */ }
-    throw new Error(`${fn}: ${detail}`);
+  try {
+    return await supaRpc<T>(fn, args);
+  } catch (err) {
+    if (err instanceof SupaFetchError) {
+      let detail = err.body;
+      try {
+        const parsed = JSON.parse(detail);
+        detail = parsed.message ?? parsed.error ?? detail;
+      } catch { /* not json */ }
+      throw new Error(`${fn}: ${detail}`);
+    }
+    throw err;
   }
-  return (await res.json()) as T;
 }
 
 // ─── Types ───────────────────────────────────────────────────
@@ -115,22 +105,22 @@ let rolesCache: Role[] | null = null;
 
 export async function listPermissions(): Promise<Permission[]> {
   if (permissionsCache) return permissionsCache;
-  if (!SB_URL || !SB_KEY) return [];
-  const res = await fetch(`${SB_URL}/rest/v1/permissions?select=*&order=category,key`, {
-    headers: headers(),
-  });
-  permissionsCache = await res.json();
-  return permissionsCache ?? [];
+  try {
+    permissionsCache = await supaGet<Permission[]>('/rest/v1/permissions?select=*&order=category,key');
+    return permissionsCache ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export async function listRoles(): Promise<Role[]> {
   if (rolesCache) return rolesCache;
-  if (!SB_URL || !SB_KEY) return [];
-  const res = await fetch(`${SB_URL}/rest/v1/roles?select=*&order=sort_order`, {
-    headers: headers(),
-  });
-  rolesCache = await res.json();
-  return rolesCache ?? [];
+  try {
+    rolesCache = await supaGet<Role[]>('/rest/v1/roles?select=*&order=sort_order');
+    return rolesCache ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export function clearRBACCache(): void {
@@ -140,24 +130,26 @@ export function clearRBACCache(): void {
 
 // ─── Effective permissions ───────────────────────────────────
 export async function getEffectivePermissions(userId: string): Promise<string[]> {
-  if (!SB_URL || !SB_KEY) return [];
-  const res = await fetch(
-    `${SB_URL}/rest/v1/effective_user_permissions?user_id=eq.${userId}&select=permission_key`,
-    { headers: headers() },
-  );
-  const rows = (await res.json()) as { permission_key: string }[];
-  return rows.map((r) => r.permission_key);
+  try {
+    const rows = await supaGet<{ permission_key: string }[]>(
+      `/rest/v1/effective_user_permissions?user_id=eq.${userId}&select=permission_key`,
+    );
+    return rows.map((r) => r.permission_key);
+  } catch {
+    return [];
+  }
 }
 
 // ─── Role assignment ─────────────────────────────────────────
 export async function getUserRoles(userId: string): Promise<string[]> {
-  if (!SB_URL || !SB_KEY) return [];
-  const res = await fetch(
-    `${SB_URL}/rest/v1/user_roles?user_id=eq.${userId}&select=role_id`,
-    { headers: headers() },
-  );
-  const rows = (await res.json()) as { role_id: string }[];
-  return rows.map((r) => r.role_id);
+  try {
+    const rows = await supaGet<{ role_id: string }[]>(
+      `/rest/v1/user_roles?user_id=eq.${userId}&select=role_id`,
+    );
+    return rows.map((r) => r.role_id);
+  } catch {
+    return [];
+  }
 }
 
 export async function setUserRoles(
@@ -179,13 +171,14 @@ export async function setUserRoles(
 
 // ─── Role → permission management ────────────────────────────
 export async function getRolePermissions(roleId: string): Promise<string[]> {
-  if (!SB_URL || !SB_KEY) return [];
-  const res = await fetch(
-    `${SB_URL}/rest/v1/role_permissions?role_id=eq.${roleId}&select=permission_key`,
-    { headers: headers() },
-  );
-  const rows = (await res.json()) as { permission_key: string }[];
-  return rows.map((r) => r.permission_key);
+  try {
+    const rows = await supaGet<{ permission_key: string }[]>(
+      `/rest/v1/role_permissions?role_id=eq.${roleId}&select=permission_key`,
+    );
+    return rows.map((r) => r.permission_key);
+  } catch {
+    return [];
+  }
 }
 
 export async function setRolePermissions(roleId: string, permKeys: string[]): Promise<void> {
@@ -219,10 +212,12 @@ export async function createRole(input: RoleInput): Promise<Role | null> {
   });
   if (!id) return null;
   // Re-fetch the row so consumers get the full object
-  if (!SB_URL || !SB_KEY) return null;
-  const res = await fetch(`${SB_URL}/rest/v1/roles?id=eq.${id}&select=*&limit=1`, { headers: headers() });
-  const rows = (await res.json()) as Role[];
-  return rows[0] ?? null;
+  try {
+    const rows = await supaGet<Role[]>(`/rest/v1/roles?id=eq.${id}&select=*&limit=1`);
+    return rows[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Update label / description / sort_order. System roles are blocked by the RPC. */
@@ -253,12 +248,13 @@ export async function deleteRole(roleId: string): Promise<void> {
 
 // ─── Per-user feature flags (overrides) ──────────────────────
 export async function getUserFeatureFlags(userId: string): Promise<UserFeatureFlag[]> {
-  if (!SB_URL || !SB_KEY) return [];
-  const res = await fetch(
-    `${SB_URL}/rest/v1/user_feature_flags?user_id=eq.${userId}&select=*`,
-    { headers: headers() },
-  );
-  return await res.json();
+  try {
+    return await supaGet<UserFeatureFlag[]>(
+      `/rest/v1/user_feature_flags?user_id=eq.${userId}&select=*`,
+    );
+  } catch {
+    return [];
+  }
 }
 
 export async function setUserFeatureFlag(
@@ -293,22 +289,24 @@ export async function clearUserFeatureFlag(userId: string, permissionKey: string
 
 // ─── User management (admin) ─────────────────────────────────
 export async function listAllUsers(): Promise<AdminUserRow[]> {
-  if (!SB_URL || !SB_KEY) return [];
-  const res = await fetch(
-    `${SB_URL}/rest/v1/app_users?select=id,email,name,is_super_admin,suspended_at,suspended_reason,created_at,last_login_at&order=created_at.desc`,
-    { headers: headers() },
-  );
-  return await res.json();
+  try {
+    return await supaGet<AdminUserRow[]>(
+      '/rest/v1/app_users?select=id,email,name,is_super_admin,suspended_at,suspended_reason,created_at,last_login_at&order=created_at.desc',
+    );
+  } catch {
+    return [];
+  }
 }
 
 export async function getUserById(userId: string): Promise<AdminUserRow | null> {
-  if (!SB_URL || !SB_KEY) return null;
-  const res = await fetch(
-    `${SB_URL}/rest/v1/app_users?id=eq.${userId}&select=id,email,name,is_super_admin,suspended_at,suspended_reason,created_at,last_login_at&limit=1`,
-    { headers: headers() },
-  );
-  const rows = await res.json();
-  return rows[0] ?? null;
+  try {
+    const rows = await supaGet<AdminUserRow[]>(
+      `/rest/v1/app_users?id=eq.${userId}&select=id,email,name,is_super_admin,suspended_at,suspended_reason,created_at,last_login_at&limit=1`,
+    );
+    return rows[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // Suspension write happens server-side via admin_set_suspended, which both
@@ -351,12 +349,14 @@ export interface UserSuspensionEvent {
 
 /** Fetch a user's suspension/unsuspension history (newest first). */
 export async function listUserSuspensions(userId: string, limit = 50): Promise<UserSuspensionEvent[]> {
-  if (!SB_URL || !SB_KEY) return [];
-  const res = await fetch(
-    `${SB_URL}/rest/v1/user_suspensions?user_id=eq.${userId}&select=*&order=performed_at.desc&limit=${limit}`,
-    { headers: headers() }
-  );
-  const rows = (await res.json()) as UserSuspensionEvent[];
+  let rows: UserSuspensionEvent[];
+  try {
+    rows = await supaGet<UserSuspensionEvent[]>(
+      `/rest/v1/user_suspensions?user_id=eq.${userId}&select=*&order=performed_at.desc&limit=${limit}`,
+    );
+  } catch {
+    return [];
+  }
   if (!Array.isArray(rows) || rows.length === 0) return [];
 
   // Resolve performer emails
@@ -366,11 +366,14 @@ export async function listUserSuspensions(userId: string, limit = 50): Promise<U
   if (performerIds.length === 0) return rows;
 
   const inList = performerIds.map((id) => `"${id}"`).join(',');
-  const usersRes = await fetch(
-    `${SB_URL}/rest/v1/app_users?select=id,email&id=in.(${inList})`,
-    { headers: headers() }
-  );
-  const users = (await usersRes.json()) as Array<{ id: string; email: string }>;
+  let users: Array<{ id: string; email: string }> = [];
+  try {
+    users = await supaGet<Array<{ id: string; email: string }>>(
+      `/rest/v1/app_users?select=id,email&id=in.(${inList})`,
+    );
+  } catch {
+    users = [];
+  }
   const byId = new Map(users.map((u) => [u.id, u.email]));
   return rows.map((r) => ({
     ...r,
@@ -395,19 +398,22 @@ export async function logImpersonationStart(
   targetUserId: string,
   reason?: string,
 ): Promise<string | null> {
-  if (!SB_URL || !SB_KEY) return null;
-  const res = await fetch(`${SB_URL}/rest/v1/impersonation_log`, {
-    method: 'POST',
-    headers: headers({ 'Content-Type': 'application/json', Prefer: 'return=representation' }),
-    body: JSON.stringify({
-      admin_user_id: adminUserId,
-      impersonated_user_id: targetUserId,
-      reason: reason ?? null,
-      user_agent: navigator.userAgent,
-    }),
-  });
-  const rows = await res.json();
-  return rows[0]?.id ?? null;
+  try {
+    const res = await supaFetch('/rest/v1/impersonation_log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      body: JSON.stringify({
+        admin_user_id: adminUserId,
+        impersonated_user_id: targetUserId,
+        reason: reason ?? null,
+        user_agent: navigator.userAgent,
+      }),
+    });
+    const rows = await res.json();
+    return rows[0]?.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -422,19 +428,10 @@ export async function notifyImpersonationStart(payload: {
   reason?: string | null;
   log_id?: string | null;
 }): Promise<void> {
-  if (!SB_URL || !SB_KEY) return;
   try {
-    await fetch(`${SB_URL}/functions/v1/notify-impersonation`, {
-      method: 'POST',
-      headers: {
-        apikey: SB_KEY,
-        Authorization: `Bearer ${SB_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ...payload,
-        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-      }),
+    await supaInvokeFunction('notify-impersonation', {
+      ...payload,
+      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
     });
   } catch {
     // Silent: missing config / network error must not block impersonation
@@ -442,12 +439,15 @@ export async function notifyImpersonationStart(payload: {
 }
 
 export async function logImpersonationEnd(logId: string): Promise<void> {
-  if (!SB_URL || !SB_KEY) return;
-  await fetch(`${SB_URL}/rest/v1/impersonation_log?id=eq.${logId}`, {
-    method: 'PATCH',
-    headers: headers({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }),
-    body: JSON.stringify({ ended_at: new Date().toISOString() }),
-  });
+  try {
+    await supaFetch(`/rest/v1/impersonation_log?id=eq.${logId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ ended_at: new Date().toISOString() }),
+    });
+  } catch {
+    // best-effort — never block sign-out
+  }
 }
 
 export interface ImpersonationLogEntry {
@@ -496,8 +496,6 @@ export async function listImpersonationLog(
   filter: ImpersonationLogFilter = {},
   pagination: { limit?: number; offset?: number } = {},
 ): Promise<ImpersonationLogPage> {
-  if (!SB_URL || !SB_KEY) return { rows: [], total: null, has_more: false };
-
   const limit = pagination.limit ?? 50;
   const offset = pagination.offset ?? 0;
 
@@ -508,14 +506,18 @@ export async function listImpersonationLog(
   if (filter.until) params.push(`started_at=lte.${encodeURIComponent(filter.until)}`);
   if (filter.active_only) params.push('ended_at=is.null');
 
-  const url = `${SB_URL}/rest/v1/impersonation_log?${params.join('&')}`;
-  const res = await fetch(url, {
-    headers: headers({
-      Prefer: offset === 0 ? 'count=exact' : '',
-      Range: `${offset}-${offset + limit - 1}`,
-      'Range-Unit': 'items',
-    }),
-  });
+  let res: Response;
+  try {
+    res = await supaFetch(`/rest/v1/impersonation_log?${params.join('&')}`, {
+      headers: {
+        Prefer: offset === 0 ? 'count=exact' : '',
+        Range: `${offset}-${offset + limit - 1}`,
+        'Range-Unit': 'items',
+      },
+    });
+  } catch {
+    return { rows: [], total: null, has_more: false };
+  }
   const rows = (await res.json()) as ImpersonationLogEntry[];
 
   // Parse content-range header: "0-49/237"
@@ -535,11 +537,14 @@ export async function listImpersonationLog(
     new Set(rows.flatMap((r) => [r.admin_user_id, r.impersonated_user_id]))
   );
   const inList = userIds.map((id) => `"${id}"`).join(',');
-  const usersRes = await fetch(
-    `${SB_URL}/rest/v1/app_users?select=id,email,name&id=in.(${inList})`,
-    { headers: headers() }
-  );
-  const users = (await usersRes.json()) as Array<{ id: string; email: string; name: string | null }>;
+  let users: Array<{ id: string; email: string; name: string | null }> = [];
+  try {
+    users = await supaGet<Array<{ id: string; email: string; name: string | null }>>(
+      `/rest/v1/app_users?select=id,email,name&id=in.(${inList})`,
+    );
+  } catch {
+    users = [];
+  }
   const byId = new Map(users.map((u) => [u.id, u]));
 
   const enriched: ImpersonationLogEntry[] = rows.map((r) => ({
@@ -574,41 +579,32 @@ export interface UserEnrichmentStats {
  * — the canonical full BikeConfig still lives in IndexedDB on the client.
  */
 export async function getUserEnrichmentStats(userId: string): Promise<UserEnrichmentStats> {
-  const empty: UserEnrichmentStats = {
-    bikes_count: 0, rides_count: 0, files_count: 0, storage_bytes: 0,
-    last_ride_at: null, last_upload_at: null,
-  };
-  if (!SB_URL || !SB_KEY) return empty;
-
-  const countHeaders = headers({ Prefer: 'count=exact', Range: '0-0' });
   const countOf = async (path: string): Promise<number> => {
-    const res = await fetch(`${SB_URL}/rest/v1/${path}`, { method: 'GET', headers: countHeaders });
-    const range = res.headers.get('content-range') ?? '';
-    const m = /\/(\d+|\*)$/.exec(range);
-    if (!m || m[1] === '*') return 0;
-    return parseInt(m[1] ?? '0', 10);
+    try {
+      const res = await supaFetch(`/rest/v1/${path}`, {
+        method: 'GET',
+        headers: { Prefer: 'count=exact', Range: '0-0' },
+      });
+      const range = res.headers.get('content-range') ?? '';
+      const m = /\/(\d+|\*)$/.exec(range);
+      if (!m || m[1] === '*') return 0;
+      return parseInt(m[1] ?? '0', 10);
+    } catch {
+      return 0;
+    }
   };
 
   const [ridesCount, lastRideRows, filesRows, settingsRows] = await Promise.all([
-    countOf(`ride_sessions?user_id=eq.${userId}&select=id`).catch(() => 0),
-    fetch(
-      `${SB_URL}/rest/v1/ride_sessions?user_id=eq.${userId}&select=started_at&order=started_at.desc&limit=1`,
-      { headers: headers() }
-    )
-      .then((r) => r.json() as Promise<Array<{ started_at: string }>>)
-      .catch(() => []),
-    fetch(
-      `${SB_URL}/rest/v1/kromi_files?owner_user_id=eq.${userId}&select=size_bytes,created_at&order=created_at.desc`,
-      { headers: headers() }
-    )
-      .then((r) => r.json() as Promise<Array<{ size_bytes: number | null; created_at: string }>>)
-      .catch(() => []),
-    fetch(
-      `${SB_URL}/rest/v1/user_settings?user_id=eq.${userId}&select=bikes&limit=1`,
-      { headers: headers() }
-    )
-      .then((r) => r.json() as Promise<Array<{ bikes: unknown }>>)
-      .catch(() => []),
+    countOf(`ride_sessions?user_id=eq.${userId}&select=id`),
+    supaGet<Array<{ started_at: string }>>(
+      `/rest/v1/ride_sessions?user_id=eq.${userId}&select=started_at&order=started_at.desc&limit=1`,
+    ).catch(() => [] as Array<{ started_at: string }>),
+    supaGet<Array<{ size_bytes: number | null; created_at: string }>>(
+      `/rest/v1/kromi_files?owner_user_id=eq.${userId}&select=size_bytes,created_at&order=created_at.desc`,
+    ).catch(() => [] as Array<{ size_bytes: number | null; created_at: string }>),
+    supaGet<Array<{ bikes: unknown }>>(
+      `/rest/v1/user_settings?user_id=eq.${userId}&select=bikes&limit=1`,
+    ).catch(() => [] as Array<{ bikes: unknown }>),
   ]);
 
   const files = Array.isArray(filesRows) ? filesRows : [];
@@ -648,12 +644,14 @@ export interface StorageStats {
  * (one row per file in admin context).
  */
 export async function getStorageStats(topN = 10): Promise<StorageStats> {
-  if (!SB_URL || !SB_KEY) return { total_files: 0, total_bytes: 0, by_user: [] };
-  const res = await fetch(
-    `${SB_URL}/rest/v1/kromi_files?select=owner_user_id,size_bytes&limit=10000`,
-    { headers: headers() }
-  );
-  const rows = (await res.json()) as Array<{ owner_user_id: string | null; size_bytes: number | null }>;
+  let rows: Array<{ owner_user_id: string | null; size_bytes: number | null }>;
+  try {
+    rows = await supaGet<Array<{ owner_user_id: string | null; size_bytes: number | null }>>(
+      '/rest/v1/kromi_files?select=owner_user_id,size_bytes&limit=10000',
+    );
+  } catch {
+    return { total_files: 0, total_bytes: 0, by_user: [] };
+  }
   if (!Array.isArray(rows)) return { total_files: 0, total_bytes: 0, by_user: [] };
 
   const byOwner = new Map<string, { files: number; bytes: number }>();
@@ -679,11 +677,13 @@ export async function getStorageStats(topN = 10): Promise<StorageStats> {
   let users: Array<{ id: string; email: string }> = [];
   if (ids.length > 0) {
     const inList = ids.map((id) => `"${id}"`).join(',');
-    const ures = await fetch(
-      `${SB_URL}/rest/v1/app_users?select=id,email&id=in.(${inList})`,
-      { headers: headers() }
-    );
-    users = (await ures.json()) as Array<{ id: string; email: string }>;
+    try {
+      users = await supaGet<Array<{ id: string; email: string }>>(
+        `/rest/v1/app_users?select=id,email&id=in.(${inList})`,
+      );
+    } catch {
+      users = [];
+    }
   }
   const emailById = new Map(users.map((u) => [u.id, u.email]));
 

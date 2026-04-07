@@ -16,13 +16,7 @@
 
 import { uploadFile, slugify, userFolderSlug, type FileCategory } from './KromiFileStore';
 import type { AuthUser } from '../auth/AuthService';
-
-const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-function headers(extra: Record<string, string> = {}): HeadersInit {
-  return { apikey: SB_KEY ?? '', Authorization: `Bearer ${SB_KEY ?? ''}`, ...extra };
-}
+import { supaFetch, SUPABASE_URL } from '../../lib/supaFetch';
 
 interface LegacyPhotoRow {
   id: string;
@@ -60,32 +54,37 @@ export interface MigrationResult {
 
 /** Count rows still on Supabase Storage. */
 export async function countLegacyPhotos(): Promise<number> {
-  if (!SB_URL || !SB_KEY) return 0;
-  const res = await fetch(
-    `${SB_URL}/rest/v1/service_photos?storage_path=not.is.null&file_id=is.null&select=id`,
-    { method: 'GET', headers: headers({ Prefer: 'count=exact', Range: '0-0' }) }
-  );
-  const range = res.headers.get('content-range') ?? '';
-  const m = /\/(\d+|\*)$/.exec(range);
-  if (!m || m[1] === '*') return 0;
-  return parseInt(m[1] ?? '0', 10);
+  try {
+    const res = await supaFetch(
+      '/rest/v1/service_photos?storage_path=not.is.null&file_id=is.null&select=id',
+      { method: 'GET', headers: { Prefer: 'count=exact', Range: '0-0' } },
+    );
+    const range = res.headers.get('content-range') ?? '';
+    const m = /\/(\d+|\*)$/.exec(range);
+    if (!m || m[1] === '*') return 0;
+    return parseInt(m[1] ?? '0', 10);
+  } catch {
+    return 0;
+  }
 }
 
 async function fetchLegacyBatch(limit: number): Promise<LegacyPhotoRow[]> {
-  if (!SB_URL || !SB_KEY) return [];
-  const url =
-    `${SB_URL}/rest/v1/service_photos` +
-    `?storage_path=not.is.null&file_id=is.null` +
-    `&select=*,service_requests(bike_name,rider_id),app_users!service_photos_uploaded_by_fkey(email,name)` +
+  const path =
+    '/rest/v1/service_photos' +
+    '?storage_path=not.is.null&file_id=is.null' +
+    '&select=*,service_requests(bike_name,rider_id),app_users!service_photos_uploaded_by_fkey(email,name)' +
     `&order=created_at.asc&limit=${limit}`;
-  const res = await fetch(url, { headers: headers() });
-  if (!res.ok) throw new Error(`Falha ao listar fotos legadas: ${await res.text()}`);
-  return (await res.json()) as LegacyPhotoRow[];
+  try {
+    const res = await supaFetch(path);
+    return (await res.json()) as LegacyPhotoRow[];
+  } catch (err) {
+    throw new Error(`Falha ao listar fotos legadas: ${(err as Error).message}`);
+  }
 }
 
 /** Convert a public Supabase Storage path into a downloadable URL. */
 function publicUrl(storagePath: string): string {
-  return `${SB_URL}/storage/v1/object/public/${storagePath}`;
+  return `${SUPABASE_URL}/storage/v1/object/public/${storagePath}`;
 }
 
 async function downloadAsFile(storagePath: string, fileName: string): Promise<File> {
@@ -99,13 +98,15 @@ async function patchPhotoRow(
   photoId: string,
   patch: { file_id: string; file_name: string; file_size_bytes: number; mime_type: string },
 ): Promise<void> {
-  if (!SB_URL || !SB_KEY) return;
-  const res = await fetch(`${SB_URL}/rest/v1/service_photos?id=eq.${photoId}`, {
-    method: 'PATCH',
-    headers: headers({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }),
-    body: JSON.stringify(patch),
-  });
-  if (!res.ok) throw new Error(`patch falhou: ${await res.text()}`);
+  try {
+    await supaFetch(`/rest/v1/service_photos?id=eq.${photoId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(patch),
+    });
+  } catch (err) {
+    throw new Error(`patch falhou: ${(err as Error).message}`);
+  }
 }
 
 /**

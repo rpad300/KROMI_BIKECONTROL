@@ -6,15 +6,12 @@ import { useMapStore } from '../../store/mapStore';
 import { useBikeStore } from '../../store/bikeStore';
 import { rideSessionManager } from '../../services/storage/RideHistory';
 import { wsClient } from '../../services/bluetooth/WebSocketBLEClient';
-
-const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaFetch } from '../../lib/supaFetch';
 
 function dlog(msg: string, data?: Record<string, unknown>) {
-  if (!SB_URL || !SB_KEY) return;
-  fetch(`${SB_URL}/rest/v1/debug_logs`, {
+  supaFetch('/rest/v1/debug_logs', {
     method: 'POST',
-    headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+    headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
     body: JSON.stringify({ level: 'info', message: msg, data: { ...data, ts: new Date().toISOString() } }),
   }).catch(() => {});
 }
@@ -52,10 +49,8 @@ export function DiagBadge() {
     async function check() {
       try { await localRideStore.init(); if (mounted) setIdbOk(true); } catch { if (mounted) setIdbOk(false); }
       try {
-        if (SB_URL && SB_KEY) {
-          const res = await fetch(`${SB_URL}/rest/v1/debug_logs?limit=1`, { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }, signal: AbortSignal.timeout(5000) });
-          if (mounted) setSupOk(res.ok);
-        }
+        await supaFetch('/rest/v1/debug_logs?limit=1', { signal: AbortSignal.timeout(5000) });
+        if (mounted) setSupOk(true);
       } catch { if (mounted) setSupOk(false); }
       try { const c = await localRideStore.getUnsyncedCount(); if (mounted) setUnsynced(c); } catch {}
       if (mounted) setLastCheck(new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));

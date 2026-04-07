@@ -9,11 +9,9 @@
 import FitParser from 'fit-file-parser';
 import { useAuthStore } from '../../store/authStore';
 import type { SimulationSummary } from '../simulation/KromiSimulator';
+import { supaFetch, supaGet } from '../../lib/supaFetch';
 
 const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 /** Detected platform/device that created the FIT file */
 export interface FitPlatform {
@@ -365,13 +363,11 @@ export async function enrichWithElevation(ride: ImportedRide): Promise<void> {
   console.log(`[Elevation] Done: ${elevations.length} samples, ${gpsRecords.length} interpolated, range ${altMin}m-${altMax}m`);
 
   // Save to Supabase cache (best-effort)
-  if (cacheEntries.length > 0 && SUPABASE_URL && SUPABASE_KEY) {
+  if (cacheEntries.length > 0) {
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/elevation_cache?on_conflict=lat_key,lng_key`, {
+      await supaFetch('/rest/v1/elevation_cache?on_conflict=lat_key,lng_key', {
         method: 'POST',
         headers: {
-          'apikey': SUPABASE_KEY!,
-          'Authorization': `Bearer ${SUPABASE_KEY}`,
           'Content-Type': 'application/json',
           'Prefer': 'resolution=ignore-duplicates,return=minimal',
         },
@@ -386,20 +382,14 @@ export async function enrichWithElevation(ride: ImportedRide): Promise<void> {
 
 /** Save imported ride to Supabase (with optional simulation results) */
 export async function saveImportedRide(ride: ImportedRide, sim?: SimulationSummary): Promise<boolean> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return false;
   const userId = useAuthStore.getState().user?.id;
   if (!userId) return false;
 
   try {
     // 1. Create ride_session
-    await fetch(`${SUPABASE_URL}/rest/v1/ride_sessions`, {
+    await supaFetch('/rest/v1/ride_sessions', {
       method: 'POST',
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal',
-      },
+      headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
       body: JSON.stringify({
         id: ride.id,
         user_id: userId,
@@ -484,14 +474,9 @@ export async function saveImportedRide(ride: ImportedRide, sim?: SimulationSumma
         };
       });
 
-      await fetch(`${SUPABASE_URL}/rest/v1/ride_snapshots`, {
+      await supaFetch('/rest/v1/ride_snapshots', {
         method: 'POST',
-        headers: {
-          'apikey': SUPABASE_KEY,
-          'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal',
-        },
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify(batch),
       });
     }
@@ -519,7 +504,6 @@ function getHRZone(hr: number, hrMax: number): number {
  * Returns the session ID if found, null otherwise.
  */
 export async function findOverlappingSession(ride: ImportedRide): Promise<string | null> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
   const userId = useAuthStore.getState().user?.id;
   if (!userId) return null;
 
@@ -528,15 +512,12 @@ export async function findOverlappingSession(ride: ImportedRide): Promise<string
 
   try {
     // Find sessions that overlap: session started before FIT ends AND ended after FIT starts
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/ride_sessions?user_id=eq.${userId}&started_at=lte.${fitEnd}&ended_at=gte.${fitStart}&select=id,started_at,ended_at,duration_s,total_km,devices_connected&limit=1`,
-      { headers: { 'apikey': SUPABASE_KEY!, 'Authorization': `Bearer ${SUPABASE_KEY}` } },
+    const sessions = await supaGet<Array<{ id: string; started_at: string; ended_at: string; duration_s: number; total_km: number; devices_connected: { source?: string } }>>(
+      `/rest/v1/ride_sessions?user_id=eq.${userId}&started_at=lte.${fitEnd}&ended_at=gte.${fitStart}&select=id,started_at,ended_at,duration_s,total_km,devices_connected&limit=1`,
     );
-    if (!res.ok) return null;
-    const sessions = await res.json();
     if (sessions.length === 0) return null;
 
-    const existing = sessions[0];
+    const existing = sessions[0]!;
     // Only merge if NOT already a FIT import
     const source = existing.devices_connected?.source;
     if (source === 'fit_import' || source === 'fit_import+ble_bridge') return null;
@@ -554,27 +535,20 @@ export async function findOverlappingSession(ride: ImportedRide): Promise<string
  * The FIT has GPS + HR that the live session may be missing.
  */
 export async function mergeIntoSession(sessionId: string, ride: ImportedRide): Promise<boolean> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return false;
-
   try {
     // 1. Fetch existing snapshots
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/ride_snapshots?session_id=eq.${sessionId}&select=id,elapsed_s,lat,lng,altitude_m,hr_bpm,hr_zone,speed_kmh,cadence_rpm,power_watts&order=elapsed_s`,
-      { headers: { 'apikey': SUPABASE_KEY!, 'Authorization': `Bearer ${SUPABASE_KEY}` } },
+    const existingSnaps = await supaGet<{ id: number; elapsed_s: number; lat: number; lng: number; altitude_m: number | null; hr_bpm: number; speed_kmh: number; cadence_rpm: number; power_watts: number }[]>(
+      `/rest/v1/ride_snapshots?session_id=eq.${sessionId}&select=id,elapsed_s,lat,lng,altitude_m,hr_bpm,hr_zone,speed_kmh,cadence_rpm,power_watts&order=elapsed_s`,
     );
-    if (!res.ok) return false;
-    const existingSnaps = await res.json() as { id: number; elapsed_s: number; lat: number; lng: number; altitude_m: number | null; hr_bpm: number; speed_kmh: number; cadence_rpm: number; power_watts: number }[];
 
     if (existingSnaps.length === 0) return false;
 
     // 2. Build FIT record lookup by elapsed_s (offset by session start vs FIT start)
     // The FIT may start earlier or later than the live session
-    const sessionRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/ride_sessions?id=eq.${sessionId}&select=started_at`,
-      { headers: { 'apikey': SUPABASE_KEY!, 'Authorization': `Bearer ${SUPABASE_KEY}` } },
+    const sessionData = await supaGet<Array<{ started_at: string }>>(
+      `/rest/v1/ride_sessions?id=eq.${sessionId}&select=started_at`,
     );
-    const sessionData = await sessionRes.json();
-    const sessionStart = new Date(sessionData[0]?.started_at).getTime();
+    const sessionStart = new Date(sessionData[0]?.started_at ?? 0).getTime();
     const fitStart = new Date(ride.startedAt).getTime();
     const offsetS = Math.round((sessionStart - fitStart) / 1000); // FIT elapsed → session elapsed
 
@@ -622,14 +596,9 @@ export async function mergeIntoSession(sessionId: string, ride: ImportedRide): P
 
     // 4. Apply patches in batches
     for (const { id, patch } of updates) {
-      await fetch(`${SUPABASE_URL}/rest/v1/ride_snapshots?id=eq.${id}`, {
+      await supaFetch(`/rest/v1/ride_snapshots?id=eq.${id}`, {
         method: 'PATCH',
-        headers: {
-          'apikey': SUPABASE_KEY!,
-          'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal',
-        },
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify(patch),
       });
     }
@@ -645,14 +614,9 @@ export async function mergeIntoSession(sessionId: string, ride: ImportedRide): P
     };
 
     if (Object.keys(updateSession).length > 0) {
-      await fetch(`${SUPABASE_URL}/rest/v1/ride_sessions?id=eq.${sessionId}`, {
+      await supaFetch(`/rest/v1/ride_sessions?id=eq.${sessionId}`, {
         method: 'PATCH',
-        headers: {
-          'apikey': SUPABASE_KEY!,
-          'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal',
-        },
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify(updateSession),
       });
     }

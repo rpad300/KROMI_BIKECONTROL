@@ -13,9 +13,8 @@ import { useMapStore } from '../../store/mapStore';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAthleteStore } from '../../store/athleteStore';
+import { supaFetch, supaGet } from '../../lib/supaFetch';
 
-const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 const POLL_INTERVAL = 10_000; // 10s
 const RADIUS_KM = 5;
 
@@ -64,17 +63,15 @@ export function RescueAlert() {
   const rescueAvailable = useSettingsStore((s) => s.riderProfile.rescue_available);
 
   const checkForSOS = useCallback(async () => {
-    if (!SB_URL || !SB_KEY || !rescueAvailable) return;
+    if (!rescueAvailable) return;
 
     const map = useMapStore.getState();
     if (!map.latitude || !map.longitude) return;
 
     try {
-      const res = await fetch(
-        `${SB_URL}/rest/v1/rescue_requests?status=eq.active&expires_at=gt.${new Date().toISOString()}&select=id,victim_name,victim_lat,victim_lng,created_at&order=created_at.desc&limit=5`,
-        { headers: { 'apikey': SB_KEY!, 'Authorization': `Bearer ${SB_KEY}` } },
+      const requests = await supaGet<{ id: string; victim_name: string; victim_lat: number; victim_lng: number; created_at: string }[]>(
+        `/rest/v1/rescue_requests?status=eq.active&expires_at=gt.${new Date().toISOString()}&select=id,victim_name,victim_lat,victim_lng,created_at&order=created_at.desc&limit=5`,
       );
-      const requests = await res.json() as { id: string; victim_name: string; victim_lat: number; victim_lng: number; created_at: string }[];
 
       // Find nearest within radius
       for (const req of requests) {
@@ -98,16 +95,16 @@ export function RescueAlert() {
   }, [rideActive, rescueAvailable, checkForSOS]);
 
   const handleAccept = async () => {
-    if (!sos || !SB_URL || !SB_KEY) return;
+    if (!sos) return;
 
     const userId = useAuthStore.getState().getUserId();
     const profile = useSettingsStore.getState().riderProfile;
     const map = useMapStore.getState();
 
     try {
-      await fetch(`${SB_URL}/rest/v1/rescue_responses`, {
+      await supaFetch('/rest/v1/rescue_responses', {
         method: 'POST',
-        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({
           request_id: sos.id,
           responder_user_id: userId,

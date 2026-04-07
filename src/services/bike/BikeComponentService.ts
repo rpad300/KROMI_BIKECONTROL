@@ -5,8 +5,7 @@
  * Supports fuzzy search, auto-saves new components, and AI normalization.
  */
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaFetch, supaGet, supaRpc, SupaFetchError } from '../../lib/supaFetch';
 
 export interface BikeComponent {
   id: string;
@@ -30,7 +29,6 @@ export async function searchComponents(
   query: string,
   limit = 15,
 ): Promise<BikeComponent[]> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return [];
   if (!query || query.length < 1) return getTopComponents(category, limit);
 
   const cacheKey = `${category}:${query.toLowerCase()}`;
@@ -40,11 +38,9 @@ export async function searchComponents(
   try {
     // Use ilike for simple matching — works well with partial brand/model names
     const q = query.replace(/'/g, "''"); // escape single quotes
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/bike_components?category=eq.${category}&or=(brand.ilike.*${q}*,model.ilike.*${q}*)&order=usage_count.desc&limit=${limit}`,
-      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } },
+    const data = await supaGet<BikeComponent[]>(
+      `/rest/v1/bike_components?category=eq.${category}&or=(brand.ilike.*${q}*,model.ilike.*${q}*)&order=usage_count.desc&limit=${limit}`,
     );
-    const data = await res.json();
     if (!Array.isArray(data)) return [];
     cache.set(cacheKey, { data, ts: Date.now() });
     return data;
@@ -55,18 +51,14 @@ export async function searchComponents(
 
 /** Get top components by usage for a category (no search query) */
 export async function getTopComponents(category: string, limit = 10): Promise<BikeComponent[]> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return [];
-
   const cacheKey = `top:${category}`;
   const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data;
 
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/bike_components?category=eq.${category}&order=usage_count.desc&limit=${limit}`,
-      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } },
+    const data = await supaGet<BikeComponent[]>(
+      `/rest/v1/bike_components?category=eq.${category}&order=usage_count.desc&limit=${limit}`,
     );
-    const data = await res.json();
     if (!Array.isArray(data)) return [];
     cache.set(cacheKey, { data, ts: Date.now() });
     return data;
@@ -77,21 +69,17 @@ export async function getTopComponents(category: string, limit = 10): Promise<Bi
 
 /** Get unique brands for a category */
 export async function getBrands(category: string): Promise<string[]> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return [];
-
   const cacheKey = `brands:${category}`;
   const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data.map((c) => c.brand);
 
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/bike_components?category=eq.${category}&select=brand&order=usage_count.desc&limit=50`,
-      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } },
+    const data = await supaGet<Array<{ brand: string }>>(
+      `/rest/v1/bike_components?category=eq.${category}&select=brand&order=usage_count.desc&limit=50`,
     );
-    const data = await res.json();
     if (!Array.isArray(data)) return [];
     // Deduplicate brands
-    const unique = [...new Set(data.map((d: { brand: string }) => d.brand))];
+    const unique = [...new Set(data.map((d) => d.brand))];
     return unique;
   } catch {
     return [];
@@ -105,17 +93,14 @@ export async function saveComponent(
   model: string,
   specs: Record<string, unknown> = {},
 ): Promise<void> {
-  if (!SUPABASE_URL || !SUPABASE_KEY || !brand.trim() || !model.trim()) return;
+  if (!brand.trim() || !model.trim()) return;
 
   try {
     // Try insert with on_conflict handling
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/bike_components?on_conflict=category,brand,model`,
-      {
+    try {
+      await supaFetch('/rest/v1/bike_components?on_conflict=category,brand,model', {
         method: 'POST',
         headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
           'Content-Type': 'application/json',
           Prefer: 'resolution=merge-duplicates',
         },
@@ -127,23 +112,16 @@ export async function saveComponent(
           usage_count: 1,
           updated_at: new Date().toISOString(),
         }),
-      },
-    );
-
-    if (res.status === 409) {
-      // Fallback: just increment usage via RPC
-      await fetch(
-        `${SUPABASE_URL}/rest/v1/rpc/increment_component_usage`,
-        {
-          method: 'POST',
-          headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ p_category: category, p_brand: brand.trim(), p_model: model.trim() }),
-        },
-      );
+      });
+    } catch (err) {
+      if (err instanceof SupaFetchError && err.status === 409) {
+        // Fallback: just increment usage via RPC
+        await supaRpc('increment_component_usage', {
+          p_category: category,
+          p_brand: brand.trim(),
+          p_model: model.trim(),
+        });
+      }
     }
 
     // Invalidate cache for this category

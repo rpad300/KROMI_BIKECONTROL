@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { useReadOnlyGuard } from '../../hooks/useReadOnlyGuard';
+import { supaFetch, supaGet } from '../../lib/supaFetch';
 import {
   getServiceById, getServiceItems, getComments, getPhotos,
   updateService, updateServiceStatus, addComment, addServiceItem,
@@ -353,9 +354,6 @@ function QuickAddItem({ serviceId, onAdded }: { serviceId: string; onAdded: () =
 
 // ── Rating Widget ───────────────────────────────────────────
 
-const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
 function RatingWidget({ serviceId, shopId, userId }: { serviceId: string; shopId: string; userId: string }) {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
@@ -363,23 +361,22 @@ function RatingWidget({ serviceId, shopId, userId }: { serviceId: string; shopId
   const [existing, setExisting] = useState(false);
 
   useEffect(() => {
-    if (!SB_URL || !SB_KEY) return;
-    fetch(`${SB_URL}/rest/v1/shop_reviews?service_id=eq.${serviceId}&user_id=eq.${userId}`, {
-      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
-    }).then((r) => r.json()).then((data) => {
+    supaGet<Array<{ rating: number; comment: string | null }>>(
+      `/rest/v1/shop_reviews?service_id=eq.${serviceId}&user_id=eq.${userId}`,
+    ).then((data) => {
       if (Array.isArray(data) && data.length > 0) {
-        setRating(data[0].rating);
-        setComment(data[0].comment ?? '');
+        setRating(data[0]!.rating);
+        setComment(data[0]!.comment ?? '');
         setExisting(true);
       }
-    });
+    }).catch(() => {});
   }, [serviceId, userId]);
 
   const handleSubmit = async () => {
-    if (!SB_URL || !SB_KEY || rating === 0) return;
-    await fetch(`${SB_URL}/rest/v1/shop_reviews`, {
+    if (rating === 0) return;
+    await supaFetch('/rest/v1/shop_reviews', {
       method: 'POST',
-      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
+      headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
       body: JSON.stringify({ shop_id: shopId, service_id: serviceId, user_id: userId, rating, comment: comment || null }),
     });
     setSubmitted(true);

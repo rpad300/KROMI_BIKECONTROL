@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { initGoogleMaps, isMapsLoaded } from '../../services/maps/GoogleMapsService';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+import { supaGet } from '../../lib/supaFetch';
 
 // ── Filter types ────────────────────────────────────────────
 type MapPeriod = 'all' | '30d' | '90d' | 'year';
@@ -16,11 +14,8 @@ interface RouteData {
   points: { lat: number; lng: number }[];
 }
 
-async function fetchJSON(path: string) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-    headers: { 'apikey': SUPABASE_KEY!, 'Authorization': `Bearer ${SUPABASE_KEY}` },
-  });
-  return res.json();
+async function fetchJSON<T = unknown>(path: string): Promise<T> {
+  return supaGet<T>(`/rest/v1${path}`);
 }
 
 export function GlobalMapView() {
@@ -63,18 +58,18 @@ export function GlobalMapView() {
 
   // Fetch all route GPS points from ride_snapshots
   const loadRoutes = useCallback(async () => {
-    if (!userId || !SUPABASE_URL || !SUPABASE_KEY) { setLoading(false); return; }
+    if (!userId) { setLoading(false); return; }
     setLoading(true);
 
     // First get all completed sessions
-    const sessions = await fetchJSON(
+    const sessions = await fetchJSON<Array<{ id: string; started_at: string; total_km: number }>>(
       `/ride_sessions?user_id=eq.${userId}&status=eq.completed&select=id,started_at,total_km&order=started_at.desc&limit=100`
     );
     if (!Array.isArray(sessions)) { setLoading(false); return; }
 
     // For each session, fetch GPS points (sampled — every 5th point to keep load manageable)
     const routePromises = sessions.map(async (sess: { id: string; started_at: string; total_km: number }) => {
-      const snaps = await fetchJSON(
+      const snaps = await fetchJSON<Array<{ lat: number; lng: number }>>(
         `/ride_snapshots?session_id=eq.${sess.id}&select=lat,lng&lat=neq.0&lng=neq.0&order=elapsed_s.asc&limit=600`
       );
       if (!Array.isArray(snaps) || snaps.length < 2) return null;

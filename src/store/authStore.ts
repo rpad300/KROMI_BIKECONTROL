@@ -30,13 +30,22 @@ interface AuthState {
   impersonationReadOnly: boolean;
 
   sessionToken: string | null;
+  /** PostgREST-compatible JWT — the Bearer credential for REST calls. */
+  jwt: string | null;
+  jwtExpiresAt: string | null;
   expiresAt: string | null;
   loading: boolean;
 
   /** The "viewer" — what the rest of the app sees as the current user. */
   user: AuthUser | null;
 
-  setSession: (user: AuthUser, token: string, expiresAt: string) => void;
+  setSession: (
+    user: AuthUser,
+    token: string,
+    expiresAt: string,
+    jwt?: string | null,
+    jwtExpiresAt?: string | null,
+  ) => void;
   logout: () => void;
   checkSession: () => Promise<boolean>;
   isLoggedIn: () => boolean;
@@ -64,6 +73,18 @@ function viewerOf(real: AuthUser | null, imp: AuthUser | null): AuthUser | null 
   return imp ?? real;
 }
 
+/**
+ * Mirror the active JWT onto a global so buildSupaHeadersSync (used
+ * by the very few call sites that can't await) can pick it up without
+ * reaching back into the store. Zustand subscribers call this
+ * whenever `jwt` changes.
+ */
+function publishJwtGlobal(jwt: string | null): void {
+  if (typeof globalThis === 'undefined') return;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).__KROMI_AUTH_JWT__ = jwt ?? null;
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -72,43 +93,61 @@ export const useAuthStore = create<AuthState>()(
       impersonationLogId: null,
       impersonationReadOnly: true,
       sessionToken: null,
+      jwt: null,
+      jwtExpiresAt: null,
       expiresAt: null,
       loading: true,
       user: null,
 
-      setSession: (user, token, expiresAt) =>
+      setSession: (user, token, expiresAt, jwt, jwtExpiresAt) => {
+        publishJwtGlobal(jwt ?? null);
         set({
           realUser: user,
           user,
           sessionToken: token,
+          jwt: jwt ?? null,
+          jwtExpiresAt: jwtExpiresAt ?? null,
           expiresAt,
           loading: false,
           impersonatedUser: null,
           impersonationLogId: null,
-        }),
+        });
+      },
 
-      logout: () =>
+      logout: () => {
+        publishJwtGlobal(null);
         set({
           realUser: null,
           impersonatedUser: null,
           impersonationLogId: null,
           user: null,
           sessionToken: null,
+          jwt: null,
+          jwtExpiresAt: null,
           expiresAt: null,
           loading: false,
-        }),
+        });
+      },
 
       checkSession: async () => {
-        const { realUser: localUser, sessionToken, expiresAt } = get();
+        const { realUser: localUser, sessionToken, expiresAt, jwt: persistedJwt } = get();
+
+        // Re-publish the persisted JWT so supaFetch sees it BEFORE any
+        // background verification runs. Without this, the first REST
+        // calls after boot would go out with the anon key.
+        if (persistedJwt) publishJwtGlobal(persistedJwt);
 
         if (!sessionToken || !expiresAt) {
-          // No local session — try device auto-login
+          // No local session — try device auto-login (mints a fresh JWT)
           const deviceResult = await loginByDevice();
           if (deviceResult.success && deviceResult.user) {
+            publishJwtGlobal(deviceResult.jwt ?? null);
             set({
               realUser: deviceResult.user,
               user: deviceResult.user,
               sessionToken: deviceResult.session_token!,
+              jwt: deviceResult.jwt ?? null,
+              jwtExpiresAt: deviceResult.jwt_expires_at ?? null,
               expiresAt: deviceResult.expires_at!,
               loading: false,
             });
@@ -123,13 +162,17 @@ export const useAuthStore = create<AuthState>()(
           // Restore viewer (consider any persisted impersonation)
           set((s) => ({ user: viewerOf(localUser, s.impersonatedUser), loading: false }));
 
-          // Background verify — only logout if server explicitly rejects
+          // Background verify — refreshes the JWT so the next REST call
+          // has a full TTL window. Only logout if server explicitly rejects.
           try {
-            const serverUser = await verifySession(sessionToken);
-            if (serverUser) {
+            const verified = await verifySession(sessionToken);
+            if (verified) {
+              publishJwtGlobal(verified.jwt);
               set((s) => ({
-                realUser: serverUser,
-                user: viewerOf(serverUser, s.impersonatedUser),
+                realUser: verified.user,
+                jwt: verified.jwt,
+                jwtExpiresAt: verified.jwt_expires_at,
+                user: viewerOf(verified.user, s.impersonatedUser),
               }));
             }
           } catch {
@@ -139,17 +182,27 @@ export const useAuthStore = create<AuthState>()(
         }
 
         // No local user — must verify with server
-        const user = await verifySession(sessionToken);
-        if (user) {
-          set({ realUser: user, user, loading: false });
+        const verified = await verifySession(sessionToken);
+        if (verified) {
+          publishJwtGlobal(verified.jwt);
+          set({
+            realUser: verified.user,
+            user: verified.user,
+            jwt: verified.jwt,
+            jwtExpiresAt: verified.jwt_expires_at,
+            loading: false,
+          });
           return true;
         }
 
+        publishJwtGlobal(null);
         set({
           realUser: null,
           impersonatedUser: null,
           user: null,
           sessionToken: null,
+          jwt: null,
+          jwtExpiresAt: null,
           expiresAt: null,
           loading: false,
         });
@@ -273,8 +326,15 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         realUser: state.realUser,
         sessionToken: state.sessionToken,
+        jwt: state.jwt,
+        jwtExpiresAt: state.jwtExpiresAt,
         expiresAt: state.expiresAt,
       }),
+      onRehydrateStorage: () => (state) => {
+        // Mirror JWT to the global immediately after rehydrate so the
+        // very first fetch after page load uses the stored credential.
+        if (state?.jwt) publishJwtGlobal(state.jwt);
+      },
     }
   )
 );
