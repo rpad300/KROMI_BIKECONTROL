@@ -5,6 +5,7 @@ import { verifySession, loginByDevice } from '../services/auth/AuthService';
 import {
   logImpersonationStart,
   logImpersonationEnd,
+  notifyImpersonationStart,
 } from '../services/rbac/RBACService';
 
 interface AuthState {
@@ -159,6 +160,15 @@ export const useAuthStore = create<AuthState>()(
           impersonationLogId: logId,
           impersonationReadOnly: true,
           user: target,
+        });
+        // Fire-and-forget audit email (no-op if SMTP secrets aren't set)
+        void notifyImpersonationStart({
+          admin_email: realUser.email,
+          admin_name: realUser.name ?? null,
+          target_email: target.email,
+          target_name: target.name ?? null,
+          reason: reason ?? null,
+          log_id: logId,
         });
       },
 
