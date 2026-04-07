@@ -9,14 +9,16 @@ import { useState } from 'react';
 import { useIsSuperAdmin } from '../../hooks/usePermission';
 import { AdminUsersPage } from './AdminUsersPage';
 import { AdminRolesPage } from './AdminRolesPage';
+import { AdminAuditPage } from './AdminAuditPage';
 import { DriveStoragePage } from '../Settings/DriveStoragePage';
 
-export type AdminTab = 'users' | 'roles' | 'drive' | 'system';
+export type AdminTab = 'users' | 'roles' | 'drive' | 'audit' | 'system';
 
 const TABS: { id: AdminTab; label: string; icon: string }[] = [
   { id: 'users', label: 'Utilizadores', icon: 'group' },
   { id: 'roles', label: 'Roles + Permissões', icon: 'admin_panel_settings' },
   { id: 'drive', label: 'Google Drive', icon: 'cloud' },
+  { id: 'audit', label: 'Auditoria', icon: 'history' },
   { id: 'system', label: 'Sistema', icon: 'memory' },
 ];
 
@@ -102,6 +104,7 @@ export function AdminPanel({ initialTab = 'users' }: { initialTab?: AdminTab }) 
         {tab === 'users' && <AdminUsersPage />}
         {tab === 'roles' && <AdminRolesPage />}
         {tab === 'drive' && <DriveStoragePage />}
+        {tab === 'audit' && <AdminAuditPage />}
         {tab === 'system' && <AdminSystemPage />}
       </div>
     </div>
@@ -123,11 +126,10 @@ function AdminSystemPage() {
           <strong style={{ color: '#fbbf24' }}>Próximas features pendentes:</strong>
         </div>
         <ul style={{ paddingLeft: '16px', margin: 0 }}>
-          <li>Refactor BikesPage / BikeFitPage / ShopManagement para usar KromiFileStore</li>
           <li>Migration script para fotos legadas em Supabase Storage</li>
-          <li>Lista detalhada de impersonation_log + filtros</li>
-          <li>Relatórios: storage usage por user, rides por user, etc.</li>
+          <li>Filtros + paginação no log de auditoria</li>
           <li>Ban / unban com timeline</li>
+          <li>Notificações por email quando há impersonation</li>
         </ul>
       </div>
     </div>

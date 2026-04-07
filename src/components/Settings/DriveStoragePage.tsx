@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useDriveStore } from '../../store/driveStore';
 import { bootstrapFolderStructure, TOP_LEVEL_FOLDERS } from '../../services/storage/KromiFileStore';
+import { getStorageStats, type StorageStats } from '../../services/rbac/RBACService';
 
 /**
  * DriveStoragePage — admin diagnostic for the central KROMI Drive backend.
@@ -15,10 +16,20 @@ export function DriveStoragePage() {
 
   const [bootstrapping, setBootstrapping] = useState(false);
   const [bootstrapResult, setBootstrapResult] = useState<string | null>(null);
+  const [usage, setUsage] = useState<StorageStats | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
 
   useEffect(() => {
     if (status === 'unknown') void refresh();
   }, [status, refresh]);
+
+  useEffect(() => {
+    setUsageLoading(true);
+    getStorageStats(10)
+      .then(setUsage)
+      .catch(() => setUsage(null))
+      .finally(() => setUsageLoading(false));
+  }, []);
 
   const runBootstrap = async () => {
     setBootstrapping(true);
@@ -209,6 +220,47 @@ export function DriveStoragePage() {
           )}
         </div>
       )}
+
+      {/* Storage usage by user (kromi_files aggregate) */}
+      <div style={card}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+          <div style={{ fontSize: '12px', color: '#3fff8b', fontWeight: 700 }}>Utilização (kromi_files)</div>
+          {usage && (
+            <div style={{ fontSize: '10px', color: '#777575' }}>
+              {usage.total_files.toLocaleString('pt-PT')} ficheiros · {formatBytes(usage.total_bytes)}
+            </div>
+          )}
+        </div>
+        {usageLoading && <div style={{ fontSize: '11px', color: '#777575' }}>A calcular...</div>}
+        {!usageLoading && usage && usage.by_user.length === 0 && (
+          <div style={{ fontSize: '11px', color: '#777575' }}>Sem ficheiros registados.</div>
+        )}
+        {!usageLoading && usage && usage.by_user.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ fontSize: '10px', color: '#777575', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Top {usage.by_user.length} utilizadores
+            </div>
+            {usage.by_user.map((row, idx) => {
+              const pct = usage.total_bytes > 0 ? (row.bytes / usage.total_bytes) * 100 : 0;
+              return (
+                <div key={row.user_id ?? idx} style={{ fontSize: '11px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                    <span style={{ color: '#adaaaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {row.email ?? row.user_id?.slice(0, 8)}
+                    </span>
+                    <span style={{ color: '#777575', flexShrink: 0, marginLeft: '8px' }}>
+                      {row.files} · {formatBytes(row.bytes)}
+                    </span>
+                  </div>
+                  <div style={{ height: '3px', backgroundColor: '#0e0e0e', borderRadius: '2px', overflow: 'hidden' }}>
+                    <div style={{ width: `${pct}%`, height: '100%', backgroundColor: '#3fff8b' }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Info */}
       <div style={{ ...card, backgroundColor: 'rgba(110,155,255,0.05)', border: '1px solid rgba(110,155,255,0.2)' }}>

@@ -281,3 +281,120 @@ export async function logImpersonationEnd(logId: string): Promise<void> {
     body: JSON.stringify({ ended_at: new Date().toISOString() }),
   });
 }
+
+export interface ImpersonationLogEntry {
+  id: string;
+  admin_user_id: string;
+  impersonated_user_id: string;
+  started_at: string;
+  ended_at: string | null;
+  reason: string | null;
+  user_agent: string | null;
+  /** Joined display fields (resolved client-side from app_users). */
+  admin_email?: string;
+  admin_name?: string | null;
+  target_email?: string;
+  target_name?: string | null;
+}
+
+/** Fetch the most recent impersonation log entries. */
+export async function listImpersonationLog(limit = 50): Promise<ImpersonationLogEntry[]> {
+  if (!SB_URL || !SB_KEY) return [];
+  const res = await fetch(
+    `${SB_URL}/rest/v1/impersonation_log?select=*&order=started_at.desc&limit=${limit}`,
+    { headers: headers() }
+  );
+  const rows = (await res.json()) as ImpersonationLogEntry[];
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+
+  // Resolve user emails/names in one batched query
+  const userIds = Array.from(
+    new Set(rows.flatMap((r) => [r.admin_user_id, r.impersonated_user_id]))
+  );
+  const inList = userIds.map((id) => `"${id}"`).join(',');
+  const usersRes = await fetch(
+    `${SB_URL}/rest/v1/app_users?select=id,email,name&id=in.(${inList})`,
+    { headers: headers() }
+  );
+  const users = (await usersRes.json()) as Array<{ id: string; email: string; name: string | null }>;
+  const byId = new Map(users.map((u) => [u.id, u]));
+
+  return rows.map((r) => ({
+    ...r,
+    admin_email: byId.get(r.admin_user_id)?.email,
+    admin_name: byId.get(r.admin_user_id)?.name ?? null,
+    target_email: byId.get(r.impersonated_user_id)?.email,
+    target_name: byId.get(r.impersonated_user_id)?.name ?? null,
+  }));
+}
+
+// ─── Storage usage stats (kromi_files) ───────────────────────
+export interface StorageUsageRow {
+  user_id: string | null;
+  email: string | null;
+  files: number;
+  bytes: number;
+}
+
+export interface StorageStats {
+  total_files: number;
+  total_bytes: number;
+  by_user: StorageUsageRow[];
+}
+
+/**
+ * Aggregates kromi_files per owner. Done client-side because we want
+ * a single round-trip without adding a SQL view. The volume is small
+ * (one row per file in admin context).
+ */
+export async function getStorageStats(topN = 10): Promise<StorageStats> {
+  if (!SB_URL || !SB_KEY) return { total_files: 0, total_bytes: 0, by_user: [] };
+  const res = await fetch(
+    `${SB_URL}/rest/v1/kromi_files?select=owner_user_id,size_bytes&limit=10000`,
+    { headers: headers() }
+  );
+  const rows = (await res.json()) as Array<{ owner_user_id: string | null; size_bytes: number | null }>;
+  if (!Array.isArray(rows)) return { total_files: 0, total_bytes: 0, by_user: [] };
+
+  const byOwner = new Map<string, { files: number; bytes: number }>();
+  let total_files = 0;
+  let total_bytes = 0;
+  for (const r of rows) {
+    total_files += 1;
+    const b = r.size_bytes ?? 0;
+    total_bytes += b;
+    const key = r.owner_user_id ?? '__null__';
+    const cur = byOwner.get(key) ?? { files: 0, bytes: 0 };
+    cur.files += 1;
+    cur.bytes += b;
+    byOwner.set(key, cur);
+  }
+
+  // Resolve emails for the top N owners
+  const sorted = Array.from(byOwner.entries())
+    .filter(([id]) => id !== '__null__')
+    .sort((a, b) => b[1].bytes - a[1].bytes)
+    .slice(0, topN);
+  const ids = sorted.map(([id]) => id);
+  let users: Array<{ id: string; email: string }> = [];
+  if (ids.length > 0) {
+    const inList = ids.map((id) => `"${id}"`).join(',');
+    const ures = await fetch(
+      `${SB_URL}/rest/v1/app_users?select=id,email&id=in.(${inList})`,
+      { headers: headers() }
+    );
+    users = (await ures.json()) as Array<{ id: string; email: string }>;
+  }
+  const emailById = new Map(users.map((u) => [u.id, u.email]));
+
+  return {
+    total_files,
+    total_bytes,
+    by_user: sorted.map(([id, stats]) => ({
+      user_id: id,
+      email: emailById.get(id) ?? null,
+      files: stats.files,
+      bytes: stats.bytes,
+    })),
+  };
+}
