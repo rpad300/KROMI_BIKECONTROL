@@ -8,6 +8,7 @@ import { IntelligenceWidget } from '../Dashboard/IntelligenceWidget';
 import { MiniMap } from '../Dashboard/MiniMap';
 import { ElevationProfile } from '../Dashboard/ElevationProfile';
 import { ClockDisplay } from '../shared/ClockDisplay';
+import { usePermission } from '../../hooks/usePermission';
 
 /** CRUISE Dashboard — flat terrain, efficiency focused */
 export function CruiseDashboard() {
@@ -18,6 +19,7 @@ export function CruiseDashboard() {
   const tripTime = useBikeStore((s) => s.trip_time_s);
   const isEBike = useIsEBike();
   const isPowerMode = assistMode === AssistMode.POWER;
+  const canSeeIntelligence = usePermission('features.intelligence_v2');
 
   const formatTime = (s: number) => s > 0 ? `${Math.floor(s/3600)}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}` : '0:00';
 
@@ -45,8 +47,8 @@ export function CruiseDashboard() {
         <BatteryStrip />
       </div>
 
-      {/* KROMI Intelligence — 4% */}
-      <div style={{ height: '4%', flexShrink: 0 }}><CompactIntelligence /></div>
+      {/* KROMI Intelligence — 4% (gated by features.intelligence_v2) */}
+      {canSeeIntelligence && <div style={{ height: '4%', flexShrink: 0 }}><CompactIntelligence /></div>}
 
       {/* Elevation profile — 12% */}
       <div style={{ height: '12%', flexShrink: 0, padding: '2px 4px', backgroundColor: '#131313' }}>
@@ -88,7 +90,7 @@ export function CruiseDashboard() {
 
       {/* Bottom: KROMI Intelligence in POWER mode, Map otherwise */}
       <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-        {isPowerMode ? (
+        {isPowerMode && canSeeIntelligence ? (
           <div style={{ height: '100%', overflow: 'hidden' }}>
             <IntelligenceWidget />
           </div>

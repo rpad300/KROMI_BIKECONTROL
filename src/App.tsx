@@ -13,6 +13,7 @@ import { useMotorControl } from './hooks/useMotorControl';
 import { useRouteNavigation } from './hooks/useRouteNavigation';
 import { NavigationBar } from './components/Dashboard/NavigationBar';
 import { useAuthStore } from './store/authStore';
+import { usePermissions } from './hooks/usePermission';
 import { usePlatform } from './hooks/usePlatform';
 import { useDriveBootstrap } from './hooks/useDriveBootstrap';
 import { ImpersonationBanner } from './components/Admin/ImpersonationBanner';
@@ -137,12 +138,21 @@ function MobileApp() {
 
 type DesktopSub = string; // e.g., 'live:preview', 'settings:rider', etc.
 
+interface NavSub {
+  id: string;
+  label: string;
+  icon: string;
+  /** RBAC permission key required to see this sub-item. */
+  permission?: string;
+}
 interface NavItem {
   screen: DesktopScreen;
   label: string;
   icon: string;
   color?: string;
-  subs?: { id: string; label: string; icon: string }[];
+  subs?: NavSub[];
+  /** RBAC permission key gating the entire entry (used for entries without subs). */
+  permission?: string;
 }
 
 const DESKTOP_NAV: NavItem[] = [
@@ -156,35 +166,45 @@ const DESKTOP_NAV: NavItem[] = [
     { id: 'personal', label: 'Dados Pessoais', icon: 'badge' },
     { id: 'physical', label: 'Perfil Físico', icon: 'monitor_heart' },
     { id: 'medical', label: 'Médico + Objectivos', icon: 'health_and_safety' },
-    { id: 'emergency', label: 'Emergência + QR', icon: 'emergency' },
+    { id: 'emergency', label: 'Emergência + QR', icon: 'emergency', permission: 'features.emergency_qr' },
   ]},
   { screen: 'settings', label: 'Treino', icon: 'show_chart', color: '#fbbf24', subs: [
     { id: 'zones', label: 'Zonas HR + Potência', icon: 'show_chart' },
-    { id: 'kromi', label: 'KROMI Intelligence', icon: 'psychology' },
+    { id: 'kromi', label: 'KROMI Intelligence', icon: 'psychology', permission: 'features.intelligence_v2' },
   ]},
   { screen: 'settings', label: 'Bicicletas', icon: 'pedal_bike', color: '#3fff8b', subs: [
     { id: 'bike', label: 'As minhas bikes', icon: 'pedal_bike' },
-    { id: 'bikefit', label: 'Bike Fit', icon: 'straighten' },
+    { id: 'bikefit', label: 'Bike Fit', icon: 'straighten', permission: 'features.bike_fit' },
   ]},
   { screen: 'settings', label: 'Manutenção', icon: 'build', color: '#ff9f43', subs: [
-    { id: 'service-book', label: 'Caderneta de Serviço', icon: 'menu_book' },
+    { id: 'service-book', label: 'Caderneta de Serviço', icon: 'menu_book', permission: 'features.service_book' },
   ]},
   { screen: 'settings', label: 'Clube', icon: 'groups', color: '#fbbf24', subs: [
-    { id: 'club', label: 'O meu clube', icon: 'groups' },
+    { id: 'club', label: 'O meu clube', icon: 'groups', permission: 'features.clubs' },
   ]},
   { screen: 'settings', label: 'Dispositivos', icon: 'bluetooth', color: '#6e9bff', subs: [
     { id: 'bluetooth', label: 'BLE + Sensores', icon: 'bluetooth' },
   ]},
   { screen: 'history', label: 'Atividades', icon: 'timeline', color: '#e966ff' },
   { screen: 'map', label: 'Mapa', icon: 'map', color: '#6e9bff' },
-  { screen: 'settings', label: 'Oficina', icon: 'store', color: '#ff9f43', subs: [
-    { id: 'shop', label: 'Gestão de Oficina', icon: 'store' },
+  { screen: 'settings', label: 'Oficina', icon: 'store', color: '#ff9f43', permission: 'features.shop_management', subs: [
+    { id: 'shop', label: 'Gestão de Oficina', icon: 'store', permission: 'features.shop_management' },
   ]},
   { screen: 'settings', label: 'Sistema', icon: 'settings', color: '#adaaaa', subs: [
     { id: 'routes', label: 'Rotas', icon: 'route' },
     { id: 'account', label: 'Conta', icon: 'account_circle' },
   ]},
 ];
+
+/** All distinct permission keys referenced by desktop nav (for batched RBAC check). */
+const DESKTOP_NAV_PERMISSIONS: string[] = Array.from(
+  new Set(
+    DESKTOP_NAV.flatMap((it) => [
+      ...(it.permission ? [it.permission] : []),
+      ...(it.subs ?? []).map((s) => s.permission).filter((p): p is string => !!p),
+    ])
+  )
+);
 
 // Super-admin-only entries — injected dynamically in DesktopApp
 const ADMIN_NAV: NavItem[] = [
@@ -200,7 +220,20 @@ function DesktopApp() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const isSuperAdmin = !!user?.is_super_admin;
-  const navItems = isSuperAdmin ? [...DESKTOP_NAV, ...ADMIN_NAV] : DESKTOP_NAV;
+  const perms = usePermissions(DESKTOP_NAV_PERMISSIONS);
+
+  // Filter nav by RBAC: drop sub-items the user can't see; drop entries that
+  // gate themselves OR end up with zero subs (when they originally had subs).
+  const filteredNav: NavItem[] = DESKTOP_NAV
+    .filter((it) => !it.permission || perms[it.permission])
+    .map((it) => {
+      if (!it.subs) return it;
+      const subs = it.subs.filter((s) => !s.permission || perms[s.permission]);
+      return { ...it, subs };
+    })
+    .filter((it) => !it.subs || it.subs.length > 0);
+
+  const navItems = isSuperAdmin ? [...filteredNav, ...ADMIN_NAV] : filteredNav;
 
   const handleNav = (item: NavItem, subId?: string) => {
     setScreen(item.screen);

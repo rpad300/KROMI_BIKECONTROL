@@ -12,7 +12,7 @@ import { BikesPage } from './BikesPage';
 import { ServiceBookPage } from '../ServiceBook/ServiceBookPage';
 import { ShopManagementPage } from '../Shop/ShopManagementPage';
 import { AdminPanel } from '../Admin/AdminPanel';
-import { useIsSuperAdmin } from '../../hooks/usePermission';
+import { useIsSuperAdmin, usePermissions } from '../../hooks/usePermission';
 const AccessoriesSettingsContent = lazy(() => import('./AccessoriesSettings').then(m => ({ default: m.AccessoriesSettingsContent })));
 // TuningPreview removed — config is now read-only from motor telemetry
 
@@ -30,13 +30,23 @@ type Screen = 'dashboard' | 'map' | 'climb' | 'connections' | 'settings' | 'hist
 type SettingsPage = 'menu' | 'rider' | 'personal' | 'physical' | 'zones' | 'medical' | 'emergency' | 'bikefit' | 'club' | 'bike' | 'kromi' | 'bluetooth' | 'accessories' | 'routes' | 'account' | 'service-book' | 'shop' | 'super-admin';
 
 // ── Grouped menu matching desktop 9-category sidebar ────────
+interface MenuItem {
+  id: SettingsPage;
+  icon: string;
+  label: string;
+  desc: string;
+  /** RBAC permission key required to see this item. Omit = always visible. */
+  permission?: string;
+}
 interface MenuCategory {
   label: string;
   icon: string;
   color: string;
-  items: { id: SettingsPage; icon: string; label: string; desc: string }[];
+  items: MenuItem[];
   /** Navigate to a different screen instead of opening sub-items */
   navigateTo?: Screen;
+  /** RBAC permission key gating the entire category (used for navigateTo cards). */
+  permission?: string;
 }
 
 const MENU_CATEGORIES: MenuCategory[] = [
@@ -44,21 +54,21 @@ const MENU_CATEGORIES: MenuCategory[] = [
     { id: 'personal', icon: 'badge', label: 'Dados Pessoais', desc: 'Nome, nascimento, género, clube, foto' },
     { id: 'physical', icon: 'monitor_heart', label: 'Perfil Físico', desc: 'Peso, altura, VO2max, FTP, SpO2' },
     { id: 'medical', icon: 'health_and_safety', label: 'Médico + Objectivos', desc: 'Condições, objectivos, perfil atleta' },
-    { id: 'emergency', icon: 'emergency', label: 'Emergência + QR', desc: 'Sangue, alergias, contactos, QR público' },
+    { id: 'emergency', icon: 'emergency', label: 'Emergência + QR', desc: 'Sangue, alergias, contactos, QR público', permission: 'features.emergency_qr' },
   ]},
   { label: 'Treino', icon: 'show_chart', color: '#fbbf24', items: [
     { id: 'zones', icon: 'show_chart', label: 'Zonas HR + Potência', desc: 'Zonas cardíacas e de potência editáveis' },
-    { id: 'kromi', icon: 'psychology', label: 'KROMI Intelligence', desc: 'Auto-assist, aprendizagem' },
+    { id: 'kromi', icon: 'psychology', label: 'KROMI Intelligence', desc: 'Auto-assist, aprendizagem', permission: 'features.intelligence_v2' },
   ]},
   { label: 'Bicicletas', icon: 'pedal_bike', color: '#3fff8b', items: [
     { id: 'bike', icon: 'pedal_bike', label: 'As minhas bikes', desc: 'Bateria, motor, consumo, hardware' },
-    { id: 'bikefit', icon: 'straighten', label: 'Bike Fit', desc: '25 medidas, por bike, com histórico' },
+    { id: 'bikefit', icon: 'straighten', label: 'Bike Fit', desc: '25 medidas, por bike, com histórico', permission: 'features.bike_fit' },
   ]},
   { label: 'Manutenção', icon: 'build', color: '#ff9f43', items: [
-    { id: 'service-book', icon: 'menu_book', label: 'Caderneta de Serviço', desc: 'Histórico, custos, manutenção programada' },
+    { id: 'service-book', icon: 'menu_book', label: 'Caderneta de Serviço', desc: 'Histórico, custos, manutenção programada', permission: 'features.service_book' },
   ]},
   { label: 'Clube', icon: 'groups', color: '#fbbf24', items: [
-    { id: 'club', icon: 'groups', label: 'O meu clube', desc: 'Gerir clube, membros, rides em grupo' },
+    { id: 'club', icon: 'groups', label: 'O meu clube', desc: 'Gerir clube, membros, rides em grupo', permission: 'features.clubs' },
   ]},
   { label: 'Dispositivos', icon: 'bluetooth', color: '#6e9bff', items: [
     { id: 'bluetooth', icon: 'bluetooth', label: 'BLE + Sensores', desc: 'Ligação, sensores, estado' },
@@ -67,13 +77,23 @@ const MENU_CATEGORIES: MenuCategory[] = [
   { label: 'Atividades', icon: 'timeline', color: '#e966ff', items: [], navigateTo: 'history' },
   { label: 'Mapa', icon: 'map', color: '#6e9bff', items: [], navigateTo: 'map' },
   { label: 'Oficina', icon: 'store', color: '#ff9f43', items: [
-    { id: 'shop', icon: 'store', label: 'Gestão de Oficina', desc: 'Serviços, preços, calendário, equipa' },
-  ]},
+    { id: 'shop', icon: 'store', label: 'Gestão de Oficina', desc: 'Serviços, preços, calendário, equipa', permission: 'features.shop_management' },
+  ], permission: 'features.shop_management' },
   { label: 'Sistema', icon: 'settings', color: '#adaaaa', items: [
     { id: 'routes', icon: 'route', label: 'Rotas', desc: 'Import Komoot, histórico' },
     { id: 'account', icon: 'account_circle', label: 'Conta', desc: 'Email, sessão, versão' },
   ]},
 ];
+
+/** All distinct permission keys referenced by the settings menu — for batched lookups. */
+const SETTINGS_MENU_PERMISSIONS = Array.from(
+  new Set(
+    MENU_CATEGORIES.flatMap((c) => [
+      ...(c.permission ? [c.permission] : []),
+      ...c.items.map((i) => i.permission).filter((p): p is string => !!p),
+    ])
+  )
+);
 
 // Flat lookup for back-header label
 const ALL_MENU_ITEMS = MENU_CATEGORIES.flatMap((c) => c.items);
@@ -131,11 +151,22 @@ export function Settings({ onNavigate, initialPage }: { onNavigate?: (screen: Sc
 function SettingsMenu({ onSelect, onNavigate }: { onSelect: (p: SettingsPage) => void; onNavigate?: (s: Screen) => void }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const isSuperAdmin = useIsSuperAdmin();
+  const perms = usePermissions(SETTINGS_MENU_PERMISSIONS);
+
+  // 1) Filter out items the user does not have permission for
+  // 2) Drop categories that gate themselves (e.g. Oficina) or end up empty
+  const visibleCategories: MenuCategory[] = MENU_CATEGORIES
+    .filter((cat) => !cat.permission || perms[cat.permission])
+    .map((cat) => ({
+      ...cat,
+      items: cat.items.filter((item) => !item.permission || perms[item.permission]),
+    }))
+    .filter((cat) => cat.navigateTo || cat.items.length > 0);
 
   // Inject Super Admin category dynamically (visible only to super admins)
   const categories: MenuCategory[] = isSuperAdmin
     ? [
-        ...MENU_CATEGORIES,
+        ...visibleCategories,
         {
           label: 'Super Admin',
           icon: 'admin_panel_settings',
@@ -145,7 +176,7 @@ function SettingsMenu({ onSelect, onNavigate }: { onSelect: (p: SettingsPage) =>
           ],
         },
       ]
-    : MENU_CATEGORIES;
+    : visibleCategories;
 
   return (
     <div style={{ padding: '12px', backgroundColor: '#0e0e0e', minHeight: '100%' }}>

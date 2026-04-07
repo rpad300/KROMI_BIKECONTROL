@@ -20,6 +20,7 @@ import { RadarPanel } from './RadarPanel';
 import { LightsPanel } from './LightsPanel';
 import { useNutritionStore } from '../../store/nutritionStore';
 import { kromiEngine } from '../../services/intelligence/KromiEngine';
+import { usePermission } from '../../hooks/usePermission';
 
 /**
  * STEALTH-EV Dashboard — Fullscreen, no-scroll, fixed height sections.
@@ -62,6 +63,8 @@ export function Dashboard() {
 
 /** Expanded view with tabbed panels */
 function ExpandedView({ onCollapse, autoAssistEnabled }: { onCollapse: () => void; autoAssistEnabled: boolean }) {
+  const canSeeIntelligence = usePermission('features.intelligence_v2');
+  const canSeeNutrition = usePermission('features.nutrition_tracking');
   const [activeTab, setActiveTab] = useState<'ride' | 'lights' | 'radar' | 'battery'>('ride');
   const radarConnected = useBikeStore((s) => s.ble_services.radar);
   const lightConnected = useBikeStore((s) => s.ble_services.light);
@@ -110,15 +113,17 @@ function ExpandedView({ onCollapse, autoAssistEnabled }: { onCollapse: () => voi
           {activeTab === 'ride' && (
             <>
               <CompactHeader />
-              <IntelligenceWidget />
+              {canSeeIntelligence && <IntelligenceWidget />}
               <div className="flex gap-2">
                 <BatteryWidget />
                 <HRWidget />
               </div>
-              <div className="flex gap-2">
-                <div className="flex-1"><WPrimeWidget /></div>
-                <div className="flex-1"><NutritionWidget /></div>
-              </div>
+              {(canSeeIntelligence || canSeeNutrition) && (
+                <div className="flex gap-2">
+                  {canSeeIntelligence && <div className="flex-1"><WPrimeWidget /></div>}
+                  {canSeeNutrition && <div className="flex-1"><NutritionWidget /></div>}
+                </div>
+              )}
               <LightRadarWidget />
               <WeatherWidget />
               <TrailWidget />
