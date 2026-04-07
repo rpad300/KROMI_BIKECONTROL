@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
+import { useReadOnlyGuard } from '../../hooks/useReadOnlyGuard';
 import { FIT_FIELD_GROUPS, type BikeFit, type BikeFitChange } from '../../types/bikefit.types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -20,6 +21,7 @@ export function BikeFitPage() {
   const [saving, setSaving] = useState(false);
 
   const userId = useAuthStore((s) => s.getUserId());
+  const guard = useReadOnlyGuard();
 
   // Load existing fit from Supabase
   useEffect(() => {
@@ -45,6 +47,7 @@ export function BikeFitPage() {
   // Save fit to Supabase
   const saveFit = async (updatedFit: BikeFit, changedField?: string, oldValue?: string, newValue?: string) => {
     if (!SUPABASE_URL || !userId) return;
+    if (!guard('Não é possível alterar bike fit em modo impersonation.')) return;
     setSaving(true);
 
     const payload = { ...updatedFit, user_id: userId, bike_name: bike.name, updated_at: new Date().toISOString() };

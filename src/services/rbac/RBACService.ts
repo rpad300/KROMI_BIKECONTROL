@@ -328,6 +328,66 @@ export async function listImpersonationLog(limit = 50): Promise<ImpersonationLog
   }));
 }
 
+// ─── Per-user enrichment stats for admin user detail ────────
+export interface UserEnrichmentStats {
+  rides_count: number;
+  files_count: number;
+  storage_bytes: number;
+  last_ride_at: string | null;
+  last_upload_at: string | null;
+}
+
+/**
+ * Aggregates ride_sessions + kromi_files for one user.
+ *
+ * Note: bikes live in IndexedDB / settings (not a Postgres table), so we
+ * can't count them server-side. We deliberately omit a bikes count rather
+ * than show a misleading zero.
+ */
+export async function getUserEnrichmentStats(userId: string): Promise<UserEnrichmentStats> {
+  const empty: UserEnrichmentStats = {
+    rides_count: 0, files_count: 0, storage_bytes: 0,
+    last_ride_at: null, last_upload_at: null,
+  };
+  if (!SB_URL || !SB_KEY) return empty;
+
+  const countHeaders = headers({ Prefer: 'count=exact', Range: '0-0' });
+  const countOf = async (path: string): Promise<number> => {
+    const res = await fetch(`${SB_URL}/rest/v1/${path}`, { method: 'GET', headers: countHeaders });
+    const range = res.headers.get('content-range') ?? '';
+    const m = /\/(\d+|\*)$/.exec(range);
+    if (!m || m[1] === '*') return 0;
+    return parseInt(m[1] ?? '0', 10);
+  };
+
+  const [ridesCount, lastRideRows, filesRows] = await Promise.all([
+    countOf(`ride_sessions?user_id=eq.${userId}&select=id`).catch(() => 0),
+    fetch(
+      `${SB_URL}/rest/v1/ride_sessions?user_id=eq.${userId}&select=started_at&order=started_at.desc&limit=1`,
+      { headers: headers() }
+    )
+      .then((r) => r.json() as Promise<Array<{ started_at: string }>>)
+      .catch(() => []),
+    fetch(
+      `${SB_URL}/rest/v1/kromi_files?owner_user_id=eq.${userId}&select=size_bytes,created_at&order=created_at.desc`,
+      { headers: headers() }
+    )
+      .then((r) => r.json() as Promise<Array<{ size_bytes: number | null; created_at: string }>>)
+      .catch(() => []),
+  ]);
+
+  const files = Array.isArray(filesRows) ? filesRows : [];
+  const storage_bytes = files.reduce((acc, f) => acc + (f.size_bytes ?? 0), 0);
+
+  return {
+    rides_count: ridesCount,
+    files_count: files.length,
+    storage_bytes,
+    last_ride_at: Array.isArray(lastRideRows) && lastRideRows[0]?.started_at ? lastRideRows[0].started_at : null,
+    last_upload_at: files[0]?.created_at ?? null,
+  };
+}
+
 // ─── Storage usage stats (kromi_files) ───────────────────────
 export interface StorageUsageRow {
   user_id: string | null;

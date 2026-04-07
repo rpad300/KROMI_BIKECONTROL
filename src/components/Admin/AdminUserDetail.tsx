@@ -24,11 +24,13 @@ import {
   suspendUser,
   unsuspendUser,
   setUserSuperAdmin,
+  getUserEnrichmentStats,
   type AdminUserRow,
   type Role,
   type Permission,
   type UserFeatureFlag,
   type FeatureFlagMode,
+  type UserEnrichmentStats,
 } from '../../services/rbac/RBACService';
 import { slugify } from '../../services/storage/KromiFileStore';
 import { bootstrapUserOnDrive } from '../../services/storage/googleDrive/driveClient';
@@ -58,23 +60,26 @@ export function AdminUserDetail({ userId, onBack }: { userId: string; onBack: ()
   const [allPerms, setAllPerms] = useState<Permission[]>([]);
   const [userRoleIds, setUserRoleIds] = useState<Set<string>>(new Set());
   const [flags, setFlags] = useState<UserFeatureFlag[]>([]);
+  const [stats, setStats] = useState<UserEnrichmentStats | null>(null);
   const [busy, setBusy] = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
 
   const load = useCallback(async () => {
     setBusy(true);
-    const [u, roles, perms, urs, fs] = await Promise.all([
+    const [u, roles, perms, urs, fs, st] = await Promise.all([
       getUserById(userId),
       listRoles(),
       listPermissions(),
       getUserRoles(userId),
       getUserFeatureFlags(userId),
+      getUserEnrichmentStats(userId).catch(() => null),
     ]);
     setUser(u);
     setAllRoles(roles);
     setAllPerms(perms);
     setUserRoleIds(new Set(urs));
     setFlags(fs);
+    setStats(st);
     setBusy(false);
   }, [userId]);
 
@@ -190,6 +195,29 @@ export function AdminUserDetail({ userId, onBack }: { userId: string; onBack: ()
           {user.last_login_at && ` · Último login: ${new Date(user.last_login_at).toLocaleDateString('pt-PT')}`}
         </div>
       </div>
+
+      {/* Activity stats */}
+      {stats && (
+        <div style={card}>
+          <div style={sectionLabel}>Atividade</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+            <StatTile label="Rides" value={stats.rides_count.toString()} color="#fbbf24" icon="route" />
+            <StatTile label="Ficheiros" value={stats.files_count.toString()} color="#6e9bff" icon="folder" />
+            <StatTile label="Storage" value={formatBytes(stats.storage_bytes)} color="#e966ff" icon="cloud" />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '8px', fontSize: '9px', color: '#777575' }}>
+            {stats.last_ride_at && (
+              <div>Último ride: {new Date(stats.last_ride_at).toLocaleString('pt-PT')}</div>
+            )}
+            {stats.last_upload_at && (
+              <div>Último upload: {new Date(stats.last_upload_at).toLocaleString('pt-PT')}</div>
+            )}
+            {!stats.last_ride_at && !stats.last_upload_at && (
+              <div style={{ fontStyle: 'italic' }}>Sem atividade registada.</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Quick actions */}
       <div style={card}>
@@ -350,4 +378,32 @@ function flagBtnStyle(color: string, active: boolean): React.CSSProperties {
     fontWeight: 700,
     cursor: 'pointer',
   };
+}
+
+function StatTile({ label, value, color, icon }: { label: string; value: string; color: string; icon: string }) {
+  return (
+    <div style={{
+      padding: '10px',
+      backgroundColor: '#0e0e0e',
+      borderRadius: '4px',
+      border: `1px solid ${color}33`,
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+    }}>
+      <span className="material-symbols-outlined" style={{ fontSize: '18px', color }}>{icon}</span>
+      <div>
+        <div style={{ fontSize: '9px', color: '#777575', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</div>
+        <div style={{ fontSize: '14px', color, fontWeight: 700 }}>{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
+  if (n < 1024 ** 4) return `${(n / 1024 ** 3).toFixed(2)} GB`;
+  return `${(n / 1024 ** 4).toFixed(2)} TB`;
 }

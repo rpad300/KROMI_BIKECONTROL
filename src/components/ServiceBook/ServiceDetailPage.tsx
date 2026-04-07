@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../../store/authStore';
+import { useReadOnlyGuard } from '../../hooks/useReadOnlyGuard';
 import {
   getServiceById, getServiceItems, getComments, getPhotos,
   updateService, updateServiceStatus, addComment, addServiceItem,
@@ -14,6 +15,7 @@ import {
 
 export function ServiceDetailPage({ serviceId, onBack }: { serviceId: string; onBack: () => void }) {
   const userId = useAuthStore((s) => s.user?.id);
+  const guard = useReadOnlyGuard();
   const [service, setService] = useState<ServiceRequest | null>(null);
   const [items, setItems] = useState<ServiceItem[]>([]);
   const [comments, setComments] = useState<ServiceComment[]>([]);
@@ -52,6 +54,7 @@ export function ServiceDetailPage({ serviceId, onBack }: { serviceId: string; on
   const pendingApproval = items.filter((i) => i.needs_approval && i.status === 'pending');
 
   const handleStatusChange = async (newStatus: ServiceStatus) => {
+    if (!guard('Não é possível alterar o estado do serviço em modo impersonation.')) return;
     await updateServiceStatus(service.id, newStatus);
     await addComment({
       service_id: service.id, author_id: userId!, author_role: isRider ? 'rider' : 'mechanic',
@@ -63,6 +66,7 @@ export function ServiceDetailPage({ serviceId, onBack }: { serviceId: string; on
 
   const handleAddComment = async () => {
     if (!newComment.trim() || !userId) return;
+    if (!guard('Não é possível comentar em modo impersonation.')) return;
     await addComment({
       service_id: service.id, author_id: userId, author_role: isRider ? 'rider' : 'mechanic',
       body: newComment.trim(), comment_type: 'message',
@@ -72,12 +76,14 @@ export function ServiceDetailPage({ serviceId, onBack }: { serviceId: string; on
   };
 
   const handleSaveNote = async () => {
+    if (!guard('Não é possível guardar notas em modo impersonation.')) return;
     await updateService(service.id, { service_note: noteText });
     setEditNote(false);
     load();
   };
 
   const handleDelete = async () => {
+    if (!guard('Não é possível apagar serviços em modo impersonation.')) return;
     if (!confirm('Apagar este serviço?')) return;
     await deleteService(service.id);
     onBack();
@@ -312,9 +318,11 @@ function QuickAddItem({ serviceId, onAdded }: { serviceId: string; onAdded: () =
   const [desc, setDesc] = useState('');
   const [cost, setCost] = useState(0);
   const [type, setType] = useState<'part' | 'labor' | 'consumable'>('part');
+  const guard = useReadOnlyGuard();
 
   const save = async () => {
     if (!desc.trim()) return;
+    if (!guard('Não é possível adicionar itens em modo impersonation.')) return;
     await addServiceItem({ service_id: serviceId, item_type: type, description: desc.trim(), quantity: 1, unit_cost: cost, total_cost: cost });
     onAdded();
   };

@@ -6,6 +6,7 @@ import { useNutritionStore } from '../../../store/nutritionStore';
 import { useSettingsStore, safeBikeConfig } from '../../../store/settingsStore';
 import { di2Service } from '../../../services/di2/Di2Service';
 import { localRideStore, type LocalSnapshot } from '../../../services/storage/LocalRideStore';
+import { usePermission } from '../../../hooks/usePermission';
 
 /** Full-screen trip summary shown after FINISH */
 export function TripSummaryModal({ onClose }: { onClose: () => void }) {
@@ -13,6 +14,10 @@ export function TripSummaryModal({ onClose }: { onClose: () => void }) {
   const battery = useBikeStore((s) => s.battery_percent);
   const di2Battery = useBikeStore((s) => s.di2_battery);
   const [snapshots, setSnapshots] = useState<LocalSnapshot[]>([]);
+  // Pro analysis sections (HR zones, gear usage, energy comparison, pre-ride
+  // vs actual) are gated behind features.ride_analysis_pro. Free users still
+  // see distance / time / speed / map / elevation / battery.
+  const canSeePro = usePermission('features.ride_analysis_pro');
 
   const gearStats = useMemo(() => di2Service.getRideGearStats(), []);
 
@@ -162,8 +167,8 @@ export function TripSummaryModal({ onClose }: { onClose: () => void }) {
         </Section>
       )}
 
-      {/* HR Zones */}
-      {totalHrSamples > 0 && (
+      {/* HR Zones (PRO) */}
+      {canSeePro && totalHrSamples > 0 && (
         <Section title="Zonas HR" subtitle={`avg ${avgHr} · max ${maxHr} bpm`}>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', height: '50px', padding: '0 4px' }}>
             {hrZones.map((count, i) => {
@@ -182,8 +187,8 @@ export function TripSummaryModal({ onClose }: { onClose: () => void }) {
         </Section>
       )}
 
-      {/* Gear Usage */}
-      {gearEntries.length > 0 && (
+      {/* Gear Usage (PRO) */}
+      {canSeePro && gearEntries.length > 0 && (
         <Section title="Mudancas" subtitle={`${gearStats.shiftCount} shifts`}>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '50px', padding: '0 4px' }}>
             {gearEntries.map(({ gear, ms }) => {
@@ -209,16 +214,32 @@ export function TripSummaryModal({ onClose }: { onClose: () => void }) {
         </div>
       </Section>
 
-      {/* Energy comparison: KROMI vs standard modes */}
-      <EnergyComparison distanceKm={trip.tripKm} batteryUsedPct={batteryUsed} />
+      {/* Energy comparison: KROMI vs standard modes (PRO) */}
+      {canSeePro && <EnergyComparison distanceKm={trip.tripKm} batteryUsedPct={batteryUsed} />}
 
-      {/* Pre-ride vs Actual comparison */}
-      <PreRideComparison
-        actualKm={trip.tripKm}
-        actualTimeMin={Math.round(trip.movingTime / 60)}
-        actualBatteryUsed={batteryUsed}
-        elevGain={elevGain}
-      />
+      {/* Pre-ride vs Actual comparison (PRO) */}
+      {canSeePro && (
+        <PreRideComparison
+          actualKm={trip.tripKm}
+          actualTimeMin={Math.round(trip.movingTime / 60)}
+          actualBatteryUsed={batteryUsed}
+          elevGain={elevGain}
+        />
+      )}
+
+      {/* Upsell hint shown to free users in place of locked sections */}
+      {!canSeePro && (
+        <div style={{
+          margin: '12px 4px', padding: '12px',
+          backgroundColor: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.25)',
+          borderRadius: '6px', fontSize: '11px', color: '#fbbf24', textAlign: 'center',
+        }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '14px', verticalAlign: 'middle', marginRight: '4px' }}>
+            workspace_premium
+          </span>
+          Análise PRO desbloqueia zonas HR, distribuição de mudanças e simulação energética.
+        </div>
+      )}
 
       <div style={{ height: '60px' }} />
     </div>
