@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import {
   exportMyData,
   downloadExport,
   deleteMyAccount,
+  listMySessions,
+  revokeMySession,
   type ExportProgress,
+  type MySession,
 } from '../../services/gdpr/GdprService';
 
 // ═══════════════════════════════════════════════════════════════
@@ -26,7 +29,38 @@ export function PrivacyPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const [sessions, setSessions] = useState<MySession[] | null>(null);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [revoking, setRevoking] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    setSessionsLoading(true);
+    listMySessions()
+      .then((rows) => setSessions(rows))
+      .finally(() => setSessionsLoading(false));
+  }, [user]);
+
   if (!user) return null;
+
+  const handleRevoke = async (sessionId: string) => {
+    if (!confirm('Revogar esta sessão? Se for a sessão actual, vais ter de fazer login outra vez.')) return;
+    setRevoking(sessionId);
+    try {
+      const ok = await revokeMySession(sessionId);
+      if (ok) {
+        setSessions((prev) => (prev ?? []).filter((s) => s.id !== sessionId));
+        // If we revoked the current session, force logout
+        const wasCurrent = sessions?.find((s) => s.id === sessionId)?.is_current;
+        if (wasCurrent) {
+          logout();
+          window.location.href = '/';
+        }
+      }
+    } finally {
+      setRevoking(null);
+    }
+  };
 
   const handleExport = async () => {
     setExporting(true);
@@ -145,6 +179,77 @@ export function PrivacyPage() {
         {lastExportRows !== null && (
           <div style={{ marginTop: '8px', fontSize: '10px', color: '#3fff8b' }}>
             Exportado: {lastExportRows} linhas totais
+          </div>
+        )}
+      </section>
+
+      {/* ── Active sessions ─────────────────────────────── */}
+      <section style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '20px', color: '#3fff8b' }}>devices</span>
+          <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>Sessões activas</h3>
+        </div>
+        <p style={{ fontSize: '10px', color: '#777575', lineHeight: 1.5, marginBottom: '10px' }}>
+          Cada vez que fazes login num browser ou dispositivo novo é criada uma sessão
+          com 30 dias de validade. Podes revogar qualquer uma — se revogares a actual,
+          o próximo pedido vai falhar e vais ter de fazer login outra vez.
+        </p>
+
+        {sessionsLoading && (
+          <div style={{ fontSize: '10px', color: '#777575' }}>A carregar…</div>
+        )}
+
+        {sessions && sessions.length === 0 && (
+          <div style={{ fontSize: '10px', color: '#777575' }}>
+            Nenhuma sessão activa encontrada (deves estar em modo device-login).
+          </div>
+        )}
+
+        {sessions && sessions.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {sessions.map((s) => (
+              <div key={s.id} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '8px 10px',
+                backgroundColor: s.is_current ? 'rgba(63,255,139,0.05)' : '#0e0e0e',
+                border: s.is_current ? '1px solid rgba(63,255,139,0.3)' : '1px solid rgba(73,72,71,0.2)',
+                borderRadius: '4px',
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px' }}>
+                    <span style={{ color: '#adaaaa', fontWeight: 600 }}>
+                      {new Date(s.created_at).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' })}
+                    </span>
+                    {s.is_current && (
+                      <span style={{
+                        fontSize: '8px', padding: '1px 5px', backgroundColor: 'rgba(63,255,139,0.15)',
+                        color: '#3fff8b', borderRadius: '2px', fontWeight: 700,
+                      }}>
+                        SESSÃO ACTUAL
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '9px', color: '#777575', marginTop: '2px' }}>
+                    Último uso: {new Date(s.last_used_at).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' })}
+                    {' · '}Expira: {new Date(s.expires_at).toLocaleDateString('pt-PT')}
+                  </div>
+                </div>
+                <button
+                  onClick={() => void handleRevoke(s.id)}
+                  disabled={revoking === s.id || isImpersonating}
+                  style={{
+                    padding: '5px 10px', fontSize: '9px', fontWeight: 700,
+                    backgroundColor: 'rgba(255,113,108,0.1)',
+                    border: '1px solid rgba(255,113,108,0.3)',
+                    borderRadius: '3px', color: '#ff716c',
+                    cursor: (revoking === s.id || isImpersonating) ? 'not-allowed' : 'pointer',
+                    opacity: (revoking === s.id || isImpersonating) ? 0.5 : 1,
+                  }}
+                >
+                  {revoking === s.id ? '…' : 'Revogar'}
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </section>

@@ -312,7 +312,12 @@ export async function getUserById(userId: string): Promise<AdminUserRow | null> 
 // Suspension write happens server-side via admin_set_suspended, which both
 // updates app_users and inserts the user_suspensions audit row in one call.
 
-export async function suspendUser(userId: string, reason: string, _performedBy?: string | null): Promise<void> {
+export async function suspendUser(
+  userId: string,
+  reason: string,
+  _performedBy?: string | null,
+  expiresAt?: string | null,
+): Promise<void> {
   void _performedBy;
   const token = await getSessionToken();
   if (!token) throw new Error('not authenticated');
@@ -321,6 +326,7 @@ export async function suspendUser(userId: string, reason: string, _performedBy?:
     p_target_user_id: userId,
     p_suspend: true,
     p_reason: reason,
+    p_expires_at: expiresAt ?? null,
   });
 }
 
@@ -333,7 +339,24 @@ export async function unsuspendUser(userId: string, _performedBy?: string | null
     p_target_user_id: userId,
     p_suspend: false,
     p_reason: null,
+    p_expires_at: null,
   });
+}
+
+/**
+ * Session 18 scheduled unsuspend — sweep suspensions whose
+ * `expires_at` is in the past and auto-unsuspend them. The
+ * AdminPanel calls this fire-and-forget on mount so the sweep
+ * runs at least once per admin visit; no external cron needed.
+ */
+export async function expireDueSuspensions(): Promise<number> {
+  const token = await getSessionToken();
+  if (!token) return 0;
+  try {
+    return await rpc<number>('kromi_expire_due_suspensions', { p_session_token: token });
+  } catch {
+    return 0;
+  }
 }
 
 export interface UserSuspensionEvent {

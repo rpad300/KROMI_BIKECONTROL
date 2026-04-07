@@ -22,7 +22,11 @@
 import JSZip from 'jszip';
 import { supaGet, supaRpc } from '../../lib/supaFetch';
 import { useAuthStore } from '../../store/authStore';
+import { trashUserDriveFolder } from '../storage/googleDrive/driveClient';
+import { slugify, userFolderSlug } from '../storage/KromiFileStore';
 import type { AuthUser } from '../auth/AuthService';
+
+void slugify; // kept for symmetry with KromiFileStore exports
 
 // ── Types ──────────────────────────────────────────────────
 export interface ExportProgress {
@@ -210,6 +214,23 @@ export async function deleteMyAccount(
   }
 
   try {
+    // Step 1: trash the user's Drive folder FIRST so Drive links
+    // become inaccessible before the metadata rows are deleted.
+    // Fail-soft: Drive can fall over (OAuth expired, network, etc.)
+    // and that must not block the DB delete — GDPR compliance is
+    // measured on data inaccessibility in the app, not on physical
+    // erasure from blob storage. The service account retains Trash
+    // for 30 days so admin can restore in case of mistake.
+    try {
+      const slug = userFolderSlug(user);
+      await trashUserDriveFolder(slug);
+    } catch (err) {
+      console.warn('[GDPR] Drive folder trash failed (continuing):', err);
+    }
+
+    // Step 2: DB RPC — this is the authoritative delete. Tombstones
+    // the app_users row, hard-deletes owned data, writes an entry to
+    // account_deletion_log.
     const logId = await supaRpc<string>('kromi_delete_my_account', {
       p_session_token: sessionToken,
       p_confirmation_email: confirmationEmail,
@@ -225,6 +246,46 @@ export async function deleteMyAccount(
 
 function lower(s: string | null | undefined): string {
   return (s ?? '').trim().toLowerCase();
+}
+
+// ═══════════════════════════════════════════════════════════
+// Session management (user-facing)
+// ═══════════════════════════════════════════════════════════
+
+export interface MySession {
+  id: string;
+  created_at: string;
+  last_used_at: string;
+  expires_at: string;
+  is_current: boolean;
+}
+
+/** List the current user's active sessions via kromi_list_my_sessions RPC. */
+export async function listMySessions(): Promise<MySession[]> {
+  const sessionToken = useAuthStore.getState().sessionToken;
+  if (!sessionToken) return [];
+  try {
+    const rows = await supaRpc<MySession[]>('kromi_list_my_sessions', {
+      p_session_token: sessionToken,
+    });
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Revoke one of the caller's own sessions. */
+export async function revokeMySession(targetSessionId: string): Promise<boolean> {
+  const sessionToken = useAuthStore.getState().sessionToken;
+  if (!sessionToken) return false;
+  try {
+    return await supaRpc<boolean>('kromi_revoke_my_session', {
+      p_session_token: sessionToken,
+      p_target_session_id: targetSessionId,
+    });
+  } catch {
+    return false;
+  }
 }
 
 /** Convenience type for consumers. */

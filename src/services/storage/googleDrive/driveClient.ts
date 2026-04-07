@@ -142,3 +142,19 @@ export async function bootstrapUserOnDrive(
   );
   return r.created;
 }
+
+/**
+ * GDPR self-service: move the entire users/{slug}/ folder to Drive
+ * trash. Used by deleteMyAccount BEFORE the DB RPC fires so binary
+ * content stops being accessible via any drive_view_link before the
+ * kromi_files metadata rows are deleted. Idempotent; returns
+ * `{ trashed: false }` when the folder doesn't exist.
+ */
+export async function trashUserDriveFolder(
+  slug: string,
+): Promise<{ trashed: boolean; folder_id?: string; reason?: string }> {
+  return await callJson<{ trashed: boolean; folder_id?: string; reason?: string }>(
+    'trashUserFolder',
+    { slug },
+  );
+}

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useDriveStore } from '../../store/driveStore';
-import { bootstrapFolderStructure, TOP_LEVEL_FOLDERS } from '../../services/storage/KromiFileStore';
+import { bootstrapFolderStructure, TOP_LEVEL_FOLDERS, deleteFile } from '../../services/storage/KromiFileStore';
 import { getStorageStats, type StorageStats } from '../../services/rbac/RBACService';
+import { supaGet } from '../../lib/supaFetch';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 /**
@@ -286,6 +287,9 @@ export function DriveStoragePage() {
         )}
       </div>
 
+      {/* Orphan file cleanup */}
+      <OrphanFileCleanup card={card} />
+
       {/* Info */}
       <div style={{ ...card, backgroundColor: 'rgba(110,155,255,0.05)', border: '1px solid rgba(110,155,255,0.2)' }}>
         <div style={{ fontSize: '11px', color: '#6e9bff', fontWeight: 700, marginBottom: '6px' }}>
@@ -311,4 +315,241 @@ function formatBytes(n: number): string {
   if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
   if (n < 1024 ** 4) return `${(n / 1024 ** 3).toFixed(2)} GB`;
   return `${(n / 1024 ** 4).toFixed(2)} TB`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// OrphanFileCleanup — Session 18 admin polish
+// ═══════════════════════════════════════════════════════════
+//
+// Scans kromi_files for rows whose `entity_id` no longer points to
+// an existing row in the parent table (bike, service request, etc.)
+// — these are leftovers from deletes that didn't cascade their
+// kromi_files metadata. Admin can trash them in one click.
+//
+// Detection is client-side because there's no FK cascade helper:
+// we fetch every kromi_files row + a slim id-only projection of
+// each parent table we care about, then cross-reference in memory.
+// The admin user count is small enough that this is fine.
+
+interface KromiFileRow {
+  id: string;
+  owner_user_id: string | null;
+  category: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  file_name: string;
+  size_bytes: number | null;
+  created_at: string;
+}
+
+interface OrphanRow extends KromiFileRow {
+  reason: string;
+}
+
+const ENTITY_TABLES: Record<string, string> = {
+  bike: 'bike_configs',
+  service_request: 'service_requests',
+  bike_fit: 'bike_fits',
+  ride: 'ride_sessions',
+};
+
+function OrphanFileCleanup({ card }: { card: React.CSSProperties }) {
+  const [loading, setLoading] = useState(false);
+  const [files, setFiles] = useState<KromiFileRow[] | null>(null);
+  const [existingIds, setExistingIds] = useState<Record<string, Set<string>>>({});
+  const [trashing, setTrashing] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const scan = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const allFiles = await supaGet<KromiFileRow[]>(
+        '/rest/v1/kromi_files?select=id,owner_user_id,category,entity_type,entity_id,file_name,size_bytes,created_at&limit=5000',
+      );
+      setFiles(Array.isArray(allFiles) ? allFiles : []);
+
+      // Fetch ids of each parent table referenced by kromi_files.
+      // service_requests.id is uuid; bike_configs.id is text in some
+      // rows (legacy) — the comparison is string-based to cover both.
+      const result: Record<string, Set<string>> = {};
+      for (const [entityType, table] of Object.entries(ENTITY_TABLES)) {
+        try {
+          const rows = await supaGet<Array<{ id: string }>>(
+            `/rest/v1/${table}?select=id&limit=10000`,
+          );
+          result[entityType] = new Set(
+            (Array.isArray(rows) ? rows : []).map((r) => String(r.id)),
+          );
+        } catch {
+          result[entityType] = new Set();
+        }
+      }
+      setExistingIds(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'scan failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const orphans = useMemo<OrphanRow[]>(() => {
+    if (!files) return [];
+    const out: OrphanRow[] = [];
+    for (const f of files) {
+      if (!f.entity_type || !f.entity_id) continue; // global files (profile, etc.)
+      const ids = existingIds[f.entity_type];
+      if (!ids) continue; // unknown entity type, skip (don't flag)
+      if (!ids.has(String(f.entity_id))) {
+        out.push({ ...f, reason: `${f.entity_type}.id=${f.entity_id.slice(0, 8)} missing` });
+      }
+    }
+    return out;
+  }, [files, existingIds]);
+
+  const totalBytes = orphans.reduce((s, f) => s + (f.size_bytes ?? 0), 0);
+
+  const trashOne = async (id: string) => {
+    if (!confirm('Mover este ficheiro para o trash do Drive? (Recuperável por 30 dias)')) return;
+    setTrashing(id);
+    try {
+      await deleteFile(id);
+      setFiles((prev) => (prev ? prev.filter((f) => f.id !== id) : prev));
+    } catch (err) {
+      alert(`Erro: ${(err as Error).message}`);
+    } finally {
+      setTrashing(null);
+    }
+  };
+
+  const trashAll = async () => {
+    if (orphans.length === 0) return;
+    if (!confirm(`Mover ${orphans.length} ficheiros órfãos para o trash do Drive?`)) return;
+    setTrashing('__bulk__');
+    const ids = orphans.map((o) => o.id);
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      try {
+        await deleteFile(id);
+        ok++;
+      } catch {
+        fail++;
+      }
+    }
+    // Refresh scan to reflect new state
+    await scan();
+    setTrashing(null);
+    alert(`Concluído: ${ok} removidos, ${fail} falharam`);
+  };
+
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#ff9f43' }}>cleaning_services</span>
+          <span style={{ fontSize: '13px', color: '#ff9f43', fontWeight: 700 }}>
+            Limpeza de ficheiros órfãos
+          </span>
+        </div>
+        <button
+          onClick={() => void scan()}
+          disabled={loading}
+          style={{
+            padding: '6px 10px', fontSize: '10px', fontWeight: 700,
+            backgroundColor: 'rgba(110,155,255,0.1)', border: '1px solid rgba(110,155,255,0.2)',
+            borderRadius: '4px', color: '#6e9bff', cursor: 'pointer',
+          }}
+        >
+          {loading ? 'A procurar…' : files ? 'Re-scan' : 'Procurar órfãos'}
+        </button>
+      </div>
+
+      <div style={{ fontSize: '11px', color: '#adaaaa', lineHeight: 1.5, marginBottom: '10px' }}>
+        Rows de <code style={{ fontSize: '10px' }}>kromi_files</code> onde o{' '}
+        <code style={{ fontSize: '10px' }}>entity_id</code> já não existe na tabela parente
+        (bike apagada, service request removido, etc.). Tipos verificados:{' '}
+        {Object.keys(ENTITY_TABLES).join(', ')}.
+      </div>
+
+      {error && (
+        <div style={{
+          padding: '6px 8px', fontSize: '10px', color: '#ff716c',
+          backgroundColor: 'rgba(255,113,108,0.1)', border: '1px solid rgba(255,113,108,0.2)',
+          borderRadius: '3px', marginBottom: '8px',
+        }}>
+          {error}
+        </div>
+      )}
+
+      {files && (
+        <>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+            padding: '8px 10px', backgroundColor: '#0e0e0e', borderRadius: '4px', marginBottom: '8px',
+          }}>
+            <div style={{ fontSize: '10px', color: '#777575' }}>
+              {files.length} ficheiros analisados · {orphans.length} órfãos · {formatBytes(totalBytes)} recuperáveis
+            </div>
+            {orphans.length > 0 && (
+              <button
+                onClick={() => void trashAll()}
+                disabled={trashing === '__bulk__'}
+                style={{
+                  padding: '6px 12px', fontSize: '10px', fontWeight: 700,
+                  backgroundColor: trashing === '__bulk__' ? 'rgba(255,113,108,0.2)' : '#ff716c',
+                  color: trashing === '__bulk__' ? '#777575' : '#0e0e0e',
+                  border: 'none', borderRadius: '3px',
+                  cursor: trashing === '__bulk__' ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {trashing === '__bulk__' ? 'A remover…' : `Trash todos (${orphans.length})`}
+              </button>
+            )}
+          </div>
+
+          {orphans.length === 0 ? (
+            <div style={{
+              padding: '14px', textAlign: 'center', color: '#3fff8b', fontSize: '11px',
+              backgroundColor: 'rgba(63,255,139,0.05)', borderRadius: '4px',
+            }}>
+              ✓ Nenhum ficheiro órfão encontrado
+            </div>
+          ) : (
+            <div style={{
+              maxHeight: '300px', overflow: 'auto',
+              border: '1px solid rgba(73,72,71,0.2)', borderRadius: '4px',
+            }}>
+              {orphans.map((o) => (
+                <div key={o.id} style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  padding: '8px 10px', borderBottom: '1px solid rgba(73,72,71,0.15)',
+                  fontSize: '10px',
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {o.file_name}
+                    </div>
+                    <div style={{ color: '#777575', fontSize: '9px', marginTop: '2px' }}>
+                      {o.category} · {formatBytes(o.size_bytes ?? 0)} · {o.reason}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => void trashOne(o.id)}
+                    disabled={trashing === o.id}
+                    style={{
+                      padding: '4px 8px', fontSize: '9px', fontWeight: 700,
+                      backgroundColor: 'rgba(255,113,108,0.1)', border: '1px solid rgba(255,113,108,0.2)',
+                      borderRadius: '3px', color: '#ff716c', cursor: 'pointer',
+                    }}
+                  >
+                    {trashing === o.id ? '…' : 'Trash'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
 }

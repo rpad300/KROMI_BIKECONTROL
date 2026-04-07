@@ -7,6 +7,7 @@
 
 import type { ParsedRoute, RoutePoint } from './GPXParser';
 import { supaFetch, supaGet, supaRpc } from '../../lib/supaFetch';
+import { useAuthStore } from '../../store/authStore';
 
 export interface SavedRoute {
   id: string;
@@ -44,7 +45,17 @@ export async function saveRoute(
   sourceUrl?: string,
   estimates?: { wh: number; time_min: number; glycogen_g: number },
 ): Promise<SavedRoute | null> {
+  // Session 18: routes.user_id is now a real uuid FK to app_users.id,
+  // NOT NULL, no default. Must be passed explicitly so the RLS policy
+  // `user_id = kromi_uid()` accepts the insert.
+  const userId = useAuthStore.getState().user?.id;
+  if (!userId) {
+    console.error('[RouteService] Save error: no authenticated user');
+    return null;
+  }
+
   const body = {
+    user_id: userId,
     name: parsed.name,
     description: parsed.description,
     source,

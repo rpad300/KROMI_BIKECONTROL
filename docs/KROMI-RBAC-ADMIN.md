@@ -1,9 +1,9 @@
 # KROMI Super Admin + RBAC
 
-> **Status:** Production (Session 16, 2026-04-06)
+> **Status:** Production (Session 18, 2026-04-07)
 > **Super admin:** `rdias300@gmail.com`
 > **Frontend:** `src/components/Admin/`, `src/hooks/usePermission.ts`, `src/store/permissionStore.ts`
-> **Backend:** Supabase tables + view, edge function `drive-storage` (admin actions)
+> **Backend:** Supabase tables + view + 9 SECURITY DEFINER admin RPCs, edge function `drive-storage` (admin actions)
 
 ---
 
@@ -244,6 +244,109 @@ ON CONFLICT DO NOTHING;
 3. **All admin actions are logged** in `impersonation_log` (start + end timestamps + reason).
 4. **The OAuth client_secret was exposed in chat during Session 16.** Should be rotated via GCP Console → Reset Secret, then update Supabase Edge Function secret `GOOGLE_OAUTH_CLIENT_SECRET`.
 5. **Custom OTP auth means Supabase RLS is permissive.** All RBAC enforcement happens at the application layer (hooks + stores). Don't trust DB-level filtering for security.
+
+---
+
+## RLS architecture (Session 18)
+
+Up to Session 17 the user-data tables had `qual = true` policies — RLS was on but cosmetic. Session 18 swapped opaque tokens for a real HS256 JWT (see `docs/KROMI-RBAC-ADMIN.md` references to `KROMI_JWT_SECRET` and `memory/reference_jwt_auth.md`) so PostgREST sees a verified `sub` claim per request, then rebuilt every policy on top of two helpers:
+
+- `public.kromi_uid() → uuid` — reads `request.jwt.claims.sub`. Use this in policies, NOT `auth.uid()` (KROMI doesn't use Supabase Auth).
+- `public.is_super_admin_jwt() → boolean` — SECURITY DEFINER. Joins the JWT subject against `app_users.is_super_admin`. Used as the bypass clause in every owner-restricted SELECT/DELETE policy.
+
+The lockdown migration is at `supabase/migrations/20260407_session18_rls_user_data_lockdown.sql`. It drops every existing policy on 37+ user-data tables, re-enables RLS, and rebuilds ~132 policies following the standard owner template:
+
+```sql
+CREATE POLICY t_sel ON t FOR SELECT USING (user_id = public.kromi_uid() OR public.is_super_admin_jwt());
+CREATE POLICY t_ins ON t FOR INSERT WITH CHECK (user_id = public.kromi_uid());
+CREATE POLICY t_upd ON t FOR UPDATE USING (user_id = public.kromi_uid()) WITH CHECK (user_id = public.kromi_uid());
+CREATE POLICY t_del ON t FOR DELETE USING (user_id = public.kromi_uid() OR public.is_super_admin_jwt());
+```
+
+Child tables that don't carry a direct `user_id` (e.g. `service_items`, `ride_snapshots`) join through their parent via `EXISTS` subqueries. The `can_access_service(uuid)` helper centralises the service_* tree.
+
+**Tables NOT covered by this migration:**
+- `app_users`, `roles`, `role_permissions`, `user_roles`, `user_feature_flags`, `impersonation_log`, `user_suspensions` — locked down in Session 17 with restrictive policies that block ALL direct writes; admin mutations go through the SECURITY DEFINER RPCs below.
+- `ride_summaries` — left permissive while the ambiguous `athlete_id` column (mix of `user_id` and `athlete_profiles.id`) is normalised in a follow-up migration.
+
+---
+
+## List of admin RPCs
+
+All 9 admin write paths route through SECURITY DEFINER RPCs that take the caller's session token, resolve the actor via `resolve_session_user_id(p_session_token)`, and verify `is_super_admin = true` before mutating. Direct PostgREST writes to the underlying tables are blocked by restrictive RLS policies. Source: `src/services/rbac/RBACService.ts`.
+
+| RPC | Signature | Effect |
+|---|---|---|
+| `admin_set_super_admin` | `(p_session_token text, p_target_user_id uuid, p_is_super boolean)` | Toggle the master super-admin flag on a user. |
+| `admin_set_suspended` | `(p_session_token text, p_target_user_id uuid, p_suspend boolean, p_reason text)` | Suspend / unsuspend; updates `app_users` AND inserts a row into `user_suspensions` for the audit history. |
+| `admin_set_user_roles` | `(p_session_token text, p_target_user_id uuid, p_role_ids uuid[])` | Replace the user's `user_roles` set in one transaction. |
+| `admin_create_role` | `(p_session_token text, p_key text, p_label text, p_description text, p_sort_order int)` | Create a non-system role. Returns the new role id. |
+| `admin_update_role` | `(p_session_token text, p_role_id uuid, p_label text, p_description text, p_sort_order int)` | Edit label / description / sort order. Blocks system roles. |
+| `admin_delete_role` | `(p_session_token text, p_role_id uuid)` | Delete a custom role + cascade `role_permissions` + `user_roles`. Blocks system roles. |
+| `admin_set_role_permissions` | `(p_session_token text, p_role_id uuid, p_permission_keys text[])` | Replace the role's permission set. Core perms cannot be revoked. |
+| `admin_set_user_feature_flag` | `(p_session_token text, p_target_user_id uuid, p_permission_key text, p_mode text, p_reason text)` | Set an `allow` / `deny` override for one user + permission. |
+| `admin_clear_user_feature_flag` | `(p_session_token text, p_target_user_id uuid, p_permission_key text)` | Remove the override row entirely (back to role-derived default). |
+
+`resolve_session_user_id` accepts both hashed opaque session tokens (`user_sessions.token_hash`) and the `device:{device_token_id}` shorthand used by auto-login.
+
+---
+
+## Rate limiting
+
+Edge functions enforce per-IP limits via the `public.check_rate_limit()` RPC, which logs each call into `edge_function_rate_limits` and counts entries within a sliding window.
+
+```sql
+check_rate_limit(p_function text, p_identifier text, p_window_secs int, p_max int)
+  RETURNS jsonb  -- { allowed: bool, current: int }
+```
+
+Current caps:
+
+| Edge function | Identifier | Window | Max |
+|---|---|---|---|
+| `drive-storage` | client IP | 60 s | 120 |
+| `notify-impersonation` | client IP | 60 s | 10 |
+
+The helper is **fail-open** — if the RPC errors (network, wrong service role) the request is allowed through rather than blocked. Recent 429s can be inspected directly in `edge_function_rate_limits` (filter by `function_name`).
+
+See also: `memory/reference_edge_rate_limits.md`.
+
+---
+
+## GDPR RPC
+
+Self-service account deletion lives at Settings → Privacidade. The RPC is:
+
+```sql
+kromi_delete_my_account(p_session_token text, p_confirmation_email text)
+  RETURNS jsonb  -- { deleted: true, deletion_id: uuid }
+```
+
+It resolves the session token, verifies the confirmation email matches `app_users.email`, inserts a row into `account_deletion_log` FIRST so partial failures still leave a trail, then hard-deletes across 15+ tables. The `app_users` row itself is **tombstoned** rather than deleted: `email → deleted-<uuid>@deleted.local`, `name → null`, `deleted_at` set, suspended flag set. This keeps FKs from `login_history`, `impersonation_log`, `clubs.created_by` etc. intact for audit. Drive binaries are not yet GC'd — only the `kromi_files` metadata rows are dropped.
+
+Companion frontend: `src/services/gdpr/GdprService.ts` (`exportMyData`, `deleteMyAccount`). Both are disabled while `useAuthStore.getState().isImpersonating()` returns true.
+
+See also: `memory/reference_gdpr.md`.
+
+---
+
+## Pre-flight checklist before applying the RLS lockdown
+
+Mirrors `SESSION_18_SETUP.md`. **Do NOT apply `20260407_session18_rls_user_data_lockdown.sql` until every box is checked**, otherwise every legitimate user will be locked out:
+
+- [ ] `KROMI_JWT_SECRET` set in Supabase Dashboard → Edge Functions → Secrets to the **exact** value of Project Settings → API → JWT Settings → JWT Secret
+- [ ] `verify-otp` v14+ deployed (mints JWT)
+- [ ] `verify-session` v14+ deployed (mints + refreshes JWT)
+- [ ] `login-by-device` v1+ deployed
+- [ ] Production frontend ships the Session 18 build (`authStore` persists `jwt`, `src/lib/supaFetch.ts` exists, services migrated)
+- [ ] Smoke test in SQL editor:
+  ```sql
+  SET LOCAL request.jwt.claims TO '{"sub":"<your-admin-uuid>","role":"authenticated"}';
+  SELECT public.kromi_uid();          -- returns your uuid
+  SELECT public.is_super_admin_jwt(); -- returns true
+  ```
+- [ ] Browser smoke test: refresh the PWA, check `useAuthStore.getState().jwt` is a non-null `eyJ...` string
+- [ ] Rollback plan understood: drop and recreate the offending policy permissively, investigate, re-lock
 
 ---
 
