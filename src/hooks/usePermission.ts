@@ -32,9 +32,19 @@ export function usePermission(key: string): boolean {
   return has(key);
 }
 
-/** Returns true if the current user is a super admin. */
+/**
+ * Returns true if the REAL logged-in user is a super admin.
+ *
+ * Deliberately reads from `realUser`, not the viewer, so the super admin
+ * panel + Super Admin menu entry stay accessible during impersonation.
+ * Without this, clicking "Entrar como" would immediately lock you out
+ * of the admin area you need to use to click "Sair".
+ *
+ * Feature-level permission checks (usePermission) still reflect the
+ * viewer, so impersonation continues to show what the target user sees.
+ */
 export function useIsSuperAdmin(): boolean {
-  return useAuthStore((s) => !!s.user?.is_super_admin);
+  return useAuthStore((s) => !!s.realUser?.is_super_admin);
 }
 
 /**

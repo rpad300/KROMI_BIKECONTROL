@@ -203,8 +203,12 @@ function DesktopApp() {
   const [sub, setSub] = useState<DesktopSub>('preview');
   const [expanded, setExpanded] = useState<string | null>('Volta Live');
   const user = useAuthStore((s) => s.user);
+  // Super admin status is derived from the REAL user, not the viewer, so
+  // the sidebar admin entry stays visible during impersonation — otherwise
+  // you'd lose access to the panel that lets you exit impersonation.
+  const realUser = useAuthStore((s) => s.realUser);
   const logout = useAuthStore((s) => s.logout);
-  const isSuperAdmin = !!user?.is_super_admin;
+  const isSuperAdmin = !!realUser?.is_super_admin;
   const perms = usePermissions(NAV_PERMISSION_KEYS);
 
   // Apply RBAC filter against the canonical NAV_CATEGORIES, then convert to
