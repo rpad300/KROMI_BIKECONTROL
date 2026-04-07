@@ -7,6 +7,7 @@ import {
 } from '../../store/settingsStore';
 import { useBikeStore } from '../../store/bikeStore';
 import { useAuthStore } from '../../store/authStore';
+import { useReadOnlyGuard } from '../../hooks/useReadOnlyGuard';
 import { AutocompleteField } from '../shared/AutocompleteField';
 import { getTopComponents, type BikeComponent } from '../../services/bike/BikeComponentService';
 import { getBikeServiceStats, type BikeServiceStats } from '../../services/maintenance/MaintenanceService';
@@ -18,9 +19,18 @@ import { getBikeServiceStats, type BikeServiceStats } from '../../services/maint
 export function BikesPage() {
   const bikes = useSettingsStore((s) => s.bikes);
   const activeBikeId = useSettingsStore((s) => s.activeBikeId);
-  const addBike = useSettingsStore((s) => s.addBike);
-  const removeBike = useSettingsStore((s) => s.removeBike);
+  const addBikeRaw = useSettingsStore((s) => s.addBike);
+  const removeBikeRaw = useSettingsStore((s) => s.removeBike);
   const selectBike = useSettingsStore((s) => s.selectBike);
+  const guard = useReadOnlyGuard();
+  const addBike: typeof addBikeRaw = (...args) => {
+    if (!guard('Não é possível criar bikes em modo impersonation.')) return undefined as never;
+    return addBikeRaw(...args);
+  };
+  const removeBike: typeof removeBikeRaw = (...args) => {
+    if (!guard('Não é possível apagar bikes em modo impersonation.')) return undefined as never;
+    return removeBikeRaw(...args);
+  };
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -269,6 +279,7 @@ function BikeDetailPage({ bikeId, onBack }: { bikeId: string; onBack: () => void
   const selectBike = useSettingsStore((s) => s.selectBike);
   const activeBikeId = useSettingsStore((s) => s.activeBikeId);
   const updateBikeConfig = useSettingsStore((s) => s.updateBikeConfig);
+  const guard = useReadOnlyGuard();
 
   // Select this bike so bikeConfig is in sync
   if (activeBikeId !== bikeId) selectBike(bikeId);
@@ -276,7 +287,10 @@ function BikeDetailPage({ bikeId, onBack }: { bikeId: string; onBack: () => void
   // Read reactively from store — re-renders on every update
   const bike = safeBikeConfig(useSettingsStore((s) => s.bikeConfig));
 
-  const update = (partial: Partial<BikeConfig>) => updateBikeConfig(partial);
+  const update = (partial: Partial<BikeConfig>) => {
+    if (!guard('Não é possível alterar a bike deste utilizador em modo impersonation.')) return;
+    updateBikeConfig(partial);
+  };
   const isEBike = bike.bike_type === 'ebike';
 
   return (

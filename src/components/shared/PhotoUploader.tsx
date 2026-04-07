@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useAuthStore } from '../../store/authStore';
+import { useReadOnlyGuard } from '../../hooks/useReadOnlyGuard';
 import { addPhoto } from '../../services/maintenance/MaintenanceService';
 import { uploadFile, slugify, userFolderSlug, type KromiFile } from '../../services/storage/KromiFileStore';
 import type { PhotoType } from '../../types/service.types';
@@ -17,6 +18,7 @@ interface PhotoUploaderProps {
 export function PhotoUploader({ serviceId, itemId, bikeSlug, bikeName, onUploaded }: PhotoUploaderProps) {
   const user = useAuthStore((s) => s.user);
   const userId = user?.id;
+  const guard = useReadOnlyGuard();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -31,6 +33,7 @@ export function PhotoUploader({ serviceId, itemId, bikeSlug, bikeName, onUploade
       setError('Não autenticado');
       return;
     }
+    if (!guard('Não é possível enviar fotos em modo impersonation.')) return;
     setError(null);
 
     // Local preview
