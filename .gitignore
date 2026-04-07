@@ -63,3 +63,12 @@ tsconfig.tsbuildinfo
 # APK analysis
 APKRIDECONTROL/
 screen_*.png
+
+# kromi-doc generated artefacts
+.kromi-doc-index.json
+.kromi-doc-index-st.npz
+.kromi-doc-schema.json
+tools/kromi-doc/kromi_doc.egg-info/
+tools/kromi-doc/build/
+tools/kromi-doc/dist/
+tools/kromi-doc/**/__pycache__/

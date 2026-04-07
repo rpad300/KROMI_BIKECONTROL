@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kromi-doc"
+version = "0.1.0"
+description = "Auto-sync engine + RAG search + CLI for the KROMI BikeControl Obsidian vault"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "rdias300"}]
+license = {text = "MIT"}
+dependencies = [
+    "requests>=2.31",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+embeddings = [
+    "sentence-transformers>=2.2",
+    "numpy>=1.24",
+]
+server = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+]
+all = [
+    "kromi-doc[embeddings,server]",
+]
+
+[project.scripts]
+kromi-doc = "kromi_doc.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["kromi_doc*"]
+
+[tool.setuptools.package-data]
+kromi_doc = ["../templates/*.md"]
