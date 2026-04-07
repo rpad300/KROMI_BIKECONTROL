@@ -158,29 +158,44 @@ Deno.serve(async (req: Request) => {
 
   const recipients = NOTIFY_TO.split(',').map((s: string) => s.trim()).filter(Boolean);
 
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: NOTIFY_FROM,
-      to: recipients,
-      subject: `[KROMI] Impersonation: ${payload.admin_email} → ${payload.target_email}`,
-      html: buildHtml(payload),
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    return new Response(JSON.stringify({ ok: false, error: text }), {
-      status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  // Fail-soft on Resend errors. Notification is fire-and-forget audit:
+  // we never want a Resend rejection (unverified domain, free-tier
+  // recipient restriction, network blip) to surface as a 502 in the
+  // browser console. Always return 200 — the response body indicates
+  // whether the send actually happened.
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: NOTIFY_FROM,
+        to: recipients,
+        subject: `[KROMI] Impersonation: ${payload.admin_email} → ${payload.target_email}`,
+        html: buildHtml(payload),
+      }),
     });
-  }
 
-  const data = await res.json();
-  return new Response(JSON.stringify({ ok: true, id: data.id }), {
-    status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
+    if (!res.ok) {
+      const text = await res.text();
+      console.warn('[notify-impersonation] resend error:', res.status, text);
+      return new Response(
+        JSON.stringify({ ok: false, skipped: true, reason: 'resend_error', status: res.status }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    const data = await res.json();
+    return new Response(JSON.stringify({ ok: true, id: data.id }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (err) {
+    console.warn('[notify-impersonation] network error:', (err as Error).message);
+    return new Response(
+      JSON.stringify({ ok: false, skipped: true, reason: 'network_error' }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
 });
