@@ -6,12 +6,15 @@
 // Toggle individual permissions per role. Core perms are always
 // granted (locked). System roles cannot be deleted.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   listRoles,
   listPermissions,
   getRolePermissions,
   setRolePermissions,
+  createRole,
+  updateRole,
+  deleteRole,
   type Role,
   type Permission,
 } from '../../services/rbac/RBACService';
@@ -23,22 +26,28 @@ export function AdminRolesPage() {
   const [rolePerms, setRolePerms] = useState<Record<string, Set<string>>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    const [r, p] = await Promise.all([listRoles(), listPermissions()]);
+    setRoles(r);
+    setPerms(p);
+    const map: Record<string, Set<string>> = {};
+    for (const role of r) {
+      const keys = await getRolePermissions(role.id);
+      map[role.id] = new Set(keys);
+    }
+    setRolePerms(map);
+  }, []);
 
   useEffect(() => {
     void (async () => {
-      const [r, p] = await Promise.all([listRoles(), listPermissions()]);
-      setRoles(r);
-      setPerms(p);
-      // Pre-load all role permissions
-      const map: Record<string, Set<string>> = {};
-      for (const role of r) {
-        const keys = await getRolePermissions(role.id);
-        map[role.id] = new Set(keys);
-      }
-      setRolePerms(map);
+      await reload();
       setLoading(false);
     })();
-  }, []);
+  }, [reload]);
 
   const togglePerm = async (roleId: string, permKey: string) => {
     setSaving(roleId);
@@ -48,6 +57,47 @@ export function AdminRolesPage() {
     setRolePerms({ ...rolePerms, [roleId]: current });
     await setRolePermissions(roleId, Array.from(current));
     setSaving(null);
+  };
+
+  const handleCreate = async (input: { key: string; label: string; description: string }) => {
+    setError(null);
+    try {
+      await createRole({
+        key: input.key,
+        label: input.label,
+        description: input.description || null,
+      });
+      setCreating(false);
+      await reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const handleSaveEdit = async (roleId: string, patch: { label: string; description: string }) => {
+    setError(null);
+    try {
+      await updateRole(roleId, { label: patch.label, description: patch.description || null });
+      setEditingId(null);
+      await reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const handleDelete = async (role: Role) => {
+    if (role.is_system) {
+      setError('Roles do sistema não podem ser apagadas.');
+      return;
+    }
+    if (!confirm(`Apagar role "${role.label}"? Todos os utilizadores que a têm vão perdê-la.`)) return;
+    setError(null);
+    try {
+      await deleteRole(role.id);
+      await reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
   };
 
   if (loading) {
@@ -64,9 +114,43 @@ export function AdminRolesPage() {
 
   return (
     <div style={{ padding: '4px' }}>
-      <h2 className="font-headline font-bold" style={{ fontSize: '16px', color: '#3fff8b', marginBottom: '12px' }}>
-        Roles ({roles.length}) · Permissões ({perms.length})
-      </h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+        <h2 className="font-headline font-bold" style={{ fontSize: '16px', color: '#3fff8b', margin: 0 }}>
+          Roles ({roles.length}) · Permissões ({perms.length})
+        </h2>
+        <button
+          onClick={() => { setCreating(true); setError(null); }}
+          style={{
+            padding: '6px 12px', backgroundColor: 'rgba(63,255,139,0.1)',
+            border: '1px solid rgba(63,255,139,0.3)', color: '#3fff8b',
+            borderRadius: '4px', fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '4px',
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>add</span>
+          Nova Role
+        </button>
+      </div>
+
+      {error && (
+        <div style={{
+          padding: '8px 10px', marginBottom: '10px',
+          backgroundColor: 'rgba(255,113,108,0.08)', border: '1px solid rgba(255,113,108,0.2)',
+          color: '#ff716c', fontSize: '11px', borderRadius: '4px',
+        }}>
+          {error}
+        </div>
+      )}
+
+      {creating && (
+        <RoleEditor
+          title="Nova role"
+          initial={{ key: '', label: '', description: '' }}
+          allowKey
+          onSave={(d) => void handleCreate(d)}
+          onCancel={() => setCreating(false)}
+        />
+      )}
 
       {roles.map((r) => {
         const isExpanded = expanded === r.id;
@@ -107,11 +191,45 @@ export function AdminRolesPage() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '10px', color: '#3fff8b' }}>{granted.size} perms</span>
+                {!r.is_system && (
+                  <>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingId(editingId === r.id ? null : r.id); setError(null); }}
+                      title="Editar"
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: '#fbbf24', display: 'flex', alignItems: 'center',
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>edit</span>
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); void handleDelete(r); }}
+                      title="Apagar"
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: '#ff716c', display: 'flex', alignItems: 'center',
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>delete</span>
+                    </button>
+                  </>
+                )}
                 <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#777575' }}>
                   {isExpanded ? 'expand_less' : 'expand_more'}
                 </span>
               </div>
             </div>
+
+            {editingId === r.id && (
+              <RoleEditor
+                title={`Editar "${r.label}"`}
+                initial={{ key: r.key, label: r.label, description: r.description ?? '' }}
+                allowKey={false}
+                onSave={(d) => void handleSaveEdit(r.id, d)}
+                onCancel={() => setEditingId(null)}
+              />
+            )}
 
             {isExpanded && (
               <div style={{ padding: '0 12px 12px', borderTop: '1px solid rgba(73,72,71,0.15)' }}>
@@ -160,3 +278,108 @@ export function AdminRolesPage() {
     </div>
   );
 }
+
+// ─── RoleEditor inline form ──────────────────────────────────
+function RoleEditor({
+  title,
+  initial,
+  allowKey,
+  onSave,
+  onCancel,
+}: {
+  title: string;
+  initial: { key: string; label: string; description: string };
+  allowKey: boolean;
+  onSave: (data: { key: string; label: string; description: string }) => void;
+  onCancel: () => void;
+}) {
+  const [key, setKey] = useState(initial.key);
+  const [label, setLabel] = useState(initial.label);
+  const [description, setDescription] = useState(initial.description);
+
+  const valid = label.trim().length > 0 && (!allowKey || /^[a-z][a-z0-9_]*$/.test(key));
+
+  return (
+    <div style={{
+      backgroundColor: '#0e0e0e',
+      border: '1px solid rgba(63,255,139,0.3)',
+      borderRadius: '6px',
+      padding: '12px',
+      marginBottom: '8px',
+    }}>
+      <div style={{ fontSize: '11px', color: '#3fff8b', fontWeight: 700, marginBottom: '8px' }}>
+        {title}
+      </div>
+      {allowKey && (
+        <div style={{ marginBottom: '6px' }}>
+          <div style={{ fontSize: '9px', color: '#777575', marginBottom: '2px' }}>
+            Key (snake_case, imutável depois)
+          </div>
+          <input
+            type="text"
+            value={key}
+            onChange={(e) => setKey(e.target.value.toLowerCase())}
+            placeholder="ex: shop_owner"
+            style={inputStyle}
+          />
+        </div>
+      )}
+      <div style={{ marginBottom: '6px' }}>
+        <div style={{ fontSize: '9px', color: '#777575', marginBottom: '2px' }}>Nome visível</div>
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="ex: Dono de Oficina"
+          style={inputStyle}
+        />
+      </div>
+      <div style={{ marginBottom: '8px' }}>
+        <div style={{ fontSize: '9px', color: '#777575', marginBottom: '2px' }}>Descrição (opcional)</div>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={2}
+          style={{ ...inputStyle, resize: 'vertical' as const }}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+        <button
+          onClick={onCancel}
+          style={{
+            padding: '5px 12px', backgroundColor: 'transparent',
+            border: '1px solid rgba(73,72,71,0.3)', color: '#adaaaa',
+            borderRadius: '4px', fontSize: '10px', fontWeight: 700, cursor: 'pointer',
+          }}
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={() => onSave({ key, label, description })}
+          disabled={!valid}
+          style={{
+            padding: '5px 12px',
+            backgroundColor: valid ? '#3fff8b' : 'rgba(63,255,139,0.2)',
+            border: 'none', color: valid ? '#0e0e0e' : '#777575',
+            borderRadius: '4px', fontSize: '10px', fontWeight: 700,
+            cursor: valid ? 'pointer' : 'not-allowed',
+          }}
+        >
+          Guardar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '6px 8px',
+  backgroundColor: '#131313',
+  border: '1px solid rgba(73,72,71,0.3)',
+  borderRadius: '3px',
+  color: 'white',
+  fontSize: '11px',
+  outline: 'none',
+  fontFamily: 'inherit',
+};

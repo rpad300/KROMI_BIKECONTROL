@@ -14,6 +14,12 @@ import { useRouteNavigation } from './hooks/useRouteNavigation';
 import { NavigationBar } from './components/Dashboard/NavigationBar';
 import { useAuthStore } from './store/authStore';
 import { usePermissions } from './hooks/usePermission';
+import {
+  NAV_CATEGORIES,
+  NAV_PERMISSION_KEYS,
+  filterNavByPermissions,
+  type NavCategory,
+} from './config/navigation';
 import { usePlatform } from './hooks/usePlatform';
 import { useDriveBootstrap } from './hooks/useDriveBootstrap';
 import { ImpersonationBanner } from './components/Admin/ImpersonationBanner';
@@ -142,8 +148,6 @@ interface NavSub {
   id: string;
   label: string;
   icon: string;
-  /** RBAC permission key required to see this sub-item. */
-  permission?: string;
 }
 interface NavItem {
   screen: DesktopScreen;
@@ -151,62 +155,43 @@ interface NavItem {
   icon: string;
   color?: string;
   subs?: NavSub[];
-  /** RBAC permission key gating the entire entry (used for entries without subs). */
-  permission?: string;
 }
 
-const DESKTOP_NAV: NavItem[] = [
-  { screen: 'live', label: 'Volta Live', icon: 'directions_bike', color: '#3fff8b', subs: [
+/** Convert a category from the canonical NAV_CATEGORIES into the desktop NavItem shape. */
+function categoryToDesktopNavItem(cat: NavCategory): NavItem {
+  // Categories with navigateTo are top-level shortcuts (history, map)
+  if (cat.navigateTo && cat.items.length === 0) {
+    return {
+      screen: cat.navigateTo as DesktopScreen,
+      label: cat.label,
+      icon: cat.icon,
+      color: cat.color,
+    };
+  }
+  return {
+    screen: 'settings',
+    label: cat.label,
+    icon: cat.icon,
+    color: cat.color,
+    subs: cat.items.map((it) => ({ id: it.id, label: it.label, icon: it.icon })),
+  };
+}
+
+/** "Volta Live" is desktop-only (no mobile equivalent), so it stays here. */
+const VOLTA_LIVE_NAV: NavItem = {
+  screen: 'live',
+  label: 'Volta Live',
+  icon: 'directions_bike',
+  color: '#3fff8b',
+  subs: [
     { id: 'preview', label: 'Dashboard Preview', icon: 'phone_iphone' },
     { id: 'builder', label: 'Custom Builder', icon: 'construction' },
     { id: 'range', label: 'Autonomia', icon: 'battery_charging_full' },
     { id: 'widgets', label: 'Widget Library', icon: 'widgets' },
-  ]},
-  { screen: 'settings', label: 'Perfil', icon: 'person', color: '#ff716c', subs: [
-    { id: 'personal', label: 'Dados Pessoais', icon: 'badge' },
-    { id: 'physical', label: 'Perfil Físico', icon: 'monitor_heart' },
-    { id: 'medical', label: 'Médico + Objectivos', icon: 'health_and_safety' },
-    { id: 'emergency', label: 'Emergência + QR', icon: 'emergency', permission: 'features.emergency_qr' },
-  ]},
-  { screen: 'settings', label: 'Treino', icon: 'show_chart', color: '#fbbf24', subs: [
-    { id: 'zones', label: 'Zonas HR + Potência', icon: 'show_chart' },
-    { id: 'kromi', label: 'KROMI Intelligence', icon: 'psychology', permission: 'features.intelligence_v2' },
-  ]},
-  { screen: 'settings', label: 'Bicicletas', icon: 'pedal_bike', color: '#3fff8b', subs: [
-    { id: 'bike', label: 'As minhas bikes', icon: 'pedal_bike' },
-    { id: 'bikefit', label: 'Bike Fit', icon: 'straighten', permission: 'features.bike_fit' },
-  ]},
-  { screen: 'settings', label: 'Manutenção', icon: 'build', color: '#ff9f43', subs: [
-    { id: 'service-book', label: 'Caderneta de Serviço', icon: 'menu_book', permission: 'features.service_book' },
-  ]},
-  { screen: 'settings', label: 'Clube', icon: 'groups', color: '#fbbf24', subs: [
-    { id: 'club', label: 'O meu clube', icon: 'groups', permission: 'features.clubs' },
-  ]},
-  { screen: 'settings', label: 'Dispositivos', icon: 'bluetooth', color: '#6e9bff', subs: [
-    { id: 'bluetooth', label: 'BLE + Sensores', icon: 'bluetooth' },
-  ]},
-  { screen: 'history', label: 'Atividades', icon: 'timeline', color: '#e966ff' },
-  { screen: 'map', label: 'Mapa', icon: 'map', color: '#6e9bff' },
-  { screen: 'settings', label: 'Oficina', icon: 'store', color: '#ff9f43', permission: 'features.shop_management', subs: [
-    { id: 'shop', label: 'Gestão de Oficina', icon: 'store', permission: 'features.shop_management' },
-  ]},
-  { screen: 'settings', label: 'Sistema', icon: 'settings', color: '#adaaaa', subs: [
-    { id: 'routes', label: 'Rotas', icon: 'route' },
-    { id: 'account', label: 'Conta', icon: 'account_circle' },
-  ]},
-];
+  ],
+};
 
-/** All distinct permission keys referenced by desktop nav (for batched RBAC check). */
-const DESKTOP_NAV_PERMISSIONS: string[] = Array.from(
-  new Set(
-    DESKTOP_NAV.flatMap((it) => [
-      ...(it.permission ? [it.permission] : []),
-      ...(it.subs ?? []).map((s) => s.permission).filter((p): p is string => !!p),
-    ])
-  )
-);
-
-// Super-admin-only entries — injected dynamically in DesktopApp
+// Super-admin-only entry — injected dynamically in DesktopApp
 const ADMIN_NAV: NavItem[] = [
   { screen: 'settings', label: 'Super Admin', icon: 'admin_panel_settings', color: '#ff9f43', subs: [
     { id: 'super-admin', label: 'Painel Admin', icon: 'admin_panel_settings' },
@@ -220,20 +205,18 @@ function DesktopApp() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const isSuperAdmin = !!user?.is_super_admin;
-  const perms = usePermissions(DESKTOP_NAV_PERMISSIONS);
+  const perms = usePermissions(NAV_PERMISSION_KEYS);
 
-  // Filter nav by RBAC: drop sub-items the user can't see; drop entries that
-  // gate themselves OR end up with zero subs (when they originally had subs).
-  const filteredNav: NavItem[] = DESKTOP_NAV
-    .filter((it) => !it.permission || perms[it.permission])
-    .map((it) => {
-      if (!it.subs) return it;
-      const subs = it.subs.filter((s) => !s.permission || perms[s.permission]);
-      return { ...it, subs };
-    })
-    .filter((it) => !it.subs || it.subs.length > 0);
+  // Apply RBAC filter against the canonical NAV_CATEGORIES, then convert to
+  // the desktop sidebar shape and prepend the desktop-only "Volta Live".
+  const filteredNav: NavItem[] = [
+    VOLTA_LIVE_NAV,
+    ...filterNavByPermissions(NAV_CATEGORIES, perms).map(categoryToDesktopNavItem),
+  ];
+  // Remove any settings categories that ended up with zero subs after filtering
+  const cleanedNav = filteredNav.filter((it) => !it.subs || it.subs.length > 0);
 
-  const navItems = isSuperAdmin ? [...filteredNav, ...ADMIN_NAV] : filteredNav;
+  const navItems = isSuperAdmin ? [...cleanedNav, ...ADMIN_NAV] : cleanedNav;
 
   const handleNav = (item: NavItem, subId?: string) => {
     setScreen(item.screen);

@@ -163,6 +163,66 @@ export async function setRolePermissions(roleId: string, permKeys: string[]): Pr
   });
 }
 
+// ─── Role CRUD (custom roles) ────────────────────────────────
+export interface RoleInput {
+  key: string;
+  label: string;
+  description?: string | null;
+  sort_order?: number;
+}
+
+/** Create a new (non-system) role. The DB enforces unique `key`. */
+export async function createRole(input: RoleInput): Promise<Role | null> {
+  if (!SB_URL || !SB_KEY) return null;
+  const res = await fetch(`${SB_URL}/rest/v1/roles`, {
+    method: 'POST',
+    headers: headers({ 'Content-Type': 'application/json', Prefer: 'return=representation' }),
+    body: JSON.stringify({
+      key: input.key,
+      label: input.label,
+      description: input.description ?? null,
+      sort_order: input.sort_order ?? 100,
+      is_system: false,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Falha ao criar role: ${text}`);
+  }
+  const rows = (await res.json()) as Role[];
+  return rows[0] ?? null;
+}
+
+/** Update label / description / sort_order. Cannot rename `key` for safety. */
+export async function updateRole(
+  roleId: string,
+  patch: Partial<Pick<Role, 'label' | 'description' | 'sort_order'>>,
+): Promise<void> {
+  if (!SB_URL || !SB_KEY) return;
+  const res = await fetch(`${SB_URL}/rest/v1/roles?id=eq.${roleId}`, {
+    method: 'PATCH',
+    headers: headers({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }),
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`Falha ao atualizar role: ${await res.text()}`);
+}
+
+/** Delete a custom role. System roles are protected by a CHECK / our pre-check. */
+export async function deleteRole(roleId: string): Promise<void> {
+  if (!SB_URL || !SB_KEY) return;
+  // 1. Cascade delete role_permissions + user_roles first to avoid FK errors
+  await fetch(`${SB_URL}/rest/v1/role_permissions?role_id=eq.${roleId}`, {
+    method: 'DELETE', headers: headers(),
+  });
+  await fetch(`${SB_URL}/rest/v1/user_roles?role_id=eq.${roleId}`, {
+    method: 'DELETE', headers: headers(),
+  });
+  const res = await fetch(`${SB_URL}/rest/v1/roles?id=eq.${roleId}&is_system=eq.false`, {
+    method: 'DELETE', headers: headers({ Prefer: 'return=minimal' }),
+  });
+  if (!res.ok) throw new Error(`Falha ao apagar role: ${await res.text()}`);
+}
+
 // ─── Per-user feature flags (overrides) ──────────────────────
 export async function getUserFeatureFlags(userId: string): Promise<UserFeatureFlag[]> {
   if (!SB_URL || !SB_KEY) return [];
@@ -271,6 +331,37 @@ export async function logImpersonationStart(
   });
   const rows = await res.json();
   return rows[0]?.id ?? null;
+}
+
+/**
+ * Best-effort notification ping to the notify-impersonation edge function.
+ * Never throws — impersonation should not be blocked by mail issues.
+ */
+export async function notifyImpersonationStart(payload: {
+  admin_email: string;
+  admin_name?: string | null;
+  target_email: string;
+  target_name?: string | null;
+  reason?: string | null;
+  log_id?: string | null;
+}): Promise<void> {
+  if (!SB_URL || !SB_KEY) return;
+  try {
+    await fetch(`${SB_URL}/functions/v1/notify-impersonation`, {
+      method: 'POST',
+      headers: {
+        apikey: SB_KEY,
+        Authorization: `Bearer ${SB_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...payload,
+        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      }),
+    });
+  } catch {
+    // Silent: missing config / network error must not block impersonation
+  }
 }
 
 export async function logImpersonationEnd(logId: string): Promise<void> {

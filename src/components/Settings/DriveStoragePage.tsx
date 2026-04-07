@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useDriveStore } from '../../store/driveStore';
 import { bootstrapFolderStructure, TOP_LEVEL_FOLDERS } from '../../services/storage/KromiFileStore';
 import { getStorageStats, type StorageStats } from '../../services/rbac/RBACService';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 /**
  * DriveStoragePage — admin diagnostic for the central KROMI Drive backend.
@@ -236,29 +237,52 @@ export function DriveStoragePage() {
           <div style={{ fontSize: '11px', color: '#777575' }}>Sem ficheiros registados.</div>
         )}
         {!usageLoading && usage && usage.by_user.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div style={{ fontSize: '10px', color: '#777575', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Top {usage.by_user.length} utilizadores
+          <>
+            <div style={{ fontSize: '10px', color: '#777575', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+              Top {usage.by_user.length} utilizadores (por bytes)
             </div>
-            {usage.by_user.map((row, idx) => {
-              const pct = usage.total_bytes > 0 ? (row.bytes / usage.total_bytes) * 100 : 0;
-              return (
-                <div key={row.user_id ?? idx} style={{ fontSize: '11px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                    <span style={{ color: '#adaaaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {row.email ?? row.user_id?.slice(0, 8)}
-                    </span>
-                    <span style={{ color: '#777575', flexShrink: 0, marginLeft: '8px' }}>
-                      {row.files} · {formatBytes(row.bytes)}
-                    </span>
-                  </div>
-                  <div style={{ height: '3px', backgroundColor: '#0e0e0e', borderRadius: '2px', overflow: 'hidden' }}>
-                    <div style={{ width: `${pct}%`, height: '100%', backgroundColor: '#3fff8b' }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+            <div style={{ width: '100%', height: Math.max(180, usage.by_user.length * 28) }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={usage.by_user.map((r) => ({
+                    name: r.email ?? r.user_id?.slice(0, 8) ?? '?',
+                    bytes: r.bytes,
+                    files: r.files,
+                  }))}
+                  layout="vertical"
+                  margin={{ top: 4, right: 12, bottom: 4, left: 4 }}
+                >
+                  <XAxis type="number" hide />
+                  <YAxis
+                    dataKey="name"
+                    type="category"
+                    width={140}
+                    tick={{ fill: '#adaaaa', fontSize: 10 }}
+                    axisLine={{ stroke: '#262626' }}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(63,255,139,0.05)' }}
+                    contentStyle={{
+                      backgroundColor: '#0e0e0e',
+                      border: '1px solid #3fff8b',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                    }}
+                    labelStyle={{ color: '#3fff8b', fontWeight: 700 }}
+                    formatter={(value: number, name: string) =>
+                      name === 'bytes' ? [formatBytes(value), 'Storage'] : [value, 'Ficheiros']
+                    }
+                  />
+                  <Bar dataKey="bytes" radius={[0, 3, 3, 0]}>
+                    {usage.by_user.map((_, idx) => (
+                      <Cell key={idx} fill={idx === 0 ? '#3fff8b' : `rgba(63,255,139,${0.85 - idx * 0.07})`} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </>
         )}
       </div>
 
