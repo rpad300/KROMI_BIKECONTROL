@@ -40,7 +40,8 @@ const LOCKDOWN_TABLES = [
   'service_comments',
   'service_photos',
   'bike_configs',
-  'bike_components',
+  // NOTE: bike_components is a shared catalog (brand + model + specs) —
+  // intentionally readable by anyone. Not a user-owned table. Do NOT add.
   'bike_fits',
   'bike_fit_changes',
   'bike_qr_codes',
