@@ -12,6 +12,9 @@ kromi-drive-sa.json
 *-service-account*.json
 service-account*.json
 
+# Local secrets directory (OAuth client configs etc.)
+.secrets/
+
 # Node
 node_modules/
 dist/
@@ -63,6 +66,15 @@ tsconfig.tsbuildinfo
 # APK analysis
 APKRIDECONTROL/
 screen_*.png
+
+# Accidental Windows artefacts (NUL redirect, JADX cache, "New folder")
+null/
+PowerShell*/
+"Nova pasta/"
+**/Nova pasta/
+
+# Project Plan / one-off prompts (not project-specific)
+KROMI_BIKECONTROL.txt
 
 # Release artifacts (built via CI, never commit ~30MB each)
 *.apk
