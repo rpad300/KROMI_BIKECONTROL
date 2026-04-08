@@ -69,6 +69,12 @@ const LOCKDOWN_TABLES = [
   'admin_audit_log',
   'account_deletion_log',
   'impersonation_log',
+  // Added 2026-04-08 after a full policy audit caught 4 more leaks
+  // (app_users, user_suspensions, user_roles, user_feature_flags).
+  'app_users',
+  'user_suspensions',
+  'user_roles',
+  'user_feature_flags',
 ];
 
 const failures = [];

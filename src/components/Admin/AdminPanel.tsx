@@ -12,14 +12,8 @@ import { AdminRolesPage } from './AdminRolesPage';
 import { AdminAuditPage } from './AdminAuditPage';
 import { AdminDashboardPage } from './AdminDashboardPage';
 import { DriveStoragePage } from '../Settings/DriveStoragePage';
-import {
-  countLegacyPhotos,
-  migrateLegacyPhotos,
-  type MigrationProgress,
-  type MigrationResult,
-} from '../../services/storage/LegacyPhotoMigration';
 import { expireDueSuspensions } from '../../services/rbac/RBACService';
-import { supaGet } from '../../lib/supaFetch';
+import { supaGet, supaRpc } from '../../lib/supaFetch';
 
 export type AdminTab = 'dashboard' | 'users' | 'roles' | 'drive' | 'audit' | 'system';
 
@@ -132,141 +126,139 @@ export function AdminPanel({ initialTab = 'dashboard' }: { initialTab?: AdminTab
   );
 }
 
-// ─── System tab (migration tools, future maintenance ops) ────
+// ─── System tab ──────────────────────────────────────────────
 function AdminSystemPage() {
-  const [legacyCount, setLegacyCount] = useState<number | null>(null);
-  const [progress, setProgress] = useState<MigrationProgress | null>(null);
-  const [result, setResult] = useState<MigrationResult | null>(null);
-  const [running, setRunning] = useState(false);
-
-  const refreshCount = async () => {
-    try {
-      setLegacyCount(await countLegacyPhotos());
-    } catch {
-      setLegacyCount(null);
-    }
-  };
-
-  useEffect(() => { void refreshCount(); }, []);
-
-  const runMigration = async () => {
-    if (!confirm('Iniciar migração de fotos legadas? Esta operação pode levar minutos.')) return;
-    setRunning(true);
-    setResult(null);
-    try {
-      const r = await migrateLegacyPhotos((p) => setProgress(p));
-      setResult(r);
-      await refreshCount();
-    } catch (e) {
-      alert(`Erro: ${(e as Error).message}`);
-    } finally {
-      setRunning(false);
-      setProgress(null);
-    }
-  };
-
   return (
     <div style={{ padding: '4px' }}>
       <h2 className="font-headline font-bold" style={{ fontSize: '16px', color: '#3fff8b', marginBottom: '12px' }}>
         Sistema
       </h2>
 
-      {/* Legacy photo migration */}
-      <div style={{
-        backgroundColor: '#131313', padding: '14px', borderRadius: '6px',
-        border: '1px solid rgba(73,72,71,0.2)', marginBottom: '10px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#fbbf24' }}>cloud_sync</span>
-          <span style={{ fontSize: '12px', color: '#fbbf24', fontWeight: 700 }}>
-            Migração de fotos legadas (Supabase Storage → Drive)
-          </span>
-        </div>
-        <div style={{ fontSize: '10px', color: '#adaaaa', marginBottom: '10px', lineHeight: 1.5 }}>
-          Re-faz upload via KromiFileStore das fotos com <code style={{ fontSize: '9px' }}>storage_path</code> mas
-          sem <code style={{ fontSize: '9px' }}>file_id</code>. O <code style={{ fontSize: '9px' }}>storage_path</code> antigo
-          mantém-se até validares manualmente.
-        </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '8px 10px', backgroundColor: '#0e0e0e', borderRadius: '4px', marginBottom: '8px',
-        }}>
-          <span style={{ fontSize: '11px', color: '#777575' }}>Por migrar:</span>
-          <span style={{
-            fontSize: '14px', color: legacyCount === 0 ? '#3fff8b' : '#fbbf24', fontWeight: 700,
-          }}>
-            {legacyCount === null ? '...' : legacyCount}
-          </span>
-        </div>
-        <button
-          onClick={() => void runMigration()}
-          disabled={running || legacyCount === 0 || legacyCount === null}
-          style={{
-            width: '100%', padding: '8px',
-            backgroundColor: running || !legacyCount ? 'rgba(251,191,36,0.15)' : '#fbbf24',
-            color: running || !legacyCount ? '#777575' : '#0e0e0e',
-            border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: 700,
-            cursor: running || !legacyCount ? 'not-allowed' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-          }}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
-            {running ? 'hourglass_top' : 'play_arrow'}
-          </span>
-          {running ? 'A migrar...' : legacyCount === 0 ? 'Nada para migrar' : 'Iniciar migração'}
-        </button>
-
-        {progress && progress.total > 0 && (
-          <div style={{ marginTop: '10px' }}>
-            <div style={{
-              height: '6px', backgroundColor: '#0e0e0e', borderRadius: '3px', overflow: 'hidden',
-            }}>
-              <div style={{
-                width: `${(progress.done / progress.total) * 100}%`,
-                height: '100%', backgroundColor: '#3fff8b', transition: 'width 0.3s',
-              }} />
-            </div>
-            <div style={{ fontSize: '9px', color: '#777575', marginTop: '4px', textAlign: 'center' }}>
-              {progress.done} / {progress.total} migradas
-              {progress.failed > 0 && <span style={{ color: '#ff716c' }}> · {progress.failed} falharam</span>}
-              {progress.current && <span> · {progress.current}</span>}
-            </div>
-          </div>
-        )}
-
-        {result && (
-          <div style={{
-            marginTop: '10px', padding: '8px',
-            backgroundColor: result.failed.length === 0 ? 'rgba(63,255,139,0.05)' : 'rgba(255,113,108,0.05)',
-            border: `1px solid ${result.failed.length === 0 ? 'rgba(63,255,139,0.2)' : 'rgba(255,113,108,0.2)'}`,
-            borderRadius: '4px', fontSize: '10px',
-          }}>
-            <div style={{
-              color: result.failed.length === 0 ? '#3fff8b' : '#ff716c',
-              fontWeight: 700, marginBottom: '4px',
-            }}>
-              {result.failed.length === 0 ? '✓' : '⚠'} Migração concluída
-            </div>
-            <div style={{ color: '#adaaaa' }}>
-              {result.migrated} / {result.total} migradas com sucesso
-              {result.failed.length > 0 && (
-                <div style={{ marginTop: '4px', color: '#ff716c' }}>
-                  {result.failed.length} falharam:
-                  <ul style={{ paddingLeft: '14px', margin: '2px 0 0' }}>
-                    {result.failed.slice(0, 5).map((f) => (
-                      <li key={f.id}><code style={{ fontSize: '9px' }}>{f.id.slice(0, 8)}</code>: {f.error}</li>
-                    ))}
-                    {result.failed.length > 5 && <li>... e mais {result.failed.length - 5}</li>}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Cron health */}
+      <CronHealthViewer />
 
       {/* Rate limit viewer */}
       <RateLimitViewer />
+    </div>
+  );
+}
+
+// ─── Cron health viewer ────────────────────────────────────
+//
+// Summary of pg_cron worker status. Reads kromi_cron_job_status() RPC
+// which returns one row per scheduled job with last run + 24h stats.
+// The RPC is SECURITY DEFINER + gated on is_super_admin_jwt().
+
+interface CronJobStatus {
+  job_name: string;
+  last_run_at: string | null;
+  last_status: 'ok' | 'error' | 'running' | null;
+  last_result: number | null;
+  last_error: string | null;
+  last_duration_ms: number | null;
+  runs_24h: number;
+  errors_24h: number;
+}
+
+function CronHealthViewer() {
+  const [rows, setRows] = useState<CronJobStatus[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await supaRpc<CronJobStatus[]>('kromi_cron_job_status', {});
+      setRows(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'load failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  return (
+    <div style={{
+      backgroundColor: '#131313', padding: '14px', borderRadius: '6px',
+      border: '1px solid rgba(73,72,71,0.2)', marginBottom: '10px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#6e9bff' }}>schedule</span>
+          <span style={{ fontSize: '12px', color: '#6e9bff', fontWeight: 700 }}>Cron jobs (pg_cron)</span>
+        </div>
+        <button
+          onClick={() => void load()}
+          disabled={loading}
+          style={{
+            padding: '4px 8px', fontSize: '9px', fontWeight: 700,
+            backgroundColor: 'rgba(110,155,255,0.1)',
+            border: '1px solid rgba(110,155,255,0.2)',
+            borderRadius: '3px', color: '#6e9bff', cursor: 'pointer',
+          }}
+        >
+          {loading ? '…' : 'Recarregar'}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ fontSize: '10px', color: '#ff716c' }}>{error}</div>
+      )}
+
+      {rows && rows.length === 0 && !error && (
+        <div style={{ fontSize: '10px', color: '#777575' }}>
+          Ainda sem execuções registadas — os jobs vão correr na próxima janela.
+        </div>
+      )}
+
+      {rows && rows.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {rows.map((r) => {
+            const statusColor =
+              r.last_status === 'ok' ? '#3fff8b' :
+              r.last_status === 'error' ? '#ff716c' :
+              r.last_status === 'running' ? '#fbbf24' : '#777575';
+            const staleMs = r.last_run_at ? Date.now() - new Date(r.last_run_at).getTime() : Infinity;
+            const hoursAgo = Math.floor(staleMs / 3600000);
+            return (
+              <div key={r.job_name} style={{
+                padding: '8px 10px', backgroundColor: '#0e0e0e', borderRadius: '4px',
+                borderLeft: `3px solid ${statusColor}`,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '11px', color: '#adaaaa', fontWeight: 700 }}>{r.job_name}</span>
+                  <span style={{ fontSize: '9px', color: statusColor, textTransform: 'uppercase', fontWeight: 700 }}>
+                    {r.last_status ?? 'never run'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '9px', color: '#777575' }}>
+                  {r.last_run_at
+                    ? `Último run: ${hoursAgo < 1 ? '< 1h' : hoursAgo + 'h'} · ${r.last_duration_ms ?? '—'}ms · resultado: ${r.last_result ?? '—'}`
+                    : 'Nunca correu'}
+                </div>
+                <div style={{ fontSize: '9px', color: '#777575' }}>
+                  24h: {r.runs_24h} runs
+                  {r.errors_24h > 0 && (
+                    <span style={{ color: '#ff716c', fontWeight: 700 }}> · {r.errors_24h} erros</span>
+                  )}
+                </div>
+                {r.last_error && (
+                  <div style={{
+                    fontSize: '9px', color: '#ff716c', marginTop: '4px',
+                    padding: '4px', backgroundColor: 'rgba(255,113,108,0.08)',
+                    borderRadius: '2px', fontFamily: 'monospace',
+                  }}>
+                    {r.last_error.slice(0, 200)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
