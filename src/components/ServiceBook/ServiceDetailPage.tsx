@@ -90,14 +90,24 @@ export function ServiceDetailPage({ serviceId, onBack }: { serviceId: string; on
     onBack();
   };
 
-  // Status actions based on current state
+  // Status actions based on current state + viewer role.
+  // The DB trigger trg_service_status_guard enforces the same rules
+  // server-side; this block is the cosmetic mirror so customers
+  // don't see buttons that would 403. See migration
+  // s20_service_status_transition_guard.
   const statusActions: { label: string; status: ServiceStatus; color: string }[] = [];
-  if (service.status === 'draft') statusActions.push({ label: 'Enviar pedido', status: 'requested', color: '#6e9bff' });
-  if (service.status === 'requested') statusActions.push({ label: 'Aceitar', status: 'accepted', color: '#3fff8b' }, { label: 'Rejeitar', status: 'rejected', color: '#ff716c' });
-  if (service.status === 'accepted') statusActions.push({ label: 'Iniciar trabalho', status: 'in_progress', color: '#fbbf24' });
-  if (service.status === 'in_progress') statusActions.push({ label: 'Concluir', status: 'completed', color: '#3fff8b' }, { label: 'Pedir aprovação', status: 'pending_approval', color: '#e966ff' });
-  if (service.status === 'pending_approval') statusActions.push({ label: 'Retomar trabalho', status: 'in_progress', color: '#fbbf24' });
-  if (service.status === 'completed') statusActions.push({ label: 'Fechar', status: 'closed', color: '#adaaaa' });
+  if (isRider) {
+    // Customer (bike owner): only draft → requested and requested → cancelled.
+    if (service.status === 'draft') statusActions.push({ label: 'Enviar pedido', status: 'requested', color: '#6e9bff' });
+    if (service.status === 'requested') statusActions.push({ label: 'Cancelar pedido', status: 'cancelled', color: '#ff716c' });
+  } else {
+    // Mechanic / shop owner: the full workflow after submission.
+    if (service.status === 'requested') statusActions.push({ label: 'Aceitar', status: 'accepted', color: '#3fff8b' }, { label: 'Rejeitar', status: 'rejected', color: '#ff716c' });
+    if (service.status === 'accepted') statusActions.push({ label: 'Iniciar trabalho', status: 'in_progress', color: '#fbbf24' });
+    if (service.status === 'in_progress') statusActions.push({ label: 'Concluir', status: 'completed', color: '#3fff8b' }, { label: 'Pedir aprovação', status: 'pending_approval', color: '#e966ff' });
+    if (service.status === 'pending_approval') statusActions.push({ label: 'Retomar trabalho', status: 'in_progress', color: '#fbbf24' });
+    if (service.status === 'completed') statusActions.push({ label: 'Fechar', status: 'closed', color: '#adaaaa' });
+  }
 
   return (
     <div className="space-y-3">
