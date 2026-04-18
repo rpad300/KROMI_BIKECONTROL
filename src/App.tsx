@@ -9,6 +9,7 @@ import { LoginPage } from './components/Auth/LoginPage';
 import { ConnectionStatus } from './components/shared/ConnectionStatus';
 import { BridgeSetup } from './components/shared/BridgeSetup';
 import { useGeolocation } from './hooks/useGeolocation';
+import { useElevationData } from './hooks/useElevationData';
 import { useMotorControl } from './hooks/useMotorControl';
 import { useRouteNavigation } from './hooks/useRouteNavigation';
 import { NavigationBar } from './components/Dashboard/NavigationBar';
@@ -119,6 +120,7 @@ function MobileApp() {
   const [screen, setScreen] = useState<MobileScreen>('dashboard');
 
   useGeolocation();
+  useElevationData();  // Always-on: gradient, climb profile, elevation chart (independent of auto-assist)
   useMotorControl();
   useRouteNavigation();
 
