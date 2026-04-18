@@ -51,13 +51,19 @@ export function DashboardSwipeContainer({ children }: { children: ReactNode }) {
       if (dir === 1) {
         target = 'map'; // data → map
       } else {
-        target = autoContext; // data → back to context (whatever auto-context is)
+        target = autoContext; // data → back to context
       }
     } else if (active === 'map') {
       if (dir === 1) {
-        target = autoContext; // map → wrap to context (circular)
+        target = 'nav'; // map → nav
       } else {
         target = 'data'; // map → data
+      }
+    } else if (active === 'nav') {
+      if (dir === 1) {
+        target = autoContext; // nav → wrap to context (circular)
+      } else {
+        target = 'map'; // nav → map
       }
     } else {
       return;

@@ -12,6 +12,7 @@ import { ClimbDashboard } from './ClimbDashboard';
 import { DescentDashboard } from './DescentDashboard';
 import { DataDashboard } from './DataDashboard';
 import { MapDashboard } from './MapDashboard';
+import { NavDashboard } from './NavDashboard';
 
 /**
  * DashboardController — orchestrates 5 context-aware dashboards.
@@ -57,6 +58,7 @@ export function DashboardController() {
             {active === 'descent' && <DescentDashboard />}
             {active === 'data' && <DataDashboard />}
             {active === 'map' && <MapDashboard />}
+            {active === 'nav' && <NavDashboard />}
           </>
         )}
       </DashboardSwipeContainer>

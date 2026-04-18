@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type DashboardId = 'cruise' | 'climb' | 'descent' | 'data' | 'map';
+export type DashboardId = 'cruise' | 'climb' | 'descent' | 'data' | 'map' | 'nav';
 export type AutoContext = 'cruise' | 'climb' | 'descent';
 
 interface DashboardState {

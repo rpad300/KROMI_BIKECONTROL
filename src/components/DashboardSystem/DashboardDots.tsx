@@ -7,6 +7,7 @@ const SLOTS: { id: DashboardId; label: string }[] = [
   { id: 'descent', label: 'DESC' },
   { id: 'data', label: 'DATA' },
   { id: 'map', label: 'MAP' },
+  { id: 'nav', label: 'NAV' },
 ];
 
 /** Navigation dots — visual indicator only, swipe to navigate */
