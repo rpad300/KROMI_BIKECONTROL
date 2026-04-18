@@ -100,6 +100,13 @@ export interface KromiTickOutput {
   autoTerrain: string;
   /** Gap #11: Active Crr being used (after terrain adjustment) */
   activeCrr: number;
+  /** Real-time elevation tracking */
+  elevation: {
+    totalAscent_m: number;
+    totalDescent_m: number;
+    currentClimbGain_m: number;
+    isInClimb: boolean;
+  };
   alerts: string[];
 }
 
@@ -153,9 +160,9 @@ class KromiEngine {
   private prevSupport = 200;
   private prevTorque = 40;
 
-  // Gap #9: Gradient EMA smoothing
+  // Gap #9: Gradient EMA smoothing (adaptive alpha based on speed + barometer)
   private smoothedGradient = 0;
-  private readonly GRADIENT_ALPHA = 0.3;
+  private lastSpeed: number | null = null;
 
   // Gap #20: Power variance-based adaptive EMA alpha
   private recentPowerValues: number[] = [];
@@ -219,6 +226,21 @@ class KromiEngine {
 
   // Gap #3: Last GPS timestamp for dead-reckoning detection
   private lastGpsTs = 0;
+
+  // ── Barometric altitude fusion for real-time gradient ──
+  private prevCorrectedAlt: number | null = null;
+
+  // ── Real-time ascent/descent tracking ──
+  private rideElevation = {
+    totalAscent_m: 0,
+    totalDescent_m: 0,
+    lastSmoothedAlt: 0,
+    altInitialized: false,
+    // Running climb detector
+    currentClimbGain_m: 0,
+    currentClimbStart_m: 0,
+    isInClimb: false,
+  };
 
   // Sustained effort tracker for CP calibration
   private sustainedEffortStart = 0;
@@ -297,10 +319,75 @@ class KromiEngine {
     return this.motorConnected;
   }
 
-  // ── Gap #9: Gradient EMA smoothing ──────────────────────
+  // ── Gap #9: Adaptive Gradient EMA (speed + barometer aware) ──
   private smoothGradient(rawGradient: number): number {
-    this.smoothedGradient = this.GRADIENT_ALPHA * rawGradient + (1 - this.GRADIENT_ALPHA) * this.smoothedGradient;
+    const speed = this.lastSpeed ?? 0;
+    const hasBaro = useBikeStore.getState().barometric_altitude_m > 0;
+
+    let alpha: number;
+    if (speed < 5) {
+      alpha = 0.08;  // stopped/very slow — GPS very noisy, heavy smooth
+    } else if (speed < 10) {
+      alpha = 0.12;  // slow climbing — noisy
+    } else if (speed < 20) {
+      alpha = hasBaro ? 0.30 : 0.20; // medium speed — moderate smooth
+    } else {
+      alpha = hasBaro ? 0.40 : 0.30; // fast — more responsive
+    }
+
+    // Additional damping for extreme gradient spikes (likely sensor error)
+    const delta = Math.abs(rawGradient - this.smoothedGradient);
+    if (delta > 8) {
+      alpha *= 0.5; // halve responsiveness for big jumps
+    }
+
+    this.smoothedGradient = alpha * rawGradient + (1 - alpha) * this.smoothedGradient;
     return this.smoothedGradient;
+  }
+
+  // ── Real-time elevation stats (ascent/descent/climb detection) ──
+  private updateElevationStats(smoothedGradient: number, speedKmh: number): void {
+    const distM = speedKmh / 3.6; // distance per tick (1s)
+    if (distM < 0.5) return; // too slow for meaningful tracking
+
+    const elevChange = distM * (smoothedGradient / 100);
+
+    // Minimum threshold to avoid noise accumulation
+    // (iGPSPORT/Garmin use ~2m/km minimum for counting)
+    if (smoothedGradient > 0.5) {
+      this.rideElevation.totalAscent_m += elevChange;
+
+      // Climb tracking
+      if (!this.rideElevation.isInClimb && smoothedGradient > 3) {
+        this.rideElevation.isInClimb = true;
+        this.rideElevation.currentClimbGain_m = 0;
+        this.rideElevation.currentClimbStart_m = this.rideElevation.totalAscent_m;
+      }
+      if (this.rideElevation.isInClimb) {
+        this.rideElevation.currentClimbGain_m += elevChange;
+      }
+    } else if (smoothedGradient < -0.5) {
+      this.rideElevation.totalDescent_m += Math.abs(elevChange);
+
+      // End climb if descending
+      if (this.rideElevation.isInClimb && smoothedGradient < -1) {
+        this.rideElevation.isInClimb = false;
+      }
+    } else {
+      // Flat section — end climb if sustained
+      if (this.rideElevation.isInClimb && smoothedGradient < 1) {
+        this.rideElevation.isInClimb = false;
+      }
+    }
+  }
+
+  getRideElevation() {
+    return {
+      totalAscent_m: Math.round(this.rideElevation.totalAscent_m),
+      totalDescent_m: Math.round(this.rideElevation.totalDescent_m),
+      currentClimbGain_m: Math.round(this.rideElevation.currentClimbGain_m),
+      isInClimb: this.rideElevation.isInClimb,
+    };
   }
 
   // ── Gap #12: Adaptive ramp duration ────────────────────
@@ -639,6 +726,7 @@ class KromiEngine {
         gearSuggestion: null, gearSuggestionDetail: null,
         physiology: null, nutrition: this.cachedNutrition,
         autoTerrain: this.lastAutoTerrain, activeCrr: this.cachedCrr,
+        elevation: this.getRideElevation(),
         alerts: ['Motor desligado — a aguardar reconexao'],
       };
     }
@@ -738,8 +826,38 @@ class KromiEngine {
       ? [...bike.cassette_sprockets].sort((a, b) => b - a)
       : [51, 45, 39, 34, 30, 26, 23, 20, 17, 15, 13, 10];
 
-    // Gap #9: smooth gradient before feeding to physics
-    const smoothedGrad = this.smoothGradient(input.gradient_pct);
+    // Track speed for adaptive gradient EMA
+    this.lastSpeed = input.speed_kmh;
+
+    // ── Barometric altitude fusion for real-time gradient ──
+    let rawGradient = input.gradient_pct;
+    const baroAltTick = bikeState.barometric_altitude_m;
+    const gpsAltTick = input.altitude;
+
+    if (baroAltTick > 0 && this.prevCorrectedAlt != null) {
+      // Blend barometer (70%) + GPS (30%) for corrected altitude
+      const correctedAlt = baroAltTick * 0.7 + ((gpsAltTick ?? baroAltTick) * 0.3);
+
+      // Calculate gradient from corrected altitude change
+      const altDelta = correctedAlt - this.prevCorrectedAlt;
+      const distDelta = (input.speed_kmh / 3.6) * 1.0; // 1 second of travel
+      if (distDelta > 1) { // at least 1m traveled
+        const baroGradient = (altDelta / distDelta) * 100;
+        // Use baro-derived gradient with higher weight than GPS
+        rawGradient = baroGradient * 0.6 + (input.gradient_pct ?? 0) * 0.4;
+      }
+      this.prevCorrectedAlt = correctedAlt;
+    } else if (baroAltTick > 0) {
+      this.prevCorrectedAlt = baroAltTick * 0.7 + ((gpsAltTick ?? baroAltTick) * 0.3);
+    } else if (gpsAltTick != null) {
+      this.prevCorrectedAlt = gpsAltTick;
+    }
+
+    // Gap #9: smooth gradient before feeding to physics (now using baro-fused raw)
+    const smoothedGrad = this.smoothGradient(rawGradient);
+
+    // ── Real-time ascent/descent tracking ──
+    this.updateElevationStats(smoothedGrad, input.speed_kmh);
 
     // Gap #8: Feed terrain pattern learner every tick (after smoothedGrad is computed)
     terrainPatternLearner.feed(smoothedGrad, input.distanceKm);
@@ -1165,6 +1283,7 @@ class KromiEngine {
       nutrition: this.cachedNutrition,
       autoTerrain: this.lastAutoTerrain,
       activeCrr: adjustedCrr,
+      elevation: this.getRideElevation(),
       alerts: alerts.slice(0, 4), // max 4 alerts (motor + nutrition)
     };
 
@@ -1267,6 +1386,13 @@ class KromiEngine {
     this.sustainedEffortSamples = 0;
     this.cachedNutrition = null;
     this.smoothedGradient = 0;
+    this.lastSpeed = null;
+    this.prevCorrectedAlt = null;
+    this.rideElevation = {
+      totalAscent_m: 0, totalDescent_m: 0,
+      lastSmoothedAlt: 0, altInitialized: false,
+      currentClimbGain_m: 0, currentClimbStart_m: 0, isInClimb: false,
+    };
     this.recentPowerValues = [];
     this.lastGradientForRamp = 0;
     this.rideStartTs = 0;

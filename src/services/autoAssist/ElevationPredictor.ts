@@ -79,6 +79,28 @@ export class LookaheadController {
   private coldStartGradient = 0;
   private coldStartConfidence = 0;
 
+  // ── Median altitude pre-filtering ──────────────────────
+  private altitudeBuffer: number[] = [];
+  private readonly ALTITUDE_SMOOTH_WINDOW = 5;
+
+  /**
+   * Median-filter raw altitude before gradient calculation.
+   * Robust to GPS spikes (unlike simple averaging).
+   * Apply BEFORE computing gradient, not after.
+   */
+  smoothAltitude(rawAltitude: number): number {
+    this.altitudeBuffer.push(rawAltitude);
+    if (this.altitudeBuffer.length > this.ALTITUDE_SMOOTH_WINDOW) {
+      this.altitudeBuffer.shift();
+    }
+    // Median filter (robust to GPS spikes)
+    const sorted = [...this.altitudeBuffer].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0
+      ? (sorted[mid - 1]! + sorted[mid]!) / 2
+      : sorted[mid]!;
+  }
+
   // ── Gap #1: Barometer altitude correction ──────────────
   private lastBaroAlt: number | null = null;
   private lastGpsAlt: number | null = null;
@@ -482,6 +504,8 @@ export class LookaheadController {
     this.deviationStartTs = 0;
     if (this.gpxRoute) this.mode = 'gpx';
     else this.mode = 'discovery';
+    // Altitude pre-filtering
+    this.altitudeBuffer = [];
     // Gap #1
     this.lastBaroAlt = null;
     this.lastGpsAlt = null;
@@ -609,8 +633,28 @@ function classifyGrade(gradient: number): SegmentGrade {
 }
 
 /**
+ * Median-smooth an array of elevations (window=5) for segment gradient calculation.
+ * Applied to the entire profile before gradient computation to remove GPS spikes.
+ */
+function medianSmoothElevations(elevations: number[], windowSize = 5): number[] {
+  return elevations.map((_, i, arr) => {
+    const half = Math.floor(windowSize / 2);
+    const start = Math.max(0, i - half);
+    const end = Math.min(arr.length, i + half + 1);
+    const window = arr.slice(start, end);
+    const sorted = [...window].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0
+      ? (sorted[mid - 1]! + sorted[mid]!) / 2
+      : sorted[mid]!;
+  });
+}
+
+/**
  * Build segment lookahead from elevation profile.
  * Used by Mode A (GPX points), Mode B (discovery), and Mode C (hybrid).
+ * Applies median smoothing to altitudes BEFORE gradient calculation
+ * to eliminate GPS spikes (segment-based, not point-to-point).
  */
 export function buildSegmentLookahead(
   profile: ElevationPoint[],
@@ -620,6 +664,10 @@ export function buildSegmentLookahead(
   currentGear: number,
 ): Omit<LookaheadResult, 'mode' | 'route_remaining_km'> {
   if (!profile || profile.length < 2) return emptyResult();
+
+  // Pre-smooth all elevations with median filter before gradient calculation
+  const rawElevations = profile.map(p => p.elevation);
+  const smoothedElevations = medianSmoothElevations(rawElevations);
 
   const segments: LookaheadSegment[] = [];
   let totalWhMotor = 0;
@@ -640,7 +688,8 @@ export function buildSegmentLookahead(
     const distM = endPt.distance_from_current - startPt.distance_from_current;
     if (distM < 10) { segStart = segEnd; continue; }
 
-    const gradient = ((endPt.elevation - startPt.elevation) / distM) * 100;
+    // Use median-smoothed elevations for gradient (not raw point-to-point)
+    const gradient = ((smoothedElevations[segEnd]! - smoothedElevations[segStart]!) / distM) * 100;
     const grade = classifyGrade(gradient);
     const estSpeed = estimateSegmentSpeed(currentSpeed, gradient);
     const speedMs = estSpeed / 3.6;
@@ -660,7 +709,7 @@ export function buildSegmentLookahead(
       distance_start_m: startPt.distance_from_current,
       distance_end_m: endPt.distance_from_current,
       gradient_pct: Math.round(gradient * 10) / 10,
-      grade, elevation_start: startPt.elevation, elevation_end: endPt.elevation,
+      grade, elevation_start: smoothedElevations[segStart]!, elevation_end: smoothedElevations[segEnd]!,
       P_total_est: Math.round(P_total_est),
       wh_motor_est: Math.round(wh_motor_est * 10) / 10,
       time_est_s: Math.round(time_est_s), motor_active,
