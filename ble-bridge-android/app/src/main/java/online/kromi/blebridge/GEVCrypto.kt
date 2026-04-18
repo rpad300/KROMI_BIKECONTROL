@@ -40,6 +40,10 @@ object GEVCrypto {
     )
 
     fun encrypt(data: ByteArray, keyIndex: Int): ByteArray {
+        if (keyIndex !in AES_KEYS.indices) {
+            Log.e(TAG, "Invalid key index: $keyIndex, valid range: 0..${AES_KEYS.size - 1}")
+            return data
+        }
         return try {
             val padded = pad16(data)
             val key = SecretKeySpec(AES_KEYS[keyIndex], "AES")
@@ -49,12 +53,16 @@ object GEVCrypto {
             Log.d(TAG, "Encrypt OK: cmd=%02X key=%d len=${data.size}→${result.size}".format(data[0].toInt() and 0xFF, keyIndex))
             result
         } catch (e: Exception) {
-            Log.e(TAG, "Encrypt FAILED (key=$keyIndex cmd=%02X): ${e.message}".format(data[0].toInt() and 0xFF))
+            Log.w(TAG, "AES encrypt failed for keyIndex=$keyIndex, returning original data", e)
             data
         }
     }
 
     fun decrypt(data: ByteArray, keyIndex: Int): ByteArray {
+        if (keyIndex !in AES_KEYS.indices) {
+            Log.e(TAG, "Invalid key index: $keyIndex, valid range: 0..${AES_KEYS.size - 1}")
+            return data
+        }
         return try {
             val key = SecretKeySpec(AES_KEYS[keyIndex], "AES")
             val cipher = Cipher.getInstance("AES/ECB/NoPadding")
@@ -63,7 +71,7 @@ object GEVCrypto {
             Log.d(TAG, "Decrypt OK: resp=%02X key=%d len=${data.size}".format(result[0].toInt() and 0xFF, keyIndex))
             result
         } catch (e: Exception) {
-            Log.e(TAG, "Decrypt FAILED (key=$keyIndex): ${e.message}")
+            Log.w(TAG, "AES decrypt failed for keyIndex=$keyIndex, returning original data", e)
             data
         }
     }

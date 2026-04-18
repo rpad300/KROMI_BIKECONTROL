@@ -13,6 +13,7 @@ import android.os.ParcelUuid
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.util.UUID
 
 /**
@@ -93,7 +94,11 @@ class AccessoryService(private val context: Context) {
     // Light state
     private var lightMode = 0
     private var lightBattery = 0
-    private var responseBuffer = ByteArray(0)
+    private val responseBuffers = mutableMapOf<String, ByteArrayOutputStream>()
+
+    private fun getBuffer(key: String): ByteArrayOutputStream {
+        return responseBuffers.getOrPut(key) { ByteArrayOutputStream() }
+    }
 
     fun isConnected(key: String): Boolean = connections.containsKey(key)
 
@@ -234,6 +239,10 @@ class AccessoryService(private val context: Context) {
     }
 
     fun disconnectAccessory(key: String) {
+        // Cancel battery polling
+        batteryRunnables.remove(key)?.let { handler.removeCallbacks(it) }
+        // Clean up per-device response buffer
+        responseBuffers.remove(key)
         autoReconnect[key] = false
         connections[key]?.close()
         connections.remove(key)
@@ -434,25 +443,45 @@ class AccessoryService(private val context: Context) {
                 })
             }
         }
+
+        @Suppress("DEPRECATION")
+        override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            writePending = false
+            processWriteQueue()
+        }
     }
 
     // ═══════════════════════════════════════
     // NUS write helper
     // ═══════════════════════════════════════
 
+    private val writeQueue = ArrayDeque<Pair<BluetoothGatt, ByteArray>>()
+    private var writePending = false
+    private var activeWriteChar: BluetoothGattCharacteristic? = null
+
     @Suppress("DEPRECATION")
     private fun writeNUS(gatt: BluetoothGatt, txChar: BluetoothGattCharacteristic, data: ByteArray) {
-        // Send in 20-byte MTU chunks
+        activeWriteChar = txChar
+        // Enqueue 20-byte MTU chunks
         val mtu = 20
         var offset = 0
         while (offset < data.size) {
             val chunk = data.copyOfRange(offset, minOf(offset + mtu, data.size))
-            txChar.value = chunk
-            txChar.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-            gatt.writeCharacteristic(txChar)
+            writeQueue.addLast(Pair(gatt, chunk))
             offset += mtu
-            if (offset < data.size) Thread.sleep(20) // Small delay between chunks
         }
+        processWriteQueue()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun processWriteQueue() {
+        if (writePending || writeQueue.isEmpty()) return
+        val char = activeWriteChar ?: return
+        writePending = true
+        val (gatt, chunk) = writeQueue.removeFirst()
+        char.value = chunk
+        char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        gatt.writeCharacteristic(char)
     }
 
     // ═══════════════════════════════════════
@@ -465,15 +494,22 @@ class AccessoryService(private val context: Context) {
             ?.let { gatt.readCharacteristic(it) }
     }
 
+    private val batteryRunnables = mutableMapOf<String, Runnable>()
+
     private fun startBatteryPolling(key: String) {
-        handler.postDelayed(object : Runnable {
+        // Cancel existing polling for this key
+        batteryRunnables.remove(key)?.let { handler.removeCallbacks(it) }
+
+        val runnable = object : Runnable {
             override fun run() {
                 val gatt = connections[key] ?: return
                 readStandardBattery(gatt, key)
                 if (key == "light") readLightBattery()
                 handler.postDelayed(this, BATTERY_POLL_MS)
             }
-        }, BATTERY_POLL_MS)
+        }
+        batteryRunnables[key] = runnable
+        handler.postDelayed(runnable, BATTERY_POLL_MS)
     }
 
     // ═══════════════════════════════════════
@@ -522,24 +558,8 @@ class AccessoryService(private val context: Context) {
         return header + protoData
     }
 
-    /**
-     * Encode protobuf varint field.
-     */
-    private fun encodeVarint(value: Int): ByteArray {
-        val bytes = mutableListOf<Byte>()
-        var v = value and 0x7FFFFFFF
-        while (v > 0x7F) {
-            bytes.add(((v and 0x7F) or 0x80).toByte())
-            v = v ushr 7
-        }
-        bytes.add((v and 0x7F).toByte())
-        return bytes.toByteArray()
-    }
-
-    private fun encodeField(fieldNumber: Int, value: Int): ByteArray {
-        val tag = (fieldNumber shl 3) or 0 // wire type 0 = varint
-        return encodeVarint(tag) + encodeVarint(value)
-    }
+    // Protobuf helpers — delegated to shared ProtoUtils
+    private fun encodeField(fieldNumber: Int, value: Int) = ProtoUtils.encodeField(fieldNumber, value)
 
     private fun buildProto(fields: List<Pair<Int, Int>>): ByteArray {
         var result = ByteArray(0)
@@ -579,14 +599,7 @@ class AccessoryService(private val context: Context) {
         return buildCommand(PST_BLE_LIGHT, BLS_BAT_PCT, POT_GET, proto)
     }
 
-    private fun buildReadSupportedModesCommand(): ByteArray {
-        val proto = buildProto(listOf(
-            1 to PST_BLE_LIGHT.toInt(),
-            2 to POT_GET.toInt(),
-            3 to BLS_MODE_SUP.toInt()
-        ))
-        return buildCommand(PST_BLE_LIGHT, BLS_MODE_SUP, POT_GET, proto)
-    }
+    // buildReadSupportedModesCommand removed — unused
 
     // ═══════════════════════════════════════
     // Response parsers
@@ -594,7 +607,9 @@ class AccessoryService(private val context: Context) {
 
     private fun handleLightResponse(data: ByteArray) {
         // Accumulate response data (may span multiple notifications)
-        responseBuffer += data
+        val buf = getBuffer("light")
+        buf.write(data)
+        val responseBuffer = buf.toByteArray()
         if (responseBuffer.size < 20) return
 
         // Parse 20-byte header
@@ -604,12 +619,13 @@ class AccessoryService(private val context: Context) {
 
         val subService = responseBuffer[2].toInt() and 0xFF
         val protoData = responseBuffer.copyOfRange(20, totalExpected)
-        responseBuffer = if (responseBuffer.size > totalExpected) {
-            responseBuffer.copyOfRange(totalExpected, responseBuffer.size)
-        } else ByteArray(0)
+        buf.reset()
+        if (responseBuffer.size > totalExpected) {
+            buf.write(responseBuffer, totalExpected, responseBuffer.size - totalExpected)
+        }
 
         // Parse protobuf fields
-        val fields = parseProtoFields(protoData)
+        val fields = ProtoUtils.parseProtoFields(protoData)
         val hex = protoData.joinToString(" ") { "%02x".format(it) }
         Log.d(TAG, "Light response sub=$subService fields=$fields raw=$hex")
 
@@ -648,7 +664,9 @@ class AccessoryService(private val context: Context) {
 
     private fun handleRadarResponse(data: ByteArray) {
         // Accumulate + parse header
-        responseBuffer += data
+        val buf = getBuffer("radar")
+        buf.write(data)
+        val responseBuffer = buf.toByteArray()
         if (responseBuffer.size < 20) return
 
         val dataSize = ((responseBuffer[7].toInt() and 0xFF) shl 8) or (responseBuffer[8].toInt() and 0xFF)
@@ -656,11 +674,12 @@ class AccessoryService(private val context: Context) {
         if (responseBuffer.size < totalExpected) return
 
         val protoData = responseBuffer.copyOfRange(20, totalExpected)
-        responseBuffer = if (responseBuffer.size > totalExpected) {
-            responseBuffer.copyOfRange(totalExpected, responseBuffer.size)
-        } else ByteArray(0)
+        buf.reset()
+        if (responseBuffer.size > totalExpected) {
+            buf.write(responseBuffer, totalExpected, responseBuffer.size - totalExpected)
+        }
 
-        val fields = parseProtoFields(protoData)
+        val fields = ProtoUtils.parseProtoFields(protoData)
         Log.d(TAG, "Radar response fields=$fields")
 
         // Radar target: field 6=level, 7=range(cm), 8=speed(km/h)
@@ -682,53 +701,7 @@ class AccessoryService(private val context: Context) {
         }
     }
 
-    /**
-     * Parse protobuf varint fields from binary data.
-     * Returns map of field_number → value.
-     */
-    private fun parseProtoFields(data: ByteArray): Map<Int, Int> {
-        val fields = mutableMapOf<Int, Int>()
-        var offset = 0
-
-        while (offset < data.size) {
-            // Decode tag
-            var tag = 0; var shift = 0; var b: Int
-            do {
-                if (offset >= data.size) return fields
-                b = data[offset++].toInt() and 0xFF
-                tag = tag or ((b and 0x7F) shl shift)
-                shift += 7
-            } while (b and 0x80 != 0 && shift < 35)
-
-            val fieldNumber = tag ushr 3
-            val wireType = tag and 0x07
-
-            when (wireType) {
-                0 -> { // Varint
-                    var value = 0; shift = 0
-                    do {
-                        if (offset >= data.size) return fields
-                        b = data[offset++].toInt() and 0xFF
-                        value = value or ((b and 0x7F) shl shift)
-                        shift += 7
-                    } while (b and 0x80 != 0 && shift < 35)
-                    fields[fieldNumber] = value
-                }
-                2 -> { // Length-delimited
-                    var length = 0; shift = 0
-                    do {
-                        if (offset >= data.size) return fields
-                        b = data[offset++].toInt() and 0xFF
-                        length = length or ((b and 0x7F) shl shift)
-                        shift += 7
-                    } while (b and 0x80 != 0)
-                    offset += length // Skip embedded data
-                }
-                else -> return fields // Unknown wire type
-            }
-        }
-        return fields
-    }
+    // parseProtoFields — delegated to ProtoUtils.parseProtoFields()
 
     // ═══════════════════════════════════════
     // Garmin GFDI Protocol
@@ -750,7 +723,8 @@ class AccessoryService(private val context: Context) {
         Log.d(TAG, "Garmin light response: $hex (${data.size}B)")
 
         // Look for light mode values (100-106) in the GFDI response
-        val fields = parseProtoFields(data)
+        // TODO: Implement proper GFDI framing (header + CRC16 + message type) for Garmin Varia commands
+        val fields = ProtoUtils.parseProtoFields(data)
         for ((_, value) in fields) {
             if (value in 100..106) {
                 lightMode = value
@@ -775,7 +749,7 @@ class AccessoryService(private val context: Context) {
         val hex = data.joinToString(" ") { "%02x".format(it) }
         Log.d(TAG, "Garmin radar response: $hex (${data.size}B)")
 
-        val fields = parseProtoFields(data)
+        val fields = ProtoUtils.parseProtoFields(data)
 
         // Garmin radar sends incident_detected (bool) and status fields
         // Map to our threat level system: incident = threat level 2, no incident = 0

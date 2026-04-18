@@ -1,6 +1,7 @@
 package online.kromi.blebridge
 
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
 import org.json.JSONObject
@@ -44,16 +45,16 @@ class KromiCore(private val bleManager: BLEManager) {
         const val CDA_MTB = 0.6
     }
 
-    // ── Sensor state (updated by BLE callbacks) ──────────────
+    // ── Sensor state (updated by BLE callbacks, read from tick thread) ──
 
-    private var speed = 0.0        // km/h
-    private var cadence = 0        // rpm
-    private var power = 0          // watts
-    private var hr = 0             // bpm
-    private var gear = 0           // 1-12, 0=unknown
-    private var gradient = 0.0     // % from GPS
-    private var batterySoc = 0     // %
-    private var assistMode = 0     // 0-6, POWER=5
+    @Volatile private var speed = 0.0        // km/h
+    @Volatile private var cadence = 0        // rpm
+    @Volatile private var power = 0          // watts
+    @Volatile private var hr = 0             // bpm
+    @Volatile private var gear = 0           // 1-12, 0=unknown
+    @Volatile private var gradient = 0.0     // % from GPS
+    @Volatile private var batterySoc = 0     // %
+    @Volatile private var assistMode = 0     // 0-6, POWER=5
 
     // ── Cached params from PWA (Layers 3-7) ──────────────────
 
@@ -102,8 +103,9 @@ class KromiCore(private val bleManager: BLEManager) {
     private var lastWireS = -1; private var lastWireT = -1; private var lastWireL = -1
 
     // Active flag + logging
-    private var active = false
-    private val handler = Handler(Looper.getMainLooper())
+    @Volatile private var active = false
+    private val tickThread = HandlerThread("KromiCoreTick").also { it.start() }
+    private val handler = Handler(tickThread.looper)
     private var tickCount = 0L
     private var lastDetailedLog = 0L
 
@@ -147,13 +149,13 @@ class KromiCore(private val bleManager: BLEManager) {
     // SENSOR UPDATES (called from BLEManager callbacks)
     // ═════════════════════════════════════════════════════════
 
-    fun onSpeed(v: Double) { speed = v }
-    fun onCadence(c: Int) { cadence = c }
-    fun onPower(w: Int) { power = w }
-    fun onHR(bpm: Int) { hr = bpm }
-    fun onGear(g: Int) { gear = g }
-    fun onGradient(g: Double) { gradient = g }
-    fun onBattery(soc: Int) { batterySoc = soc }
+    fun onSpeed(v: Double) { if (v.isFinite() && v in 0.0..120.0) speed = v }
+    fun onCadence(c: Int) { if (c in 0..200) cadence = c }
+    fun onPower(w: Int) { if (w in 0..3000) power = w }
+    fun onHR(bpm: Int) { if (bpm in 20..250) hr = bpm }
+    fun onGear(g: Int) { if (g in 0..24) gear = g }
+    fun onGradient(g: Double) { if (g.isFinite() && g in -50.0..50.0) gradient = g }
+    fun onBattery(soc: Int) { if (soc in 0..100) batterySoc = soc }
     fun onAssistMode(m: Int) {
         val wasActive = assistMode == 5
         assistMode = m
@@ -486,9 +488,9 @@ class KromiCore(private val bleManager: BLEManager) {
     private fun currentHRZone(): Int {
         if (hr <= 0) return 0
         for (i in hrZoneBounds.indices.reversed()) {
-            if (hr >= hrZoneBounds[i]) return i + 1 + 1 // zone is ceiling-based
+            if (hr >= hrZoneBounds[i]) return (i + 2).coerceAtMost(5) // Zone 2-5 (above bound i → zone i+2, capped at 5)
         }
-        return 1
+        return 1 // Below zone 1 threshold
     }
 
     /** Cardiac drift: HR change per minute at roughly constant effort */

@@ -90,7 +90,12 @@ class SpecializedBikeManager(private val context: Context) {
     // ═══════════════════════════════════════
 
     fun connect(address: String) {
-        val device = adapter?.getRemoteDevice(address) ?: return
+        val device = try {
+            adapter?.getRemoteDevice(address) ?: return
+        } catch (e: IllegalArgumentException) {
+            Log.e(TAG, "Invalid BLE address: $address", e)
+            return
+        }
         Log.i(TAG, "Connecting to Specialized: ${device.name ?: address}")
         device.connectGatt(context, true, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
@@ -237,12 +242,17 @@ class SpecializedBikeManager(private val context: Context) {
             })
         })
 
-        for ((field, value) in fields) {
-            if (value in 0..100 && field <= 5) {
-                onData?.invoke(JSONObject().apply { put("type", "battery"); put("value", value) })
+        // Parse known fields by position (Specialized MCSP/BES3 protocol)
+        // Field 1 = assist mode (0=OFF, 1=ECO, 2=TRAIL, 3=TURBO, 4=MasterMind, 5=SMART)
+        fields[1]?.let { mode ->
+            if (mode in 0..5) {
+                onData?.invoke(JSONObject().apply { put("type", "assistMode"); put("value", mode) })
             }
-            if (value in 0..5 && field <= 3) {
-                onData?.invoke(JSONObject().apply { put("type", "assistMode"); put("value", value) })
+        }
+        // Field 2 = battery SOC (0-100)
+        fields[2]?.let { bat ->
+            if (bat in 0..100) {
+                onData?.invoke(JSONObject().apply { put("type", "battery"); put("value", bat) })
             }
         }
     }
@@ -257,7 +267,8 @@ class SpecializedBikeManager(private val context: Context) {
         val g = gatt ?: return
         sc.value = proto
         sc.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-        g.writeCharacteristic(sc)
+        val success = g.writeCharacteristic(sc)
+        if (!success) Log.w(TAG, "writeCharacteristic failed")
     }
 
     private fun readDeviceInfo(g: BluetoothGatt) {
@@ -271,52 +282,9 @@ class SpecializedBikeManager(private val context: Context) {
         g.getService(BATTERY_SERVICE)?.getCharacteristic(BATTERY_LEVEL)?.let { g.readCharacteristic(it) }
     }
 
-    private fun encodeVarint(value: Int): ByteArray {
-        val bytes = mutableListOf<Byte>()
-        var v = value and 0x7FFFFFFF
-        while (v > 0x7F) { bytes.add(((v and 0x7F) or 0x80).toByte()); v = v ushr 7 }
-        bytes.add((v and 0x7F).toByte())
-        return bytes.toByteArray()
-    }
-
-    private fun encodeField(fieldNumber: Int, value: Int): ByteArray {
-        return encodeVarint((fieldNumber shl 3) or 0) + encodeVarint(value)
-    }
-
-    private fun parseProtoFields(data: ByteArray): Map<Int, Int> {
-        val fields = mutableMapOf<Int, Int>()
-        var offset = 0
-        while (offset < data.size) {
-            var tag = 0; var shift = 0; var b: Int
-            do {
-                if (offset >= data.size) return fields
-                b = data[offset++].toInt() and 0xFF
-                tag = tag or ((b and 0x7F) shl shift); shift += 7
-            } while (b and 0x80 != 0 && shift < 35)
-            when (tag and 0x07) {
-                0 -> {
-                    var value = 0; shift = 0
-                    do {
-                        if (offset >= data.size) return fields
-                        b = data[offset++].toInt() and 0xFF
-                        value = value or ((b and 0x7F) shl shift); shift += 7
-                    } while (b and 0x80 != 0 && shift < 35)
-                    fields[tag ushr 3] = value
-                }
-                2 -> {
-                    var length = 0; shift = 0
-                    do {
-                        if (offset >= data.size) return fields
-                        b = data[offset++].toInt() and 0xFF
-                        length = length or ((b and 0x7F) shl shift); shift += 7
-                    } while (b and 0x80 != 0)
-                    offset += length
-                }
-                else -> return fields
-            }
-        }
-        return fields
-    }
+    // Protobuf helpers — delegated to shared ProtoUtils
+    private fun encodeField(fieldNumber: Int, value: Int) = ProtoUtils.encodeField(fieldNumber, value)
+    private fun parseProtoFields(data: ByteArray) = ProtoUtils.parseProtoFields(data)
 
     fun destroy() {
         gatt?.close()

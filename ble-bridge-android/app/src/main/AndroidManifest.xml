@@ -3,16 +3,12 @@
     <!-- Bluetooth -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
-    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>
     <!-- Location (GPS + BLE scan) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    <!-- Camera (QR scan, future) -->
-    <uses-permission android:name="android.permission.CAMERA"/>
     <!-- Sensors -->
-    <uses-permission android:name="android.permission.BODY_SENSORS"/>
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
     <!-- System -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
@@ -23,7 +19,6 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <!-- Hardware features (optional = app works without, but uses if available) -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true"/>
-    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.sensor.barometer" android:required="false"/>
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false"/>
 
@@ -32,7 +27,7 @@
         android:label="KROMI BikeControl"
         android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar"
         android:icon="@drawable/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:networkSecurityConfig="@xml/network_security_config">
 
         <!-- Main entry: WebView hosting the PWA -->
         <activity

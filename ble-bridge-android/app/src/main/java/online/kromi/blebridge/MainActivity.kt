@@ -109,15 +109,29 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.tuneMaxBtn).setOnClickListener {
             val ble = BLEBridgeService.instance?.bleManager
             if (ble == null || !ble.isConnected) { appendLog("ERR", "Not connected!"); return@setOnClickListener }
-            appendLog("CMD", ">>> TUNE MAX (all modes lv0 = max watts)")
-            ble.tuningMax()
+            AlertDialog.Builder(this)
+                .setTitle("Confirm Motor Tuning")
+                .setMessage("Set ALL modes to MAX watts (level 0)?")
+                .setPositiveButton("Confirm") { _, _ ->
+                    appendLog("CMD", ">>> TUNE MAX (all modes lv0 = max watts)")
+                    ble.tuningMax()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
 
         findViewById<Button>(R.id.tuneMinBtn).setOnClickListener {
             val ble = BLEBridgeService.instance?.bleManager
             if (ble == null || !ble.isConnected) { appendLog("ERR", "Not connected!"); return@setOnClickListener }
-            appendLog("CMD", ">>> TUNE MIN (all modes lv2 = min watts)")
-            ble.tuningMin()
+            AlertDialog.Builder(this)
+                .setTitle("Confirm Motor Tuning")
+                .setMessage("Set ALL modes to MIN watts (level 2)?")
+                .setPositiveButton("Confirm") { _, _ ->
+                    appendLog("CMD", ">>> TUNE MIN (all modes lv2 = min watts)")
+                    ble.tuningMin()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
 
         findViewById<Button>(R.id.tuneRestoreBtn).setOnClickListener {
@@ -130,8 +144,15 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.tuneExtBtn).setOnClickListener {
             val ble = BLEBridgeService.instance?.bleManager
             if (ble == null || !ble.isConnected) { appendLog("ERR", "Not connected!"); return@setOnClickListener }
-            appendLog("CMD", ">>> EXT TEST: POWER wire=5 (outside 1-3 range)")
-            ble.tuningExtendedTest(5)
+            AlertDialog.Builder(this)
+                .setTitle("Confirm Extended Tuning")
+                .setMessage("Send POWER wire=5 (outside normal 1-3 range). This is a test command.")
+                .setPositiveButton("Confirm") { _, _ ->
+                    appendLog("CMD", ">>> EXT TEST: POWER wire=5 (outside 1-3 range)")
+                    ble.tuningExtendedTest(5)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
 
         findViewById<Button>(R.id.sgOnlyBtn).setOnClickListener {
@@ -180,8 +201,8 @@ class MainActivity : AppCompatActivity() {
             startService(serviceIntent)
         }
 
-        registerReceiver(statusReceiver, IntentFilter("online.kromi.blebridge.STATUS"),
-            RECEIVER_NOT_EXPORTED)
+        ContextCompat.registerReceiver(this, statusReceiver, IntentFilter("online.kromi.blebridge.STATUS"),
+            ContextCompat.RECEIVER_NOT_EXPORTED)
 
         val versionName = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }
         appendLog("INIT", "BLE Bridge v$versionName started")
@@ -222,6 +243,7 @@ class MainActivity : AppCompatActivity() {
             }
             val intent = Intent("online.kromi.blebridge.STATUS")
             intent.putExtra("status", status)
+            intent.setPackage(packageName)
             sendBroadcast(intent)
         }
 
@@ -622,6 +644,22 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    private var logUpdatePending = false
+
+    private fun scheduleLogUpdate() {
+        if (!logUpdatePending) {
+            logUpdatePending = true
+            handler.postDelayed({
+                logUpdatePending = false
+                val displayLines = if (logLines.size > maxLogLines)
+                    logLines.subList(logLines.size - maxLogLines, logLines.size)
+                else logLines
+                logText.text = displayLines.joinToString("\n")
+                logScrollView.post { logScrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+            }, 100)
+        }
+    }
+
     private fun appendLog(tag: String, message: String) {
         val time = timeFormat.format(Date())
         val line = "[$time] $tag: $message"
@@ -631,12 +669,7 @@ class MainActivity : AppCompatActivity() {
             val excess = logLines.size - maxTotalLogLines
             logLines.subList(0, excess).clear()
         }
-        // Display only last N lines (UI performance)
-        val displayLines = if (logLines.size > maxLogLines)
-            logLines.subList(logLines.size - maxLogLines, logLines.size)
-        else logLines
-        logText.text = displayLines.joinToString("\n")
-        logScrollView.post { logScrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+        scheduleLogUpdate()
     }
 
     private fun requestPermissions() {

@@ -89,7 +89,12 @@ class ShimanoMotorManager(private val context: Context) {
     // ═══════════════════════════════════���═══
 
     fun connect(address: String) {
-        val device = adapter?.getRemoteDevice(address) ?: return
+        val device = try {
+            adapter?.getRemoteDevice(address) ?: return
+        } catch (e: IllegalArgumentException) {
+            Log.e(TAG, "Invalid BLE address: $address", e)
+            return
+        }
         Log.i(TAG, "Connecting to Shimano STEPS: ${device.name ?: address}")
         device.connectGatt(context, true, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
@@ -293,7 +298,7 @@ class ShimanoMotorManager(private val context: Context) {
 
     /** TRAVELING_INFORMATION1 — assist mode, speed, cadence, time */
     private fun parseTravelingInfo1(data: ByteArray) {
-        if (data.size < 10) return
+        if (data.size < 12) return  // Ensure enough bytes for speed parsing
 
         val rawAssist = data[1].toInt() and 0xFF
         val assistMode = rawAssist and 0x0F // Lower nibble = mode
@@ -355,9 +360,13 @@ class ShimanoMotorManager(private val context: Context) {
         Log.d(TAG, "TRAVEL2: trip=${"%.1f".format(tripDist/1000.0)}km total=${"%.0f".format(totalDist/1000.0)}km range: eco=$rangeEco trail=$rangeTrail boost=$rangeBoost")
     }
 
-    /** Cycling Power Measurement — motor watts */
+    /** Cycling Power Measurement — motor watts.
+     *  Per BLE Cycling Power Measurement spec, power is always at bytes 2-3
+     *  (after 2-byte flags field), regardless of which optional fields are present.
+     *  Optional fields (pedal balance, torque, etc.) appear AFTER the power field. */
     private fun parsePowerMeasurement(data: ByteArray) {
         if (data.size < 4) return
+        // Bytes 0-1: flags, Bytes 2-3: instantaneous power (always at this position)
         val watts = ((data[3].toInt() and 0xFF) shl 8) or (data[2].toInt() and 0xFF)
         if (watts in 0..2000) {
             onData?.invoke(JSONObject().apply {

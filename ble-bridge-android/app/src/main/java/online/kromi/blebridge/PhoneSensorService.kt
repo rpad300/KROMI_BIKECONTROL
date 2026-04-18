@@ -37,7 +37,7 @@ class PhoneSensorService(
         private const val GRAVITY = 9.80665
     }
 
-    private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    private val sensorManager: SensorManager? = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
 
     private var barometerSensor: Sensor? = null
     private var accelerometerSensor: Sensor? = null
@@ -47,6 +47,7 @@ class PhoneSensorService(
     private var magnetometerSensor: Sensor? = null
 
     private var lastAccelSendMs = 0L
+    private var lastGyroSendMs = 0L
     private var lastBaroSendMs = 0L
     private var lastTempSendMs = 0L
     private var lastLightSendMs = 0L
@@ -64,14 +65,18 @@ class PhoneSensorService(
 
     fun start() {
         if (running) return
+        val sm = sensorManager ?: run {
+            Log.e(TAG, "SensorManager not available")
+            return
+        }
         running = true
 
-        barometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE)
-        accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        gyroscopeSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
-        temperatureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_AMBIENT_TEMPERATURE)
-        lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
-        magnetometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+        barometerSensor = sm.getDefaultSensor(Sensor.TYPE_PRESSURE)
+        accelerometerSensor = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        gyroscopeSensor = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        temperatureSensor = sm.getDefaultSensor(Sensor.TYPE_AMBIENT_TEMPERATURE)
+        lightSensor = sm.getDefaultSensor(Sensor.TYPE_LIGHT)
+        magnetometerSensor = sm.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
 
         hasBarometer = barometerSensor != null
         hasAccelerometer = accelerometerSensor != null
@@ -81,28 +86,29 @@ class PhoneSensorService(
         hasMagnetometer = magnetometerSensor != null
 
         // Register with appropriate delays
+        // Use 200_000 microseconds (200ms = 5Hz) for accel/gyro to match throttle interval
         barometerSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
+            sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
             Log.i(TAG, "Barometer registered")
         }
         accelerometerSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
-            Log.i(TAG, "Accelerometer registered")
+            sm.registerListener(this, it, 200_000)
+            Log.i(TAG, "Accelerometer registered (200ms interval)")
         }
         gyroscopeSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
-            Log.i(TAG, "Gyroscope registered")
+            sm.registerListener(this, it, 200_000)
+            Log.i(TAG, "Gyroscope registered (200ms interval)")
         }
         temperatureSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
+            sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
             Log.i(TAG, "Ambient temperature registered")
         }
         lightSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
+            sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
             Log.i(TAG, "Light sensor registered")
         }
         magnetometerSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
+            sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
             Log.i(TAG, "Magnetometer registered")
         }
 
@@ -112,7 +118,7 @@ class PhoneSensorService(
     fun stop() {
         if (!running) return
         running = false
-        sensorManager.unregisterListener(this)
+        sensorManager?.unregisterListener(this)
         Log.i(TAG, "Sensors stopped")
     }
 
@@ -165,8 +171,8 @@ class PhoneSensorService(
             }
 
             Sensor.TYPE_GYROSCOPE -> {
-                // Gyro data is sent alongside accel — throttled at same rate
-                if (now - lastAccelSendMs < ACCEL_MIN_INTERVAL_MS) return
+                if (now - lastGyroSendMs < ACCEL_MIN_INTERVAL_MS) return
+                lastGyroSendMs = now
 
                 val json = JSONObject().apply {
                     put("type", "gyro")

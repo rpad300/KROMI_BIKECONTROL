@@ -85,7 +85,12 @@ class BoschBikeManager(private val context: Context) {
     // ═══════════════════════════════════════
 
     fun connect(address: String) {
-        val device = adapter?.getRemoteDevice(address) ?: return
+        val device = try {
+            adapter?.getRemoteDevice(address) ?: return
+        } catch (e: IllegalArgumentException) {
+            Log.e(TAG, "Invalid BLE address: $address", e)
+            return
+        }
         Log.i(TAG, "Connecting to Bosch: ${device.name ?: address}")
         device.connectGatt(context, true, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
@@ -202,6 +207,10 @@ class BoschBikeManager(private val context: Context) {
     private fun sendMCSP(proto: ByteArray) {
         val wc = writeChar ?: return
         val g = gatt ?: return
+        if (proto.size > 127) {
+            Log.w(TAG, "STP frame too large (${proto.size} bytes), max 127")
+            return
+        }
         // STP: single segment for small payloads
         val frame = ByteArray(proto.size + 1)
         frame[0] = proto.size.toByte()
@@ -217,6 +226,10 @@ class BoschBikeManager(private val context: Context) {
         val isMore = (header and 0x80) != 0
 
         if (isMore) {
+            if (pendingSegments.size > 50) {
+                Log.w(TAG, "Too many pending STP segments, dropping")
+                pendingSegments.clear()
+            }
             pendingSegments.add(data)
             return
         }
@@ -255,18 +268,20 @@ class BoschBikeManager(private val context: Context) {
             })
         })
 
-        // Parse known patterns
-        for ((field, value) in fields) {
-            // Battery SOC (0-100)
-            if (value in 0..100 && field <= 5) {
+        // Parse known fields by position (Bosch MCSP protocol)
+        // Field 1 = assist mode (0=OFF, 1=ECO, 2=TOUR, 3=SPORT, 4=TURBO)
+        fields[1]?.let { mode ->
+            if (mode in 0..4) {
                 onData?.invoke(JSONObject().apply {
-                    put("type", "battery"); put("value", value)
+                    put("type", "assistMode"); put("value", mode)
                 })
             }
-            // Assist mode (1=ECO, 2=TOUR, 3=SPORT, 4=TURBO)
-            if (value in 1..4 && field <= 3) {
+        }
+        // Field 2 = battery SOC (0-100)
+        fields[2]?.let { bat ->
+            if (bat in 0..100) {
                 onData?.invoke(JSONObject().apply {
-                    put("type", "assistMode"); put("value", value)
+                    put("type", "battery"); put("value", bat)
                 })
             }
         }
@@ -294,57 +309,9 @@ class BoschBikeManager(private val context: Context) {
         }
     }
 
-    // ═══════════════════════════════════════
-    // Protobuf helpers
-    // ═══════════════════════════════════════
-
-    private fun encodeVarint(value: Int): ByteArray {
-        val bytes = mutableListOf<Byte>()
-        var v = value and 0x7FFFFFFF
-        while (v > 0x7F) { bytes.add(((v and 0x7F) or 0x80).toByte()); v = v ushr 7 }
-        bytes.add((v and 0x7F).toByte())
-        return bytes.toByteArray()
-    }
-
-    private fun encodeField(fieldNumber: Int, value: Int): ByteArray {
-        return encodeVarint((fieldNumber shl 3) or 0) + encodeVarint(value)
-    }
-
-    private fun parseProtoFields(data: ByteArray): Map<Int, Int> {
-        val fields = mutableMapOf<Int, Int>()
-        var offset = 0
-        while (offset < data.size) {
-            var tag = 0; var shift = 0; var b: Int
-            do {
-                if (offset >= data.size) return fields
-                b = data[offset++].toInt() and 0xFF
-                tag = tag or ((b and 0x7F) shl shift); shift += 7
-            } while (b and 0x80 != 0 && shift < 35)
-            val wireType = tag and 0x07
-            when (wireType) {
-                0 -> {
-                    var value = 0; shift = 0
-                    do {
-                        if (offset >= data.size) return fields
-                        b = data[offset++].toInt() and 0xFF
-                        value = value or ((b and 0x7F) shl shift); shift += 7
-                    } while (b and 0x80 != 0 && shift < 35)
-                    fields[tag ushr 3] = value
-                }
-                2 -> {
-                    var length = 0; shift = 0
-                    do {
-                        if (offset >= data.size) return fields
-                        b = data[offset++].toInt() and 0xFF
-                        length = length or ((b and 0x7F) shl shift); shift += 7
-                    } while (b and 0x80 != 0)
-                    offset += length
-                }
-                else -> return fields
-            }
-        }
-        return fields
-    }
+    // Protobuf helpers — delegated to shared ProtoUtils
+    private fun encodeField(fieldNumber: Int, value: Int) = ProtoUtils.encodeField(fieldNumber, value)
+    private fun parseProtoFields(data: ByteArray) = ProtoUtils.parseProtoFields(data)
 
     fun destroy() {
         gatt?.close()

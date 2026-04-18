@@ -1,6 +1,5 @@
 package online.kromi.blebridge
 
-import android.annotation.SuppressLint
 import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
@@ -12,7 +11,6 @@ import android.util.Log
 import org.json.JSONObject
 import java.util.UUID
 
-@SuppressLint("MissingPermission")
 class BLEManager(private val context: Context) {
 
     companion object {
@@ -93,6 +91,20 @@ class BLEManager(private val context: Context) {
 
     private var scanCallback: ScanCallback? = null
 
+    // CSC crank cadence delta tracking (P0 fix)
+    private var prevCrankRevs: Int = 0
+    private var prevCrankTime: Int = 0
+
+    /** Wrap BLE API calls that require BLUETOOTH_CONNECT/SCAN permission */
+    private inline fun <T> withBlePermission(block: () -> T): T? {
+        return try {
+            block()
+        } catch (e: SecurityException) {
+            Log.e(TAG, "BLE permission denied: ${e.message}")
+            null
+        }
+    }
+
     /**
      * Scan for BLE devices. Each found device is reported via onFound callback.
      * onDone is called when scan completes (timeout or manual stop).
@@ -139,7 +151,7 @@ class BLEManager(private val context: Context) {
             }
         }
 
-        scanner.startScan(null, settings, scanCallback)
+        withBlePermission { scanner.startScan(null, settings, scanCallback) }
 
         // Auto-stop after 12s
         handler.postDelayed({
@@ -149,9 +161,7 @@ class BLEManager(private val context: Context) {
 
     fun stopScan(onDone: (() -> Unit)? = null) {
         scanCallback?.let { cb ->
-            try {
-                bluetoothAdapter?.bluetoothLeScanner?.stopScan(cb)
-            } catch (_: Exception) {}
+            withBlePermission { bluetoothAdapter?.bluetoothLeScanner?.stopScan(cb) }
         }
         scanCallback = null
         onDone?.invoke()
@@ -164,8 +174,9 @@ class BLEManager(private val context: Context) {
             onStatusChanged?.invoke("Already connected — disconnect first")
             return
         }
-        Log.i(TAG, "Connecting to ${device.name} (${device.address}) bond:${device.bondState}")
-        onStatusChanged?.invoke("Connecting to ${device.name}...")
+        val name = withBlePermission { device.name } ?: "Unknown"
+        Log.i(TAG, "Connecting to $name (${device.address}) bond:${device.bondState}")
+        onStatusChanged?.invoke("Connecting to $name...")
         connectGatt(device)
     }
 
@@ -179,15 +190,15 @@ class BLEManager(private val context: Context) {
         lastConnectedDevice = device
         shouldAutoReconnect = true
         // autoConnect=true lets Android reconnect automatically when device comes back in range
-        gatt = device.connectGatt(context, true, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        gatt = withBlePermission { device.connectGatt(context, true, gattCallback, BluetoothDevice.TRANSPORT_LE) }
     }
 
     fun disconnect() {
         shouldAutoReconnect = false
         lastConnectedDevice = null
         stopKeepAlive()
-        gatt?.disconnect()
-        gatt?.close()
+        withBlePermission { gatt?.disconnect() }
+        withBlePermission { gatt?.close() }
         gatt = null
         gevChar = null
         protoWriteChar = null
@@ -202,7 +213,7 @@ class BLEManager(private val context: Context) {
         val runnable = object : Runnable {
             override fun run() {
                 gatt?.let { g ->
-                    g.readRemoteRssi()
+                    withBlePermission { g.readRemoteRssi() }
                     Log.d(TAG, "Keep-alive RSSI ping")
                 }
                 reconnectHandler.postDelayed(this, KEEPALIVE_INTERVAL_MS)
@@ -227,20 +238,20 @@ class BLEManager(private val context: Context) {
                     if (g.device.bondState != BluetoothDevice.BOND_BONDED) {
                         Log.i(TAG, "★ Initiating BOND (required for motor control)...")
                         onStatusChanged?.invoke("Bonding...")
-                        g.device.createBond()
+                        withBlePermission { g.device.createBond() }
                         // Bond callback will continue the flow, but also proceed with MTU
                         // in case bonding happens in parallel
                     }
 
                     onStatusChanged?.invoke("Connected, requesting MTU...")
                     // Request high priority + large MTU, then discover services in onMtuChanged
-                    g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
-                    g.requestMtu(247)
+                    withBlePermission { g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) }
+                    withBlePermission { g.requestMtu(247) }
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Log.i(TAG, "GATT disconnected (status=$status, autoReconnect=$shouldAutoReconnect)")
                     stopKeepAlive()
-                    gatt?.close()
+                    withBlePermission { gatt?.close() }
                     gatt = null
                     gevChar = null
                     protoWriteChar = null
@@ -424,6 +435,8 @@ class BLEManager(private val context: Context) {
                 UUID.fromString("00001800-0000-1000-8000-00805f9b34fb"),
                 UUID.fromString("00001801-0000-1000-8000-00805f9b34fb")
             )
+            var unknownNotifyCount = 0
+            val MAX_UNKNOWN_NOTIFY = 5
             for (service in g.services) {
                 if (service.uuid !in knownServices) {
                     Log.i(TAG, ">>> EXPLORING unknown service: ${service.uuid} <<<")
@@ -432,7 +445,12 @@ class BLEManager(private val context: Context) {
                             pendingReads.add(char)
                         }
                         if (char.properties and (BluetoothGattCharacteristic.PROPERTY_NOTIFY or BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
-                            pendingNotifications.add(char)
+                            if (unknownNotifyCount < MAX_UNKNOWN_NOTIFY) {
+                                pendingNotifications.add(char)
+                                unknownNotifyCount++
+                            } else {
+                                Log.w(TAG, ">>> Skipping unknown notify char ${char.uuid} (limit $MAX_UNKNOWN_NOTIFY reached)")
+                            }
                         }
                     }
                 }
@@ -500,7 +518,7 @@ class BLEManager(private val context: Context) {
                 .put("ok", status == BluetoothGatt.GATT_SUCCESS))
             // NOW discover services (after MTU negotiation completes)
             onStatusChanged?.invoke("MTU $mtu — discovering services...")
-            handler.postDelayed({ g.discoverServices() }, 300)
+            handler.postDelayed({ withBlePermission { g.discoverServices() } }, 300)
         }
 
         override fun onCharacteristicWrite(g: BluetoothGatt, char: BluetoothGattCharacteristic, status: Int) {
@@ -564,26 +582,28 @@ class BLEManager(private val context: Context) {
             when (notifPhase) {
                 0 -> {
                     // Phase 0: DISABLE first (like nRF Connect does)
-                    g.setCharacteristicNotification(char, false)
+                    withBlePermission { g.setCharacteristicNotification(char, false) }
+                    // TODO: migrate to writeDescriptor(gatt, desc, value) API 33+
                     desc.value = BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
                     Log.i(TAG, "Sub [$cShort] phase 0: DISABLE${if (isSG) " ★SG" else ""}")
                     notifPhase = 1
-                    g.writeDescriptor(desc)
+                    withBlePermission { g.writeDescriptor(desc) }
                 }
                 1 -> {
                     // Phase 1: ENABLE
-                    g.setCharacteristicNotification(char, true)
+                    withBlePermission { g.setCharacteristicNotification(char, true) }
+                    // TODO: migrate to writeDescriptor(gatt, desc, value) API 33+
                     desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                     Log.i(TAG, "Sub [$cShort] phase 1: ENABLE${if (isSG) " ★SG" else ""}")
                     notifPhase = 2
-                    g.writeDescriptor(desc)
+                    withBlePermission { g.writeDescriptor(desc) }
                 }
                 2 -> {
                     // Phase 2: READ back CCCD to confirm
                     Log.i(TAG, "Sub [$cShort] phase 2: READ CCCD${if (isSG) " ★SG" else ""}")
                     notifPhase = 0
                     pendingNotifications.removeAt(0)
-                    g.readDescriptor(desc)
+                    withBlePermission { g.readDescriptor(desc) }
                 }
                 else -> {
                     notifPhase = 0
@@ -707,8 +727,8 @@ class BLEManager(private val context: Context) {
                                         .put("motorWatts", powerW)
                                         .put("odo", tripDistKm))
 
-                                    // PWA compat broadcasts
-                                    if (speed > 0.5) onDataReceived?.invoke(JSONObject().put("type", "speed").put("value", speed))
+                                    // PWA compat broadcasts (>2.0 to filter GPS noise at standstill)
+                                    if (speed > 2.0) onDataReceived?.invoke(JSONObject().put("type", "speed").put("value", speed))
                                     if (powerW > 0) onDataReceived?.invoke(JSONObject().put("type", "power").put("value", powerW.toInt()))
                                     if (cadenceRpm > 0) onDataReceived?.invoke(JSONObject().put("type", "cadence").put("value", cadenceRpm.toInt()))
                                 }
@@ -1114,10 +1134,10 @@ class BLEManager(private val context: Context) {
 
                     onDataReceived?.invoke(JSONObject()
                         .put("type", "speed")
-                        .put("value", "%.1f".format(speedKmh).toDouble()))
+                        .put("value", Math.round(speedKmh * 10) / 10.0))
                     onDataReceived?.invoke(JSONObject()
                         .put("type", "distance")
-                        .put("value", "%.2f".format(totalDistance).toDouble()))
+                        .put("value", Math.round(totalDistance * 100) / 100.0))
                 }
             }
             lastWheelRevs = wheelRevs
@@ -1125,10 +1145,16 @@ class BLEManager(private val context: Context) {
         }
 
         if (flags and 0x02 != 0 && offset + 3 < data.size) {
-            val crankTime = ((data[offset + 2].toInt() and 0xFF) or
-                    ((data[offset + 3].toInt() and 0xFF) shl 8))
-            if (crankTime > 0) {
-                val cadence = (60 * 1024) / crankTime
+            val crankRevs = (data[offset].toInt() and 0xFF) or ((data[offset + 1].toInt() and 0xFF) shl 8)
+            val crankTime = (data[offset + 2].toInt() and 0xFF) or ((data[offset + 3].toInt() and 0xFF) shl 8)
+
+            val deltaRevs = (crankRevs - prevCrankRevs) and 0xFFFF  // handle uint16 rollover
+            val deltaTime = (crankTime - prevCrankTime) and 0xFFFF
+            prevCrankRevs = crankRevs
+            prevCrankTime = crankTime
+
+            if (deltaTime > 0 && deltaRevs > 0 && deltaRevs < 20) {
+                val cadence = (deltaRevs * 60 * 1024) / deltaTime
                 onDataReceived?.invoke(JSONObject().put("type", "cadence").put("value", cadence))
             }
         }
@@ -1171,7 +1197,7 @@ class BLEManager(private val context: Context) {
             val char = pendingReads.removeAt(0)
             val cShort = char.uuid.toString().substring(4, 8).uppercase()
             Log.i(TAG, "Reading [$cShort]... (${pendingReads.size} remaining)")
-            g.readCharacteristic(char)
+            withBlePermission { g.readCharacteristic(char) }
         } else {
             // All reads done → start notification subscriptions
             Log.i(TAG, "All reads done → enabling ${pendingNotifications.size} notifications...")
@@ -1206,9 +1232,10 @@ class BLEManager(private val context: Context) {
         for (b in packet) sum += b.toInt() and 0xFF
         val fullPacket = packet + byteArrayOf(((sum shr 8) and 0xFF).toByte(), (sum and 0xFF).toByte())
 
+        // TODO: migrate to writeCharacteristic(gatt, char, data, writeType) API 33+
         char.value = fullPacket
         char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-        g.writeCharacteristic(char)
+        withBlePermission { g.writeCharacteristic(char) }
         Log.i(TAG, "Sent assist mode: $mode (packet: ${fullPacket.joinToString("") { "%02x".format(it) }})")
     }
 
@@ -1271,18 +1298,20 @@ class BLEManager(private val context: Context) {
         val enableRiding = byteArrayOf(0xFB.toByte(), 0x22, 0x01, 0xD8.toByte())
 
         // Send CONNECT_GEV
+        // TODO: migrate to writeCharacteristic(gatt, char, data, writeType) API 33+
         char.value = connectPkt
         char.writeType = android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-        g.writeCharacteristic(char)
+        withBlePermission { g.writeCharacteristic(char) }
         Log.i(TAG, ">>> CONNECT_GEV sent")
         onDataReceived?.invoke(org.json.JSONObject()
             .put("type", "sgCmd").put("name", "AUTO_CONNECT_GEV").put("ok", true))
 
         // Send enableRiding after 1s delay
         handler.postDelayed({
+            // TODO: migrate to writeCharacteristic(gatt, char, data, writeType) API 33+
             char.value = enableRiding
             char.writeType = android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-            g.writeCharacteristic(char)
+            withBlePermission { g.writeCharacteristic(char) }
             Log.i(TAG, ">>> ENABLE_RIDING sent — FC23 telemetry should start")
             onDataReceived?.invoke(org.json.JSONObject()
                 .put("type", "sgCmd").put("name", "AUTO_ENABLE_RIDING").put("ok", true))
@@ -1291,14 +1320,16 @@ class BLEManager(private val context: Context) {
         // Repeat enableRiding a few times (sometimes first one is missed)
         for (i in 1..3) {
             handler.postDelayed({
+                // TODO: migrate to writeCharacteristic(gatt, char, data, writeType) API 33+
                 char.value = enableRiding
                 char.writeType = android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-                g.writeCharacteristic(char)
+                withBlePermission { g.writeCharacteristic(char) }
             }, (1000 + i * 2000).toLong())
         }
     }
 
     fun testSGWrite() {
+        if (!BuildConfig.DEBUG) return
         val g = gatt ?: return
         val char = sgWriteChar ?: run {
             Log.w(TAG, "SG Write char not available!")
@@ -1406,10 +1437,11 @@ class BLEManager(private val context: Context) {
                     .put("hex", hex)
                     .put("size", data.size))
 
+                // TODO: migrate to writeCharacteristic(gatt, char, data, writeType) API 33+
                 char.value = data
                 // RideControl uses WRITE_TYPE_NO_RESPONSE (WriteType=1)
                 char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-                val ok = g.writeCharacteristic(char)
+                val ok = withBlePermission { g.writeCharacteristic(char) } ?: false
                 onDataReceived?.invoke(JSONObject()
                     .put("type", "sgWriteResult")
                     .put("name", name)
@@ -1422,9 +1454,10 @@ class BLEManager(private val context: Context) {
         val startDelay = (tests.size * 1000 + 500).toLong()
         for (i in 0..14) {
             handler.postDelayed({
+                // TODO: migrate to writeCharacteristic(gatt, char, data, writeType) API 33+
                 char.value = enableRiding
                 char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-                g.writeCharacteristic(char)
+                withBlePermission { g.writeCharacteristic(char) }
                 if (i == 0) Log.i(TAG, ">>> Repeating enableRiding 15s...")
                 if (i == 14) {
                     Log.i(TAG, ">>> TEST COMPLETE")
@@ -1506,9 +1539,10 @@ class BLEManager(private val context: Context) {
         val hex = pkt.joinToString("") { "%02x".format(it) }
         Log.i(TAG, ">>> CMD [$label]: $hex (${pkt.size}b)")
 
+        // TODO: migrate to writeCharacteristic(gatt, char, data, writeType) API 33+
         char.value = pkt
         char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-        val ok = g.writeCharacteristic(char)
+        val ok = withBlePermission { g.writeCharacteristic(char) } ?: false
 
         onDataReceived?.invoke(JSONObject()
             .put("type", "sgCmd")

@@ -91,17 +91,36 @@ object ShimanoAuth {
     }
 
     /**
+     * Result of key generation — allows thread-safe usage without reading singleton state.
+     */
+    data class AuthKeys(
+        val authKey: ByteArray,
+        val encKey: ByteArray,
+        val decKey: ByteArray,
+        val commonKey: ByteArray,
+        val updateKey: ByteArray,
+    )
+
+    /**
      * Generate all 4 keys from device + product serial numbers.
+     *
+     * Thread-safe: core computation uses local state, then updates singleton fields.
      *
      * @param dcasSerialHex The DCAS wireless unit serial as hex string
      *                      (typically derived from BLE address or 2AE2 data)
      * @param productSerial The product serial string (e.g., "3KAXEAAF7C1")
+     * @return AuthKeys with all generated keys, or null if dcasSerialHex is invalid
      */
-    fun generateKeys(dcasSerialHex: String, productSerial: String) {
-        reset()
+    fun generateKeys(dcasSerialHex: String, productSerial: String): AuthKeys? {
+        // Validate input
+        val dSerial = try {
+            dcasSerialHex.toLong(16)
+        } catch (e: NumberFormatException) {
+            Log.e(TAG, "Invalid DCAS serial hex: $dcasSerialHex", e)
+            return null
+        }
 
-        // Parse device serial as 48-bit hex value
-        val dSerial = dcasSerialHex.toLong(16)
+        reset()
 
         // Take last 6 chars of product serial as ASCII bytes
         val pSuffix = productSerial.takeLast(6)
@@ -150,7 +169,15 @@ object ShimanoAuth {
         updateKey = ByteArray(16)
         fillKey(updateKey)
 
-        Log.i(TAG, "Keys generated for DCAS=$dcasSerialHex product=$productSerial")
+        Log.d(TAG, "Keys generated successfully")
+
+        return AuthKeys(
+            authKey = authKey.copyOf(),
+            encKey = encryptKey.copyOf(),
+            decKey = encryptKey.copyOf(),
+            commonKey = commonKey.copyOf(),
+            updateKey = updateKey.copyOf(),
+        )
     }
 
     /**

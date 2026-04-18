@@ -2,8 +2,10 @@ package online.kromi.blebridge
 
 import android.app.*
 import android.content.Intent
+import android.os.Handler
 import android.os.IBinder
 import android.os.Build
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import org.json.JSONObject
@@ -89,9 +91,10 @@ class BLEBridgeService : Service() {
         phoneSensorService?.start()
         bleManager.onStatusChanged = { status ->
             updateNotification(status)
-            // Broadcast status to activity
+            // Broadcast status to activity (package-scoped for security)
             val intent = Intent("online.kromi.blebridge.STATUS")
             intent.putExtra("status", status)
+            intent.setPackage(packageName)
             sendBroadcast(intent)
         }
 
@@ -100,8 +103,12 @@ class BLEBridgeService : Service() {
         wsServer = BridgeWebSocketServer(WS_PORT, { command ->
             handleCommand(command)
         }, appVer)
-        wsServer?.start()
-        Log.i(TAG, "WebSocket server started on port $WS_PORT")
+        try {
+            wsServer?.start()
+            Log.i(TAG, "WebSocket server started on port $WS_PORT")
+        } catch (e: Exception) {
+            Log.e(TAG, "WebSocket server failed to start on port $WS_PORT", e)
+        }
 
         startForeground(NOTIFICATION_ID, buildNotification("Ready — waiting for connection"))
     }
@@ -164,94 +171,14 @@ class BLEBridgeService : Service() {
                 }
                 if (bleManager.isConnected) {
                     bleManager.disconnect()
-                    Thread.sleep(500)
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        Log.i(TAG, "WS scan: starting PWA-driven scan after disconnect delay")
+                        startPwaScan()
+                    }, 500)
+                    return
                 }
                 Log.i(TAG, "WS scan: starting PWA-driven scan")
-                bleManager.startScan(
-                    onFound = { device, rssi, uuids ->
-                        val name = device.name ?: "(unnamed)"
-                        val tags = mutableListOf<String>()
-                        val isGiantDevice = name.contains("GBHA", true) || name.contains("Giant", true) || uuids.contains("F0BA", true)
-                        if (isGiantDevice) tags.add("GIANT")
-                        if (uuids.contains("F0BA", true)) tags.add("GEV")
-                        if (isGiantDevice && (uuids.contains("1816") || uuids.contains("1818"))) tags.add("BIKE")
-
-                        // Bosch eBike (MCSP service "424F5343" = ASCII "BOSC")
-                        val isBosch = uuids.contains("424F5343", true) || uuids.contains("DC435FBE", true) ||
-                            name.contains("Nyon", true) || name.contains("Kiox", true) || name.contains("Bosch", true)
-                        if (isBosch) { tags.add("BOSCH"); tags.add("BIKE") }
-
-                        // Specialized / Brose (MCSP EAA2 or BES3 FE02)
-                        val isSpecialized = uuids.contains("EAA2-11E9", true) || uuids.contains("FE02", true) ||
-                            uuids.contains("C0B1", true) || name.contains("Turbo", true) || name.contains("Levo", true) ||
-                            name.contains("Creo", true) || name.contains("Vado", true) || name.contains("Como", true)
-                        if (isSpecialized) { tags.add("SPECIALIZED"); tags.add("BIKE") }
-
-                        // Shimano STEPS motor (0x18EF service — NOT the Di2 0x18FF gear service)
-                        val isShimanoMotor = uuids.contains("18EF", true) ||
-                            name.startsWith("EP", true) || name.startsWith("E8", true) ||
-                            name.startsWith("E7", true) || name.startsWith("E6", true) ||
-                            name.startsWith("E5", true) || name.contains("STEPS", true)
-                        if (isShimanoMotor && !tags.contains("DI2")) { tags.add("SHIMANO_STEPS"); tags.add("BIKE") }
-
-                        // Specialized TurboConnect (3-service proprietary protocol)
-                        val isSpecTurbo = uuids.contains("3731-3032-494D", true) || uuids.contains("4B49-4E4F-5254", true)
-                        if (isSpecTurbo) { tags.add("SPECIALIZED"); tags.add("TURBO_CONNECT"); tags.add("BIKE") }
-
-                        // Fazua / Avinox (detected by name only — protocol in Dart bytecode)
-                        val isFazua = name.contains("Avinox", true) || name.contains("Fazua", true) || name.contains("Evation", true)
-                        if (isFazua) { tags.add("FAZUA"); tags.add("BIKE") }
-
-                        // Yamaha PW series
-                        val isYamaha = name.contains("Yamaha", true) || name.startsWith("PW-", true) || name.startsWith("PWSeries", true)
-                        if (isYamaha) { tags.add("YAMAHA"); tags.add("BIKE") }
-                        if (!isGiantDevice && uuids.contains("1816")) tags.add("CAD") // standalone cadence sensor
-                        if (uuids.contains("180D", true)) tags.add("HR")
-                        if (uuids.contains("1818", true) && !tags.contains("GIANT")) tags.add("POWER")
-                        if (name.contains("SRAM", true) || uuids.contains("4D50", true)) tags.add("SRAM")
-                        if (name.contains("Di2", true) || name.contains("SHIMANO", true)
-                            || uuids.contains("5348-494D-414E", true)  // SHIMANO_BLE base
-                            || uuids.contains("18FF", true)            // E-Tube service
-                            || uuids.contains("18EF", true))           // Realtime service
-                            tags.add("DI2")
-                        // iGPSPORT / NUS-based accessories (light, radar)
-                        if (uuids.contains("DCCA8E", true) || uuids.contains("dcca8e", true)) {
-                            val isRadar = name.lowercase().contains("radar")
-                            if (isRadar) tags.add("RADAR") else tags.add("LIGHT")
-                        }
-                        if (name.startsWith("VS", true) || name.startsWith("LR", true)) tags.add("LIGHT")
-
-                        // Garmin Varia accessories
-                        val isGarminAccessory = uuids.contains("6A4E", true) || uuids.contains("16AA8022", true)
-                        if (isGarminAccessory) {
-                            tags.add("GARMIN")
-                            // RTL = Radar + Tail Light, HL/UT = Head Light
-                            if (uuids.contains("6A4E8022", true) || name.startsWith("RTL", true) ||
-                                (name.contains("Varia", true) && (name.contains("R", true) || name.contains("Radar", true)))) {
-                                tags.add("RADAR")
-                                tags.add("LIGHT") // RTL is both radar AND light
-                            } else {
-                                tags.add("LIGHT")
-                            }
-                        }
-                        if (name.startsWith("HL", true) || name.startsWith("UT", true)) tags.add("LIGHT")
-
-                        val result = JSONObject().apply {
-                            put("type", "scanResult")
-                            put("name", name)
-                            put("address", device.address)
-                            put("rssi", rssi)
-                            put("uuids", uuids)
-                            put("tags", org.json.JSONArray(tags))
-                        }
-                        wsServer?.broadcastData(result)
-                    },
-                    onDone = {
-                        val done = JSONObject().apply { put("type", "scanDone") }
-                        wsServer?.broadcastData(done)
-                        Log.i(TAG, "WS scan: complete")
-                    }
-                )
+                startPwaScan()
             }
 
             "stopScan" -> {
@@ -270,21 +197,12 @@ class BLEBridgeService : Service() {
                 if (bleManager.isScanning) bleManager.stopScan()
                 if (bleManager.isConnected) {
                     bleManager.disconnect()
-                    Thread.sleep(500)
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        connectToAddress(address)
+                    }, 500)
+                    return
                 }
-                Log.i(TAG, "WS connectDevice: $address")
-                val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
-                val device = adapter?.getRemoteDevice(address)
-                if (device != null) {
-                    bleManager.connectToDevice(device)
-                } else {
-                    Log.e(TAG, "connectDevice: invalid address $address")
-                    val err = JSONObject().apply {
-                        put("type", "connectFailed")
-                        put("reason", "Invalid address: $address")
-                    }
-                    wsServer?.broadcastData(err)
-                }
+                connectToAddress(address)
             }
 
             // === External sensor management (hr, power, di2, sram, light, radar) ===
@@ -504,6 +422,103 @@ class BLEBridgeService : Service() {
         }
     }
 
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun startPwaScan() {
+        bleManager.startScan(
+            onFound = { device, rssi, uuids ->
+                val name = device.name ?: "(unnamed)"
+                val tags = mutableListOf<String>()
+                val isGiantDevice = name.contains("GBHA", true) || name.contains("Giant", true) || uuids.contains("F0BA", true)
+                if (isGiantDevice) tags.add("GIANT")
+                if (uuids.contains("F0BA", true)) tags.add("GEV")
+                if (isGiantDevice && (uuids.contains("1816") || uuids.contains("1818"))) tags.add("BIKE")
+
+                val isBosch = uuids.contains("424F5343", true) || uuids.contains("DC435FBE", true) ||
+                    name.contains("Nyon", true) || name.contains("Kiox", true) || name.contains("Bosch", true)
+                if (isBosch) { tags.add("BOSCH"); tags.add("BIKE") }
+
+                val isSpecialized = uuids.contains("EAA2-11E9", true) || uuids.contains("FE02", true) ||
+                    uuids.contains("C0B1", true) || name.contains("Turbo", true) || name.contains("Levo", true) ||
+                    name.contains("Creo", true) || name.contains("Vado", true) || name.contains("Como", true)
+                if (isSpecialized) { tags.add("SPECIALIZED"); tags.add("BIKE") }
+
+                val isShimanoMotor = uuids.contains("18EF", true) ||
+                    name.startsWith("EP", true) || name.startsWith("E8", true) ||
+                    name.startsWith("E7", true) || name.startsWith("E6", true) ||
+                    name.startsWith("E5", true) || name.contains("STEPS", true)
+                if (isShimanoMotor && !tags.contains("DI2")) { tags.add("SHIMANO_STEPS"); tags.add("BIKE") }
+
+                val isSpecTurbo = uuids.contains("3731-3032-494D", true) || uuids.contains("4B49-4E4F-5254", true)
+                if (isSpecTurbo) { tags.add("SPECIALIZED"); tags.add("TURBO_CONNECT"); tags.add("BIKE") }
+
+                val isFazua = name.contains("Avinox", true) || name.contains("Fazua", true) || name.contains("Evation", true)
+                if (isFazua) { tags.add("FAZUA"); tags.add("BIKE") }
+
+                val isYamaha = name.contains("Yamaha", true) || name.startsWith("PW-", true) || name.startsWith("PWSeries", true)
+                if (isYamaha) { tags.add("YAMAHA"); tags.add("BIKE") }
+                if (!isGiantDevice && uuids.contains("1816")) tags.add("CAD")
+                if (uuids.contains("180D", true)) tags.add("HR")
+                if (uuids.contains("1818", true) && !tags.contains("GIANT")) tags.add("POWER")
+                if (name.contains("SRAM", true) || uuids.contains("4D50", true)) tags.add("SRAM")
+                if (name.contains("Di2", true) || name.contains("SHIMANO", true)
+                    || uuids.contains("5348-494D-414E", true)
+                    || uuids.contains("18FF", true)
+                    || uuids.contains("18EF", true))
+                    tags.add("DI2")
+                if (uuids.contains("DCCA8E", true) || uuids.contains("dcca8e", true)) {
+                    val isRadar = name.lowercase().contains("radar")
+                    if (isRadar) tags.add("RADAR") else tags.add("LIGHT")
+                }
+                if (name.startsWith("VS", true) || name.startsWith("LR", true)) tags.add("LIGHT")
+
+                val isGarminAccessory = uuids.contains("6A4E", true) || uuids.contains("16AA8022", true)
+                if (isGarminAccessory) {
+                    tags.add("GARMIN")
+                    if (uuids.contains("6A4E8022", true) || name.startsWith("RTL", true) ||
+                        (name.contains("Varia", true) && (name.contains("R", true) || name.contains("Radar", true)))) {
+                        tags.add("RADAR")
+                        tags.add("LIGHT")
+                    } else {
+                        tags.add("LIGHT")
+                    }
+                }
+                if (name.startsWith("HL", true) || name.startsWith("UT", true)) tags.add("LIGHT")
+
+                val result = JSONObject().apply {
+                    put("type", "scanResult")
+                    put("name", name)
+                    put("address", device.address)
+                    put("rssi", rssi)
+                    put("uuids", uuids)
+                    put("tags", org.json.JSONArray(tags))
+                }
+                wsServer?.broadcastData(result)
+            },
+            onDone = {
+                val done = JSONObject().apply { put("type", "scanDone") }
+                wsServer?.broadcastData(done)
+                Log.i(TAG, "WS scan: complete")
+            }
+        )
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun connectToAddress(address: String) {
+        Log.i(TAG, "WS connectDevice: $address")
+        val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+        val device = adapter?.getRemoteDevice(address)
+        if (device != null) {
+            bleManager.connectToDevice(device)
+        } else {
+            Log.e(TAG, "connectDevice: invalid address $address")
+            val err = JSONObject().apply {
+                put("type", "connectFailed")
+                put("reason", "Invalid address: $address")
+            }
+            wsServer?.broadcastData(err)
+        }
+    }
+
     /**
      * Feed BLE sensor data to KromiCore for native motor control.
      * Called on every onDataReceived from BLEManager.
@@ -514,7 +529,15 @@ class BLEBridgeService : Service() {
             val type = json.optString("type")
             when (type) {
                 "speed"     -> kromiCore.onSpeed(json.optDouble("value", 0.0))
-                "cadence"   -> kromiCore.onCadence(json.optInt("value", 0))
+                "cadence"   -> {
+                    // Handle both internal (motor crank) and external cadence sensors
+                    val rpm = json.optInt("value", 0)
+                    val source = json.optString("source", "")
+                    if (source == "external" && rpm > 0) {
+                        Log.d(TAG, "feedKromiCore EXT_CADENCE: $rpm rpm")
+                    }
+                    kromiCore.onCadence(rpm)
+                }
                 "power"     -> kromiCore.onPower(json.optInt("value", 0))
                 "hr"        -> kromiCore.onHR(json.optInt("bpm", 0))
                 "battery"   -> kromiCore.onBattery(json.optInt("value", 0))
@@ -540,14 +563,7 @@ class BLEBridgeService : Service() {
                     Log.d(TAG, "feedKromiCore shimanoGear: gear=$gear")
                     kromiCore.onGear(gear)
                 }
-                "cadence" -> {
-                    // External cadence sensor — more accurate than motor crank sensor
-                    val rpm = json.optInt("value", 0)
-                    if (json.optString("source") == "external" && rpm > 0) {
-                        Log.d(TAG, "feedKromiCore EXT_CADENCE: $rpm rpm")
-                        kromiCore.onCadence(rpm)
-                    }
-                }
+                // NOTE: duplicate "cadence" case merged into the first "cadence" branch above
                 "gradient"  -> {
                     kromiCore.onGradient(json.optDouble("value", 0.0))
                 }

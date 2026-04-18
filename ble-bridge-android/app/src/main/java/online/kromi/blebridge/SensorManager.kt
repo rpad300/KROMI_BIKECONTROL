@@ -71,6 +71,7 @@ class SensorManager(private val context: Context) {
     private val connections = mutableMapOf<String, BluetoothGatt>()
     private val addresses = mutableMapOf<String, String>()
     private val autoReconnect = mutableMapOf<String, Boolean>()
+    private val reconnectPending = mutableMapOf<String, Boolean>()
     private var activeScanCallback: ScanCallback? = null
 
     fun isConnected(sensor: String): Boolean = connections.containsKey(sensor)
@@ -87,8 +88,10 @@ class SensorManager(private val context: Context) {
         }
         val scanner = adapter?.bluetoothLeScanner ?: return
 
-        // Stop any active scan
-        activeScanCallback?.let { scanner.stopScan(it) }
+        // Stop any active scan to prevent callback leak
+        activeScanCallback?.let { cb ->
+            try { scanner.stopScan(cb) } catch (_: SecurityException) {}
+        }
 
         Log.i(TAG, "Scanning for $sensorKey (exclude: $excludeAddress)...")
 
@@ -198,9 +201,11 @@ class SensorManager(private val context: Context) {
                         put("type", "sensorDisconnected")
                         put("sensor", sensorKey)
                     })
-                    if (autoReconnect[sensorKey] == true && addresses[sensorKey] != null) {
+                    if (autoReconnect[sensorKey] == true && addresses[sensorKey] != null && reconnectPending[sensorKey] != true) {
+                        reconnectPending[sensorKey] = true
                         Log.i(TAG, "$sensorKey auto-reconnect in ${RECONNECT_DELAY_MS}ms")
                         handler.postDelayed({
+                            reconnectPending[sensorKey] = false
                             connectSensor(sensorKey, addresses[sensorKey]!!)
                         }, RECONNECT_DELAY_MS)
                     }
@@ -220,6 +225,7 @@ class SensorManager(private val context: Context) {
 
             gatt.setCharacteristicNotification(char, true)
             char.getDescriptor(CCC_DESCRIPTOR)?.let { desc ->
+                // TODO: migrate to writeDescriptor(gatt, desc, value) API 33+
                 desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                 gatt.writeDescriptor(desc)
             }
@@ -298,7 +304,7 @@ class SensorManager(private val context: Context) {
             when (sensorKey) {
                 "hr" -> parseHR(data)
                 "power" -> parsePower(data)
-                "cadence" -> parseCadence(data)
+                "cadence" -> parseCadence(data, gatt.device.address)
                 "di2" -> parseDi2(data)
                 "sram" -> parseSRAM(data)
             }
@@ -384,11 +390,11 @@ class SensorManager(private val context: Context) {
      *
      * We compute RPM from delta revs / delta time between notifications.
      */
-    private var lastCrankRevs = 0
-    private var lastCrankTime = 0
-    private var lastCrankTs = 0L
+    // Per-device crank state: address -> (lastRevs, lastTime, lastTimestamp)
+    private data class CrankState(var revs: Int = 0, var time: Int = 0, var ts: Long = 0L)
+    private val crankState = mutableMapOf<String, CrankState>()
 
-    private fun parseCadence(data: ByteArray) {
+    private fun parseCadence(data: ByteArray, deviceAddress: String = "") {
         if (data.isEmpty()) return
         val flags = data[0].toInt() and 0xFF
         val hasCrank = (flags and 0x02) != 0
@@ -402,12 +408,13 @@ class SensorManager(private val context: Context) {
         val crankRevs = (data[offset].toInt() and 0xFF) or ((data[offset + 1].toInt() and 0xFF) shl 8)
         val crankTime = (data[offset + 2].toInt() and 0xFF) or ((data[offset + 3].toInt() and 0xFF) shl 8)
 
+        val state = crankState.getOrPut(deviceAddress) { CrankState() }
         val now = System.currentTimeMillis()
-        if (lastCrankTs > 0 && crankRevs != lastCrankRevs) {
-            var deltaRevs = crankRevs - lastCrankRevs
+        if (state.ts > 0 && crankRevs != state.revs) {
+            var deltaRevs = crankRevs - state.revs
             if (deltaRevs < 0) deltaRevs += 65536 // uint16 overflow
 
-            var deltaTime = crankTime - lastCrankTime
+            var deltaTime = crankTime - state.time
             if (deltaTime < 0) deltaTime += 65536
             val deltaTimeSec = deltaTime / 1024.0
 
@@ -424,9 +431,9 @@ class SensorManager(private val context: Context) {
             }
         }
 
-        lastCrankRevs = crankRevs
-        lastCrankTime = crankTime
-        lastCrankTs = now
+        state.revs = crankRevs
+        state.time = crankTime
+        state.ts = now
     }
 
     private fun parseDi2(data: ByteArray) {

@@ -89,7 +89,8 @@ class ShimanoProtocol(private val context: Context) {
     private var totalGears = 12
     private var isShifting = false
     private var shiftCount = 0
-    private var gearHistory = mutableListOf<Pair<Long, Int>>() // timestamp → gear
+    private val MAX_GEAR_HISTORY = 5000
+    private var gearHistory = ArrayDeque<Pair<Long, Int>>() // timestamp → gear
 
     val isConnected get() = gatt != null && authenticated
 
@@ -243,8 +244,9 @@ class ShimanoProtocol(private val context: Context) {
                     gatt = null
                     authenticated = false
                     emitStatus("disconnected")
-                    if (autoReconnect && connectedAddress != null) {
-                        handler.postDelayed({ connect(connectedAddress!!) }, RECONNECT_DELAY_MS)
+                    val addr = connectedAddress
+                    if (autoReconnect && addr != null) {
+                        handler.postDelayed({ connect(addr) }, RECONNECT_DELAY_MS)
                     }
                 }
             }
@@ -284,6 +286,8 @@ class ShimanoProtocol(private val context: Context) {
             @Suppress("DEPRECATION")
             val data = char.value ?: return
             val charShort = char.uuid.toString().substring(4, 8).uppercase()
+
+            onGattOperationComplete()
 
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 bleLog("READ_FAIL", "char=$charShort status=$status uuid=${char.uuid}")
@@ -373,6 +377,7 @@ class ShimanoProtocol(private val context: Context) {
 
         @Suppress("DEPRECATION")
         override fun onDescriptorWrite(g: BluetoothGatt, desc: BluetoothGattDescriptor, status: Int) {
+            onGattOperationComplete()
             val charShort = desc.characteristic.uuid.toString().substring(4, 8).uppercase()
             val descVal = desc.value?.joinToString("") { "%02x".format(it) } ?: "null"
             if (status == BluetoothGatt.GATT_SUCCESS) {
@@ -386,6 +391,7 @@ class ShimanoProtocol(private val context: Context) {
         override fun onCharacteristicWrite(
             g: BluetoothGatt, char: BluetoothGattCharacteristic, status: Int
         ) {
+            onGattOperationComplete()
             val charShort = char.uuid.toString().substring(4, 8).uppercase()
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 bleLog("WRITE_OK", "char=$charShort", char.value)
@@ -410,40 +416,37 @@ class ShimanoProtocol(private val context: Context) {
 
         // Primary attempt: use BLE address (most common for DCAS)
         val dcasHex = if (bleAddr.length >= 12) bleAddr else deviceSerial
-        bleLog("AUTH_DCAS", "using dcasHex=$dcasHex productSerial=$deviceSerial")
+        bleLog("AUTH_DCAS", "using dcasHex=$dcasHex")
 
         ShimanoAuth.generateKeys(dcasHex, deviceSerial)
 
-        bleLog("AUTH_KEYS", "authKey", ShimanoAuth.authKey)
-        bleLog("AUTH_KEYS", "encryptKey", ShimanoAuth.encryptKey)
-        bleLog("AUTH_KEYS", "commonKey", ShimanoAuth.commonKey)
-        bleLog("AUTH_KEYS", "updateKey", ShimanoAuth.updateKey)
+        bleLog("AUTH", "Authentication keys generated")
 
         val authPayload = ShimanoAuth.getAuthPayload()
-        bleLog("AUTH_PAYLOAD", "AES(encryptKey, authKey)", authPayload)
+        bleLog("AUTH", "Authentication payload prepared (${authPayload.size} bytes)")
 
         // Subscribe to AUTH_CONTROL indications first
         enableIndication(g, SERVICE_ETUBE, CHAR_AUTH_CONTROL)
 
         // Write auth payload to AUTH_CONTROL
         handler.postDelayed({
-            bleLog("AUTH_WRITE", "writing to AUTH_CONTROL (2AF3)", authPayload)
+            bleLog("AUTH_WRITE", "writing auth payload to AUTH_CONTROL (2AF3)")
             writeCharacteristic(g, SERVICE_ETUBE, CHAR_AUTH_CONTROL, authPayload)
         }, 500)
 
         // Safety: if no auth response in 3s, try subscribing anyway (maybe auth not needed for some chars)
         handler.postDelayed({
             if (!authenticated) {
-                bleLog("AUTH_TIMEOUT", "No auth response after 3s — trying to subscribe anyway")
-                authenticated = true // optimistic
-                emitStatus("connected")
+                Log.w(TAG, "Shimano auth timed out — proceeding without authentication")
+                // Don't set authenticated = true — leave it false
+                // Still try to subscribe, but emit warning status
                 onData?.invoke(JSONObject().apply {
-                    put("type", "shimanoConnected")
+                    put("type", "shimano_auth")
+                    put("status", "timeout_unauthenticated")
                     put("serial", deviceSerial)
                     put("firmware", firmwareVersion)
-                    put("authStatus", "timeout_fallback")
                 })
-                subscribeToDataChannels(g)
+                subscribeToDataChannels(g)  // Try anyway, device may not require auth
             }
         }, 3000)
     }
@@ -551,7 +554,7 @@ class ShimanoProtocol(private val context: Context) {
         val components = JSONArray()
         var i = 0
         var slotIdx = 0
-        while (i + 4 < data.size) {
+        while (i + 5 <= data.size) {
             val type = data[i].toInt() and 0xFF
             val status = data[i + 1].toInt() and 0xFF
             val gear = data[i + 2].toInt() and 0xFF
@@ -573,7 +576,8 @@ class ShimanoProtocol(private val context: Context) {
                         val oldGear = currentGear
                         currentGear = newGear
                         shiftCount++
-                        gearHistory.add(Pair(System.currentTimeMillis(), newGear))
+                        gearHistory.addLast(Pair(System.currentTimeMillis(), newGear))
+                        if (gearHistory.size > MAX_GEAR_HISTORY) gearHistory.removeFirst()
 
                         onData?.invoke(JSONObject().apply {
                             put("type", "shimanoGear")
@@ -614,7 +618,8 @@ class ShimanoProtocol(private val context: Context) {
                     val oldGear = currentGear
                     currentGear = gear
                     shiftCount++
-                    gearHistory.add(Pair(System.currentTimeMillis(), gear))
+                    gearHistory.addLast(Pair(System.currentTimeMillis(), gear))
+                    if (gearHistory.size > MAX_GEAR_HISTORY) gearHistory.removeFirst()
 
                     val direction = if (gear > oldGear) "up" else "down"
                     bleLog("GEAR_CHANGE", "$oldGear → $gear ($direction) total=$total shifts=$shiftCount")
@@ -729,8 +734,32 @@ class ShimanoProtocol(private val context: Context) {
         shiftCount = 0
         gearHistory.clear()
         if (currentGear > 0) {
-            gearHistory.add(Pair(System.currentTimeMillis(), currentGear))
+            gearHistory.addLast(Pair(System.currentTimeMillis(), currentGear))
         }
+    }
+
+    // ══════════════════════════════════════════
+    // GATT OPERATION QUEUE
+    // ══════════════════════════════════════════
+
+    private val gattQueue = ArrayDeque<() -> Unit>()
+    private var gattBusy = false
+
+    private fun enqueueGattOp(op: () -> Unit) {
+        gattQueue.addLast(op)
+        processGattQueue()
+    }
+
+    private fun processGattQueue() {
+        if (gattBusy || gattQueue.isEmpty()) return
+        gattBusy = true
+        gattQueue.removeFirst().invoke()
+    }
+
+    /** Call from onCharacteristicRead/onCharacteristicWrite/onDescriptorWrite to advance queue */
+    private fun onGattOperationComplete() {
+        gattBusy = false
+        processGattQueue()
     }
 
     // ══════════════════════════════════════════
@@ -741,7 +770,7 @@ class ShimanoProtocol(private val context: Context) {
     private fun readCharacteristic(g: BluetoothGatt, serviceUuid: UUID, charUuid: UUID) {
         val char = g.getService(serviceUuid)?.getCharacteristic(charUuid)
         if (char != null) {
-            g.readCharacteristic(char)
+            enqueueGattOp { g.readCharacteristic(char) }
         } else {
             Log.w(TAG, "Char not found: $charUuid in service $serviceUuid")
         }
@@ -754,32 +783,38 @@ class ShimanoProtocol(private val context: Context) {
     ) {
         val char = g.getService(serviceUuid)?.getCharacteristic(charUuid)
         if (char != null) {
-            char.value = data
-            char.writeType = if (writeNoResponse)
-                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-            else
-                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            g.writeCharacteristic(char)
+            enqueueGattOp {
+                char.value = data
+                char.writeType = if (writeNoResponse)
+                    BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                else
+                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                g.writeCharacteristic(char)
+            }
         }
     }
 
     @Suppress("DEPRECATION")
     private fun enableNotification(g: BluetoothGatt, serviceUuid: UUID, charUuid: UUID) {
         val char = g.getService(serviceUuid)?.getCharacteristic(charUuid) ?: return
-        g.setCharacteristicNotification(char, true)
-        char.getDescriptor(CCC_DESCRIPTOR)?.let { desc ->
-            desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-            g.writeDescriptor(desc)
+        enqueueGattOp {
+            g.setCharacteristicNotification(char, true)
+            char.getDescriptor(CCC_DESCRIPTOR)?.let { desc ->
+                desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                g.writeDescriptor(desc)
+            }
         }
     }
 
     @Suppress("DEPRECATION")
     private fun enableIndication(g: BluetoothGatt, serviceUuid: UUID, charUuid: UUID) {
         val char = g.getService(serviceUuid)?.getCharacteristic(charUuid) ?: return
-        g.setCharacteristicNotification(char, true)
-        char.getDescriptor(CCC_DESCRIPTOR)?.let { desc ->
-            desc.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
-            g.writeDescriptor(desc)
+        enqueueGattOp {
+            g.setCharacteristicNotification(char, true)
+            char.getDescriptor(CCC_DESCRIPTOR)?.let { desc ->
+                desc.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+                g.writeDescriptor(desc)
+            }
         }
     }
 

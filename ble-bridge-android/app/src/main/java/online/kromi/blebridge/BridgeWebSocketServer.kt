@@ -11,7 +11,7 @@ class BridgeWebSocketServer(
     port: Int = 8765,
     private val onCommand: (JSONObject) -> Unit,
     var appVersion: String = "unknown"
-) : WebSocketServer(InetSocketAddress("0.0.0.0", port)) {
+) : WebSocketServer(InetSocketAddress("127.0.0.1", port)) {
 
     companion object {
         const val TAG = "WSServer"
@@ -53,7 +53,7 @@ class BridgeWebSocketServer(
 
     fun broadcastData(json: JSONObject) {
         val msg = json.toString()
-        connections.forEach { conn ->
+        connections.toList().forEach { conn ->
             try {
                 conn.send(msg)
             } catch (_: Exception) {}

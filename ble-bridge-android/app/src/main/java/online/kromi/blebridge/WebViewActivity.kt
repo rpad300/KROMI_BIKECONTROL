@@ -8,6 +8,8 @@ import android.net.Uri
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import android.view.View
@@ -114,12 +116,9 @@ class WebViewActivity : AppCompatActivity() {
         val allPerms = mutableListOf(
             android.Manifest.permission.BLUETOOTH_CONNECT,
             android.Manifest.permission.BLUETOOTH_SCAN,
-            android.Manifest.permission.BLUETOOTH_ADVERTISE,
             android.Manifest.permission.ACCESS_FINE_LOCATION,
             android.Manifest.permission.ACCESS_COARSE_LOCATION,
-            android.Manifest.permission.CAMERA,
             android.Manifest.permission.POST_NOTIFICATIONS,
-            android.Manifest.permission.BODY_SENSORS,
             android.Manifest.permission.ACTIVITY_RECOGNITION,
         )
 
@@ -235,7 +234,8 @@ class WebViewActivity : AppCompatActivity() {
             override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
                 val url = error?.url ?: ""
                 Log.w(TAG, "SSL error: ${error?.primaryError} url=$url")
-                if (url.contains("kromi.online") || url.contains("127.0.0.1")) {
+                val host = Uri.parse(url).host
+                if (host == "kromi.online" || host == "www.kromi.online" || host == "127.0.0.1") {
                     handler?.proceed() // trust our own domain
                 } else {
                     handler?.cancel()
@@ -257,15 +257,21 @@ class WebViewActivity : AppCompatActivity() {
                 return true
             }
 
-            // Auto-grant geolocation for our domain
+            // Auto-grant geolocation for our domain only
             override fun onGeolocationPermissionsShowPrompt(origin: String?, callback: GeolocationPermissions.Callback?) {
                 Log.i(TAG, "Geolocation permission for: $origin")
-                callback?.invoke(origin, true, false)
+                if (origin != null && (origin.contains("kromi.online") || origin.startsWith("file://"))) {
+                    callback?.invoke(origin, true, false)
+                } else {
+                    callback?.invoke(origin, false, false)
+                }
             }
         }
 
-        // Enable Chrome DevTools remote debugging
-        WebView.setWebContentsDebuggingEnabled(true)
+        // Enable Chrome DevTools remote debugging (debug builds only)
+        if (BuildConfig.DEBUG) {
+            WebView.setWebContentsDebuggingEnabled(true)
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -277,10 +283,23 @@ class WebViewActivity : AppCompatActivity() {
         Log.i(TAG, "Loading PWA: $PWA_URL")
         webView.loadUrl(PWA_URL)
 
-        // Wire KromiCore telemetry → WebView for UI display
-        BLEBridgeService.instance?.kromiCore?.onTelemetry = { telemetry ->
-            val js = "window.__kromiState && window.__kromiState(${telemetry})"
-            runOnUiThread { webView.evaluateJavascript(js, null) }
+        // Wire KromiCore telemetry → WebView for UI display (deferred until service is ready)
+        wireTelemetryCallback(0)
+    }
+
+    private val telemetryHandler = Handler(Looper.getMainLooper())
+
+    private fun wireTelemetryCallback(attempt: Int) {
+        val service = BLEBridgeService.instance
+        if (service != null) {
+            service.kromiCore.onTelemetry = { telemetry ->
+                val js = "window.__kromiState && window.__kromiState(${telemetry})"
+                runOnUiThread { webView.evaluateJavascript(js, null) }
+            }
+        } else if (attempt < 5) {
+            telemetryHandler.postDelayed({ wireTelemetryCallback(attempt + 1) }, 500)
+        } else {
+            Log.w(TAG, "BLEBridgeService not ready after 5 attempts — telemetry callback not wired")
         }
     }
 
@@ -311,11 +330,10 @@ class WebViewActivity : AppCompatActivity() {
     // WAKE LOCK
     // ═══════════════════════════════════════════════════════════
 
-    @SuppressLint("WakelockTimeout")
     private fun acquireWakeLock() {
         try {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "kromi:ride").apply { acquire() }
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "kromi:ride").apply { acquire(8 * 60 * 60 * 1000L) }
         } catch (e: Exception) {
             Log.w(TAG, "WakeLock failed: ${e.message}")
         }
