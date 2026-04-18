@@ -131,6 +131,7 @@ export const useAuthStore = create<AuthState>()(
 
       checkSession: async () => {
         const { realUser: localUser, sessionToken, expiresAt, jwt: persistedJwt } = get();
+        console.log('[Auth] checkSession start:', { hasUser: !!localUser, hasToken: !!sessionToken, hasExpiry: !!expiresAt, hasJwt: !!persistedJwt });
 
         // Re-publish the persisted JWT so supaFetch sees it BEFORE any
         // background verification runs. Without this, the first REST
@@ -139,7 +140,9 @@ export const useAuthStore = create<AuthState>()(
 
         if (!sessionToken || !expiresAt) {
           // No local session — try device auto-login (mints a fresh JWT)
+          console.log('[Auth] No session — trying loginByDevice...');
           const deviceResult = await loginByDevice();
+          console.log('[Auth] loginByDevice result:', { success: deviceResult.success, error: deviceResult.error });
           if (deviceResult.success && deviceResult.user) {
             publishJwtGlobal(deviceResult.jwt ?? null);
             set({
