@@ -230,6 +230,18 @@ class WebViewActivity : AppCompatActivity() {
                 }
             }
 
+            // Renderer crash recovery — reload PWA when Chromium renderer process dies
+            override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
+                Log.e(TAG, "WebView renderer crashed! priority=${detail?.rendererPriorityAtExit()}, didCrash=${detail?.didCrash()}")
+                // Reset state and reload
+                pwaLoaded = false
+                view?.post {
+                    view.loadUrl("about:blank")
+                    view.postDelayed({ loadPWA() }, 500)
+                }
+                return true // we handled it, don't kill the activity
+            }
+
             // Handle SSL errors — accept for kromi.online (our own domain)
             override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
                 val url = error?.url ?: ""
