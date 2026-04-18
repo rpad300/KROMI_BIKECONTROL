@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { DashboardController } from './components/DashboardSystem/DashboardController';
+import { DashboardRefined } from './components/Dashboard/Dashboard.refined';
+import { USE_REFINED_DASHBOARD } from './config/flags';
 import { MapView } from './components/Map/MapView';
 import { ClimbApproach } from './components/Climb/ClimbApproach';
 import { ConnectionsPage as Connections } from './components/Connections/ConnectionsPage';
 import { Settings } from './components/Settings/Settings';
 import { RideHistory } from './components/History/RideHistory';
-import { LoginPage } from './components/Auth/LoginPage';
+import { LoginPage } from './components/Auth/LoginPage.refined';
 import { ConnectionStatus } from './components/shared/ConnectionStatus';
 import { BridgeSetup } from './components/shared/BridgeSetup';
 import { useGeolocation } from './hooks/useGeolocation';
@@ -24,7 +26,8 @@ import {
 import { usePlatform } from './hooks/usePlatform';
 import { useDriveBootstrap } from './hooks/useDriveBootstrap';
 import { ImpersonationBanner } from './components/Admin/ImpersonationBanner';
-import { DesktopLiveView } from './components/Desktop/DesktopLiveView';
+import { DesktopLiveViewRefined as DesktopLiveView } from './components/Desktop/DesktopLiveView.refined';
+import { SidebarRefined } from './components/Desktop/Sidebar.refined';
 import { GlobalMapView } from './components/Map/GlobalMapView';
 import { startSettingsSync, loadSettingsFromDB } from './services/sync/SettingsSyncService';
 import { trackLogin } from './services/sync/LoginTracker';
@@ -143,7 +146,7 @@ function MobileApp() {
         className={`flex-1 min-h-0 ${screen === 'settings' || screen === 'history' ? 'overflow-y-auto' : 'overflow-hidden'}`}
         onTouchStart={resetGlance}
       >
-        {screen === 'dashboard' && <DashboardController />}
+        {screen === 'dashboard' && (USE_REFINED_DASHBOARD ? <DashboardRefined /> : <DashboardController />)}
         {screen === 'map' && <MapView />}
         {screen === 'climb' && <ClimbApproach />}
         {screen === 'connections' && <Connections />}
@@ -266,76 +269,17 @@ function DesktopApp() {
   return (
     <div className="h-full flex bg-[#0e0e0e] text-white">
       <DiagSafe><DiagBadge /></DiagSafe>
-      {/* Sidebar with expandable submenus */}
-      <aside style={{ width: '240px', flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(73,72,71,0.2)', backgroundColor: '#131313', overflow: 'auto' }}>
-        {/* Logo */}
-        <div style={{ padding: '20px 16px', borderBottom: '1px solid rgba(73,72,71,0.2)' }}>
-          <h1 className="font-headline font-bold" style={{ fontSize: '18px', color: '#3fff8b', letterSpacing: '-0.02em' }}>STEALTH-EV</h1>
-          <p className="font-label" style={{ fontSize: '9px', color: '#777575', textTransform: 'uppercase', letterSpacing: '0.15em', marginTop: '2px' }}>BikeControl Desktop</p>
-        </div>
-
-        {/* Nav items with submenus */}
-        <nav style={{ flex: 1, padding: '8px' }}>
-          {navItems.map((item) => {
-            const isExpanded = expanded === item.label && item.subs;
-            const hasActiveSub = item.subs?.some((s) => s.id === sub) && screen === item.screen;
-            const isActive = (!item.subs && screen === item.screen) || hasActiveSub;
-            return (
-              <div key={item.label}>
-                {/* Main nav item */}
-                <button
-                  onClick={() => handleNav(item)}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-                    padding: '10px 12px', border: 'none', cursor: 'pointer', textAlign: 'left',
-                    backgroundColor: isActive ? 'rgba(63,255,139,0.08)' : 'transparent',
-                    borderLeft: isActive ? `2px solid ${item.color ?? '#3fff8b'}` : '2px solid transparent',
-                    marginBottom: '2px',
-                  }}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '18px', color: isActive ? (item.color ?? '#3fff8b') : '#adaaaa' }}>{item.icon}</span>
-                  <span className="font-label" style={{ fontSize: '12px', color: isActive ? 'white' : '#adaaaa', fontWeight: isActive ? 700 : 400, flex: 1 }}>{item.label}</span>
-                  {item.subs && (
-                    <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#494847', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>expand_more</span>
-                  )}
-                </button>
-
-                {/* Submenu */}
-                {isExpanded && item.subs && (
-                  <div style={{ marginLeft: '20px', marginBottom: '4px' }}>
-                    {item.subs.map((s) => {
-                      const isSubActive = isActive && sub === s.id;
-                      return (
-                        <button
-                          key={s.id}
-                          onClick={() => { setScreen(item.screen); setSub(s.id); }}
-                          style={{
-                            width: '100%', display: 'flex', alignItems: 'center', gap: '8px',
-                            padding: '7px 10px', border: 'none', cursor: 'pointer', textAlign: 'left',
-                            backgroundColor: isSubActive ? 'rgba(63,255,139,0.05)' : 'transparent',
-                            borderLeft: isSubActive ? `2px solid ${item.color ?? '#3fff8b'}` : '2px solid transparent',
-                          }}
-                        >
-                          <span className="material-symbols-outlined" style={{ fontSize: '14px', color: isSubActive ? (item.color ?? '#3fff8b') : '#777575' }}>{s.icon}</span>
-                          <span style={{ fontSize: '11px', color: isSubActive ? 'white' : '#777575', fontWeight: isSubActive ? 600 : 400 }}>{s.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </nav>
-
-        {/* User + logout */}
-        <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(73,72,71,0.2)' }}>
-          <div style={{ fontSize: '10px', color: '#777575' }}>{user?.email}</div>
-          <button onClick={logout} style={{ marginTop: '6px', fontSize: '10px', color: '#ff716c', background: 'none', border: 'none', cursor: 'pointer' }}>
-            Terminar sessão
-          </button>
-        </div>
-      </aside>
+      {/* Sidebar — Refined v2 */}
+      <SidebarRefined
+        navItems={navItems as any}
+        activeScreen={screen}
+        activeSub={sub}
+        expanded={expanded}
+        onNav={(item, subId) => handleNav(item as any, subId)}
+        onExpand={setExpanded}
+        userEmail={user?.email}
+        onLogout={logout}
+      />
 
       {/* Main content */}
       <main className="flex-1 min-h-0 overflow-y-auto">
