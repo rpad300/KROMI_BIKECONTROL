@@ -55,8 +55,13 @@ export function App() {
   // If present, switch this tab's state to the target user and reload
   // their settings from the DB so the UI actually reflects their data.
   useEffect(() => {
-    if (loading || !user) return;
+    if (loading) return;
     if (impersonationApplied) return;
+    if (!user) {
+      // No user = no impersonation possible — unblock the render
+      setImpersonationApplied(true);
+      return;
+    }
     if (typeof window === 'undefined') return;
     if (!new URLSearchParams(window.location.search).has('as')) {
       setImpersonationApplied(true);
@@ -72,10 +77,7 @@ export function App() {
     })();
   }, [loading, user, applyImpersonationFromUrl, impersonationApplied]);
 
-  console.log('[App] render:', { loading, user: !!user, impersonationApplied });
-
   if (loading || !impersonationApplied) {
-    console.log('[App] Showing spinner:', { loading, impersonationApplied });
     return (
       <div className="h-full flex items-center justify-center bg-[#0e0e0e]">
         <div className="w-10 h-10 border-2 border-[#3fff8b] border-t-transparent rounded-full animate-spin" />
@@ -83,10 +85,7 @@ export function App() {
     );
   }
 
-  if (!user) {
-    console.log('[App] Showing LoginPage');
-    return <LoginPage />;
-  }
+  if (!user) return <LoginPage />;
 
   return (
     <>
