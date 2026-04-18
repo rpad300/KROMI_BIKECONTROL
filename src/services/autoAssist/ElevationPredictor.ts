@@ -1,11 +1,14 @@
 /**
- * ElevationPredictor — 4km rolling horizon lookahead.
+ * ElevationPredictor — adaptive rolling horizon lookahead.
  *
  * Three modes with automatic transition:
  *   Mode A (GPX Known): Pre-calculated from loaded route. Full segment profile.
- *   Mode B (Discovery): Projects 4km ahead from current position + heading.
+ *   Mode B (Discovery): Projects ahead from current position + heading.
  *   Mode C (Hybrid): GPX loaded but rider deviated >50m for 20s → Discovery
  *                     until re-entry into route corridor.
+ *
+ * Gap #5: Adaptive lookahead distance (500m-8km) based on terrain variability and speed.
+ * Gap #7: Cold start bootstrapping from GPS altitude readings.
  *
  * Every 10s: builds segment array (100m each), classifies grade,
  * estimates power + Wh per segment, projects physiological cost.
@@ -67,6 +70,214 @@ export class LookaheadController {
   private deviationStartTs = 0;
   private deviatedFlag = false;
 
+  // ── Gap #5: Adaptive lookahead distance ────────────────
+  private recentGradients: number[] = [];
+  private readonly MAX_RECENT_GRADIENTS = 20;
+
+  // ── Gap #7: Cold start improvement ─────────────────────
+  private coldStartBootstrap: { alt: number; dist: number; ts: number }[] = [];
+  private coldStartGradient = 0;
+  private coldStartConfidence = 0;
+
+  // ── Gap #1: Barometer altitude correction ──────────────
+  private lastBaroAlt: number | null = null;
+  private lastGpsAlt: number | null = null;
+
+  /** Feed barometric altitude from phone sensor (bikeStore.barometric_altitude_m) */
+  setBarometricAltitude(baroAlt: number): void {
+    this.lastBaroAlt = baroAlt > 0 ? baroAlt : null;
+  }
+
+  /** Feed GPS altitude for blending */
+  setGpsAltitude(gpsAlt: number | null): void {
+    this.lastGpsAlt = gpsAlt;
+  }
+
+  /**
+   * Get corrected altitude blending barometer and GPS.
+   * Barometer is more precise for relative changes (gradient),
+   * GPS is better for absolute calibration.
+   */
+  getCorrectedAltitude(gpsAlt: number | null, baroAlt: number | null): number {
+    if (baroAlt != null && baroAlt > 0 && gpsAlt != null && gpsAlt > 0) {
+      // Barometer-weighted blend: baro is ±0.1m precision vs GPS ±3m
+      return baroAlt * 0.7 + gpsAlt * 0.3;
+    }
+    return baroAlt != null && baroAlt > 0 ? baroAlt : gpsAlt ?? 0;
+  }
+
+  // ── Gap #2: Switchback detection ───────────────────────
+  private headingHistory: number[] = [];
+  private readonly MAX_HEADING_HISTORY = 10;
+
+  /** Track heading for switchback detection */
+  trackHeading(headingDeg: number): void {
+    this.headingHistory.push(headingDeg);
+    if (this.headingHistory.length > this.MAX_HEADING_HISTORY) {
+      this.headingHistory.shift();
+    }
+  }
+
+  /** Detect tight switchback from heading changes (>90deg in consecutive readings) */
+  isSwitchback(): boolean {
+    if (this.headingHistory.length < 3) return false;
+    const recent = this.headingHistory.slice(-3);
+    for (let i = 1; i < recent.length; i++) {
+      let delta = Math.abs(recent[i]! - recent[i - 1]!);
+      if (delta > 180) delta = 360 - delta;
+      if (delta > 90) return true;
+    }
+    return false;
+  }
+
+  // ── Gap #3: Dead-reckoning in tunnels ──────────────────
+  private lastGpsTimestamp = 0;
+  private deadReckoningActive = false;
+  private deadReckonPosition = { lat: 0, lng: 0, alt: 0 };
+  private deadReckonGradient = 0;
+  private lastKnownAltitude = 0;
+  private lastKnownGradient = 0;
+
+  /** Detect GPS loss and enter/exit dead-reckoning mode */
+  detectGpsLoss(gpsTimestamp: number, currentLat: number, currentLng: number): void {
+    if (gpsTimestamp === this.lastGpsTimestamp && gpsTimestamp > 0) {
+      // GPS hasn't updated — might be in tunnel
+      const elapsed = Date.now() - this.lastGpsTimestamp;
+      if (elapsed > 5000 && !this.deadReckoningActive) {
+        console.log('[Lookahead] GPS stale for 5s — entering dead-reckoning mode');
+        this.deadReckoningActive = true;
+        this.deadReckonPosition = {
+          lat: currentLat,
+          lng: currentLng,
+          alt: this.lastKnownAltitude,
+        };
+        this.deadReckonGradient = this.lastKnownGradient;
+      }
+    } else {
+      if (this.deadReckoningActive) {
+        console.log('[Lookahead] GPS restored — exiting dead-reckoning');
+      }
+      this.deadReckoningActive = false;
+      this.lastGpsTimestamp = gpsTimestamp;
+    }
+  }
+
+  /** Project forward using last speed + heading during GPS loss */
+  deadReckonTick(speed_kmh: number, heading: number, dt_s: number): void {
+    if (!this.deadReckoningActive) return;
+
+    const dist_m = (speed_kmh / 3.6) * dt_s;
+    const gradRad = Math.atan(this.deadReckonGradient / 100);
+
+    // Update projected altitude
+    this.deadReckonPosition.alt += dist_m * Math.sin(gradRad);
+
+    // Update projected position (haversine forward)
+    const R = 6371000;
+    const lat1 = this.deadReckonPosition.lat * Math.PI / 180;
+    const lng1 = this.deadReckonPosition.lng * Math.PI / 180;
+    const brng = heading * Math.PI / 180;
+    const d = dist_m / R;
+
+    this.deadReckonPosition.lat = Math.asin(
+      Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(brng),
+    ) * 180 / Math.PI;
+    this.deadReckonPosition.lng = (lng1 + Math.atan2(
+      Math.sin(brng) * Math.sin(d) * Math.cos(lat1),
+      Math.cos(d) - Math.sin(lat1) * Math.sin(this.deadReckonPosition.lat * Math.PI / 180),
+    )) * 180 / Math.PI;
+  }
+
+  /** Get effective position (real GPS or dead-reckoned) */
+  getEffectivePosition(lat: number, lng: number, alt: number): { lat: number; lng: number; alt: number } {
+    if (this.deadReckoningActive) {
+      return { ...this.deadReckonPosition };
+    }
+    // Update last known values for dead-reckoning fallback
+    this.lastKnownAltitude = alt;
+    return { lat, lng, alt };
+  }
+
+  isDeadReckoning(): boolean {
+    return this.deadReckoningActive;
+  }
+
+  // ── Gap #5: Adaptive Lookahead Methods ──────────────────
+
+  /**
+   * Calculate terrain-adaptive lookahead distance.
+   * Highly variable terrain (switchbacks) → short lookahead.
+   * Stable terrain (flat road, steady climb) → long lookahead.
+   */
+  getAdaptiveLookaheadM(speed_kmh: number): number {
+    const terrainVariability = this.calculateTerrainVariability();
+    const speedMs = speed_kmh / 3.6;
+    const minLookahead = Math.max(500, speedMs * 30);   // 30s ahead
+    const maxLookahead = Math.min(8000, speedMs * 120);  // 120s ahead
+
+    if (terrainVariability > 5) {
+      // Highly variable terrain (mountain switchbacks): short lookahead
+      return Math.min(1500, minLookahead);
+    } else if (terrainVariability > 2) {
+      // Rolling terrain: medium lookahead
+      return Math.min(3000, (minLookahead + maxLookahead) / 2);
+    } else {
+      // Stable terrain (flat road, steady climb): long lookahead
+      return maxLookahead;
+    }
+  }
+
+  /** Standard deviation of gradient over recent segments */
+  private calculateTerrainVariability(): number {
+    if (this.recentGradients.length < 3) return 0;
+    const mean = this.recentGradients.reduce((a, b) => a + b, 0) / this.recentGradients.length;
+    const variance = this.recentGradients.reduce((sum, g) => sum + (g - mean) ** 2, 0) / this.recentGradients.length;
+    return Math.sqrt(variance);
+  }
+
+  /** Track a gradient sample for terrain variability calculation */
+  trackGradient(gradient: number): void {
+    this.recentGradients.push(gradient);
+    if (this.recentGradients.length > this.MAX_RECENT_GRADIENTS) {
+      this.recentGradients.shift();
+    }
+  }
+
+  // ── Gap #7: Cold Start Methods ─────────────────────────
+
+  /** Bootstrap gradient estimation from GPS altitude readings (cold start) */
+  bootstrapFromGps(altitude: number, distanceKm: number): void {
+    this.coldStartBootstrap.push({ alt: altitude, dist: distanceKm, ts: Date.now() });
+
+    // Keep last 20 readings (1km of data at 50m spacing)
+    if (this.coldStartBootstrap.length > 20) this.coldStartBootstrap.shift();
+
+    // Once we have 5+ readings, calculate trend
+    if (this.coldStartBootstrap.length >= 5) {
+      const first = this.coldStartBootstrap[0]!;
+      const last = this.coldStartBootstrap[this.coldStartBootstrap.length - 1]!;
+      const distM = (last.dist - first.dist) * 1000;
+      if (distM > 100) {
+        this.coldStartGradient = ((last.alt - first.alt) / distM) * 100;
+        this.coldStartConfidence = Math.min(0.6, 0.2 + this.coldStartBootstrap.length * 0.04);
+      }
+    }
+  }
+
+  /** Estimate terrain type from altitude heuristic (cold start without route) */
+  estimateTerrainFromLocation(altitude: number): string {
+    if (altitude > 1500) return 'mountain';
+    if (altitude > 500) return 'hilly';
+    if (altitude < 100) return 'flat';
+    return 'mixed';
+  }
+
+  /** Get cold start gradient and confidence */
+  getColdStartPrediction(): { gradient: number; confidence: number } | null {
+    if (this.coldStartConfidence < 0.2) return null;
+    return { gradient: this.coldStartGradient, confidence: this.coldStartConfidence };
+  }
+
   /** Load a GPX route. Switches to Mode A. */
   loadRoute(route: RoutePoint[]): void {
     this.gpxRoute = route;
@@ -96,6 +307,7 @@ export class LookaheadController {
   /**
    * Main tick — builds lookahead using appropriate mode.
    * Handles auto-transition between modes.
+   * Integrates switchback detection (Gap #2) and dead-reckoning (Gap #3).
    */
   tick(
     lat: number, lng: number,
@@ -105,17 +317,96 @@ export class LookaheadController {
     sprockets: number[],
     currentGear: number,
   ): LookaheadResult {
+    // Gap #5: Track gradients from discovery profile for terrain variability
+    if (discoveryProfile.length >= 2) {
+      for (let i = 1; i < Math.min(discoveryProfile.length, 10); i++) {
+        const dElev = discoveryProfile[i]!.elevation - discoveryProfile[i - 1]!.elevation;
+        const dDist = Math.max(1, discoveryProfile[i]!.distance_from_current - discoveryProfile[i - 1]!.distance_from_current);
+        this.trackGradient((dElev / dDist) * 100);
+      }
+    }
+
+    // Gap #3: Use effective position (dead-reckoned if GPS lost)
+    const correctedAlt = this.getCorrectedAltitude(this.lastGpsAlt, this.lastBaroAlt);
+    const pos = this.getEffectivePosition(lat, lng, correctedAlt);
+
     // Check mode transitions
-    this.updateMode(lat, lng);
+    this.updateMode(pos.lat, pos.lng);
 
     if (this.mode === 'gpx' && this.gpxRoute) {
       return this.buildGpxLookahead(currentSpeed, physicsBase, sprockets, currentGear);
+    }
+
+    // Gap #2: Switchback detection — use momentum-based prediction instead of heading projection
+    if (this.mode === 'discovery' && this.isSwitchback()) {
+      console.log('[Lookahead] Switchback detected — using momentum prediction');
+      const currentGradient = discoveryProfile.length >= 2
+        ? ((discoveryProfile[1]!.elevation - discoveryProfile[0]!.elevation) /
+           Math.max(1, discoveryProfile[1]!.distance_from_current - discoveryProfile[0]!.distance_from_current)) * 100
+        : 0;
+      // Track last known gradient for dead-reckoning
+      this.lastKnownGradient = currentGradient;
+      return this.buildMomentumLookahead(currentGradient, currentSpeed);
+    }
+
+    // Gap #3: If dead-reckoning, use momentum prediction (no API calls with stale position)
+    if (this.deadReckoningActive) {
+      console.log('[Lookahead] Dead-reckoning active — using momentum prediction');
+      return this.buildMomentumLookahead(this.deadReckonGradient, currentSpeed);
+    }
+
+    // Track gradient for dead-reckoning fallback
+    if (discoveryProfile.length >= 2) {
+      const dElev = discoveryProfile[1]!.elevation - discoveryProfile[0]!.elevation;
+      const dDist = Math.max(1, discoveryProfile[1]!.distance_from_current - discoveryProfile[0]!.distance_from_current);
+      this.lastKnownGradient = (dElev / dDist) * 100;
     }
 
     // Mode B (discovery) or Mode C (hybrid using discovery)
     return {
       ...buildSegmentLookahead(discoveryProfile, currentSpeed, physicsBase, sprockets, currentGear),
       mode: this.mode,
+      route_remaining_km: this.getRouteRemainingKm(),
+    };
+  }
+
+  /**
+   * Gap #2: Momentum-based lookahead — assumes gradient continues at current rate.
+   * Used when switchback detected or during dead-reckoning (GPS lost).
+   * Conservative: low confidence, no heading-based API call.
+   */
+  private buildMomentumLookahead(currentGradient: number, speed: number): LookaheadResult {
+    const segments: LookaheadSegment[] = [];
+    const speedMs = speed / 3.6;
+    const grade = classifyGrade(currentGradient);
+
+    for (let d = 0; d < 300; d += 100) {
+      const time_est_s = speedMs > 0 ? 100 / speedMs : 999;
+      segments.push({
+        distance_start_m: d,
+        distance_end_m: d + 100,
+        gradient_pct: Math.round(currentGradient * 10) / 10,
+        grade,
+        elevation_start: d * (currentGradient / 100),
+        elevation_end: (d + 100) * (currentGradient / 100),
+        P_total_est: 0,
+        wh_motor_est: 0,
+        time_est_s: Math.round(time_est_s),
+        motor_active: speed < 25,
+      });
+    }
+
+    return {
+      segments,
+      total_wh_motor: 0,
+      next_transition_m: null,
+      next_transition_gradient: null,
+      seconds_to_transition: null,
+      gear_suggestion: null,
+      summary: this.deadReckoningActive
+        ? 'Dead-reckoning — GPS indisponivel'
+        : 'Switchback — predicao por momento',
+      mode: this.deadReckoningActive ? 'discovery' : 'discovery',
       route_remaining_km: this.getRouteRemainingKm(),
     };
   }
@@ -127,6 +418,24 @@ export class LookaheadController {
     this.deviationStartTs = 0;
     if (this.gpxRoute) this.mode = 'gpx';
     else this.mode = 'discovery';
+    // Gap #1
+    this.lastBaroAlt = null;
+    this.lastGpsAlt = null;
+    // Gap #2
+    this.headingHistory = [];
+    // Gap #3
+    this.lastGpsTimestamp = 0;
+    // Gap #5
+    this.recentGradients = [];
+    // Gap #7
+    this.coldStartBootstrap = [];
+    this.coldStartGradient = 0;
+    this.coldStartConfidence = 0;
+    this.deadReckoningActive = false;
+    this.deadReckonPosition = { lat: 0, lng: 0, alt: 0 };
+    this.deadReckonGradient = 0;
+    this.lastKnownAltitude = 0;
+    this.lastKnownGradient = 0;
   }
 
   // ── Mode Transition Logic ────────────────────────────────
@@ -196,8 +505,8 @@ export class LookaheadController {
   ): LookaheadResult {
     if (!this.gpxRoute) return { ...emptyResult(), mode: 'gpx', route_remaining_km: null };
 
-    // Extract next 4km from current position
-    const lookaheadM = 4000;
+    // Gap #5: Use adaptive lookahead distance instead of fixed 4km
+    const lookaheadM = this.getAdaptiveLookaheadM(currentSpeed);
     const startIdx = this.gpxProgress;
     const startDist = this.gpxRoute[startIdx]?.distance_from_start_m ?? 0;
     const endDist = startDist + lookaheadM;

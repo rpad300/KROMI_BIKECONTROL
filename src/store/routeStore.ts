@@ -12,6 +12,18 @@ import { create } from 'zustand';
 import type { SavedRoute } from '../services/routes/RouteService';
 import type { RoutePoint } from '../services/routes/GPXParser';
 
+// Gap #10: Weather sample along route
+export interface RouteWeatherSegment {
+  distance_km: number;
+  lat: number;
+  lng: number;
+  temp_c: number;
+  wind_speed_kmh: number;
+  wind_direction_deg: number;
+  headwind_component_kmh: number; // relative to route heading
+  precipitation_probability: number;
+}
+
 export interface PreRideAnalysis {
   feasible: boolean;             // Can battery handle this route?
   total_wh: number;              // Estimated motor Wh needed
@@ -26,6 +38,10 @@ export interface PreRideAnalysis {
   demanding_segments: number;    // Segments with gradient > 10%
   motor_off_km: number;          // km where motor will be off (>25 km/h)
   summary: string;               // Portuguese summary text
+  // Gap #10: Weather along route
+  routeWeather: RouteWeatherSegment[];
+  avgHeadwind: number;                       // average headwind across route (km/h)
+  worstHeadwindSegment: RouteWeatherSegment | null; // worst headwind for energy planning
 }
 
 export interface NavigationState {

@@ -6,7 +6,7 @@
  */
 
 import type { RoutePoint } from './GPXParser';
-import type { PreRideAnalysis } from '../../store/routeStore';
+import type { PreRideAnalysis, RouteWeatherSegment } from '../../store/routeStore';
 import { computeForces, surfaceToCrr, airDensityFromTemp, CDA_PRESETS, type CdaPreset } from '../intelligence/PhysicsEngine';
 import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import { useBikeStore } from '../../store/bikeStore';
@@ -18,6 +18,93 @@ import { batteryEstimationService } from '../battery/BatteryEstimationService';
 const CARB_FRACTION = { easy: 0.40, moderate: 0.65, hard: 0.85 };
 const MECHANICAL_EFFICIENCY = 0.24;
 const KCAL_PER_G_GLYCOGEN = 4.0;
+
+// ── Gap #10: Open-Meteo forecast helper ──────────────────────
+
+async function fetchOpenMeteoForecast(lat: number, lng: number): Promise<{
+  temp_c: number;
+  wind_speed: number;
+  wind_direction: number;
+  precipitation_prob: number;
+}> {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&hourly=temperature_2m,windspeed_10m,winddirection_10m,precipitation_probability&forecast_days=1`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  // Get current hour's data
+  const now = new Date();
+  const hourIdx = now.getHours();
+
+  return {
+    temp_c: data.hourly?.temperature_2m?.[hourIdx] ?? 20,
+    wind_speed: data.hourly?.windspeed_10m?.[hourIdx] ?? 0,
+    wind_direction: data.hourly?.winddirection_10m?.[hourIdx] ?? 0,
+    precipitation_prob: data.hourly?.precipitation_probability?.[hourIdx] ?? 0,
+  };
+}
+
+/** Calculate bearing between two points (degrees, 0=North) */
+function calculateBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const lat1Rad = lat1 * Math.PI / 180;
+  const lat2Rad = lat2 * Math.PI / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2Rad);
+  const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
+
+/**
+ * Gap #10: Sample weather along route at regular intervals.
+ * Uses Open-Meteo (free, no API key required).
+ */
+export async function getRouteWeather(
+  routePoints: RoutePoint[],
+  sampleIntervalKm: number = 10,
+): Promise<RouteWeatherSegment[]> {
+  const segments: RouteWeatherSegment[] = [];
+  if (routePoints.length < 2) return segments;
+
+  let lastSampleDist = -sampleIntervalKm; // ensure first point is sampled
+
+  for (let i = 0; i < routePoints.length; i++) {
+    const point = routePoints[i]!;
+    const distKm = point.distance_from_start_m / 1000;
+    if (distKm - lastSampleDist < sampleIntervalKm && distKm > 0) continue;
+
+    lastSampleDist = distKm;
+
+    try {
+      const weather = await fetchOpenMeteoForecast(point.lat, point.lng);
+
+      // Calculate route heading at this point
+      const nextIdx = Math.min(i + 5, routePoints.length - 1);
+      const routeHeading = calculateBearing(
+        point.lat, point.lng,
+        routePoints[nextIdx]!.lat, routePoints[nextIdx]!.lng,
+      );
+
+      // Calculate headwind component relative to route heading
+      const headwind = weather.wind_speed *
+        Math.cos((weather.wind_direction - routeHeading) * Math.PI / 180);
+
+      segments.push({
+        distance_km: distKm,
+        lat: point.lat,
+        lng: point.lng,
+        temp_c: weather.temp_c,
+        wind_speed_kmh: weather.wind_speed,
+        wind_direction_deg: weather.wind_direction,
+        headwind_component_kmh: Math.round(headwind * 10) / 10,
+        precipitation_probability: weather.precipitation_prob,
+      });
+    } catch (err) {
+      console.warn(`[PreRide] Weather fetch failed at ${distKm.toFixed(1)}km:`, err);
+    }
+  }
+
+  return segments;
+}
 
 /**
  * Analyze a route and produce battery/nutrition/time estimates.
@@ -165,7 +252,76 @@ export function analyzeRoute(points: RoutePoint[]): PreRideAnalysis | null {
     demanding_segments: demandingSegments,
     motor_off_km: Math.round(motorOffKm * 10) / 10,
     summary: parts.join(' '),
+    // Gap #10: Weather (populated by analyzeRouteWithWeather)
+    routeWeather: [],
+    avgHeadwind: 0,
+    worstHeadwindSegment: null,
   };
+}
+
+/**
+ * Gap #10: Async version of analyzeRoute that includes weather along the route.
+ * Call this for pre-ride planning when network is available.
+ */
+export async function analyzeRouteWithWeather(
+  points: RoutePoint[],
+  sampleIntervalKm: number = 10,
+): Promise<PreRideAnalysis | null> {
+  // Run sync analysis first
+  const base = analyzeRoute(points);
+  if (!base) return null;
+
+  // Fetch weather along route
+  try {
+    const routeWeather = await getRouteWeather(points, sampleIntervalKm);
+    if (routeWeather.length === 0) return base;
+
+    // Calculate average headwind
+    const avgHeadwind = routeWeather.reduce((sum, s) => sum + s.headwind_component_kmh, 0) / routeWeather.length;
+
+    // Find worst headwind segment
+    const worstHeadwindSegment = routeWeather.reduce<RouteWeatherSegment | null>((worst, seg) => {
+      if (!worst || seg.headwind_component_kmh > worst.headwind_component_kmh) return seg;
+      return worst;
+    }, null);
+
+    // Re-calculate energy with wind data
+    let windAdjustedWh = base.total_wh;
+    if (Math.abs(avgHeadwind) > 3) {
+      // Headwind adds roughly 3% energy per km/h of headwind
+      const windFactor = 1 + (avgHeadwind * 0.03);
+      windAdjustedWh = Math.round(base.total_wh * Math.max(0.5, windFactor));
+    }
+
+    // Update summary with weather info
+    const weatherParts = [base.summary];
+    if (avgHeadwind > 5) {
+      weatherParts.push(`Vento contrario medio de ${Math.round(avgHeadwind)}km/h. Energia ajustada para ${windAdjustedWh}Wh.`);
+    } else if (avgHeadwind < -5) {
+      weatherParts.push(`Vento a favor medio de ${Math.round(Math.abs(avgHeadwind))}km/h.`);
+    }
+
+    const precipSegments = routeWeather.filter(s => s.precipitation_probability > 50);
+    if (precipSegments.length > 0) {
+      weatherParts.push(`Probabilidade de chuva em ${precipSegments.length} pontos da rota.`);
+    }
+
+    return {
+      ...base,
+      total_wh: windAdjustedWh,
+      battery_margin_pct: base.battery_remaining_wh > 0
+        ? Math.round(((base.battery_remaining_wh - windAdjustedWh) / base.battery_remaining_wh) * 100)
+        : 0,
+      feasible: base.battery_remaining_wh >= windAdjustedWh,
+      routeWeather,
+      avgHeadwind: Math.round(avgHeadwind * 10) / 10,
+      worstHeadwindSegment,
+      summary: weatherParts.join(' '),
+    };
+  } catch (err) {
+    console.warn('[PreRide] Weather analysis failed, using base analysis:', err);
+    return base;
+  }
 }
 
 /** Estimate speed for a given gradient (km/h) */

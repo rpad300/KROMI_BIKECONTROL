@@ -132,6 +132,10 @@ export function useMotorControl() {
             dlog?.(`[KROMI] MODE FEEDBACK: POWER→${['','ECO','TOUR','ACTV','SPRT'][bike.assist_mode]} | KROMI was S=${lastKromiOutput.supportPct.toFixed(0)}% grad=${lastKromiOutput.gradient.toFixed(1)} z${lastKromiOutput.hr_zone} | correction=${feedback.correction_pct > 0 ? '+' : ''}${feedback.correction_pct.toFixed(0)}%`);
           }
 
+          // Gap #4: KromiEngine stopping — let AutoAssistEngine take over
+          kromiEngine.stop();
+          autoAssistEngine.kromiEngineDefers = false;
+
           useIntelligenceStore.getState().setActive(false);
           useAutoAssistStore.getState().setLastDecision({
             action: 'none',
@@ -150,6 +154,10 @@ export function useMotorControl() {
         if (returnEvent) {
           dlog?.(`[KROMI] MODE RETURN: stayed ${returnEvent.duration_s?.toFixed(0)}s in mode ${returnEvent.target_mode} | learned correction: ${returnEvent.correction_pct > 0 ? '+' : ''}${returnEvent.correction_pct.toFixed(0)}% for grad=${returnEvent.gradient_bucket} z${returnEvent.hr_zone}`);
         }
+
+        // Gap #4: KromiEngine takes over — tell AutoAssistEngine to defer decisions
+        kromiEngine.start();
+        autoAssistEngine.kromiEngineDefers = true;
 
         useIntelligenceStore.getState().setActive(true);
         dlog?.(`[KROMI] ACTIVATED v2 — 6-layer intelligence | gear=${bike.gear} ble=${bike.ble_status} tuning=${isTuningAvailable()}`);

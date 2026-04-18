@@ -6,6 +6,16 @@ interface NextModeChange {
   mode: string;
 }
 
+// ── Gap #9: Rich gear suggestion from lookahead ──
+export interface GearSuggestion {
+  suggestedGear: number;          // 1-12
+  currentGear: number;            // 1-12
+  reason: string;                 // 'upcoming_climb' | 'upcoming_descent' | 'cadence_optimization'
+  secondsUntilTransition: number;
+  targetCadence: number;          // rpm
+  targetGradient: number;         // %
+}
+
 interface AutoAssistState {
   enabled: boolean;
   lastDecision: AssistDecision | null;
@@ -14,6 +24,14 @@ interface AutoAssistState {
   nextModeChange: NextModeChange | null;
   overrideActive: boolean;
   overrideRemaining: number; // seconds
+
+  // Gap #9: Gear suggestion from lookahead
+  gearSuggestion: GearSuggestion | null;
+  setGearSuggestion: (suggestion: GearSuggestion | null) => void;
+
+  // Gap #11: Auto-detected terrain from speed variance
+  autoDetectedTerrain: string; // 'paved' | 'gravel' | 'dirt' | 'technical' | 'mud'
+  setAutoDetectedTerrain: (terrain: string) => void;
 
   setEnabled: (v: boolean) => void;
   setLastDecision: (d: AssistDecision) => void;
@@ -29,6 +47,14 @@ export const useAutoAssistStore = create<AutoAssistState>((set) => ({
   nextModeChange: null,
   overrideActive: false,
   overrideRemaining: 0,
+
+  // Gap #9: Gear suggestion
+  gearSuggestion: null,
+  setGearSuggestion: (suggestion) => set({ gearSuggestion: suggestion }),
+
+  // Gap #11: Auto-detected terrain
+  autoDetectedTerrain: 'dirt',
+  setAutoDetectedTerrain: (terrain) => set({ autoDetectedTerrain: terrain }),
 
   setEnabled: (v) => set({ enabled: v }),
 

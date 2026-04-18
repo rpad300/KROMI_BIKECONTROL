@@ -8,6 +8,7 @@ import type {
 import { elevationService } from '../maps/ElevationService';
 import { useMapStore } from '../../store/mapStore';
 import { useBikeStore } from '../../store/bikeStore';
+import { useAutoAssistStore } from '../../store/autoAssistStore';
 
 interface AutoAssistConfig {
   enabled: boolean;
@@ -40,6 +41,9 @@ class AutoAssistEngine {
   // Gap #8: Hysteresis — dead-band to prevent mode oscillation
   private lastDecidedMode: AssistMode = AssistMode.ECO;
   private static readonly HYSTERESIS = 1.5; // % dead-band
+
+  // Gap #4: When KromiEngine is active, defer motor decisions to it
+  kromiEngineDefers = false;
 
   /**
    * GPS-based gradient fallback — used when Google Elevation API is unavailable.
@@ -90,6 +94,13 @@ class AutoAssistEngine {
     speed_kmh: number,
     currentMode: AssistMode
   ): Promise<AssistDecision> {
+    // Gap #4: If KromiEngine is active, defer motor control decisions to it.
+    // AutoAssistEngine still provides terrain data (via analyzeTerrain) but
+    // does NOT make independent mode change decisions.
+    if (this.kromiEngineDefers) {
+      return { action: 'none', reason: 'KromiEngine activo — deferido', terrain: null };
+    }
+
     if (!this.config.enabled) {
       return { action: 'none', reason: 'Auto-assist desactivado', terrain: null };
     }
@@ -248,6 +259,17 @@ class AutoAssistEngine {
 
   isOverrideActive(): boolean {
     return Date.now() - this.lastManualOverride < this.lastOverrideTimeout;
+  }
+
+  // ── Gap #4: Public terrain analysis for KromiEngine Layer 4 ──
+  /**
+   * Get current terrain analysis as a data source for KromiEngine.
+   * When KromiEngine is active, it uses this as input data (not as a decision maker).
+   */
+  getCurrentTerrainAnalysis(): TerrainAnalysis | null {
+    // Return the last terrain analysis from the auto-assist store
+    const terrain = useAutoAssistStore?.getState?.()?.terrain;
+    return terrain ?? null;
   }
 
   // ── Terrain Analysis ──────────────────────────────────

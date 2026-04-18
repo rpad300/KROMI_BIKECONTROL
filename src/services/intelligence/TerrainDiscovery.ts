@@ -102,6 +102,18 @@ export class TerrainDiscovery {
     const recentGrads = this.segments.slice(-PATTERN_WINDOW).map(s => s.gradient_pct);
 
     if (recentGrads.length < 2) {
+      // Gap #7: Cold start — try cache-based prediction with confidence boost
+      const cachedGrad = this.lookupAhead(lat, lng, heading);
+      if (cachedGrad !== null) {
+        return {
+          predicted_gradient: Math.round(cachedGrad * 10) / 10,
+          confidence: Math.min(0.8, 0.3 + 0.1), // bump for familiarity
+          pattern: cachedGrad > 2 ? 'climbing' : cachedGrad < -2 ? 'descending' : 'flat',
+          pattern_distance_m: 0,
+          pre_adjust_support: cachedGrad > 3 ? Math.min(30, cachedGrad * 5) : 0,
+          pre_adjust_torque: cachedGrad > 3 ? Math.min(10, cachedGrad * 1.5) : 0,
+        };
+      }
       return { predicted_gradient: 0, confidence: 0, pattern: 'flat', pattern_distance_m: 0, pre_adjust_support: 0, pre_adjust_torque: 0 };
     }
 
@@ -123,7 +135,9 @@ export class TerrainDiscovery {
       ? momentumGrad * 0.4 + cachedGrad * 0.6  // trust cache more
       : momentumGrad * MOMENTUM_FACTOR;          // pure momentum
 
-    const confidence = Math.min(1, (recentGrads.length / PATTERN_WINDOW) * (hasCachedData ? 1.0 : 0.6));
+    // Gap #7: Boost confidence for repeated terrain (familiarity bonus)
+    const familiarityBonus = hasCachedData ? 0.1 : 0;
+    const confidence = Math.min(1, (recentGrads.length / PATTERN_WINDOW) * (hasCachedData ? 1.0 : 0.6) + familiarityBonus);
 
     // Pattern distance
     const patternDist = this.getPatternDistance(pattern);

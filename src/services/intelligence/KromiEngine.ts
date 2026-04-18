@@ -20,7 +20,7 @@ import type { TuningFactor } from '../motor/TuningIntelligence';
 import {
   computeForces, airDensityFromTemp, windHeadComponent, surfaceToCrr,
   estimateHeadwind,
-  CDA_PRESETS, type CdaPreset,
+  CDA_PRESETS, CRR_TABLE, type CdaPreset,
   type PhysicsInput,
 } from './PhysicsEngine';
 import { PhysiologyEngine, type PhysiologyOutput } from './PhysiologyEngine';
@@ -33,7 +33,10 @@ import { RiderLearning } from '../autoAssist/RiderLearning';
 import { NutritionEngine, type NutritionState } from './NutritionEngine';
 import { terrainDiscovery } from './TerrainDiscovery';
 import { elevationService } from '../maps/ElevationService';
+import { terrainPatternLearner } from '../autoAssist/TerrainPatternLearner';
 import { useRouteStore } from '../../store/routeStore';
+import { useAutoAssistStore, type GearSuggestion } from '../../store/autoAssistStore';
+import { autoAssistEngine } from '../autoAssist/AutoAssistEngine';
 
 // ── Constants ──────────────────────────────────────────────────
 
@@ -89,8 +92,14 @@ export interface KromiTickOutput {
   speedZone: 'active' | 'fade' | 'free';
   batteryFactor: number;
   gearSuggestion: number | null;
+  /** Gap #9: Rich gear suggestion with timing & reason */
+  gearSuggestionDetail: GearSuggestion | null;
   physiology: PhysiologyOutput | null;
   nutrition: NutritionState | null;
+  /** Gap #11: Auto-detected terrain from speed variance */
+  autoTerrain: string;
+  /** Gap #11: Active Crr being used (after terrain adjustment) */
+  activeCrr: number;
   alerts: string[];
 }
 
@@ -141,16 +150,49 @@ class KromiEngine {
   private preAdjustTarget: { support: number; torque: number } | null = null;
   private preAdjustCountdown = 0;
 
+  // Gap #4: KromiEngine active flag for AutoAssistEngine coordination
+  private kromiEngineActive = false;
+
+  // Gap #3: Last GPS timestamp for dead-reckoning detection
+  private lastGpsTs = 0;
+
   // Sustained effort tracker for CP calibration
   private sustainedEffortStart = 0;
   private sustainedEffortPowerSum = 0;
   private sustainedEffortSamples = 0;
 
+  // Gap #9: Rich gear suggestion from lookahead
+  private cachedGearSuggestion: GearSuggestion | null = null;
+
+  // Gap #11: Micro-terrain auto-detection from speed variance
+  private speedHistory: number[] = [];
+  private readonly SPEED_HISTORY_SIZE = 30; // 30 seconds of data
+  private manualTerrainOverride: string | null = null;
+  private lastAutoTerrain = 'dirt';
+
   static getInstance(): KromiEngine {
     if (!KromiEngine.instance) {
       KromiEngine.instance = new KromiEngine();
+      // Gap #8: Load terrain patterns from previous rides on first instantiation
+      terrainPatternLearner.load();
     }
     return KromiEngine.instance;
+  }
+
+  // ── Gap #4: Active state for AutoAssistEngine coordination ──
+  /** Mark KromiEngine as active — AutoAssistEngine should defer decisions */
+  start(): void {
+    this.kromiEngineActive = true;
+  }
+
+  /** Mark KromiEngine as inactive — AutoAssistEngine can take over */
+  stop(): void {
+    this.kromiEngineActive = false;
+  }
+
+  /** Whether KromiEngine is actively controlling the motor */
+  isActive(): boolean {
+    return this.kromiEngineActive;
   }
 
   // ── Gap #9: Gradient EMA smoothing ──────────────────────
@@ -183,6 +225,91 @@ class KromiEngine {
     if (cv > 0.3) return 0.2;   // moderate noise
     if (cv > 0.1) return 0.35;  // normal riding
     return 0.5;                  // very stable: quick response
+  }
+
+  // ── Gap #9: Rich gear suggestion from lookahead ────────
+  private calculateGearSuggestion(
+    currentGear: number,
+    _currentCadence: number,
+    currentSpeed: number,
+    nextGradient: number,
+    secondsToTransition: number,
+    sprockets: number[],
+    chainring: number,
+    wheelCircumM: number,
+  ): GearSuggestion | null {
+    if (secondsToTransition > 10 || secondsToTransition < 3) return null;
+
+    const TARGET_CADENCE = 80; // rpm target for optimal efficiency
+
+    // Estimate what speed we'll have on the next gradient
+    const estimatedSpeed = Math.max(5, currentSpeed - nextGradient * 1.5); // km/h
+    const speedMs = estimatedSpeed / 3.6;
+
+    // Find gear that gives closest to TARGET_CADENCE at estimated speed
+    let bestGear = currentGear;
+    let bestCadenceDiff = Infinity;
+
+    for (let g = 0; g < sprockets.length; g++) {
+      const ratio = chainring / sprockets[g]!;
+      const cadence = (speedMs * 60) / (ratio * wheelCircumM);
+      const diff = Math.abs(cadence - TARGET_CADENCE);
+      if (diff < bestCadenceDiff) {
+        bestCadenceDiff = diff;
+        bestGear = g + 1; // 1-indexed
+      }
+    }
+
+    // Only suggest if different from current and improvement is significant
+    if (bestGear === currentGear) return null;
+    if (bestCadenceDiff > 30) return null; // can't hit target cadence in any gear
+
+    const reason = nextGradient > 3 ? 'upcoming_climb'
+      : nextGradient < -3 ? 'upcoming_descent'
+      : 'cadence_optimization';
+
+    return {
+      suggestedGear: bestGear,
+      currentGear,
+      reason,
+      secondsUntilTransition: secondsToTransition,
+      targetCadence: TARGET_CADENCE,
+      targetGradient: nextGradient,
+    };
+  }
+
+  // ── Gap #11: Micro-terrain auto-detection ──────────────
+  private trackSpeedVariance(speed: number): void {
+    this.speedHistory.push(speed);
+    if (this.speedHistory.length > this.SPEED_HISTORY_SIZE) {
+      this.speedHistory.shift();
+    }
+  }
+
+  private getSpeedVariance(): number {
+    if (this.speedHistory.length < 5) return 0;
+    const mean = this.speedHistory.reduce((a, b) => a + b, 0) / this.speedHistory.length;
+    if (mean < 3) return 0; // too slow, variance meaningless
+    const variance = this.speedHistory.reduce((sum, v) => sum + (v - mean) ** 2, 0) / this.speedHistory.length;
+    return Math.sqrt(variance);
+  }
+
+  private detectMicroTerrain(): string {
+    const variance = this.getSpeedVariance();
+    const avgSpeed = this.speedHistory.length > 0
+      ? this.speedHistory.reduce((a, b) => a + b, 0) / this.speedHistory.length
+      : 0;
+
+    if (avgSpeed > 25) return 'paved';
+    if (variance > 5 && avgSpeed < 12) return 'technical';
+    if (variance > 3 && avgSpeed < 18) return 'dirt';
+    if (variance > 2) return 'gravel';
+    return 'paved';
+  }
+
+  /** Allow manual terrain override (null = auto-detect) */
+  setManualTerrain(terrain: string | null): void {
+    this.manualTerrainOverride = terrain;
   }
 
   /**
@@ -247,7 +374,28 @@ class KromiEngine {
     // Feed terrain discovery (always, even with route — builds cache for future rides)
     if (input.gpsActive && input.latitude !== 0 && input.altitude != null) {
       terrainDiscovery.feed(input.latitude, input.longitude, input.altitude, input.distanceKm, input.speed_kmh);
+
+      // Gap #7: Bootstrap cold start gradient from GPS altitude
+      this.lookaheadCtrl.bootstrapFromGps(input.altitude, input.distanceKm);
     }
+
+    // ── Gap #1: Feed barometric altitude to lookahead controller ──
+    const bikeState = useBikeStore.getState();
+    const baroAlt = bikeState.barometric_altitude_m;
+    if (baroAlt > 0) {
+      this.lookaheadCtrl.setBarometricAltitude(baroAlt);
+    }
+    this.lookaheadCtrl.setGpsAltitude(input.altitude);
+
+    // ── Gap #2: Feed heading to lookahead for switchback detection ──
+    this.lookaheadCtrl.trackHeading(input.heading);
+
+    // ── Gap #3: Dead-reckoning detection ──
+    if (input.gpsActive && input.latitude !== 0) {
+      this.lastGpsTs = now;
+    }
+    this.lookaheadCtrl.detectGpsLoss(this.lastGpsTs, input.latitude, input.longitude);
+    this.lookaheadCtrl.deadReckonTick(input.speed_kmh, input.heading, 1); // dt=1s (tick interval)
 
     // ── Layer 1: Physics (every tick) ──
     const settings = useSettingsStore.getState();
@@ -264,6 +412,9 @@ class KromiEngine {
     // Gap #9: smooth gradient before feeding to physics
     const smoothedGrad = this.smoothGradient(input.gradient_pct);
 
+    // Gap #8: Feed terrain pattern learner every tick (after smoothedGrad is computed)
+    terrainPatternLearner.feed(smoothedGrad, input.distanceKm);
+
     // Gap #20: track power values for adaptive EMA alpha
     this.recentPowerValues.push(input.power_watts);
     if (this.recentPowerValues.length > 10) this.recentPowerValues.shift();
@@ -274,6 +425,17 @@ class KromiEngine {
 
     // Resolve tire pressure in bar for Crr adjustment
     const tirePressureBar = bike.tire_pressure_bar || undefined;
+
+    // Gap #11: Micro-terrain auto-detection from speed variance
+    this.trackSpeedVariance(input.speed_kmh);
+    const autoTerrain = this.detectMicroTerrain();
+    this.lastAutoTerrain = autoTerrain;
+    const activeTerrain = this.manualTerrainOverride ?? autoTerrain;
+    const terrainCrr = CRR_TABLE[activeTerrain] ?? CRR_TABLE['dirt']!;
+    // Use TerrainService Crr if available, otherwise speed-variance detected Crr
+    const baseCrr = getCachedTrail()?.category ? this.cachedCrr : terrainCrr;
+    const adjustedCrr = this.learning.getAdjustedCrr(baseCrr, getCachedTrail()?.category ?? activeTerrain);
+    useAutoAssistStore.getState().setAutoDetectedTerrain(autoTerrain);
 
     const physicsInput: PhysicsInput = {
       speed_kmh: input.speed_kmh,
@@ -286,7 +448,7 @@ class KromiEngine {
       wheelCircumM,
       chainring,
       sprockets,
-      crr: this.learning.getAdjustedCrr(this.cachedCrr, getCachedTrail()?.category ?? 'unknown'),
+      crr: adjustedCrr,
       cda,
       airDensity: this.cachedAirDensity,
       windComponent: this.cachedWindComponent,
@@ -501,6 +663,46 @@ class KromiEngine {
           detail: `${terrainPred.pattern} → ${terrainPred.predicted_gradient > 0 ? '+' : ''}${terrainPred.predicted_gradient.toFixed(1)}% (${(terrainPred.confidence * 100).toFixed(0)}% conf)`,
         });
       }
+
+      // Gap #8: Terrain pattern prediction — anticipate terrain transitions
+      const patternPred = terrainPatternLearner.predictNext();
+      if (patternPred && patternPred.confidence > 0.5 && patternPred.in_seconds < 15) {
+        // Pre-adjust for predicted terrain transition
+        const currentTerrain = terrainPatternLearner.getCurrentTerrain();
+        if (currentTerrain === 'flat' && (patternPred.terrain === 'gentle_climb' || patternPred.terrain === 'steep_climb')) {
+          // Flat → climb predicted: pre-boost support
+          const boost = patternPred.terrain === 'steep_climb' ? 30 : 15;
+          supportPct += boost * patternPred.confidence;
+          factors.push({
+            name: 'Pattern',
+            value: boost * patternPred.confidence,
+            detail: `${currentTerrain} → ${patternPred.terrain} in ${patternPred.in_seconds.toFixed(0)}s (${(patternPred.confidence * 100).toFixed(0)}% conf)`,
+          });
+        } else if ((currentTerrain === 'gentle_climb' || currentTerrain === 'steep_climb') && patternPred.terrain === 'descent') {
+          // Climb → descent predicted: reduce support early
+          supportPct *= (1 - 0.2 * patternPred.confidence);
+          factors.push({
+            name: 'Pattern',
+            value: -20 * patternPred.confidence,
+            detail: `${currentTerrain} → ${patternPred.terrain} in ${patternPred.in_seconds.toFixed(0)}s (${(patternPred.confidence * 100).toFixed(0)}% conf)`,
+          });
+        }
+      }
+    }
+
+    // ── Gap #4: Use AutoAssistEngine terrain analysis as data source (not decision maker) ──
+    const terrainAnalysis = autoAssistEngine.getCurrentTerrainAnalysis();
+    if (terrainAnalysis) {
+      const transition = terrainAnalysis.next_transition;
+      // Use terrain transition data to supplement lookahead (especially when
+      // lookahead has no data or low confidence)
+      if (transition && !this.cachedLookahead?.next_transition_m && transition.distance_m < 300) {
+        factors.push({
+          name: 'AA Terrain',
+          value: transition.gradient_after_pct,
+          detail: `Transicao ${transition.type} a ${Math.round(transition.distance_m)}m → ${transition.gradient_after_pct.toFixed(1)}%`,
+        });
+      }
     }
 
     // ── Mode Feedback Learning: apply rider preference correction ──
@@ -531,13 +733,30 @@ class KromiEngine {
     // Track sustained effort for CP calibration
     this.trackSustainedEffort(physics.P_human);
 
+    // Gap #9: Calculate rich gear suggestion from lookahead transition
+    const la = this.cachedLookahead;
+    if (la?.seconds_to_transition != null && la.seconds_to_transition <= 10 && la.seconds_to_transition >= 3 && la.next_transition_gradient != null) {
+      this.cachedGearSuggestion = this.calculateGearSuggestion(
+        input.currentGear, input.cadence_rpm, input.speed_kmh,
+        la.next_transition_gradient, la.seconds_to_transition,
+        sprockets, chainring, wheelCircumM,
+      );
+    } else {
+      this.cachedGearSuggestion = null;
+    }
+    // Push gear suggestion to store for UI consumption
+    useAutoAssistStore.getState().setGearSuggestion(this.cachedGearSuggestion);
+
     return {
       supportPct, torqueNm, launchLvl, score, reason, factors,
       speedZone: physics.speedZone,
       batteryFactor,
       gearSuggestion: this.cachedLookahead?.gear_suggestion ?? null,
+      gearSuggestionDetail: this.cachedGearSuggestion,
       physiology: physio,
       nutrition: this.cachedNutrition,
+      autoTerrain: this.lastAutoTerrain,
+      activeCrr: adjustedCrr,
       alerts: alerts.slice(0, 4), // max 4 alerts (motor + nutrition)
     };
   }
@@ -631,11 +850,21 @@ class KromiEngine {
     this.lastGradientForRamp = 0;
     this.rideStartTs = 0;
     this.lastNutritionTick = 0;
+    this.lastGpsTs = 0;
+    this.cachedGearSuggestion = null;
+    this.speedHistory = [];
+    this.manualTerrainOverride = null;
+    this.lastAutoTerrain = 'dirt';
     this.physiology.reset();
     this.learning.resetRide();
     this.nutrition.reset();
     this.lookaheadCtrl.reset();
     terrainDiscovery.reset(); // keeps terrain cache, clears ride segments
+
+    // Gap #8: Save terrain patterns from previous ride, then reset for new ride
+    terrainPatternLearner.save();
+    terrainPatternLearner.resetRide();
+    terrainPatternLearner.load(); // Reload patterns (including just-saved ones)
   }
 
   // ── Layer 3: Environment ─────────────────────────────────
