@@ -1,0 +1,224 @@
+/*
+ * STEALTH-EV / KROMI BikeControl — Design Tokens (Refined v2)
+ *
+ * Source: Claude Code Design skill + .claude/skills/17-design-system.md
+ * These tokens define the visual foundation for the entire app.
+ *
+ * COLOR PHILOSOPHY:
+ *   Dark-first, always. No light theme.
+ *   #0e0e0e base (not pure black — avoids OLED crush)
+ *   #000000 reserved for hero surfaces (Speed, Assist bar)
+ *   One primary accent: electric mint #3fff8b
+ *   Supporting accents by role (never decorative)
+ *
+ * TYPOGRAPHY:
+ *   Space Grotesk — display, numbers, labels, CTAs (700–900)
+ *   Inter — body copy, input text (400–600)
+ *   JetBrains Mono — hero numbers, speed, power, tabular data (700–800)
+ *
+ * GEOMETRY:
+ *   Rectangles, not pills. Radii 0–4px.
+ *   64px touch targets minimum for primary actions.
+ *   44px minimum for secondary.
+ */
+
+/* ══════════════════════════════════════════════════════
+   REFINED v2 COLOR PALETTE
+   ══════════════════════════════════════════════════════ */
+:root {
+  /* ── Backgrounds (layered dark) ── */
+  --ev-bg:                  #0e0e0e;   /* base canvas */
+  --ev-bg-hero:             #000000;   /* speed section, assist bar */
+  --ev-surface-low:         #131313;   /* card level 1 */
+  --ev-surface-container:   #1a1919;   /* card level 2, info strip */
+  --ev-surface-high:        #201f1f;   /* card level 3, modals */
+  --ev-surface-highest:     #262626;   /* hover, elevated */
+  --ev-surface-bright:      #2c2c2c;   /* active press, selected */
+
+  /* ── Primary accent: electric mint ── */
+  --ev-primary:             #3fff8b;   /* active, connected, CTA, auto-assist */
+  --ev-primary-dim:         #24f07e;   /* pressed state */
+  --ev-primary-glow:        rgba(63, 255, 139, 0.15);  /* bg tint when active */
+  --ev-primary-shadow:      rgba(63, 255, 139, 0.30);  /* outer glow on buttons */
+
+  /* ── Supporting accents (strict role assignment) ── */
+  --ev-secondary:           #6e9bff;   /* power/data, secondary CTA */
+  --ev-secondary-container: #0058ca;   /* secondary bg */
+  --ev-tertiary:            #e966ff;   /* cadence, W' balance */
+  --ev-amber:               #fbbf24;   /* warnings, torque, HR zone 3–4 */
+  --ev-error:               #ff716c;   /* critical, errors, HR zone 5 */
+  --ev-error-dim:           #d7383b;   /* pressed error */
+
+  /* ── Text ── */
+  --ev-on-surface:          #ffffff;   /* primary text */
+  --ev-on-surface-variant:  #adaaaa;   /* secondary text, labels */
+  --ev-on-surface-muted:    #777575;   /* tertiary, units, disabled */
+
+  /* ── Borders ── */
+  --ev-outline:             #777575;   /* visible borders */
+  --ev-outline-variant:     #494847;   /* hairline borders (10-30% alpha) */
+  --ev-outline-subtle:      rgba(73, 72, 71, 0.15); /* barely visible */
+
+  /* ── Mode-specific colors (assist modes) ── */
+  --ev-mode-eco:            #00E676;
+  --ev-mode-tour:           #3fff8b;
+  --ev-mode-active:         #fbbf24;
+  --ev-mode-sport:          #ff9100;
+  --ev-mode-power:          #ff716c;
+  --ev-mode-kromi:          #e966ff;
+
+  /* ── Semantic colors ── */
+  --ev-success:             #3fff8b;
+  --ev-warning:             #fbbf24;
+  --ev-danger:              #ff716c;
+  --ev-info:                #6e9bff;
+}
+
+/* ══════════════════════════════════════════════════════
+   REFINED v2 TYPOGRAPHY
+   ══════════════════════════════════════════════════════ */
+
+/* Display font — labels, CTAs, sidebar, headings */
+.font-display { font-family: 'Space Grotesk', system-ui, sans-serif; }
+
+/* Body font — paragraphs, inputs, long text */
+.font-body { font-family: 'Inter', system-ui, sans-serif; }
+
+/* Mono font — hero numbers (speed, power), tabular data */
+.font-mono { font-family: 'JetBrains Mono', 'Space Grotesk', ui-monospace, monospace; }
+
+/* Legacy aliases (keep backward compat) */
+.font-headline { font-family: 'Space Grotesk', sans-serif; }
+.font-label { font-family: 'Space Grotesk', sans-serif; }
+
+/* ── Type scale ── */
+.text-hero     { font-size: 82px; line-height: 1; letter-spacing: -0.06em; font-weight: 700; }
+.text-display  { font-size: 48px; line-height: 1; letter-spacing: -0.04em; font-weight: 800; }
+.text-headline { font-size: 32px; line-height: 1.1; letter-spacing: -0.03em; font-weight: 700; }
+.text-title    { font-size: 24px; line-height: 1.2; letter-spacing: -0.02em; font-weight: 700; }
+.text-label-lg { font-size: 14px; line-height: 1; letter-spacing: 0.15em; font-weight: 700; text-transform: uppercase; }
+.text-label    { font-size: 11px; line-height: 1; letter-spacing: 0.12em; font-weight: 600; text-transform: uppercase; }
+.text-label-sm { font-size: 9px;  line-height: 1; letter-spacing: 0.15em; font-weight: 700; text-transform: uppercase; }
+.text-eyebrow  { font-size: 8px;  line-height: 1; letter-spacing: 0.20em; font-weight: 600; text-transform: uppercase; }
+.text-unit     { font-size: 10px; line-height: 1; letter-spacing: 0.15em; font-weight: 500; text-transform: uppercase; }
+
+/* ══════════════════════════════════════════════════════
+   REFINED v2 COMPONENT TOKENS
+   ══════════════════════════════════════════════════════ */
+
+/* ── Mode buttons: outlined style (not filled) ── */
+.mode-btn {
+  background: transparent;
+  border: 1px solid var(--ev-outline-variant);
+  color: var(--ev-on-surface-variant);
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: all 150ms ease;
+}
+.mode-btn[data-active="true"] {
+  border-color: var(--ev-primary);
+  color: var(--ev-primary);
+  background: var(--ev-primary-glow);
+  box-shadow: 0 0 20px var(--ev-primary-shadow);
+}
+
+/* ── Cards: hairline border, tight padding ── */
+.card-surface {
+  background: var(--ev-surface-low);
+  border: 1px solid var(--ev-outline-subtle);
+  padding: 12px;
+}
+.card-elevated {
+  background: var(--ev-surface-container);
+  border: 1px solid var(--ev-outline-subtle);
+  padding: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Map overlay chips: hairline, not backdrop-blur ── */
+.chip-map {
+  background: rgba(14, 14, 14, 0.85);
+  border: 1px solid var(--ev-outline-variant);
+  padding: 4px 10px;
+  font-size: 11px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+}
+
+/* ── Info strip cells ── */
+.info-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.info-cell-label {
+  font-size: 8px;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  color: var(--ev-on-surface-muted);
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+}
+.info-cell-value {
+  font-size: 16px;
+  font-family: 'JetBrains Mono', 'Space Grotesk', monospace;
+  font-weight: 700;
+  color: var(--ev-on-surface);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Delta pill (speed change indicator) ── */
+.delta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  border-radius: 2px;
+}
+.delta-pill-up {
+  color: var(--ev-primary);
+  background: rgba(63, 255, 139, 0.1);
+}
+.delta-pill-down {
+  color: var(--ev-error);
+  background: rgba(255, 113, 108, 0.1);
+}
+.delta-pill-neutral {
+  color: var(--ev-on-surface-muted);
+  background: rgba(119, 117, 117, 0.1);
+}
+
+/* ══════════════════════════════════════════════════════
+   REFINED v2 SHADOWS & EFFECTS
+   ══════════════════════════════════════════════════════ */
+
+.shadow-card    { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
+.shadow-nav     { box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.8); }
+.shadow-glow    { box-shadow: 0 0 20px var(--ev-primary-shadow); }
+.shadow-cta     { box-shadow: 0 8px 16px rgba(14, 109, 243, 0.2); }
+
+/* ══════════════════════════════════════════════════════
+   ANIMATIONS
+   ══════════════════════════════════════════════════════ */
+
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-slideDown { animation: slideDown 0.3s ease-out; }
+.animate-slideUp   { animation: slideUp 0.3s ease-out; }
+.animate-fadeIn    { animation: fadeIn 0.2s ease-out; }

@@ -1,25 +1,5 @@
 @import "tailwindcss";
-
-/* === STEALTH-EV Design System (from Stitch) === */
-:root {
-  --ev-primary: #3fff8b;
-  --ev-primary-dim: #24f07e;
-  --ev-secondary: #6e9bff;
-  --ev-secondary-container: #0058ca;
-  --ev-tertiary: #e966ff;
-  --ev-error: #ff716c;
-  --ev-error-dim: #d7383b;
-  --ev-bg: #0e0e0e;
-  --ev-surface-low: #131313;
-  --ev-surface-container: #1a1919;
-  --ev-surface-high: #201f1f;
-  --ev-surface-highest: #262626;
-  --ev-surface-bright: #2c2c2c;
-  --ev-on-surface: #ffffff;
-  --ev-on-surface-variant: #adaaaa;
-  --ev-outline: #777575;
-  --ev-outline-variant: #494847;
-}
+@import './styles/design-tokens.css';
 
 /* Base styles */
 html, body, #root {
@@ -59,9 +39,4 @@ html.high-contrast-mode .text-gray-500 { color: #aaaaaa !important; }
 html.high-contrast-mode .bg-gray-800 { background-color: #000000 !important; }
 html.high-contrast-mode .bg-gray-950 { background-color: #000000 !important; }
 
-/* Slide-down animation for overlay banners */
-@keyframes slideDown {
-  from { transform: translateY(-100%); opacity: 0; }
-  to   { transform: translateY(0);     opacity: 1; }
-}
-.animate-slideDown { animation: slideDown 0.3s ease-out; }
+/* slideDown/slideUp/fadeIn animations are in design-tokens.css */
