@@ -15,7 +15,7 @@ export enum AssistMode {
 
 /** Brand-specific mode labels (indexed by AssistMode value) */
 export const BRAND_MODE_LABELS: Record<BikeBrand, Record<number, string>> = {
-  giant:       { 0: 'MAN', 1: 'ECO', 2: 'TOUR', 3: 'ACTIVE', 4: 'SPORT', 5: 'PWR', 6: 'SMART' },
+  giant:       { 0: 'MAN', 1: 'ECO', 2: 'TOUR', 3: 'ACTIVE', 4: 'SPORT', 5: 'KROMI', 6: 'SMART' },
   bosch:       { 0: 'OFF', 1: 'ECO', 2: 'TOUR', 3: 'SPORT', 4: 'TURBO' },
   shimano:     { 0: 'OFF', 1: 'ECO', 2: 'TRAIL', 3: 'BOOST' },
   specialized: { 0: 'OFF', 1: 'ECO', 2: 'TRAIL', 3: 'TURBO' },
@@ -36,7 +36,7 @@ export const ASSIST_MODE_LABELS: Record<AssistMode, string> = {
   [AssistMode.TOUR]: 'TOUR',
   [AssistMode.ACTIVE]: 'ACTIVE',
   [AssistMode.SPORT]: 'SPORT',
-  [AssistMode.POWER]: 'PWR',
+  [AssistMode.POWER]: 'KROMI',
   [AssistMode.SMART]: 'SMART',
 };
 

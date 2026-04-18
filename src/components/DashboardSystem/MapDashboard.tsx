@@ -1,4 +1,5 @@
 import { useBikeStore } from '../../store/bikeStore';
+import { useAutoAssistStore } from '../../store/autoAssistStore';
 import { AssistMode } from '../../types/bike.types';
 import { MetricGrid, METRIC } from './widgets/MetricGrid';
 import { MiniMap } from '../Dashboard/MiniMap';
@@ -8,11 +9,14 @@ import { ElevationProfile } from '../Dashboard/ElevationProfile';
 export function MapDashboard() {
   const assistMode = useBikeStore((s) => s.assist_mode);
   const temp = useBikeStore((s) => s.temperature_c);
+  const terrain = useAutoAssistStore((s) => s.terrain);
+  const gradient = terrain?.current_gradient_pct ?? 0;
+  const terrainType = gradient > 8 ? 'STEEP' : gradient > 3 ? 'CLIMB' : gradient < -3 ? 'DESCENT' : 'FLAT';
 
   const modes = [
     { mode: AssistMode.ECO, label: 'ECO' }, { mode: AssistMode.TOUR, label: 'TOUR' },
     { mode: AssistMode.ACTIVE, label: 'ACTV' }, { mode: AssistMode.SPORT, label: 'SPRT' },
-    { mode: AssistMode.POWER, label: 'PWR' }, { mode: AssistMode.SMART, label: 'AUTO' },
+    { mode: AssistMode.POWER, label: 'KROMI' }, { mode: AssistMode.SMART, label: 'AUTO' },
   ];
 
   return (
@@ -20,6 +24,11 @@ export function MapDashboard() {
       {/* Map — 55% */}
       <div style={{ height: '55%', flexShrink: 0, position: 'relative' }}>
         <MiniMap />
+        {/* Terrain badge overlay */}
+        <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(14,14,14,0.85)', border: '1px solid var(--ev-outline-variant)', padding: '4px 10px' }}>
+          <span className="font-display" style={{ fontSize: '9px', fontWeight: 700, color: gradient > 8 ? 'var(--ev-error)' : gradient > 3 ? 'var(--ev-amber)' : gradient < -3 ? 'var(--ev-secondary)' : 'var(--ev-on-surface-variant)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>{terrainType}</span>
+          <span className="font-mono tabular-nums" style={{ fontSize: '10px', color: 'var(--ev-on-surface-variant)' }}>{gradient > 0 ? '+' : ''}{gradient.toFixed(1)}%</span>
+        </div>
       </div>
 
       {/* Elevation profile — 15% */}
@@ -34,16 +43,19 @@ export function MapDashboard() {
 
       {/* Assist buttons — 10% */}
       <div style={{ height: '10%', flexShrink: 0, display: 'flex', gap: '3px', padding: '4px 6px', backgroundColor: 'black', alignItems: 'stretch' }}>
-        {modes.map(({ mode, label }) => (
+        {modes.map(({ mode, label }) => {
+          const active = assistMode === mode;
+          return (
           <button key={mode} style={{
             flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            backgroundColor: assistMode === mode ? '#3fff8b' : '#262626',
-            color: assistMode === mode ? 'black' : '#adaaaa',
-            border: 'none', fontFamily: "'Space Grotesk'", fontWeight: 900,
-            fontSize: '9px', textTransform: 'uppercase',
-            boxShadow: assistMode === mode ? '0 0 16px rgba(63,255,139,0.3)' : 'none',
+            backgroundColor: active ? 'var(--ev-primary-glow)' : 'transparent',
+            border: `1px solid ${active ? 'var(--ev-primary)' : 'var(--ev-outline-variant)'}`,
+            color: active ? 'var(--ev-primary)' : 'var(--ev-on-surface-variant)',
+            fontFamily: "'Space Grotesk'", fontWeight: 900,
+            fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em',
+            boxShadow: active ? '0 0 20px var(--ev-primary-shadow)' : 'none',
           }}>{label}</button>
-        ))}
+          );})}
       </div>
 
       {/* Weather strip — remaining */}

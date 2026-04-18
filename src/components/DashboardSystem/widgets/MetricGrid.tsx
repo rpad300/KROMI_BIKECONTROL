@@ -37,13 +37,13 @@ export function MetricGrid({ metrics, cols }: { metrics: MetricDef[]; cols: numb
       {metrics.map((m, i) => (
         <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: i % 2 === 0 ? '#131313' : '#1a1919', borderRight: i < metrics.length - 1 ? '1px solid rgba(73,72,71,0.1)' : 'none' }}>
           <span className="material-symbols-outlined" style={{ fontSize: '16px', color: m.iconColor, marginBottom: '2px' }}>{m.icon}</span>
-          <span className="font-label" style={{ fontSize: '9px', color: '#adaaaa', textTransform: 'uppercase' }}>{m.label}</span>
+          <span className="text-eyebrow" style={{ color: 'var(--ev-on-surface-variant)' }}>{m.label}</span>
           <span
             ref={(el) => { if (!refs.current[i]) refs.current[i] = { val: null, col: null }; refs.current[i]!.val = el; }}
-            className="font-headline font-bold tabular-nums"
+            className="font-mono font-bold tabular-nums"
             style={{ fontSize: '18px', lineHeight: 1.1 }}
           >--</span>
-          <span className="font-label" style={{ fontSize: '8px', color: '#777575' }}>{m.unit}</span>
+          <span className="text-eyebrow" style={{ color: 'var(--ev-on-surface-muted)' }}>{m.unit}</span>
         </div>
       ))}
     </div>

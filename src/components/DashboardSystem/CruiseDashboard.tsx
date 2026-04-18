@@ -28,7 +28,7 @@ export function CruiseDashboard() {
     { mode: AssistMode.TOUR, label: 'TOUR', key: 'tour' },
     { mode: AssistMode.ACTIVE, label: 'ACTV', key: 'active' },
     { mode: AssistMode.SPORT, label: 'SPRT', key: 'sport' },
-    { mode: AssistMode.POWER, label: 'PWR', key: 'power' },
+    { mode: AssistMode.POWER, label: 'KROMI', key: 'power' },
     { mode: AssistMode.SMART, label: 'AUTO', key: 'smart' },
   ];
 
@@ -76,13 +76,15 @@ export function CruiseDashboard() {
           return (
             <button key={mode} style={{
               flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              backgroundColor: active ? '#3fff8b' : '#262626', color: active ? 'black' : '#adaaaa',
-              border: 'none', cursor: 'default', fontFamily: "'Space Grotesk'", fontWeight: 900,
-              fontSize: '8px', letterSpacing: '-0.02em', textTransform: 'uppercase',
-              boxShadow: active ? '0 0 16px rgba(63,255,139,0.3)' : 'none',
+              backgroundColor: active ? 'var(--ev-primary-glow)' : 'transparent',
+              border: `1px solid ${active ? 'var(--ev-primary)' : 'var(--ev-outline-variant)'}`,
+              color: active ? 'var(--ev-primary)' : 'var(--ev-on-surface-variant)',
+              cursor: 'default', fontFamily: "'Space Grotesk'", fontWeight: 900,
+              fontSize: '8px', letterSpacing: '0.08em', textTransform: 'uppercase',
+              boxShadow: active ? '0 0 20px var(--ev-primary-shadow)' : 'none',
             }}>
               <span>{label}</span>
-              {(range ?? 0) > 0 && <span style={{ fontSize: '7px', fontWeight: 700, color: active ? 'rgba(0,0,0,0.6)' : '#777575' }}>{range}km</span>}
+              {(range ?? 0) > 0 && <span style={{ fontSize: '7px', fontWeight: 700, color: active ? 'var(--ev-primary)' : 'var(--ev-on-surface-muted)' }}>{range! < 0 ? '255+' : range}km</span>}
             </button>
           );
         })}

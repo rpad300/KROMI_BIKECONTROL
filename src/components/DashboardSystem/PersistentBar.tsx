@@ -57,37 +57,37 @@ export function PersistentBar() {
   }, []);
 
   return (
-    <div style={{ height: '32px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', backgroundColor: '#131313', borderBottom: '1px solid rgba(73,72,71,0.15)', gap: '8px' }}>
+    <div style={{ height: '32px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', backgroundColor: 'var(--ev-surface-low)', borderBottom: '1px solid var(--ev-outline-subtle)', gap: '8px' }}>
       {/* HR */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <span ref={hrIconRef} className="material-symbols-outlined" style={{ fontSize: '12px', color: '#494847', fontVariationSettings: "'FILL' 1" }}>favorite</span>
-        <span ref={hrRef} className="font-headline font-bold tabular-nums" style={{ fontSize: '13px', color: '#777575' }}>--</span>
+        <span ref={hrIconRef} className="material-symbols-outlined" style={{ fontSize: '12px', color: 'var(--ev-outline-variant)', fontVariationSettings: "'FILL' 1" }}>favorite</span>
+        <span ref={hrRef} className="font-mono font-bold tabular-nums" style={{ fontSize: '13px', color: 'var(--ev-on-surface-muted)' }}>--</span>
         <span ref={zoneRef} className="font-headline font-bold" style={{ fontSize: '9px', color: 'black', padding: '0 3px', borderRadius: '2px' }} />
       </div>
 
       {/* Dual battery */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1, maxWidth: '120px' }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <div style={{ height: '4px', backgroundColor: '#262626', overflow: 'hidden' }}>
-            <div ref={bat1Ref} style={{ height: '100%', width: '0%', backgroundColor: '#3fff8b' }} />
+          <div style={{ height: '4px', backgroundColor: 'var(--ev-surface-highest)', overflow: 'hidden' }}>
+            <div ref={bat1Ref} style={{ height: '100%', width: '0%', backgroundColor: 'var(--ev-primary)' }} />
           </div>
-          <div style={{ height: '4px', backgroundColor: '#262626', overflow: 'hidden' }}>
-            <div ref={bat2Ref} style={{ height: '100%', width: '0%', backgroundColor: '#3fff8b' }} />
+          <div style={{ height: '4px', backgroundColor: 'var(--ev-surface-highest)', overflow: 'hidden' }}>
+            <div ref={bat2Ref} style={{ height: '100%', width: '0%', backgroundColor: 'var(--ev-primary)' }} />
           </div>
         </div>
-        <span ref={bat1PctRef} className="tabular-nums" style={{ fontSize: '9px', color: '#adaaaa' }}>--%</span>
-        <span ref={bat2PctRef} className="tabular-nums" style={{ fontSize: '9px', color: '#777575' }} />
+        <span ref={bat1PctRef} className="font-mono tabular-nums" style={{ fontSize: '9px', color: 'var(--ev-on-surface-variant)' }}>--%</span>
+        <span ref={bat2PctRef} className="font-mono tabular-nums" style={{ fontSize: '9px', color: 'var(--ev-on-surface-muted)' }} />
       </div>
 
       {/* Assist mode pill */}
-      <div style={{ backgroundColor: '#3fff8b', padding: '2px 8px', borderRadius: '2px' }}>
-        <span ref={modeRef} className="font-headline font-black" style={{ fontSize: '10px', color: 'black', letterSpacing: '0.05em' }}>--</span>
+      <div style={{ backgroundColor: 'var(--ev-primary)', padding: '2px 8px', borderRadius: '2px' }}>
+        <span ref={modeRef} className="font-display font-black" style={{ fontSize: '10px', color: 'black', letterSpacing: '0.05em' }}>--</span>
       </div>
 
       {/* KROMI status */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <div ref={kromiDotRef} style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#494847' }} />
-        <span ref={kromiRef} className="font-label" style={{ fontSize: '9px', color: '#777575', textTransform: 'uppercase', letterSpacing: '0.05em' }}>OFF</span>
+        <div ref={kromiDotRef} style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--ev-outline-variant)' }} />
+        <span ref={kromiRef} className="text-label-sm" style={{ color: 'var(--ev-on-surface-muted)' }}>OFF</span>
       </div>
     </div>
   );

@@ -74,8 +74,8 @@ export function DataDashboard() {
               const idx = cellIdx++;
               return (
                 <div key={fi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: fi < 3 ? '1px solid rgba(73,72,71,0.05)' : 'none' }}>
-                  <span ref={(el) => { cells.current[idx] = el; }} className="font-headline font-bold tabular-nums" style={{ fontSize: '15px', lineHeight: 1.1 }}>--</span>
-                  <span className="font-label" style={{ fontSize: '7px', color: '#777575' }}>{field} {row.units[fi]}</span>
+                  <span ref={(el) => { cells.current[idx] = el; }} className="font-mono font-bold tabular-nums" style={{ fontSize: '15px', lineHeight: 1.1 }}>--</span>
+                  <span className="text-eyebrow" style={{ color: 'var(--ev-on-surface-muted)' }}>{field} {row.units[fi]}</span>
                 </div>
               );
             })}

@@ -81,20 +81,23 @@ function AssistBar({ assistMode }: { assistMode: number }) {
   const modes = [
     { mode: AssistMode.ECO, label: 'ECO' }, { mode: AssistMode.TOUR, label: 'TOUR' },
     { mode: AssistMode.ACTIVE, label: 'ACTV' }, { mode: AssistMode.SPORT, label: 'SPRT' },
-    { mode: AssistMode.POWER, label: 'PWR' }, { mode: AssistMode.SMART, label: 'AUTO' },
+    { mode: AssistMode.POWER, label: 'KROMI' }, { mode: AssistMode.SMART, label: 'AUTO' },
   ];
   return (
     <div style={{ display: 'flex', gap: '3px', padding: '4px 6px', backgroundColor: 'black', height: '100%', alignItems: 'stretch' }}>
-      {modes.map(({ mode, label }) => (
+      {modes.map(({ mode, label }) => {
+        const active = assistMode === mode;
+        return (
         <button key={mode} style={{
           flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          backgroundColor: assistMode === mode ? '#3fff8b' : '#262626',
-          color: assistMode === mode ? 'black' : '#adaaaa',
-          border: 'none', fontFamily: "'Space Grotesk'", fontWeight: 900,
-          fontSize: '9px', textTransform: 'uppercase',
-          boxShadow: assistMode === mode ? '0 0 16px rgba(63,255,139,0.3)' : 'none',
+          backgroundColor: active ? 'var(--ev-primary-glow)' : 'transparent',
+          border: `1px solid ${active ? 'var(--ev-primary)' : 'var(--ev-outline-variant)'}`,
+          color: active ? 'var(--ev-primary)' : 'var(--ev-on-surface-variant)',
+          fontFamily: "'Space Grotesk'", fontWeight: 900,
+          fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em',
+          boxShadow: active ? '0 0 20px var(--ev-primary-shadow)' : 'none',
         }}>{label}</button>
-      ))}
+        );})}
     </div>
   );
 }
