@@ -27,6 +27,7 @@
         android:label="KROMI BikeControl"
         android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar"
         android:icon="@drawable/ic_launcher"
+        android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config">
 
         <!-- Main entry: WebView hosting the PWA -->
