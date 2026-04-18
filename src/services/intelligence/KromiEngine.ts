@@ -1270,6 +1270,31 @@ class KromiEngine {
     // Push gear suggestion to store for UI consumption
     useAutoAssistStore.getState().setGearSuggestion(this.cachedGearSuggestion);
 
+    // Push elevation/terrain data to autoAssistStore for UI (ClimbApproach, ElevationProfile)
+    if (this.cachedLookahead && this.cachedLookahead.segments.length > 0) {
+      const elevProfile = this.cachedLookahead.segments.map((seg: any, i: number) => ({
+        elevation: seg.start_elevation ?? 0,
+        distance_from_current: seg.distance_m ?? i * 100,
+        gradient_pct: seg.gradient ?? 0,
+      }));
+      useAutoAssistStore.getState().setTerrain({
+        current_gradient_pct: smoothedGrad,
+        avg_upcoming_gradient_pct: this.cachedLookahead.avg_gradient ?? smoothedGrad,
+        max_upcoming_gradient_pct: this.cachedLookahead.max_gradient ?? smoothedGrad,
+        next_transition: this.cachedLookahead.next_transition_gradient != null ? {
+          distance_m: Math.round((this.cachedLookahead.seconds_to_transition ?? 10) * (input.speed_kmh / 3.6)),
+          gradient_after_pct: this.cachedLookahead.next_transition_gradient,
+          type: this.cachedLookahead.next_transition_gradient > 3 ? 'flat_to_climb' : 'climb_to_flat',
+          is_preemptive: (this.cachedLookahead.seconds_to_transition ?? 99) < 15,
+          target_mode: this.cachedLookahead.next_transition_gradient > 12 ? 5 :
+                       this.cachedLookahead.next_transition_gradient > 8 ? 4 :
+                       this.cachedLookahead.next_transition_gradient > 5 ? 3 :
+                       this.cachedLookahead.next_transition_gradient > 3 ? 2 : 1,
+        } : null,
+        profile: elevProfile,
+      });
+    }
+
     // ── Gap #1: Heartbeat re-broadcast to native KromiCore ──
     this.pushParamsWithHeartbeat();
 

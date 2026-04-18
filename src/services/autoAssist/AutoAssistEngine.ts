@@ -98,7 +98,18 @@ class AutoAssistEngine {
     // AutoAssistEngine still provides terrain data (via analyzeTerrain) but
     // does NOT make independent mode change decisions.
     if (this.kromiEngineDefers) {
-      return { action: 'none', reason: 'KromiEngine activo — deferido', terrain: null };
+      // KromiEngine handles motor control, but we STILL fetch elevation data
+      // for the UI (ClimbApproach, ElevationProfile, ClimbDashboard need it)
+      try {
+        const profile = await elevationService.getElevationByHeading(
+          lat, lng, heading, this.config.lookahead_m
+        );
+        if (profile.length >= 2) {
+          const terrain = this.analyzeTerrain(profile);
+          return { action: 'none', reason: 'KromiEngine activo — dados de elevação actualizados', terrain };
+        }
+      } catch {}
+      return { action: 'none', reason: 'KromiEngine activo — deferido', terrain: this.getCurrentTerrainAnalysis() };
     }
 
     if (!this.config.enabled) {
