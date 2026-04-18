@@ -142,7 +142,7 @@ export const useAuthStore = create<AuthState>()(
           // No local session — try device auto-login (mints a fresh JWT)
           console.log('[Auth] No session — trying loginByDevice...');
           const deviceResult = await loginByDevice();
-          console.log('[Auth] loginByDevice result:', { success: deviceResult.success, error: deviceResult.error });
+          console.log('[Auth] loginByDevice result:', JSON.stringify({ success: deviceResult.success, error: deviceResult.error }));
           if (deviceResult.success && deviceResult.user) {
             publishJwtGlobal(deviceResult.jwt ?? null);
             set({
@@ -156,6 +156,7 @@ export const useAuthStore = create<AuthState>()(
             });
             return true;
           }
+          console.log('[Auth] No device match — setting loading=false, showing login');
           set({ loading: false });
           return false;
         }

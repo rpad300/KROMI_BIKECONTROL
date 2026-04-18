@@ -72,7 +72,10 @@ export function App() {
     })();
   }, [loading, user, applyImpersonationFromUrl, impersonationApplied]);
 
+  console.log('[App] render:', { loading, user: !!user, impersonationApplied });
+
   if (loading || !impersonationApplied) {
+    console.log('[App] Showing spinner:', { loading, impersonationApplied });
     return (
       <div className="h-full flex items-center justify-center bg-[#0e0e0e]">
         <div className="w-10 h-10 border-2 border-[#3fff8b] border-t-transparent rounded-full animate-spin" />
@@ -80,7 +83,10 @@ export function App() {
     );
   }
 
-  if (!user) return <LoginPage />;
+  if (!user) {
+    console.log('[App] Showing LoginPage');
+    return <LoginPage />;
+  }
 
   return (
     <>
