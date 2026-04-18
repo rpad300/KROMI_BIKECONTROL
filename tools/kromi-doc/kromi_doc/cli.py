@@ -43,7 +43,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
 
     client = ObsidianClient()
     if not client.ping():
-        print("[!] Obsidian Local REST API not reachable", file=sys.stderr)
+        print("[!] Obsidian not reachable (API offline + vault not found on disk)", file=sys.stderr)
         return 1
     engine = SyncEngine(
         project_root=args.project_root,
@@ -82,7 +82,7 @@ def cmd_embed(args: argparse.Namespace) -> int:
 
     client = ObsidianClient()
     if not client.ping():
-        print("[!] Obsidian Local REST API not reachable", file=sys.stderr)
+        print("[!] Obsidian not reachable (API offline + vault not found on disk)", file=sys.stderr)
         return 1
     idx = VaultIndex(project_root=args.project_root, model=args.model)
     n = idx.build(client)
@@ -95,7 +95,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
     client = ObsidianClient()
     if not client.ping():
-        print("[!] Obsidian Local REST API not reachable", file=sys.stderr)
+        print("[!] Obsidian not reachable (API offline + vault not found on disk)", file=sys.stderr)
         return 1
     v = VaultValidator(client=client, fix=args.fix)
     report = v.run()
@@ -108,7 +108,7 @@ def cmd_new(args: argparse.Namespace) -> int:
 
     client = ObsidianClient()
     if not client.ping():
-        print("[!] Obsidian Local REST API not reachable", file=sys.stderr)
+        print("[!] Obsidian not reachable (API offline + vault not found on disk)", file=sys.stderr)
         return 1
     ok = create_from_template(
         template_name=args.template,
@@ -126,7 +126,7 @@ def cmd_deps(args: argparse.Namespace) -> int:
 
     client = ObsidianClient()
     if not client.ping():
-        print("[!] Obsidian Local REST API not reachable", file=sys.stderr)
+        print("[!] Obsidian not reachable (API offline + vault not found on disk)", file=sys.stderr)
         return 1
     g = DependencyGraph(project_root=args.project_root)
     n = g.publish(client, category=args.category)
@@ -184,7 +184,7 @@ def cmd_hooks_status(args: argparse.Namespace) -> int:
 def cmd_list(args: argparse.Namespace) -> int:
     client = ObsidianClient()
     if not client.ping():
-        print("[!] Obsidian Local REST API not reachable", file=sys.stderr)
+        print("[!] Obsidian not reachable (API offline + vault not found on disk)", file=sys.stderr)
         return 1
 
     paths = client.walk("")
