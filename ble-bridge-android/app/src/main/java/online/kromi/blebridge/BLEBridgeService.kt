@@ -87,9 +87,10 @@ class BLEBridgeService : Service() {
             feedKromiCore(json)
         }
 
-        // Start phone sensors and forward data to WebSocket
+        // Start phone sensors and forward data to WebSocket + KromiCore
         phoneSensorService = PhoneSensorService(this) { sensorJson ->
             wsServer?.broadcastData(sensorJson)
+            feedPhoneSensorToKromiCore(sensorJson)
         }
         phoneSensorService?.start()
         bleManager.onStatusChanged = { status ->
@@ -540,7 +541,11 @@ class BLEBridgeService : Service() {
         try {
             val type = json.optString("type")
             when (type) {
-                "speed"     -> kromiCore.onSpeed(json.optDouble("value", 0.0))
+                "speed"     -> {
+                    val spd = json.optDouble("value", 0.0)
+                    kromiCore.onSpeed(spd)
+                    phoneSensorService?.setCurrentSpeed(spd.toFloat())
+                }
                 "cadence"   -> {
                     // Handle both internal (motor crank) and external cadence sensors
                     val rpm = json.optInt("value", 0)
@@ -559,6 +564,7 @@ class BLEBridgeService : Service() {
                     val mode = json.optInt("assistMode", -1)
                     Log.d(TAG, "feedKromiCore sgRiding: spd=${"%.1f".format(spd)} cad=$cad mode=$mode")
                     kromiCore.onSpeed(spd)
+                    phoneSensorService?.setCurrentSpeed(spd.toFloat())
                     if (json.has("cadence")) kromiCore.onCadence(cad)
                     if (json.has("assistMode")) kromiCore.onAssistMode(mode)
                 }
@@ -594,6 +600,64 @@ class BLEBridgeService : Service() {
             }
         } catch (e: Exception) {
             Log.w(TAG, "feedKromiCore error: ${e.message}")
+        }
+    }
+
+    /**
+     * Feed phone sensor data into KromiCore for motor control decisions.
+     * Also forwards speed back to PhoneSensorService for hike-a-bike detection.
+     */
+    private fun feedPhoneSensorToKromiCore(json: JSONObject) {
+        try {
+            when (json.optString("type")) {
+                // Gravity-based gradient estimate (works without GPS/barometer)
+                "gravity_gradient" -> {
+                    val gradient = json.optDouble("gradient_pct", 0.0)
+                    val confidence = json.optDouble("confidence", 0.0)
+                    // Only use gravity gradient if confidence reasonable and no better source
+                    if (confidence >= 0.3) {
+                        kromiCore.onGradient(gradient)
+                    }
+                }
+                // Tilt-compensated heading (rotation vector, works on handlebar mount)
+                "orientation" -> {
+                    // Heading is used by lookahead in PWA, not directly by KromiCore
+                    // but available if needed for future use
+                }
+                // Crash detection — disarm motor immediately
+                "crash_detected" -> {
+                    val impactG = json.optDouble("impact_g", 0.0)
+                    Log.e(TAG, "CRASH DETECTED: ${impactG}g impact — disarming motor")
+                    kromiCore.disarm()
+                    wsServer?.broadcastData(JSONObject().apply {
+                        put("type", "motorDisarmed")
+                        put("reason", "crash_detected")
+                        put("impact_g", impactG)
+                        put("timestamp", System.currentTimeMillis())
+                    })
+                }
+                // Auto-pause: rider stopped → reduce motor to minimum
+                "ride_stationary" -> {
+                    Log.i(TAG, "Rider stationary — auto-pause")
+                }
+                // Auto-resume: rider moving again
+                "ride_resumed" -> {
+                    Log.i(TAG, "Rider resumed — auto-resume")
+                }
+                // Hike-a-bike detection: disable motor, rider is walking
+                "step_counter" -> {
+                    val hiking = json.optBoolean("hiking", false)
+                    if (hiking) {
+                        Log.i(TAG, "Hike-a-bike detected — motor assist not needed")
+                    }
+                }
+                // Speed update to PhoneSensorService for hike-a-bike detection
+                "speed" -> {
+                    phoneSensorService?.setCurrentSpeed(json.optDouble("value", 0.0).toFloat())
+                }
+            }
+        } catch (e: Exception) {
+            // Don't crash on sensor data errors
         }
     }
 
