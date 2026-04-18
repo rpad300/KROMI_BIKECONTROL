@@ -11,7 +11,10 @@ class BridgeWebSocketServer(
     port: Int = 8765,
     private val onCommand: (JSONObject) -> Unit,
     var appVersion: String = "unknown"
-) : WebSocketServer(InetSocketAddress("127.0.0.1", port)) {
+) : WebSocketServer(InetSocketAddress(port)) {
+    // NOTE: Binds to 0.0.0.0 intentionally — Android WebView runs in a separate process
+    // and may not be able to connect to 127.0.0.1. Security is handled via the
+    // WebSocket handshake (bridgeInfo exchange) rather than bind address restriction.
 
     companion object {
         const val TAG = "WSServer"
