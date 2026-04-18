@@ -60,15 +60,27 @@ export const METRIC = {
   range: {
     icon: 'route', iconColor: '#3fff8b', label: 'Range', unit: 'km',
     getValue: (s: ReturnType<typeof useBikeStore.getState>) => {
-      // When KROMI Intelligence active (mode 5), motor reports POWER range
-      // which is misleadingly low. Use weighted average of mode ranges instead.
-      if (s.assist_mode === 5 && s.range_per_mode) {
+      // Prefer rangePerMode (cmd 0x11) over range_km (FC23 0x41)
+      // because cmd 0x11 gives more accurate per-mode estimates.
+      if (s.range_per_mode) {
         const rpm = s.range_per_mode as Record<string, number>;
-        const a = rpm.active ?? 0, sp = rpm.sport ?? 0, p = rpm.power ?? 0;
-        if (a > 0 && sp > 0 && p > 0) {
-          return `~${Math.round(a * 0.3 + sp * 0.4 + p * 0.3)}`;
+        const modeKeys: Record<number, string> = { 1: 'eco', 2: 'tour', 3: 'active', 4: 'sport', 5: 'power', 6: 'smart' };
+        const key = modeKeys[s.assist_mode];
+
+        // KROMI Intelligence (mode 5): weighted average
+        if (s.assist_mode === 5) {
+          const a = rpm.active ?? 0, sp = rpm.sport ?? 0, p = rpm.power ?? 0;
+          if (a > 0 && sp > 0 && p > 0) return `~${Math.round(a * 0.3 + sp * 0.4 + p * 0.3)}`;
+        }
+
+        // Other modes: use rangePerMode for current mode
+        if (key) {
+          const val = rpm[key] ?? 0;
+          if (val < 0) return '255+';
+          if (val > 0) return `~${val}`;
         }
       }
+      // Fallback to FC23 range_km
       if (s.range_km < 0) return '255+';
       return s.range_km > 0 ? `~${Math.round(s.range_km)}` : '--';
     },

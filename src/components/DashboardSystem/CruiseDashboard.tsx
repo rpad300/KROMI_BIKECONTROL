@@ -50,22 +50,17 @@ export function CruiseDashboard() {
       {/* KROMI Intelligence — 4% (gated by features.intelligence_v2) */}
       {canSeeIntelligence && <div style={{ height: '4%', flexShrink: 0 }}><CompactIntelligence /></div>}
 
-      {/* Elevation profile — 7% (was 12% — too large, map needs more space) */}
-      <div style={{ height: '7%', flexShrink: 0, padding: '2px 4px', backgroundColor: '#131313' }}>
-        <ElevationProfile />
-      </div>
-
-      {/* Clock + Temp + Trip + Gear strip — 4% */}
-      <div style={{ height: '4%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-around', backgroundColor: '#1a1919', borderTop: '1px solid rgba(73,72,71,0.1)', borderBottom: '1px solid rgba(73,72,71,0.1)' }}>
+      {/* Clock + Temp + Trip strip — 3% */}
+      <div style={{ height: '3%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-around', backgroundColor: '#1a1919', borderTop: '1px solid rgba(73,72,71,0.1)', borderBottom: '1px solid rgba(73,72,71,0.1)' }}>
         <ClockDisplay />
         {temp > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
             <span className="material-symbols-outlined" style={{ fontSize: '10px', color: '#6e9bff' }}>thermostat</span>
-            <span className="font-headline tabular-nums" style={{ fontSize: '10px' }}>{temp.toFixed(0)}°C</span>
+            <span className="font-mono tabular-nums" style={{ fontSize: '10px' }}>{temp.toFixed(0)}°C</span>
           </div>
         )}
-        <span className="font-headline tabular-nums" style={{ fontSize: '10px', color: '#adaaaa' }}>{formatTime(tripTime)}</span>
-        {gear > 0 && <span className="font-headline font-bold" style={{ fontSize: '10px' }}>G{gear}</span>}
+        <span className="font-mono tabular-nums" style={{ fontSize: '10px', color: '#adaaaa' }}>{formatTime(tripTime)}</span>
+        {gear > 0 && <span className="font-mono font-bold" style={{ fontSize: '10px' }}>G{gear}</span>}
       </div>
 
       {/* Assist mode buttons — 9% (e-bike only) */}
@@ -90,14 +85,20 @@ export function CruiseDashboard() {
         })}
       </div>}
 
-      {/* Bottom: KROMI Intelligence in POWER mode, Map otherwise */}
+      {/* Bottom: Map with elevation overlay (or KROMI Intelligence in POWER mode) */}
       <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
         {isPowerMode && canSeeIntelligence ? (
           <div style={{ height: '100%', overflow: 'hidden' }}>
             <IntelligenceWidget />
           </div>
         ) : (
-          <MiniMap />
+          <>
+            <MiniMap />
+            {/* Elevation profile overlay at bottom of map */}
+            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '35%', backgroundColor: 'rgba(14,14,14,0.7)', zIndex: 5 }}>
+              <ElevationProfile />
+            </div>
+          </>
         )}
       </div>
     </div>
