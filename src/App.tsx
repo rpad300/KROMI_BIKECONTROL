@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
 import { DashboardController } from './components/DashboardSystem/DashboardController';
-import { DashboardRefined } from './components/Dashboard/Dashboard.refined';
-import { USE_REFINED_DASHBOARD } from './config/flags';
 import { MapView } from './components/Map/MapView';
 import { ClimbApproach } from './components/Climb/ClimbApproach';
 import { ConnectionsPage as Connections } from './components/Connections/ConnectionsPage';
@@ -146,7 +144,7 @@ function MobileApp() {
         className={`flex-1 min-h-0 ${screen === 'settings' || screen === 'history' ? 'overflow-y-auto' : 'overflow-hidden'}`}
         onTouchStart={resetGlance}
       >
-        {screen === 'dashboard' && (USE_REFINED_DASHBOARD ? <DashboardRefined /> : <DashboardController />)}
+        {screen === 'dashboard' && <DashboardController />}
         {screen === 'map' && <MapView />}
         {screen === 'climb' && <ClimbApproach />}
         {screen === 'connections' && <Connections />}

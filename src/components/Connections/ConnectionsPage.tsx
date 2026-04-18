@@ -17,7 +17,7 @@ import {
 } from '../../store/deviceStore';
 import * as BLE from '../../services/bluetooth/BLEBridge';
 import { DeviceScanner, type ScanConnectedInfo } from '../shared/DeviceScanner';
-import { webSensorService } from '../../services/sensors/WebSensorService';
+import { PhoneSensorPanel } from './PhoneSensorPanel';
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -130,7 +130,7 @@ export function ConnectionsPage() {
   const [selectedCategory, setSelectedCategory] = useState<DeviceCategory | null>(null);
   const [pendingRole, setPendingRole] = useState<DeviceRole | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
-  const [phoneSensorsOn, setPhoneSensorsOn] = useState(webSensorService.isRunning);
+  // Phone sensors are always active via BLE Bridge (no toggle state needed)
   // Track devices that are in the process of connecting (just added from scanner)
   const [pendingIds, setPendingIds] = useState<string[]>([]);
 
@@ -299,15 +299,7 @@ export function ConnectionsPage() {
     removeDevice(device.id);
   }
 
-  const togglePhoneSensors = async () => {
-    if (phoneSensorsOn) {
-      webSensorService.stop();
-      setPhoneSensorsOn(false);
-    } else {
-      const ok = await webSensorService.start();
-      setPhoneSensorsOn(ok);
-    }
-  };
+  // Phone sensors are always active via BLE Bridge — no toggle needed
 
   // Group devices by category
   const grouped = DEVICE_CATEGORIES
@@ -381,26 +373,8 @@ export function ConnectionsPage() {
         </div>
       ))}
 
-      {/* Phone Sensors */}
-      <div>
-        <div className="flex items-center justify-between mb-2 px-1">
-          <div className="flex items-center gap-1.5">
-            <span className="material-symbols-outlined text-sm text-[#6e9bff]">smartphone</span>
-            <span className="text-[10px] text-[#777575] uppercase tracking-wider font-bold">Sensores do Telemovel</span>
-          </div>
-          <button
-            onClick={togglePhoneSensors}
-            className={`h-7 px-3 rounded text-[10px] font-bold active:scale-95 ${
-              phoneSensorsOn ? 'bg-[#3fff8b]/20 text-[#3fff8b]' : 'bg-[#262626] text-[#777575]'
-            }`}
-          >
-            {phoneSensorsOn ? 'ON' : 'OFF'}
-          </button>
-        </div>
-        <div className="bg-[#1a1919] rounded-lg p-3 text-[10px] text-[#777575]">
-          Barometro · Angulo de inclinacao · Temperatura · Lux
-        </div>
-      </div>
+      {/* Phone Sensors — full panel with live status */}
+      <PhoneSensorPanel />
 
       {/* Connection summary */}
       <div className="bg-[#1a1919] rounded-lg px-4 py-3">
