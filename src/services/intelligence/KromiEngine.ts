@@ -1272,15 +1272,21 @@ class KromiEngine {
 
     // Push elevation/terrain data to autoAssistStore for UI (ClimbApproach, ElevationProfile)
     if (this.cachedLookahead && this.cachedLookahead.segments.length > 0) {
-      const elevProfile = this.cachedLookahead.segments.map((seg: any, i: number) => ({
+      const segs = this.cachedLookahead.segments as any[];
+      const grads = segs.map((s: any) => Math.abs(s.gradient ?? 0));
+      const avgGrad = grads.length > 0 ? grads.reduce((a: number, b: number) => a + b, 0) / grads.length : 0;
+      const maxGrad = grads.length > 0 ? Math.max(...grads) : 0;
+      const elevProfile = segs.map((seg: any, i: number) => ({
+        lat: 0,
+        lng: 0,
         elevation: seg.start_elevation ?? 0,
         distance_from_current: seg.distance_m ?? i * 100,
         gradient_pct: seg.gradient ?? 0,
       }));
       useAutoAssistStore.getState().setTerrain({
         current_gradient_pct: smoothedGrad,
-        avg_upcoming_gradient_pct: this.cachedLookahead.avg_gradient ?? smoothedGrad,
-        max_upcoming_gradient_pct: this.cachedLookahead.max_gradient ?? smoothedGrad,
+        avg_upcoming_gradient_pct: avgGrad,
+        max_upcoming_gradient_pct: maxGrad,
         next_transition: this.cachedLookahead.next_transition_gradient != null ? {
           distance_m: Math.round((this.cachedLookahead.seconds_to_transition ?? 10) * (input.speed_kmh / 3.6)),
           gradient_after_pct: this.cachedLookahead.next_transition_gradient,
