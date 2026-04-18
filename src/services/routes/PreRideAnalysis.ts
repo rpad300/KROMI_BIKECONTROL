@@ -7,7 +7,7 @@
 
 import type { RoutePoint } from './GPXParser';
 import type { PreRideAnalysis } from '../../store/routeStore';
-import { computeForces, surfaceToCrr, airDensityFromTemp } from '../intelligence/PhysicsEngine';
+import { computeForces, surfaceToCrr, airDensityFromTemp, CDA_PRESETS, type CdaPreset } from '../intelligence/PhysicsEngine';
 import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import { useBikeStore } from '../../store/bikeStore';
 import { getCachedWeather } from '../weather/WeatherService';
@@ -92,7 +92,9 @@ export function analyzeRoute(points: RoutePoint[]): PreRideAnalysis | null {
         power_watts: 0,  // no power meter data for planning
         currentGear: 6,  // mid gear
         totalMass, wheelCircumM, chainring, sprockets,
-        crr, airDensity, windComponent: 0,
+        crr,
+        cda: CDA_PRESETS[(bike.cda_preset || 'mtb_upright') as CdaPreset] ?? CDA_PRESETS.mtb_upright,
+        airDensity, windComponent: 0,
       });
 
       const motorW = forces.P_motor_gap * forces.fadeFactor;

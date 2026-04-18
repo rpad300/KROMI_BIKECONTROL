@@ -98,6 +98,8 @@ export interface BikeConfig {
   tyre_width_mm: number;
   tyre_pressure_front_psi: number;
   tyre_pressure_rear_psi: number;
+  /** Average tire pressure in bar for Crr adjustment (derived from PSI or set directly) */
+  tire_pressure_bar: number;
   tubeless: boolean;
   tyre_insert: boolean;
 
@@ -126,8 +128,16 @@ export interface BikeConfig {
   has_mudguards: boolean;
   has_rack: boolean;
 
+  // ── Physics tuning ─────────────────────────────────────────
+  /** CDA preset for aero drag calculation */
+  cda_preset: 'mtb_upright' | 'mtb_aero' | 'road_hoods' | 'road_drops' | 'road_aero' | 'gravel';
+  /** Default terrain type for Crr lookup */
+  terrain_type: string;
+
   // ── E-Bike specific ───────────────────────────────────────
   motor_brand: 'giant' | 'bosch' | 'shimano' | 'specialized' | 'fazua' | 'brose' | 'yamaha' | 'other';
+  /** Total battery capacity (main + sub) in Wh. Computed from main_battery_wh + sub_battery_wh. */
+  battery_capacity_wh: number;
   main_battery_wh: number;
   has_range_extender: boolean;
   sub_battery_wh: number;
@@ -229,6 +239,7 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   tyre_width_mm: 63,
   tyre_pressure_front_psi: 24,
   tyre_pressure_rear_psi: 26,
+  tire_pressure_bar: 1.7,  // ~25 PSI average of front/rear, baseline for Crr adjustment
   tubeless: true,
   tyre_insert: false,
 
@@ -257,8 +268,13 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   has_mudguards: false,
   has_rack: false,
 
+  // Physics tuning
+  cda_preset: 'mtb_upright',
+  terrain_type: 'dirt',  // default for MTB
+
   // E-Bike
   motor_brand: 'giant',
+  battery_capacity_wh: 1050,  // 800 + 250
   main_battery_wh: 800,
   has_range_extender: true,
   sub_battery_wh: 250,
@@ -306,6 +322,12 @@ export function safeBikeConfig(raw: Partial<BikeConfig> | undefined): BikeConfig
     category: raw.category ?? (raw.bike_type === 'ebike' ? 'mtb' : 'other'),
     suspension: raw.suspension ?? 'rigid',
     cassette_sprockets: raw.cassette_sprockets?.length ? raw.cassette_sprockets : [],
+    // Physics tuning defaults
+    cda_preset: raw.cda_preset ?? 'mtb_upright',
+    terrain_type: raw.terrain_type ?? 'dirt',
+    tire_pressure_bar: raw.tire_pressure_bar ?? 1.7,
+    // Battery capacity: compute from main + sub if not explicitly set
+    battery_capacity_wh: raw.battery_capacity_wh ?? ((raw.main_battery_wh ?? d.main_battery_wh) + (raw.has_range_extender !== false ? (raw.sub_battery_wh ?? d.sub_battery_wh) : 0)),
   };
 }
 

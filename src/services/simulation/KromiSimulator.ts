@@ -261,7 +261,9 @@ export function simulateKromi(
 
     // === LAYER 3: Battery constraint ===
     const soc = (batteryWh / totalWh) * 100;
-    const bf = Math.min(totalWh / 1050, 1.2);
+    // Normalize battery factor relative to the bike's configured capacity
+    const configCapacity = bike.battery_capacity_wh || (bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0));
+    const bf = Math.min(totalWh / configCapacity, 1.2);
     const conserveAt = 30 * bf;
     const emergencyAt = 15 * bf;
     let batteryMod = 1.0;

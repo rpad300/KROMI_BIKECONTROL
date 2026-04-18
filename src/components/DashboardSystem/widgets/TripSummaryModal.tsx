@@ -418,8 +418,10 @@ function PreRideComparison({ actualTimeMin, actualBatteryUsed }: {
 
   if (!preRide) return null;
 
-  // Estimate actual Wh from battery used: 625Wh × %used / 100
-  const actualWh = Math.round((actualBatteryUsed / 100) * 625);
+  // Estimate actual Wh from battery used: battery_capacity_wh × %used / 100
+  const bikeConfig = safeBikeConfig(useSettingsStore.getState().bikeConfig);
+  const batteryCapacityWh = bikeConfig.battery_capacity_wh || (bikeConfig.main_battery_wh + (bikeConfig.has_range_extender ? bikeConfig.sub_battery_wh : 0));
+  const actualWh = Math.round((actualBatteryUsed / 100) * batteryCapacityWh);
 
   const rows: { label: string; predicted: string; actual: string; delta: string; color: string }[] = [
     {

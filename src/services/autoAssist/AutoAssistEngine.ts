@@ -33,8 +33,13 @@ class AutoAssistEngine {
   private static instance: AutoAssistEngine;
   private config: AutoAssistConfig = DEFAULT_CONFIG;
   private lastManualOverride = 0;
+  private lastOverrideTimeout = 60_000; // adaptive timeout (ms)
   private modeHistory: AssistMode[] = [];
   private altitudeHistory: Array<{ alt: number; dist: number; ts: number }> = [];
+
+  // Gap #8: Hysteresis — dead-band to prevent mode oscillation
+  private lastDecidedMode: AssistMode = AssistMode.ECO;
+  private static readonly HYSTERESIS = 1.5; // % dead-band
 
   /**
    * GPS-based gradient fallback — used when Google Elevation API is unavailable.
@@ -89,13 +94,13 @@ class AutoAssistEngine {
       return { action: 'none', reason: 'Auto-assist desactivado', terrain: null };
     }
 
-    // 1. MANUAL OVERRIDE — respect rider's choice
+    // 1. MANUAL OVERRIDE — respect rider's choice (Gap #17: adaptive timeout)
     const overrideActive =
-      Date.now() - this.lastManualOverride < this.config.override_duration_s * 1000;
+      Date.now() - this.lastManualOverride < this.lastOverrideTimeout;
 
     if (overrideActive) {
       const remaining = Math.ceil(
-        (this.config.override_duration_s * 1000 - (Date.now() - this.lastManualOverride)) / 1000
+        (this.lastOverrideTimeout - (Date.now() - this.lastManualOverride)) / 1000
       );
       return { action: 'none', reason: `Override manual (${remaining}s)`, terrain: null };
     }
@@ -207,21 +212,42 @@ class AutoAssistEngine {
     };
   }
 
-  /** Called when mode changes externally (Ergo 3 or app button) */
-  notifyManualOverride(source: 'ergo3' | 'app_button'): void {
+  /**
+   * Called when mode changes externally (Ergo 3 or app button).
+   * Gap #17: Adaptive timeout based on mode step size.
+   */
+  notifyManualOverride(source: 'ergo3' | 'app_button', from?: AssistMode, to?: AssistMode): void {
     this.lastManualOverride = Date.now();
     this.modeHistory = [];
-    console.log(`[AutoAssist] Override (${source}), paused ${this.config.override_duration_s}s`);
+
+    // Gap #17: compute context-dependent timeout
+    if (from !== undefined && to !== undefined) {
+      this.lastOverrideTimeout = this.getOverrideTimeout({ from, to });
+    } else {
+      this.lastOverrideTimeout = this.config.override_duration_s * 1000;
+    }
+
+    console.log(`[AutoAssist] Override (${source}), paused ${this.lastOverrideTimeout / 1000}s`);
+  }
+
+  /**
+   * Gap #17: Adaptive override timeout.
+   * Small adjustments (1 step) → shorter pause. Major switches → longer pause.
+   */
+  private getOverrideTimeout(modeChange: { from: AssistMode; to: AssistMode }): number {
+    const steps = Math.abs(this.modeIndex(modeChange.to) - this.modeIndex(modeChange.from));
+    if (steps <= 1) return 30_000;  // 30s for fine adjustments
+    if (steps <= 2) return 60_000;  // 60s for moderate changes
+    return 90_000;                   // 90s for major mode switches (ECO→POWER)
   }
 
   getOverrideRemaining(): number {
     const elapsed = Date.now() - this.lastManualOverride;
-    const duration = this.config.override_duration_s * 1000;
-    return Math.max(0, Math.ceil((duration - elapsed) / 1000));
+    return Math.max(0, Math.ceil((this.lastOverrideTimeout - elapsed) / 1000));
   }
 
   isOverrideActive(): boolean {
-    return Date.now() - this.lastManualOverride < this.config.override_duration_s * 1000;
+    return Date.now() - this.lastManualOverride < this.lastOverrideTimeout;
   }
 
   // ── Terrain Analysis ──────────────────────────────────
@@ -281,15 +307,48 @@ class AutoAssistEngine {
     return null;
   }
 
-  // ── Gradient → AssistMode Mapping ─────────────────────
+  // ── Gradient → AssistMode Mapping (with hysteresis) ───
 
+  /** Map mode to numeric index for ordering */
+  private modeIndex(mode: AssistMode): number {
+    const order: Record<number, number> = {
+      [AssistMode.OFF]: 0, [AssistMode.ECO]: 1, [AssistMode.TOUR]: 2,
+      [AssistMode.ACTIVE]: 3, [AssistMode.SPORT]: 4, [AssistMode.POWER]: 5,
+    };
+    return order[mode] ?? 1;
+  }
+
+  /**
+   * Gradient→Mode with hysteresis dead-band (Gap #8).
+   * Going UP (increasing assist): uses normal thresholds.
+   * Going DOWN (decreasing assist): requires gradient to drop below threshold - HYSTERESIS.
+   * Prevents oscillation at mode boundaries.
+   */
   private gradientToMode(gradient: number): AssistMode {
-    if (gradient > 12) return AssistMode.POWER;
-    if (gradient > 8) return AssistMode.SPORT;
-    if (gradient > 5) return AssistMode.ACTIVE;
-    if (gradient > 3) return AssistMode.TOUR;
-    if (gradient > -4) return AssistMode.ECO;
-    return AssistMode.OFF;
+    const H = AutoAssistEngine.HYSTERESIS;
+    const currentIdx = this.modeIndex(this.lastDecidedMode);
+
+    // Thresholds: OFF < -4 < ECO < 3 < TOUR < 5 < ACTIVE < 8 < SPORT < 12 < POWER
+    // When going DOWN, require crossing threshold - H
+    // When going UP, use normal thresholds
+    let newMode: AssistMode;
+
+    if (gradient > (currentIdx >= 5 ? 12 - H : 12)) {
+      newMode = AssistMode.POWER;
+    } else if (gradient > (currentIdx >= 4 ? 8 - H : 8)) {
+      newMode = AssistMode.SPORT;
+    } else if (gradient > (currentIdx >= 3 ? 5 - H : 5)) {
+      newMode = AssistMode.ACTIVE;
+    } else if (gradient > (currentIdx >= 2 ? 3 - H : 3)) {
+      newMode = AssistMode.TOUR;
+    } else if (gradient > (currentIdx >= 1 ? -4 - H : -4)) {
+      newMode = AssistMode.ECO;
+    } else {
+      newMode = AssistMode.OFF;
+    }
+
+    this.lastDecidedMode = newMode;
+    return newMode;
   }
 
   // ── Smoothing ─────────────────────────────────────────

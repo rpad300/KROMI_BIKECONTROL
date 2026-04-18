@@ -370,6 +370,15 @@ class BLEBridgeService : Service() {
                     ecoLaunch = json.optInt("ecoLaunch", -1),
                 )
             }
+            // === KromiCore emergency disarm ===
+            "disarm" -> {
+                kromiCore.disarm()
+                wsServer?.broadcastData(JSONObject().apply {
+                    put("type", "motorDisarmed")
+                    put("timestamp", System.currentTimeMillis())
+                })
+            }
+
             // === KromiCore params from PWA (Layers 3-7 cached values) ===
             "kromiParams" -> {
                 kromiCore.updateParams(json)

@@ -473,12 +473,22 @@ export class RiderLearning {
    *
    * Example: returns +25 → KROMI should add 25% to its support calculation.
    * Example: returns -15 → KROMI should subtract 15%.
+   *
+   * Checks both the fine-grained key (gradient_bucket:hr_zone) and the
+   * Gap #16 aggregated key for broader coverage.
    */
   getSupportCorrection(gradient: number, hr_zone: number): number {
-    const key = `${this.gradientBucket(gradient)}:${hr_zone}`;
-    const entry = this.supportCorrections.get(key);
-    if (!entry || entry.samples < 2) return 0; // need at least 2 samples to trust
-    return entry.correction;
+    // Try fine-grained key first
+    const fineKey = `${this.gradientBucket(gradient)}:${hr_zone}`;
+    const fineEntry = this.supportCorrections.get(fineKey);
+    if (fineEntry && fineEntry.samples >= 2) return fineEntry.correction;
+
+    // Fall back to Gap #16 aggregated context
+    const aggKey = this.getAggregatedContext(gradient, hr_zone, 0);
+    const aggEntry = this.supportCorrections.get(aggKey);
+    if (aggEntry && aggEntry.samples >= 2) return aggEntry.correction;
+
+    return 0;
   }
 
   /** Get all learned corrections (for logging/debug) */
@@ -492,24 +502,57 @@ export class RiderLearning {
   }
 
   private applySupportCorrection(event: ModeFeedbackEvent): void {
-    const key = `${event.gradient_bucket}:${event.hr_zone}`;
+    // Learn into fine-grained key (original)
+    const fineKey = `${event.gradient_bucket}:${event.hr_zone}`;
+    this.learnCorrectionForKey(fineKey, event.correction_pct);
+
+    // Gap #16: Also learn into aggregated context for broader coverage
+    const aggKey = this.getAggregatedContext(
+      event.gradient_bucket, event.hr_zone, event.speed_kmh,
+    );
+    this.learnCorrectionForKey(aggKey, event.correction_pct);
+  }
+
+  /** Apply EMA learning to a specific context key */
+  private learnCorrectionForKey(key: string, correction_pct: number): void {
     const existing = this.supportCorrections.get(key);
 
     if (!existing) {
-      // First observation for this context — start with reduced learning rate
+      // First observation — start with reduced learning rate
       this.supportCorrections.set(key, {
-        correction: event.correction_pct * 0.5, // 50% of first observation
+        correction: correction_pct * 0.5, // 50% of first observation
         samples: 1,
       });
     } else {
       // Exponential moving average: more samples → slower change
       const alpha = Math.max(0.05, 0.3 / Math.sqrt(existing.samples));
-      const blended = existing.correction * (1 - alpha) + event.correction_pct * alpha;
+      const blended = existing.correction * (1 - alpha) + correction_pct * alpha;
       this.supportCorrections.set(key, {
         correction: Math.round(blended),
         samples: existing.samples + 1,
       });
     }
+  }
+
+  /**
+   * Gap #16: Aggregated context — reduces 1680-context matrix to ~45 contexts.
+   * Instead of gradient(7) x HR_zone(5) x speed_quartile(4) x gear(12) = 1680,
+   * uses gradient_bucket(5) x effort_level(3) x terrain(3) = 45.
+   */
+  private getAggregatedContext(gradient: number, hr_zone: number, speed: number): string {
+    // Gradient: 5 buckets
+    const gradBucket = gradient < -2 ? 'descent' :
+                       gradient < 3 ? 'flat' :
+                       gradient < 6 ? 'gentle_climb' :
+                       gradient < 10 ? 'moderate_climb' : 'steep_climb';
+
+    // Effort: 3 levels (from HR zone)
+    const effort = hr_zone <= 2 ? 'easy' : hr_zone <= 3 ? 'moderate' : 'hard';
+
+    // Terrain speed proxy: 3 categories
+    const terrain = speed > 25 ? 'road' : speed > 12 ? 'trail' : 'technical';
+
+    return `agg:${gradBucket}_${effort}_${terrain}`;
   }
 
   /** Round gradient to bucket: ...-4, -2, 0, 2, 4, 6, 8, 10+ */

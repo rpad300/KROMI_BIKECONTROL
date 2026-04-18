@@ -758,7 +758,17 @@ class BLEManager(private val context: Context) {
                                 0x43 -> {
                                     // BATTERY — byte[4]=bat1 SOC%, byte[5]=bat2 SOC%
                                     // byte[8] is NOT combined SOC (fluctuates wildly, unreliable)
-                                    // Combined SOC = weighted average: (bat1×800 + bat2×250) / 1050
+                                    //
+                                    // Giant Trance X E+ 2 dual battery system:
+                                    //   Battery 1 (internal, 800Wh): downtube, ~76% of total capacity
+                                    //   Battery 2 (range extender, 250Wh): external, ~24% of total capacity
+                                    //   Combined SOC = weighted average: (bat1×800 + bat2×250) / 1050
+                                    //   If only one battery present: bat2=0, degrades to bat1 only
+                                    //   Failure mode: if bat1 fails, combined SOC drops to ~24% (bat2 only)
+                                    //
+                                    // NOTE: 800/250 are the nominal Wh. For bikes with different capacities,
+                                    // the PWA-side formula in PhysicsEngine.combinedBatterySOC() reads from
+                                    // bikeConfig (main_battery_wh / sub_battery_wh).
                                     val bat1Soc = data[4].toInt() and 0xFF
                                     val bat2Soc = data[5].toInt() and 0xFF
                                     val combinedSoc = Math.round((bat1Soc * 800f + bat2Soc * 250f) / 1050f).toInt()

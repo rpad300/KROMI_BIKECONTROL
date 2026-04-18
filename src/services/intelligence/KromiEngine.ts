@@ -19,6 +19,8 @@ import { calculateZones } from '../../types/athlete.types';
 import type { TuningFactor } from '../motor/TuningIntelligence';
 import {
   computeForces, airDensityFromTemp, windHeadComponent, surfaceToCrr,
+  estimateHeadwind,
+  CDA_PRESETS, type CdaPreset,
   type PhysicsInput,
 } from './PhysicsEngine';
 import { PhysiologyEngine, type PhysiologyOutput } from './PhysiologyEngine';
@@ -42,7 +44,8 @@ const TORQUE_MAX = 85;
 const LAUNCH_MIN = 1;
 const LAUNCH_MAX = 7;
 // Adaptive EMA: faster at high speed (reliable data), slower at low speed (noisy GPS)
-function emaAlpha(speedKmh: number): number {
+// Gap #20: kept as fallback when power data insufficient — see getAdaptiveAlpha()
+function emaAlphaBySpeed(speedKmh: number): number {
   if (speedKmh > 15) return 0.35;  // responsive at riding speed
   if (speedKmh > 8) return 0.25;   // moderate
   if (speedKmh > 3) return 0.15;   // slow, GPS noisy
@@ -106,6 +109,16 @@ class KromiEngine {
   private prevSupport = 200;
   private prevTorque = 40;
 
+  // Gap #9: Gradient EMA smoothing
+  private smoothedGradient = 0;
+  private readonly GRADIENT_ALPHA = 0.3;
+
+  // Gap #20: Power variance-based adaptive EMA alpha
+  private recentPowerValues: number[] = [];
+
+  // Gap #12: Adaptive ramp — last gradient for delta calculation
+  private lastGradientForRamp = 0;
+
   // Layer timers
   private lastEnvTick = 0;
   private lastLookaheadTick = 0;
@@ -138,6 +151,38 @@ class KromiEngine {
       KromiEngine.instance = new KromiEngine();
     }
     return KromiEngine.instance;
+  }
+
+  // ── Gap #9: Gradient EMA smoothing ──────────────────────
+  private smoothGradient(rawGradient: number): number {
+    this.smoothedGradient = this.GRADIENT_ALPHA * rawGradient + (1 - this.GRADIENT_ALPHA) * this.smoothedGradient;
+    return this.smoothedGradient;
+  }
+
+  // ── Gap #12: Adaptive ramp duration ────────────────────
+  private calculateRampDuration(gradientDelta: number): number {
+    const absDelta = Math.abs(gradientDelta);
+    if (absDelta > 8) return 2;    // steep change: fast ramp (2s)
+    if (absDelta > 4) return 4;    // moderate change: medium ramp (4s)
+    return 8;                       // gentle change: slow ramp (8s)
+  }
+
+  // ── Gap #20: Power variance-based adaptive alpha ───────
+  private getAdaptiveAlpha(speedKmh: number): number {
+    if (this.recentPowerValues.length < 3) return emaAlphaBySpeed(speedKmh);
+
+    const mean = this.recentPowerValues.reduce((a, b) => a + b, 0) / this.recentPowerValues.length;
+    if (mean < 10) return 0.1; // very low power, slow response
+
+    const variance = this.recentPowerValues.reduce((sum, v) => sum + (v - mean) ** 2, 0) / this.recentPowerValues.length;
+    const cv = Math.sqrt(variance) / mean;
+
+    // High variance (bumpy terrain/intervals): slow alpha to dampen
+    // Low variance (steady state): fast alpha to be responsive
+    if (cv > 0.5) return 0.1;   // very noisy: heavy smoothing
+    if (cv > 0.3) return 0.2;   // moderate noise
+    if (cv > 0.1) return 0.35;  // normal riding
+    return 0.5;                  // very stable: quick response
   }
 
   /**
@@ -216,19 +261,36 @@ class KromiEngine {
       ? [...bike.cassette_sprockets].sort((a, b) => b - a)
       : [51, 45, 39, 34, 30, 26, 23, 20, 17, 15, 13, 10];
 
+    // Gap #9: smooth gradient before feeding to physics
+    const smoothedGrad = this.smoothGradient(input.gradient_pct);
+
+    // Gap #20: track power values for adaptive EMA alpha
+    this.recentPowerValues.push(input.power_watts);
+    if (this.recentPowerValues.length > 10) this.recentPowerValues.shift();
+
+    // Resolve CDA from bike config preset
+    const cdaPreset = (bike.cda_preset || 'mtb_upright') as CdaPreset;
+    const cda = CDA_PRESETS[cdaPreset] ?? CDA_PRESETS.mtb_upright;
+
+    // Resolve tire pressure in bar for Crr adjustment
+    const tirePressureBar = bike.tire_pressure_bar || undefined;
+
     const physicsInput: PhysicsInput = {
       speed_kmh: input.speed_kmh,
-      gradient_pct: input.gradient_pct,
+      gradient_pct: smoothedGrad,
       cadence_rpm: input.cadence_rpm,
       power_watts: input.power_watts,
+      power_source: bike.has_power_meter ? 'pedal' : undefined,
       currentGear: input.currentGear,
       totalMass,
       wheelCircumM,
       chainring,
       sprockets,
       crr: this.learning.getAdjustedCrr(this.cachedCrr, getCachedTrail()?.category ?? 'unknown'),
+      cda,
       airDensity: this.cachedAirDensity,
       windComponent: this.cachedWindComponent,
+      tire_pressure_bar: tirePressureBar,
     };
 
     const physics = computeForces(physicsInput);
@@ -368,6 +430,10 @@ class KromiEngine {
       }
 
       // Descent: minimal support
+      // NOTE: Giant Trance X E+ 2 (Shimano EP800) does NOT support regenerative
+      // braking. Motor assist is one-way only. On descents, motor cuts to 0%
+      // and the rider relies on mechanical brakes. Battery does not recharge
+      // during descent. This is a hardware limitation of the EP800 motor.
       if (input.gradient_pct < -3) {
         supportPct = Math.min(supportPct, SUPPORT_MIN + 20);
       }
@@ -388,12 +454,15 @@ class KromiEngine {
       reason = 'Motor off >25km/h';
     }
 
-    // ── Pre-adjustment ramp (from lookahead) ──
-    if (this.preAdjustTarget && this.preAdjustCountdown > 0 && this.preAdjustCountdown <= 5) {
-      const blend = 1 - (this.preAdjustCountdown / 5); // 0→1 over 5s
+    // ── Pre-adjustment ramp (from lookahead) — Gap #12: adaptive duration ──
+    const gradientDelta = smoothedGrad - this.lastGradientForRamp;
+    this.lastGradientForRamp = smoothedGrad;
+    const rampDuration = this.calculateRampDuration(gradientDelta);
+    if (this.preAdjustTarget && this.preAdjustCountdown > 0 && this.preAdjustCountdown <= rampDuration) {
+      const blend = 1 - (this.preAdjustCountdown / rampDuration); // 0→1 over rampDuration
       supportPct = supportPct + (this.preAdjustTarget.support - supportPct) * blend;
       torqueNm = torqueNm + (this.preAdjustTarget.torque - torqueNm) * blend;
-      reason += ` [pre-adjust ${this.preAdjustCountdown.toFixed(0)}s]`;
+      reason += ` [pre-adjust ${this.preAdjustCountdown.toFixed(0)}s ramp=${rampDuration}s]`;
     }
     if (this.preAdjustCountdown > 0) {
       this.preAdjustCountdown -= 1;
@@ -442,7 +511,8 @@ class KromiEngine {
     }
 
     // ── EMA Smoothing (support and torque) ──
-    const alpha = emaAlpha(input.speed_kmh);
+    // Gap #20: use power variance-based alpha, falling back to speed-based
+    const alpha = this.getAdaptiveAlpha(input.speed_kmh);
     supportPct = this.prevSupport + alpha * (supportPct - this.prevSupport);
     torqueNm = this.prevTorque + alpha * (torqueNm - this.prevTorque);
     this.prevSupport = supportPct;
@@ -515,6 +585,10 @@ class KromiEngine {
       sprockets,
       target_zone: rider.target_zone || 2,
       hr_zone_bounds: zones.map(z => z.max_bpm),
+      // Battery capacity for route-aware budget in native KromiCore
+      battery_capacity_wh: bike.battery_capacity_wh || (bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0)),
+      // CDA from bike config preset
+      cda: CDA_PRESETS[(bike.cda_preset || 'mtb_upright') as CdaPreset] ?? CDA_PRESETS.mtb_upright,
       pre_adjust: this.preAdjustTarget && this.preAdjustCountdown > 0
         ? { support: this.preAdjustTarget.support, torque: this.preAdjustTarget.torque, countdown: this.preAdjustCountdown }
         : undefined,
@@ -552,6 +626,9 @@ class KromiEngine {
     this.sustainedEffortPowerSum = 0;
     this.sustainedEffortSamples = 0;
     this.cachedNutrition = null;
+    this.smoothedGradient = 0;
+    this.recentPowerValues = [];
+    this.lastGradientForRamp = 0;
     this.rideStartTs = 0;
     this.lastNutritionTick = 0;
     this.physiology.reset();
@@ -579,6 +656,25 @@ class KromiEngine {
       );
       this.cachedAirDensity = airDensityFromTemp(weather.temp_c);
       this.cachedTemp = weather.temp_c;
+    }
+
+    // Gap #11: Wind estimation from power surplus (supplements weather data)
+    if (input.power_watts > 0 && input.speed_kmh > 5) {
+      const settings = useSettingsStore.getState();
+      const rider = settings.riderProfile;
+      const bike = safeBikeConfig(settings.bikeConfig);
+      const totalMass = (rider.weight_kg || 135) + (bike.weight_kg || 24);
+      const estimatedWindKmh = estimateHeadwind(
+        input.speed_kmh, input.power_watts, input.gradient_pct, totalMass,
+      );
+      const estimatedWindMs = estimatedWindKmh / 3.6;
+      if (weather) {
+        // Blend: 70% weather, 30% power-estimated
+        this.cachedWindComponent = this.cachedWindComponent * 0.7 + estimatedWindMs * 0.3;
+      } else {
+        // No weather data: use power-estimated wind fully
+        this.cachedWindComponent = estimatedWindMs;
+      }
     }
 
     // Surface → Crr
@@ -622,6 +718,7 @@ class KromiEngine {
         currentGear: input.currentGear,
         totalMass, wheelCircumM, chainring, sprockets,
         crr: this.cachedCrr,
+        cda: CDA_PRESETS[(bike.cda_preset || 'mtb_upright') as CdaPreset] ?? CDA_PRESETS.mtb_upright,
         airDensity: this.cachedAirDensity,
         windComponent: this.cachedWindComponent,
       },

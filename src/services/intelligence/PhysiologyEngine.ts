@@ -87,6 +87,11 @@ export class PhysiologyEngine {
   private ircReferenceDropBpm: number = 25; // default: 25bpm drop in 60s at fresh
   private lastIrc: number = -1;
 
+  // Gap #24: IRC auto-calibration — learn per-rider recovery baseline
+  private ircSamples: number[] = [];
+  /** Callback fired when IRC reference is auto-calibrated — caller should persist */
+  onIrcCalibrated: ((newRef: number) => void) | null = null;
+
   // Recovery tracking for W'
   private timeBelowCpMs: number = 0;
 
@@ -209,6 +214,35 @@ export class PhysiologyEngine {
     this.ircReferenceDropBpm = dropBpm;
   }
 
+  /**
+   * Gap #24: IRC auto-calibration.
+   * Called internally each time an IRC measurement completes (after 60s recovery window).
+   * Uses median of last 20 observed drops as the reference (robust to outliers).
+   */
+  private calibrateIRC(observedDrop: number): void {
+    if (observedDrop <= 0) return; // ignore non-recovery events
+
+    this.ircSamples.push(observedDrop);
+    if (this.ircSamples.length > 20) this.ircSamples.shift(); // keep last 20
+
+    if (this.ircSamples.length < 3) return; // need at least 3 samples
+
+    // Use median (robust to outliers)
+    const sorted = [...this.ircSamples].sort((a, b) => a - b);
+    const newRef = sorted[Math.floor(sorted.length / 2)]!;
+
+    if (Math.abs(newRef - this.ircReferenceDropBpm) > 1) {
+      console.log(`[Physiology] IRC reference calibrated to ${newRef} bpm (was ${this.ircReferenceDropBpm}, ${this.ircSamples.length} samples)`);
+      this.ircReferenceDropBpm = newRef;
+      this.onIrcCalibrated?.(newRef);
+    }
+  }
+
+  /** Get current IRC reference (for persistence in rider profile) */
+  getIrcReference(): number {
+    return this.ircReferenceDropBpm;
+  }
+
   /** Update W' total and tau from calibration */
   calibrate(w_prime_joules: number, _tau_seconds: number): void {
     const ratio = this.wPrimeBalance / this.wPrimeTotal;
@@ -319,6 +353,8 @@ export class PhysiologyEngine {
         const drop = this.ircStartHr - hr;
         this.lastIrc = Math.max(0, Math.min(1, drop / this.ircReferenceDropBpm));
         this.ircState = 'idle';
+        // Gap #24: auto-calibrate IRC reference from successful measurements
+        this.calibrateIRC(drop);
       } else if (!isLowEffort) {
         // Effort resumed, cancel IRC measurement
         this.ircState = 'idle';

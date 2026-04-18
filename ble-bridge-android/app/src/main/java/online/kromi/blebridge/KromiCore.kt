@@ -74,10 +74,14 @@ class KromiCore(private val bleManager: BLEManager) {
 
     // ── Bike constants (from settings, set once) ─────────────
 
-    private var totalMass = 159.0      // rider + bike
-    private var wheelCircumM = 2.290
+    private var totalMass = 159.0      // rider + bike (configurable via PWA settings)
+    private var wheelCircumM = 2.290   // wheel circumference in meters (configurable)
     private var chainring = 34
     private var sprockets = intArrayOf(51, 45, 39, 34, 30, 26, 23, 20, 17, 15, 13, 10)
+    /** Total battery capacity in Wh (main + sub). Default: 800 + 250 = 1050 for Giant Trance X E+ 2 */
+    private var batteryCapacityWh = 1050.0
+    /** CDA (drag coefficient × frontal area) in m². Configurable via PWA bike config preset. */
+    private var cdaValue = CDA_MTB
 
     // ── Internal state ───────────────────────────────────────
 
@@ -109,6 +113,45 @@ class KromiCore(private val bleManager: BLEManager) {
     private var tickCount = 0L
     private var lastDetailedLog = 0L
 
+    // ── Gap #1: Watchdog timer ──
+    private var lastTickMs = System.currentTimeMillis()
+    private val watchdogHandler = Handler(Looper.getMainLooper())
+    private val watchdogRunnable = object : Runnable {
+        override fun run() {
+            val elapsed = System.currentTimeMillis() - lastTickMs
+            if (active && elapsed > 3000) {
+                Log.e(TAG, "WATCHDOG: tick stalled for ${elapsed}ms — sending motor OFF")
+                bleManager.setTuningLevels(2, 2, 2, 2, 2)
+                // Don't stop the engine — let it recover if tick resumes
+            }
+            watchdogHandler.postDelayed(this, 2000)
+        }
+    }
+
+    // ── Gap #2: Emergency disarm ──
+    fun disarm() {
+        Log.w(TAG, "DISARM: Emergency motor cutoff")
+        active = false
+        bleManager.setTuningLevels(2, 2, 2, 2, 2)
+        onTelemetry?.invoke(JSONObject().apply {
+            put("type", "kromiCore")
+            put("disarmed", true)
+        })
+    }
+
+    // ── Gap #3: Motor temperature estimation ──
+    @Volatile private var motorLoadSeconds = 0
+    @Volatile private var motorCoolSeconds = 0
+    private var estimatedMotorTemp = 25.0
+    @Volatile private var motorThermalFactor = 1.0
+
+    // ── Gap #4: Brake sensor proxy ──
+    private var brakingDetected = false
+
+    // ── Gap #6: Sensor consistency ──
+    private var sensorInconsistencyCount = 0
+    private var lastGradient = 0.0
+
     // Telemetry callback for WebView display
     var onTelemetry: ((JSONObject) -> Unit)? = null
 
@@ -123,13 +166,21 @@ class KromiCore(private val bleManager: BLEManager) {
         prevSupport = 200.0; prevTorque = 40.0
         lastWireS = -1; lastWireT = -1; lastWireL = -1
         hrHistory.clear()
+        // Reset safety state
+        lastTickMs = System.currentTimeMillis()
+        motorLoadSeconds = 0; motorCoolSeconds = 0
+        estimatedMotorTemp = 25.0; motorThermalFactor = 1.0
+        brakingDetected = false
+        sensorInconsistencyCount = 0; lastGradient = 0.0
         handler.post(tickRunnable)
+        watchdogHandler.post(watchdogRunnable)
         Log.i(TAG, "★ KromiCore STARTED — mass=${totalMass}kg cp=${cpWatts}W W'=${wPrimeTotal}J")
     }
 
     fun stop() {
         active = false
         handler.removeCallbacks(tickRunnable)
+        watchdogHandler.removeCallbacks(watchdogRunnable)
         Log.i(TAG, "★ KromiCore STOPPED")
     }
 
@@ -199,6 +250,8 @@ class KromiCore(private val bleManager: BLEManager) {
         if (json.has("wheel_circum_m")) wheelCircumM = json.optDouble("wheel_circum_m", wheelCircumM)
         if (json.has("chainring")) chainring = json.optInt("chainring", chainring)
         if (json.has("target_zone")) targetZone = json.optInt("target_zone", targetZone)
+        if (json.has("battery_capacity_wh")) batteryCapacityWh = json.optDouble("battery_capacity_wh", batteryCapacityWh)
+        if (json.has("cda")) cdaValue = json.optDouble("cda", cdaValue)
 
         json.optJSONArray("hr_zone_bounds")?.let { arr ->
             if (arr.length() == 5) hrZoneBounds = IntArray(5) { arr.optInt(it, hrZoneBounds[it]) }
@@ -213,6 +266,14 @@ class KromiCore(private val bleManager: BLEManager) {
     // ═════════════════════════════════════════════════════════
 
     private fun tick() {
+        lastTickMs = System.currentTimeMillis()
+
+        // ── Gap #6: Sensor cross-validation ──
+        validateSensorConsistency()
+
+        // ── Gap #4: Brake detection ──
+        detectBraking()
+
         // ── Layer 1: Physics ──
         val speedMs = speed / 3.6
         val gradRad = atan(gradient / 100.0)
@@ -220,7 +281,7 @@ class KromiCore(private val bleManager: BLEManager) {
         val Fg = totalMass * G * sin(gradRad)
         val Frr = crr * totalMass * G * cos(gradRad)
         val vEff = speedMs + windComponent
-        val Faero = 0.5 * airDensity * CDA_MTB * vEff * abs(vEff)
+        val Faero = 0.5 * airDensity * cdaValue * vEff * abs(vEff)
         val Ftotal = Fg + Frr + Faero
         val Ptotal = max(0.0, Ftotal * speedMs)
 
@@ -281,8 +342,10 @@ class KromiCore(private val bleManager: BLEManager) {
         // Route-aware battery budget: if we know remaining distance,
         // modulate batteryFactor so motor paces itself to finish the route
         val batEff = if (routeRemainingKm > 0 && batterySoc > 0) {
-            // Rough estimate: 625Wh battery, consumption ~15Wh/km average
-            val remainingWh = (batterySoc / 100.0) * 625.0
+            // Battery capacity comes from PWA settings (main_battery_wh + sub_battery_wh).
+            // Default 1050Wh for Giant Trance X E+ 2 (800Wh main + 250Wh range extender).
+            // batteryCapacityWh is updated via updateParams from PWA.
+            val remainingWh = (batterySoc / 100.0) * batteryCapacityWh
             val neededWh = routeRemainingKm * 15.0
             val budgetRatio = if (neededWh > 0) remainingWh / neededWh else 99.0
             when {
@@ -308,7 +371,14 @@ class KromiCore(private val bleManager: BLEManager) {
         var launchLvl = 3.0
         var reason = ""
 
-        when {
+        // ── Gap #4: Braking override (before physics decision tree) ──
+        if (brakingDetected) {
+            supportPct = 0.0
+            torqueNm = TORQUE_MIN
+            launchLvl = LAUNCH_MIN
+            reason = "Braking: cad=0 spd=${String.format("%.1f", speed)}"
+            // Skip normal decision tree — jump to post-processing
+        } else when {
             // P1: W' critical
             wPrimePct < 0.30 -> {
                 supportPct = SUPPORT_MAX
@@ -360,7 +430,10 @@ class KromiCore(private val bleManager: BLEManager) {
                 if (cadenceEff > 0 && cadenceEff < 50 && gradient > 3) {
                     torqueNm = min(TORQUE_MAX, torqueNm * 1.3)
                 }
-                // Descent: minimal
+                // Descent: minimal support
+                // NOTE: Giant Trance X E+ 2 (Shimano EP800) does NOT support regenerative
+                // braking. Motor assist is one-way only. On descents, motor cuts to 0%
+                // and the rider relies on mechanical brakes. Battery does not recharge.
                 if (gradient < -3) supportPct = min(supportPct, SUPPORT_MIN + 20)
 
                 // Launch
@@ -379,6 +452,10 @@ class KromiCore(private val bleManager: BLEManager) {
                 reason = "Motor off >25"
             }
         }
+
+        // ── Gap #3: Motor temperature estimation + thermal throttle ──
+        updateMotorTemp(supportPct)
+        supportPct *= motorThermalFactor
 
         // ── Pre-adjustment ramp ──
         if (preAdjustCountdown in 1..5) {
@@ -463,7 +540,72 @@ class KromiCore(private val bleManager: BLEManager) {
             put("Pgap", Pgap.roundToInt())
             put("reason", reason)
             put("wireS", wireS); put("wireT", wireT); put("wireL", wireL)
+            put("motorTemp", String.format("%.1f", estimatedMotorTemp))
+            put("motorThermalFactor", String.format("%.2f", motorThermalFactor))
+            put("brakingDetected", brakingDetected)
         })
+    }
+
+    // ═════════════════════════════════════════════════════════
+    // SAFETY HELPERS
+    // ═════════════════════════════════════════════════════════
+
+    /** Gap #3: Estimate motor temperature from time at load */
+    private fun updateMotorTemp(supportPct: Double) {
+        val supportRatio = supportPct / SUPPORT_MAX
+        if (supportRatio > 0.7) {
+            motorLoadSeconds++
+            motorCoolSeconds = 0
+            estimatedMotorTemp += 0.5 * supportRatio
+        } else if (supportRatio < 0.3) {
+            motorCoolSeconds++
+            motorLoadSeconds = 0
+            estimatedMotorTemp = maxOf(25.0, estimatedMotorTemp - 0.2)
+        }
+
+        if (estimatedMotorTemp > 80) {
+            Log.w(TAG, "Motor temp estimate ${String.format("%.1f", estimatedMotorTemp)}°C — throttling 50%")
+            motorThermalFactor = 0.5
+        } else if (estimatedMotorTemp > 65) {
+            motorThermalFactor = 0.75
+        } else {
+            motorThermalFactor = 1.0
+        }
+    }
+
+    /** Gap #4: Detect braking via cadence=0 while speed > 5 km/h */
+    private fun detectBraking() {
+        brakingDetected = cadence == 0 && speed > 5.0
+        if (brakingDetected) {
+            Log.d(TAG, "Braking detected: cadence=0, speed=$speed — cutting assist")
+        }
+    }
+
+    /** Gap #6: Cross-validate sensors for consistency */
+    private fun validateSensorConsistency() {
+        // Speed vs cadence: if cadence > 0 and speed = 0 for > 5s, likely sensor error
+        if (cadence > 30 && speed < 1.0) {
+            sensorInconsistencyCount++
+            if (sensorInconsistencyCount > 5) {
+                Log.w(TAG, "Sensor inconsistency: cadence=$cadence but speed=$speed — using speed only")
+                cadence = 0
+            }
+        } else {
+            sensorInconsistencyCount = 0
+        }
+
+        // Power sanity: if power > 0 but cadence = 0 and speed = 0, ignore power
+        if (power > 50 && cadence == 0 && speed < 1.0) {
+            Log.w(TAG, "Ghost power: power=$power but no movement — zeroing")
+            power = 0
+        }
+
+        // Gradient sanity: rate-of-change check
+        if (abs(gradient - lastGradient) > 10.0) {
+            Log.w(TAG, "Gradient spike: ${lastGradient}% → ${gradient}% — smoothing")
+            gradient = lastGradient + (gradient - lastGradient) * 0.3
+        }
+        lastGradient = gradient
     }
 
     // ═════════════════════════════════════════════════════════

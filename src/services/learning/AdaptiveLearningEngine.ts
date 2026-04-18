@@ -106,6 +106,54 @@ export class AdaptiveLearningEngine {
     this.profile = profile;
   }
 
+  // ── Gap #25: CP Detection Cross-Validation ──────────────────
+
+  /**
+   * Validate a detected CP value using cadence, speed, and W/kg sanity checks.
+   * Returns true if CP is plausible, false if it should be rejected.
+   * When CP changes >15%, returns true but caller should apply 50% blend.
+   */
+  validateCPDetection(
+    detectedCP: number,
+    avgCadence: number,
+    avgSpeed: number,
+  ): { valid: boolean; blend: boolean; reason?: string } {
+    const riderWeightKg = this.profile.physiology.weight_kg || 135;
+
+    // 1. CP should be plausible for rider weight (0.5-6.0 W/kg)
+    const wpkg = detectedCP / riderWeightKg;
+    if (wpkg < 0.5 || wpkg > 6.0) {
+      console.warn(`[Learning] CP ${detectedCP}W rejected: ${wpkg.toFixed(1)} W/kg outside plausible range`);
+      return { valid: false, blend: false, reason: `${wpkg.toFixed(1)} W/kg outside 0.5-6.0 range` };
+    }
+
+    // 2. Cadence during effort should be reasonable (40-120 rpm)
+    if (avgCadence > 0 && (avgCadence < 40 || avgCadence > 120)) {
+      console.warn(`[Learning] CP ${detectedCP}W rejected: cadence ${avgCadence} rpm abnormal`);
+      return { valid: false, blend: false, reason: `cadence ${avgCadence} rpm abnormal` };
+    }
+
+    // 3. Speed during effort should be > 3 km/h (not stopped/walking)
+    if (avgSpeed < 3) {
+      console.warn(`[Learning] CP ${detectedCP}W rejected: speed ${avgSpeed} km/h too low`);
+      return { valid: false, blend: false, reason: `speed ${avgSpeed} km/h too low` };
+    }
+
+    // 4. CP shouldn't change by >15% in a single ride
+    const currentCP = this.profile.physiology.ftp_estimate_watts;
+    if (currentCP > 0 && Math.abs(detectedCP - currentCP) / currentCP > 0.15) {
+      console.warn(`[Learning] CP ${detectedCP}W flagged: >15% change from current ${currentCP}W — applying 50% blend`);
+      return { valid: true, blend: true, reason: `>15% change, blending` };
+    }
+
+    return { valid: true, blend: false };
+  }
+
+  /** Get current CP estimate */
+  getCurrentCP(): number {
+    return this.profile.physiology.ftp_estimate_watts;
+  }
+
   getProfile(): AthleteProfile {
     return this.profile;
   }
@@ -136,18 +184,36 @@ export class AdaptiveLearningEngine {
       });
     }
 
-    // FTP: exponential moving average
+    // FTP: exponential moving average — Gap #25: with cross-validation
     if (ride.ftp_estimate > 0) {
-      const prev = this.profile.physiology.ftp_estimate_watts;
-      this.profile.physiology.ftp_estimate_watts =
-        Math.round(prev * (1 - LEARNING_RATE) + ride.ftp_estimate * LEARNING_RATE);
+      const validation = this.validateCPDetection(
+        ride.ftp_estimate,
+        ride.avg_cadence,
+        ride.avg_speed_kmh,
+      );
 
-      if (Math.abs(this.profile.physiology.ftp_estimate_watts - prev) > 5) {
+      if (validation.valid) {
+        const prev = this.profile.physiology.ftp_estimate_watts;
+        const effectiveLR = validation.blend ? LEARNING_RATE * 0.5 : LEARNING_RATE;
+        this.profile.physiology.ftp_estimate_watts =
+          Math.round(prev * (1 - effectiveLR) + ride.ftp_estimate * effectiveLR);
+
+        if (Math.abs(this.profile.physiology.ftp_estimate_watts - prev) > 5) {
+          updates.changes.push({
+            field: 'ftp_estimate',
+            old_value: Math.round(prev),
+            new_value: this.profile.physiology.ftp_estimate_watts,
+            reason: validation.blend
+              ? `FTP recalibrado (blend 50%: ${validation.reason})`
+              : 'FTP recalibrado',
+          });
+        }
+      } else {
         updates.changes.push({
           field: 'ftp_estimate',
-          old_value: Math.round(prev),
+          old_value: this.profile.physiology.ftp_estimate_watts,
           new_value: this.profile.physiology.ftp_estimate_watts,
-          reason: 'FTP recalibrado',
+          reason: `FTP rejeitado: ${validation.reason}`,
         });
       }
     }

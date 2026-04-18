@@ -20,6 +20,14 @@ import javax.crypto.spec.SecretKeySpec
 object GEVCrypto {
     private const val TAG = "GEVCrypto"
 
+    // SECURITY NOTE: These AES keys are extracted from the Giant RideControl APK via
+    // reverse engineering. They are the same keys used by all Giant eBikes with Smart
+    // Gateway. Storing them in source code is a known risk.
+    //
+    // TODO: Move keys to Android Keystore or encrypted SharedPreferences.
+    // For now, R8/ProGuard obfuscation (enabled in release builds) provides minimal protection.
+    // The keys themselves are not secret (available in Giant's own APK), but embedding them
+    // in plaintext makes extraction trivial.
     private val AES_KEYS: Array<ByteArray> = arrayOf(
         /* 0  */ byteArrayOf(0x39, 0xfa.toByte(), 0xd4.toByte(), 0xc3.toByte(), 0x93.toByte(), 0x42, 0xae.toByte(), 0x41, 0x42, 0xa9.toByte(), 0xa7.toByte(), 0x77, 0x89.toByte(), 0xa1.toByte(), 0x13, 0xaf.toByte()),
         /* 1  */ byteArrayOf(0x30, 0xec.toByte(), 0x00, 0xbd.toByte(), 0x96.toByte(), 0xf7.toByte(), 0x21, 0x45, 0xd8.toByte(), 0x46, 0xb0.toByte(), 0x9a.toByte(), 0x87.toByte(), 0x29, 0xa6.toByte(), 0x37),

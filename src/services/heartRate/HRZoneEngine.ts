@@ -20,9 +20,15 @@ export class HRZoneEngine {
   private history: { value: number; timestamp: number }[] = [];
   private readonly SMOOTHING_WINDOW_S = 10;
 
+  // Gap #10: HRmax auto-detection
+  private observedHRmax = 0;
+  /** Callback fired when HRmax auto-updates — caller should persist to settings/profile */
+  onHRmaxUpdated: ((newMax: number) => void) | null = null;
+
   constructor(hrMax: number, targetZone: number = 3) {
     this.hrMax = hrMax;
     this.hrTargetZone = targetZone;
+    this.observedHRmax = hrMax;
   }
 
   updateProfile(hrMax: number, targetZone: number): void {
@@ -30,11 +36,42 @@ export class HRZoneEngine {
     this.hrTargetZone = targetZone;
   }
 
+  /**
+   * Gap #10: Track highest HR seen and auto-calibrate HRmax.
+   * Called every tick with current HR.
+   * Only updates if observed HR is significantly higher (>2 bpm) than configured HRmax.
+   */
+  updateObservedHRmax(hr: number): void {
+    if (hr > this.observedHRmax && hr < 250) { // sanity: reject >250 bpm
+      this.observedHRmax = hr;
+      if (this.observedHRmax > this.hrMax + 2) {
+        console.log(`[HRZone] New observed HRmax: ${this.observedHRmax} (was ${this.hrMax})`);
+        this.hrMax = this.observedHRmax;
+        this.recalculateZones(this.observedHRmax);
+        this.onHRmaxUpdated?.(this.observedHRmax);
+      }
+    }
+  }
+
+  /** Recalculate zone boundaries from new HRmax (zone definitions stay proportional) */
+  private recalculateZones(newMax: number): void {
+    // HR_ZONES use percentages, so the zone engine is automatically recalibrated
+    // via this.hrMax being updated. Log the change.
+    console.log(`[HRZone] Zones recalibrated for HRmax=${newMax}`);
+  }
+
+  /** Get the current observed HRmax (for persistence in athlete profile) */
+  getObservedHRmax(): number {
+    return this.observedHRmax;
+  }
+
   addReading(bpm: number): void {
     const now = Date.now();
     this.history.push({ value: bpm, timestamp: now });
     // Keep last 30s only
     this.history = this.history.filter((r) => now - r.timestamp < 30000);
+    // Gap #10: auto-detect HRmax
+    this.updateObservedHRmax(bpm);
   }
 
   /** Smoothed HR (average of last 10s) */

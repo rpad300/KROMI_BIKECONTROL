@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
+import { useSettingsStore, safeBikeConfig } from '../../store/settingsStore';
 import { batteryEstimationService } from '../../services/battery/BatteryEstimationService';
 import { ASSIST_MODE_LABELS } from '../../types/bike.types';
 
@@ -23,6 +24,8 @@ export function BatteryWidget() {
   const isEstimated = estimatedModes.has(modeKey);
 
   const di2Battery = useBikeStore((s) => s.di2_battery);
+  const bike = safeBikeConfig(useSettingsStore((s) => s.bikeConfig));
+  const totalCapacityWh = bike.battery_capacity_wh || (bike.main_battery_wh + (bike.has_range_extender ? bike.sub_battery_wh : 0));
   const hasDual = bat1 > 0 || bat2 > 0;
 
   // Use individual battery data from SG cmd 0x43
@@ -40,7 +43,7 @@ export function BatteryWidget() {
       <div className="flex items-center gap-1 mb-1">
         <span className="material-symbols-outlined text-xs text-[#777575]">battery_full</span>
         <span className="text-[8px] text-[#777575]">
-          {estimate.remaining_wh}Wh / 1050Wh
+          {estimate.remaining_wh}Wh / {totalCapacityWh}Wh
           {voltage > 0 && ` · ${voltage.toFixed(1)}V`}
         </span>
       </div>
@@ -64,8 +67,8 @@ export function BatteryWidget() {
       {/* Dual battery bars */}
       {hasDual ? (
         <div className="space-y-1 mt-1.5">
-          <BatteryBar label="800" soc={mainSoc} health={bat1} wh={Math.round(800 * mainSoc / 100)} />
-          <BatteryBar label="250" soc={subSoc} health={bat2} wh={Math.round(250 * subSoc / 100)} />
+          <BatteryBar label={String(bike.main_battery_wh)} soc={mainSoc} health={bat1} wh={Math.round(bike.main_battery_wh * mainSoc / 100)} />
+          <BatteryBar label={String(bike.sub_battery_wh)} soc={subSoc} health={bat2} wh={Math.round(bike.sub_battery_wh * subSoc / 100)} />
         </div>
       ) : (
         <div className="h-1.5 bg-[#262626] rounded-full overflow-hidden mt-1.5">
