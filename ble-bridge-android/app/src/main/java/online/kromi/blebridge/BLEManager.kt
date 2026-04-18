@@ -731,6 +731,16 @@ class BLEManager(private val context: Context) {
                                     if (speed > 2.0) onDataReceived?.invoke(JSONObject().put("type", "speed").put("value", speed))
                                     if (powerW > 0) onDataReceived?.invoke(JSONObject().put("type", "power").put("value", powerW.toInt()))
                                     if (cadenceRpm > 0) onDataReceived?.invoke(JSONObject().put("type", "cadence").put("value", cadenceRpm.toInt()))
+
+                                    // Gap #6: Motor temperature from FC23 cmd 0x40
+                                    // Giant GEV FC23 telemetry does NOT expose motor temperature in the
+                                    // known byte layout (bytes 4-18 are fully mapped to speed/torque/
+                                    // cadence/current/distance/time/power/SOC). If Giant adds motor temp
+                                    // in a future firmware update, it would likely appear in:
+                                    //   - A new FC23 sub-command (e.g. 0x44 or 0x45)
+                                    //   - Or in the FC21 readRidingData extended payload
+                                    // TODO: Monitor FC23 raw hex for unknown sub-commands that may carry
+                                    // motor temperature. If found, call: kromiCore?.onMotorTemp(temp.toDouble())
                                 }
                                 0x42 -> {
                                     // SENSOR/ESHIFT DATA (indexTwo) — from resolveTd23Data decompilation

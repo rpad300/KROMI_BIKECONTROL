@@ -139,11 +139,18 @@ class KromiCore(private val bleManager: BLEManager) {
         })
     }
 
+    // ── Gap #1 (PWA↔APK heartbeat): param version tracking + stale detection ──
+    private var lastParamVersion = 0
+    private var lastParamTimestamp = 0L
+
     // ── Gap #3: Motor temperature estimation ──
     @Volatile private var motorLoadSeconds = 0
     @Volatile private var motorCoolSeconds = 0
     private var estimatedMotorTemp = 25.0
     @Volatile private var motorThermalFactor = 1.0
+
+    // ── Gap #6: Actual motor temperature from BLE (if available) ──
+    @Volatile private var actualMotorTemp: Double? = null // null = not available from BLE
 
     // ── Gap #4: Brake sensor proxy ──
     private var brakingDetected = false
@@ -170,6 +177,8 @@ class KromiCore(private val bleManager: BLEManager) {
         lastTickMs = System.currentTimeMillis()
         motorLoadSeconds = 0; motorCoolSeconds = 0
         estimatedMotorTemp = 25.0; motorThermalFactor = 1.0
+        actualMotorTemp = null
+        lastParamVersion = 0; lastParamTimestamp = 0L
         brakingDetected = false
         sensorInconsistencyCount = 0; lastGradient = 0.0
         handler.post(tickRunnable)
@@ -207,6 +216,14 @@ class KromiCore(private val bleManager: BLEManager) {
     fun onGear(g: Int) { if (g in 0..24) gear = g }
     fun onGradient(g: Double) { if (g.isFinite() && g in -50.0..50.0) gradient = g }
     fun onBattery(soc: Int) { if (soc in 0..100) batterySoc = soc }
+    /** Gap #6: Motor temperature from BLE (if Giant GEV exposes it) */
+    fun onMotorTemp(temp: Double) {
+        if (temp in 0.0..150.0) {
+            actualMotorTemp = temp
+            Log.d(TAG, "◇ BLE motor temp: ${String.format("%.1f", temp)}°C")
+        }
+    }
+
     fun onAssistMode(m: Int) {
         val wasActive = assistMode == 5
         assistMode = m
@@ -220,7 +237,19 @@ class KromiCore(private val bleManager: BLEManager) {
     // ═════════════════════════════════════════════════════════
 
     fun updateParams(json: JSONObject) {
-        Log.d(TAG, "◆ PWA params update: crr=${json.optDouble("crr", -1.0)} wind=${json.optDouble("wind_component_ms", -1.0)} rho=${json.optDouble("air_density", -1.0)} bat×${json.optDouble("battery_factor", -1.0)} cp=${json.optDouble("cp_effective", -1.0)} glyc×${json.optDouble("glycogen_cp_factor", -1.0)} route=${json.optDouble("route_remaining_km", -1.0)}km")
+        // Gap #1: Version tracking — ignore stale/duplicate param updates
+        val version = json.optInt("paramVersion", 0)
+        val timestamp = json.optLong("paramTimestamp", 0)
+
+        if (version > 0 && version <= lastParamVersion) {
+            Log.w(TAG, "Stale param update: v$version <= v$lastParamVersion — ignoring")
+            return
+        }
+
+        lastParamVersion = version
+        lastParamTimestamp = timestamp
+
+        Log.d(TAG, "◆ PWA params update v$version: crr=${json.optDouble("crr", -1.0)} wind=${json.optDouble("wind_component_ms", -1.0)} rho=${json.optDouble("air_density", -1.0)} bat×${json.optDouble("battery_factor", -1.0)} cp=${json.optDouble("cp_effective", -1.0)} glyc×${json.optDouble("glycogen_cp_factor", -1.0)} route=${json.optDouble("route_remaining_km", -1.0)}km")
         crr = json.optDouble("crr", crr)
         windComponent = json.optDouble("wind_component_ms", windComponent)
         airDensity = json.optDouble("air_density", airDensity)
@@ -267,6 +296,9 @@ class KromiCore(private val bleManager: BLEManager) {
 
     private fun tick() {
         lastTickMs = System.currentTimeMillis()
+
+        // ── Gap #1: Check PWA param freshness ──
+        checkParamFreshness()
 
         // ── Gap #6: Sensor cross-validation ──
         validateSensorConsistency()
@@ -541,8 +573,11 @@ class KromiCore(private val bleManager: BLEManager) {
             put("reason", reason)
             put("wireS", wireS); put("wireT", wireT); put("wireL", wireL)
             put("motorTemp", String.format("%.1f", estimatedMotorTemp))
+            put("motorTempSource", if (actualMotorTemp != null) "ble" else "estimated")
             put("motorThermalFactor", String.format("%.2f", motorThermalFactor))
             put("brakingDetected", brakingDetected)
+            put("paramVersion", lastParamVersion)
+            put("paramStaleMs", if (lastParamTimestamp > 0) System.currentTimeMillis() - lastParamTimestamp else -1)
         })
     }
 
@@ -550,26 +585,45 @@ class KromiCore(private val bleManager: BLEManager) {
     // SAFETY HELPERS
     // ═════════════════════════════════════════════════════════
 
-    /** Gap #3: Estimate motor temperature from time at load */
+    /** Gap #3 + Gap #6: Motor temperature — prefer actual BLE temp, fallback to heuristic */
     private fun updateMotorTemp(supportPct: Double) {
-        val supportRatio = supportPct / SUPPORT_MAX
-        if (supportRatio > 0.7) {
-            motorLoadSeconds++
-            motorCoolSeconds = 0
-            estimatedMotorTemp += 0.5 * supportRatio
-        } else if (supportRatio < 0.3) {
-            motorCoolSeconds++
-            motorLoadSeconds = 0
-            estimatedMotorTemp = maxOf(25.0, estimatedMotorTemp - 0.2)
+        val temp = actualMotorTemp
+        if (temp != null) {
+            // Gap #6: Use actual BLE motor temperature
+            estimatedMotorTemp = temp
+        } else {
+            // Fallback to heuristic estimation (existing load-based logic)
+            val supportRatio = supportPct / SUPPORT_MAX
+            if (supportRatio > 0.7) {
+                motorLoadSeconds++
+                motorCoolSeconds = 0
+                estimatedMotorTemp += 0.5 * supportRatio
+            } else if (supportRatio < 0.3) {
+                motorCoolSeconds++
+                motorLoadSeconds = 0
+                estimatedMotorTemp = maxOf(25.0, estimatedMotorTemp - 0.2)
+            }
         }
 
-        if (estimatedMotorTemp > 80) {
-            Log.w(TAG, "Motor temp estimate ${String.format("%.1f", estimatedMotorTemp)}°C — throttling 50%")
-            motorThermalFactor = 0.5
-        } else if (estimatedMotorTemp > 65) {
-            motorThermalFactor = 0.75
-        } else {
-            motorThermalFactor = 1.0
+        // Gap #6: Gradual throttle curve instead of hard cutoffs
+        motorThermalFactor = when {
+            estimatedMotorTemp > 80 -> 0.5
+            estimatedMotorTemp > 70 -> 0.5 + (80 - estimatedMotorTemp) * 0.025  // 0.5-0.75 linear
+            estimatedMotorTemp > 60 -> 0.75 + (70 - estimatedMotorTemp) * 0.025 // 0.75-1.0 linear
+            else -> 1.0
+        }
+
+        if (estimatedMotorTemp > 70) {
+            Log.w(TAG, "Motor temp ${String.format("%.1f", estimatedMotorTemp)}°C (${if (actualMotorTemp != null) "BLE" else "est"}) — thermal factor=${String.format("%.2f", motorThermalFactor)}")
+        }
+    }
+
+    /** Gap #1: Check if PWA params are stale (no update in >60s) */
+    private fun checkParamFreshness() {
+        val elapsed = System.currentTimeMillis() - lastParamTimestamp
+        if (lastParamTimestamp > 0 && elapsed > 60_000) {
+            Log.w(TAG, "PWA params stale for ${elapsed / 1000}s — using cached values with reduced confidence")
+            // Don't crash — just log warning and continue with last good values
         }
     }
 

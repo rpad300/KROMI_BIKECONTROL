@@ -168,7 +168,9 @@ export class PhysiologyEngine {
     if (ef_degraded) flags.push('functional_efficiency_degraded');
 
     // Update EF baseline (rolling)
-    if (ef_current > 0 && input.P_human > input.cp_watts * 0.5) {
+    // Gap #4: Only update EF baseline from zone 1-3 efforts (aerobic)
+    // Zone 4-5 EF excluded — high intensity naturally has lower EF
+    if (ef_current > 0 && input.P_human > input.cp_watts * 0.5 && zone_current <= 3) {
       this.efSampleCount++;
       this.efBaseline += (ef_current - this.efBaseline) / Math.min(this.efSampleCount, 100);
     }

@@ -19,7 +19,7 @@ import { calculateZones } from '../../types/athlete.types';
 import type { TuningFactor } from '../motor/TuningIntelligence';
 import {
   computeForces, airDensityFromTemp, windHeadComponent, surfaceToCrr,
-  estimateHeadwind,
+  estimateHeadwind, resetSpeedZone,
   CDA_PRESETS, CRR_TABLE, type CdaPreset,
   type PhysicsInput,
 } from './PhysicsEngine';
@@ -57,7 +57,7 @@ function emaAlphaBySpeed(speedKmh: number): number {
 
 // Layer intervals
 const ENV_INTERVAL_MS = 60_000;
-const LOOKAHEAD_INTERVAL_MS = 10_000;
+const LOOKAHEAD_INTERVAL_MS = 5_000; // Gap #13: reduced from 10s to 5s for faster terrain response
 const BATTERY_INTERVAL_MS = 30_000;
 const LEARNING_INTERVAL_MS = 60_000;
 const NUTRITION_INTERVAL_MS = 30_000;
@@ -103,6 +103,41 @@ export interface KromiTickOutput {
   alerts: string[];
 }
 
+// ── Gap #14: Within-ride climb pattern recognition ──────────
+interface ClimbPattern {
+  startGradient: number;
+  peakGradient: number;
+  duration_s: number;
+  avgPower: number;
+  supportUsed: number;
+}
+
+// ── Gap #15: Speed event logging ────────────────────────────
+interface SpeedEvent {
+  timestamp: number;
+  speed_kmh: number;
+  duration_s: number;
+  location?: { lat: number; lng: number };
+  assistActive: boolean;
+}
+
+// ── Gap #15: Regional compliance ────────────────────────────
+export type ComplianceRegion = 'eu' | 'us' | 'au' | 'jp';
+
+export interface ComplianceConfig {
+  speedLimit_kmh: number;
+  fadeStart_kmh: number;
+  hardCutoff: boolean;
+  maxPower_w: number;
+}
+
+export const COMPLIANCE_CONFIGS: Record<ComplianceRegion, ComplianceConfig> = {
+  eu: { speedLimit_kmh: 25, fadeStart_kmh: 22, hardCutoff: false, maxPower_w: 250 },
+  us: { speedLimit_kmh: 32, fadeStart_kmh: 28, hardCutoff: false, maxPower_w: 750 },
+  au: { speedLimit_kmh: 25, fadeStart_kmh: 22, hardCutoff: true, maxPower_w: 250 },
+  jp: { speedLimit_kmh: 24, fadeStart_kmh: 21, hardCutoff: true, maxPower_w: 250 },
+};
+
 // ── Engine ─────────────────────────────────────────────────────
 
 class KromiEngine {
@@ -128,6 +163,19 @@ class KromiEngine {
   // Gap #12: Adaptive ramp — last gradient for delta calculation
   private lastGradientForRamp = 0;
 
+  // ── Gap #12 (Motor Disconnect Recovery) ─────────────────
+  private lastMotorTelemetryMs = 0;
+  private motorConnected = true;
+  private readonly MOTOR_TIMEOUT_MS = 5000;
+
+  // ── Gap #14: Within-ride climb learning ─────────────────
+  private rideClimbs: ClimbPattern[] = [];
+  private currentClimb: { startTime: number; gradients: number[]; powers: number[]; supports: number[] } | null = null;
+
+  // ── Gap #15: Speed event logging ────────────────────────
+  private speedEvents: SpeedEvent[] = [];
+  private speedExceedStartMs = 0;
+
   // Layer timers
   private lastEnvTick = 0;
   private lastLookaheadTick = 0;
@@ -149,6 +197,17 @@ class KromiEngine {
   // Pre-adjustment state
   private preAdjustTarget: { support: number; torque: number } | null = null;
   private preAdjustCountdown = 0;
+  private preAdjustStartGradient = 0; // gradient that triggered the ramp
+
+  // Gap #1 (PWA↔APK heartbeat): parameter version tracking + periodic re-broadcast
+  private paramVersion = 0;
+  private lastParamPushMs = 0;
+  private paramsChanged = false;
+  private readonly PARAM_HEARTBEAT_MS = 30_000; // re-broadcast every 30s
+
+  // Gap #5: Battery factor smoothing
+  private smoothedBatteryFactor = 1.0;
+  private readonly BATTERY_RAMP_ALPHA = 0.1; // 10% per tick = ~10s to full change
 
   // Gap #4: KromiEngine active flag for AutoAssistEngine coordination
   private kromiEngineActive = false;
@@ -169,6 +228,11 @@ class KromiEngine {
   private readonly SPEED_HISTORY_SIZE = 30; // 30 seconds of data
   private manualTerrainOverride: string | null = null;
   private lastAutoTerrain = 'dirt';
+  private lastManualTerrain: string | null = null;
+
+  // Gap #11 (extended): Terrain detection accuracy tracking
+  private terrainDetectionHistory: { auto: string; manual: string | null; ts: number }[] = [];
+  private trustAutoTerrain = true;
 
   static getInstance(): KromiEngine {
     if (!KromiEngine.instance) {
@@ -195,6 +259,39 @@ class KromiEngine {
     return this.kromiEngineActive;
   }
 
+  // ── Gap #12: Motor Disconnect Recovery ─────────────────
+  /** Call when any BLE telemetry arrives from motor */
+  onMotorTelemetry(): void {
+    this.lastMotorTelemetryMs = Date.now();
+    if (!this.motorConnected) {
+      console.log('[KromiEngine] Motor reconnected — resuming layer processing');
+      this.motorConnected = true;
+      this.requestStateRefresh();
+    }
+  }
+
+  private checkMotorConnection(): void {
+    if (this.lastMotorTelemetryMs > 0) {
+      const elapsed = Date.now() - this.lastMotorTelemetryMs;
+      if (elapsed > this.MOTOR_TIMEOUT_MS && this.motorConnected) {
+        console.warn(`[KromiEngine] Motor telemetry timeout (${elapsed}ms) — freezing outputs`);
+        this.motorConnected = false;
+      }
+    }
+  }
+
+  private requestStateRefresh(): void {
+    this.paramVersion++;
+    this.paramsChanged = true;
+    this.pushParamsWithHeartbeat();
+    console.log('[KromiEngine] Full state refresh requested after reconnect');
+  }
+
+  /** Whether motor is currently connected (receiving telemetry) */
+  isMotorConnected(): boolean {
+    return this.motorConnected;
+  }
+
   // ── Gap #9: Gradient EMA smoothing ──────────────────────
   private smoothGradient(rawGradient: number): number {
     this.smoothedGradient = this.GRADIENT_ALPHA * rawGradient + (1 - this.GRADIENT_ALPHA) * this.smoothedGradient;
@@ -207,6 +304,70 @@ class KromiEngine {
     if (absDelta > 8) return 2;    // steep change: fast ramp (2s)
     if (absDelta > 4) return 4;    // moderate change: medium ramp (4s)
     return 8;                       // gentle change: slow ramp (8s)
+  }
+
+  // ── Gap #2 (Reactive Ramps): recalculate ramp target when gradient shifts mid-ramp ──
+  private recalculateRampTarget(currentGradient: number): void {
+    if (!this.preAdjustTarget) return;
+
+    const settings = useSettingsStore.getState();
+    const rider = settings.riderProfile;
+    const bike = safeBikeConfig(settings.bikeConfig);
+    const totalMass = (rider.weight_kg || 135) + (bike.weight_kg || 24);
+    const wheelCircumM = (bike.wheel_circumference_mm || 2290) / 1000;
+
+    const gradRad = Math.atan(currentGradient / 100);
+    const Fg = totalMass * 9.81 * Math.sin(gradRad);
+    const estTorque = Math.max(TORQUE_MIN, Math.min(TORQUE_MAX, Fg * (wheelCircumM / (2 * Math.PI))));
+    const estSupport = currentGradient > 0
+      ? Math.min(SUPPORT_MAX, 150 + currentGradient * 15)
+      : SUPPORT_MIN;
+
+    this.preAdjustTarget = { support: estSupport, torque: estTorque };
+    this.preAdjustStartGradient = currentGradient;
+  }
+
+  // ── Gap #5: Battery factor smoothing (ramp over ~10s when large change) ──
+  private smoothBatteryFactor(newFactor: number): number {
+    const delta = Math.abs(newFactor - this.smoothedBatteryFactor);
+    if (delta > 0.2) {
+      // Large change — ramp gradually to avoid sudden assist drop
+      this.smoothedBatteryFactor += (newFactor - this.smoothedBatteryFactor) * this.BATTERY_RAMP_ALPHA;
+    } else {
+      this.smoothedBatteryFactor = newFactor;
+    }
+    return this.smoothedBatteryFactor;
+  }
+
+  // ── Gap #5: Hard battery ceiling for route completion guarantee ──
+  private enforceRouteBudget(supportPct: number, batteryWh: number, distRemainingKm: number): number {
+    if (distRemainingKm <= 0) return supportPct; // no route, no budget enforcement
+
+    const avgConsumptionWhPerKm = 15; // baseline, should use rolling average
+    const whNeeded = distRemainingKm * avgConsumptionWhPerKm;
+
+    if (batteryWh < whNeeded * 1.1) {
+      // Less than 10% margin — cap support to guarantee finish
+      const maxSupportForBudget = (batteryWh / whNeeded) * supportPct;
+      if (maxSupportForBudget < supportPct) {
+        console.log(`[Battery] Route budget cap: ${supportPct.toFixed(0)}% → ${maxSupportForBudget.toFixed(0)}%`);
+        return maxSupportForBudget;
+      }
+    }
+    return supportPct;
+  }
+
+  // ── Gap #1 (PWA↔APK heartbeat): push params with version + periodic re-broadcast ──
+  private pushParamsWithHeartbeat(): void {
+    const now = Date.now();
+    const forcePush = now - this.lastParamPushMs > this.PARAM_HEARTBEAT_MS;
+
+    if (forcePush || this.paramsChanged) {
+      this.paramVersion++;
+      this.lastParamPushMs = now;
+      this.paramsChanged = false;
+      this.pushParamsToNative();
+    }
   }
 
   // ── Gap #20: Power variance-based adaptive alpha ───────
@@ -309,7 +470,134 @@ class KromiEngine {
 
   /** Allow manual terrain override (null = auto-detect) */
   setManualTerrain(terrain: string | null): void {
+    // Gap #11 (extended): Track auto vs manual for accuracy validation
+    if (terrain) {
+      this.lastManualTerrain = terrain;
+      this.trackTerrainAccuracy(this.lastAutoTerrain, terrain);
+    }
     this.manualTerrainOverride = terrain;
+  }
+
+  // ── Gap #11 (extended): Terrain detection accuracy tracking ──
+
+  /**
+   * Track auto-detected terrain vs manual terrain selection.
+   * When accuracy drops below 70% (with 20+ samples), auto-detection
+   * is distrusted and manual/last-manual terrain is preferred.
+   */
+  private trackTerrainAccuracy(autoTerrain: string, manualTerrain: string | null): void {
+    if (!manualTerrain) return;
+
+    this.terrainDetectionHistory.push({ auto: autoTerrain, manual: manualTerrain, ts: Date.now() });
+
+    // Keep last 100 samples
+    if (this.terrainDetectionHistory.length > 100) this.terrainDetectionHistory.shift();
+
+    // Calculate accuracy
+    const correct = this.terrainDetectionHistory.filter(h => h.auto === h.manual).length;
+    const accuracy = correct / this.terrainDetectionHistory.length;
+
+    if (accuracy < 0.7 && this.terrainDetectionHistory.length >= 20) {
+      console.warn(`[Terrain] Auto-detection accuracy ${(accuracy * 100).toFixed(0)}% — using manual terrain preference`);
+      this.trustAutoTerrain = false;
+    } else {
+      this.trustAutoTerrain = true;
+    }
+  }
+
+  // ── Gap #14: Within-ride climb pattern tracking ──────────
+
+  private trackClimbPatterns(gradient: number, power: number, support: number): void {
+    const isClimbing = gradient > 3;
+
+    if (isClimbing && !this.currentClimb) {
+      this.currentClimb = {
+        startTime: Date.now(),
+        gradients: [gradient],
+        powers: [power],
+        supports: [support],
+      };
+    } else if (isClimbing && this.currentClimb) {
+      this.currentClimb.gradients.push(gradient);
+      this.currentClimb.powers.push(power);
+      this.currentClimb.supports.push(support);
+    } else if (!isClimbing && this.currentClimb) {
+      const duration = (Date.now() - this.currentClimb.startTime) / 1000;
+      if (duration > 30) {
+        const pattern: ClimbPattern = {
+          startGradient: this.currentClimb.gradients[0]!,
+          peakGradient: Math.max(...this.currentClimb.gradients),
+          duration_s: duration,
+          avgPower: this.currentClimb.powers.reduce((a, b) => a + b, 0) / this.currentClimb.powers.length,
+          supportUsed: this.currentClimb.supports.reduce((a, b) => a + b, 0) / this.currentClimb.supports.length,
+        };
+        this.rideClimbs.push(pattern);
+        console.log(`[ClimbLearn] Climb ${this.rideClimbs.length}: ${duration.toFixed(0)}s, peak ${pattern.peakGradient.toFixed(1)}%, avg power ${pattern.avgPower.toFixed(0)}W`);
+      }
+      this.currentClimb = null;
+    }
+  }
+
+  /** When a new climb starts, check if similar to previous climbs in this ride */
+  private getSimilarClimbSupport(gradient: number): number | null {
+    if (this.rideClimbs.length < 2) return null;
+
+    const similar = this.rideClimbs.filter(c =>
+      Math.abs(c.startGradient - gradient) < 2
+    );
+
+    if (similar.length === 0) return null;
+
+    const avgSupport = similar.reduce((sum, c) => sum + c.supportUsed, 0) / similar.length;
+    console.log(`[ClimbLearn] Similar climb found (${similar.length} matches) — suggesting ${avgSupport.toFixed(0)}% support`);
+    return avgSupport;
+  }
+
+  // ── Gap #14: Turn-aware pre-adjustment ───────────────────
+
+  /** Check navigation for upcoming turns and reduce support to prevent overshoot */
+  private checkUpcomingTurn(): number {
+    const nav = useRouteStore.getState().navigation;
+    if (!nav.active || nav.distanceToNextEvent_m == null) return 1.0;
+
+    const bikeSpeed = useBikeStore.getState().speed_kmh;
+    if (bikeSpeed < 5) return 1.0;
+
+    const secondsToTurn = nav.distanceToNextEvent_m / (bikeSpeed / 3.6);
+    if (secondsToTurn > 0 && secondsToTurn < 10) {
+      console.log(`[Navigation] Turn in ${secondsToTurn.toFixed(0)}s — reducing support`);
+      return 0.7;
+    }
+    return 1.0;
+  }
+
+  // ── Gap #15: Speed event logging ─────────────────────────
+
+  private logSpeedEvent(speed: number, lat?: number, lng?: number, assistActive?: boolean): void {
+    if (speed > 25) {
+      if (this.speedExceedStartMs === 0) {
+        this.speedExceedStartMs = Date.now();
+      }
+    } else {
+      if (this.speedExceedStartMs > 0) {
+        const duration = (Date.now() - this.speedExceedStartMs) / 1000;
+        this.speedEvents.push({
+          timestamp: this.speedExceedStartMs,
+          speed_kmh: speed,
+          duration_s: duration,
+          location: lat && lng ? { lat, lng } : undefined,
+          assistActive: assistActive ?? false,
+        });
+        this.speedExceedStartMs = 0;
+
+        if (this.speedEvents.length > 1000) this.speedEvents.shift();
+      }
+    }
+  }
+
+  /** Get all speed exceed events for this ride (for compliance reporting) */
+  getSpeedEventLog(): SpeedEvent[] {
+    return [...this.speedEvents];
   }
 
   /**
@@ -321,26 +609,39 @@ class KromiEngine {
     const factors: TuningFactor[] = [];
     const alerts: string[] = [];
 
+    // ── Gap #12: Motor disconnect recovery — freeze outputs when motor offline ──
+    this.checkMotorConnection();
+    if (!this.motorConnected) {
+      return {
+        supportPct: this.prevSupport, torqueNm: this.prevTorque, launchLvl: 3,
+        score: 0, reason: 'Motor offline — outputs frozen', factors: [],
+        speedZone: 'active', batteryFactor: this.smoothedBatteryFactor,
+        gearSuggestion: null, gearSuggestionDetail: null,
+        physiology: null, nutrition: this.cachedNutrition,
+        autoTerrain: this.lastAutoTerrain, activeCrr: this.cachedCrr,
+        alerts: ['Motor desligado — a aguardar reconexao'],
+      };
+    }
+
     // ── Layer 3: Environment (every 60s) ──
-    let paramsChanged = false;
     if (now - this.lastEnvTick > ENV_INTERVAL_MS) {
       this.tickEnvironment(input);
       this.lastEnvTick = now;
-      paramsChanged = true;
+      this.paramsChanged = true;
     }
 
     // ── Layer 5: Battery (every 30s) ──
     if (now - this.lastBatteryTick > BATTERY_INTERVAL_MS) {
       this.tickBattery(input);
       this.lastBatteryTick = now;
-      paramsChanged = true;
+      this.paramsChanged = true;
     }
 
     // ── Layer 6: Learning (every 60s) ──
     if (now - this.lastLearningTick > LEARNING_INTERVAL_MS) {
       this.tickLearning(input);
       this.lastLearningTick = now;
-      paramsChanged = true;
+      this.paramsChanged = true;
     }
 
     // ── Layer 7: Nutrition (every 30s) ──
@@ -353,12 +654,7 @@ class KromiEngine {
     if (now - this.lastLookaheadTick > LOOKAHEAD_INTERVAL_MS) {
       this.tickLookahead(input);
       this.lastLookaheadTick = now;
-      paramsChanged = true;
-    }
-
-    // Push updated params to native KromiCore (when any slow layer changed)
-    if (paramsChanged) {
-      this.pushParamsToNative();
+      this.paramsChanged = true;
     }
 
     // Send gradient to native KromiCore every tick (it needs this for physics)
@@ -387,8 +683,9 @@ class KromiEngine {
     }
     this.lookaheadCtrl.setGpsAltitude(input.altitude);
 
-    // ── Gap #2: Feed heading to lookahead for switchback detection ──
+    // ── Gap #2 + Gap #9: Feed heading + distance to lookahead for switchback detection ──
     this.lookaheadCtrl.trackHeading(input.heading);
+    this.lookaheadCtrl.setCurrentDistance(input.distanceKm);
 
     // ── Gap #3: Dead-reckoning detection ──
     if (input.gpsActive && input.latitude !== 0) {
@@ -426,11 +723,14 @@ class KromiEngine {
     // Resolve tire pressure in bar for Crr adjustment
     const tirePressureBar = bike.tire_pressure_bar || undefined;
 
-    // Gap #11: Micro-terrain auto-detection from speed variance
+    // Gap #11: Micro-terrain auto-detection from speed variance + accuracy validation
     this.trackSpeedVariance(input.speed_kmh);
     const autoTerrain = this.detectMicroTerrain();
     this.lastAutoTerrain = autoTerrain;
-    const activeTerrain = this.manualTerrainOverride ?? autoTerrain;
+    // Gap #11 (extended): Use manual override, or trust auto-detection based on accuracy
+    const activeTerrain = this.manualTerrainOverride
+      ? this.manualTerrainOverride                    // user explicitly set
+      : (this.trustAutoTerrain ? autoTerrain : this.lastManualTerrain ?? 'dirt');
     const terrainCrr = CRR_TABLE[activeTerrain] ?? CRR_TABLE['dirt']!;
     // Use TerrainService Crr if available, otherwise speed-variance detected Crr
     const baseCrr = getCachedTrail()?.category ? this.cachedCrr : terrainCrr;
@@ -453,6 +753,15 @@ class KromiEngine {
       airDensity: this.cachedAirDensity,
       windComponent: this.cachedWindComponent,
       tire_pressure_bar: tirePressureBar,
+      // Gap #15: Regional compliance speed limits
+      ...(settings.compliance_region && settings.compliance_region !== 'eu' ? (() => {
+        const cc = COMPLIANCE_CONFIGS[settings.compliance_region as ComplianceRegion];
+        return {
+          compliance_speedLimit_kmh: cc.speedLimit_kmh,
+          compliance_fadeStart_kmh: cc.fadeStart_kmh,
+          compliance_hardCutoff: cc.hardCutoff,
+        };
+      })() : {}),
     };
 
     const physics = computeForces(physicsInput);
@@ -522,15 +831,42 @@ class KromiEngine {
       alerts.push(...this.cachedNutrition.alerts);
     }
 
+    // ── Gap #10: Nutrition → motor integration (low glycogen + long ride = boost) ──
+    const routeRemainingKm = this.cachedLookahead?.route_remaining_km ?? 0;
+    let nutritionMotorBoost = 1.0;
+    if (this.cachedNutrition && this.cachedNutrition.glycogen_pct < 20 && routeRemainingKm > 10) {
+      nutritionMotorBoost = 1.2; // +20% motor support to conserve rider energy
+      console.log('[Nutrition] Low glycogen + long ride → +20% motor support');
+      factors.push({
+        name: 'NutriBoost',
+        value: 20,
+        detail: `Glycogen ${this.cachedNutrition.glycogen_pct}% + ${routeRemainingKm.toFixed(0)}km restante → +20% support`,
+      });
+    } else if (this.cachedNutrition && this.cachedNutrition.glycogen_pct < 35 && routeRemainingKm > 20) {
+      nutritionMotorBoost = 1.1; // +10% for moderate depletion on long remaining ride
+      factors.push({
+        name: 'NutriBoost',
+        value: 10,
+        detail: `Glycogen ${this.cachedNutrition.glycogen_pct}% + ${routeRemainingKm.toFixed(0)}km restante → +10% support`,
+      });
+    }
+
     // ── DECISION TREE (priority order) ──
     let supportPct = SUPPORT_MIN;
     let torqueNm = TORQUE_MIN;
     let launchLvl = 3;
     let reason = '';
 
-    const batteryFactor = this.cachedBattery?.constraint_factor ?? 1.0;
+    const rawBatteryFactor = this.cachedBattery?.constraint_factor ?? 1.0;
+    const batteryFactor = this.smoothBatteryFactor(rawBatteryFactor);
     const formMultiplier = this.cachedFormMultiplier;
-    const hrMod = physio.hrModifier;
+    let hrMod = physio.hrModifier;
+
+    // ── Gap #4: W'/Drift convergence — boost hrModifier when both are critical ──
+    if (physio.w_prime_balance < 0.40 && physio.drift_bpm_per_min > 0.3) {
+      console.log(`[Physiology] CONVERGENCE: W'=${(physio.w_prime_balance * 100).toFixed(0)}% + drift=${physio.drift_bpm_per_min.toFixed(2)} — emergency boost`);
+      hrMod = 0.5; // strongest hrModifier — maximum motor assistance
+    }
 
     // Priority 1: W' critical → max support to protect athlete
     if (physio.flags.includes('w_prime_critical')) {
@@ -573,9 +909,9 @@ class KromiEngine {
       // Support from power gap ratio
       if (physics.P_human > 10) {
         const rawSupport = (physics.P_motor_gap / physics.P_human) * 100;
-        supportPct = rawSupport * hrMod * physics.fadeFactor * batteryFactor * formMultiplier;
+        supportPct = rawSupport * hrMod * physics.fadeFactor * batteryFactor * formMultiplier * nutritionMotorBoost;
       } else if (physics.P_total > 20) {
-        supportPct = 200 * hrMod * batteryFactor;
+        supportPct = 200 * hrMod * batteryFactor * nutritionMotorBoost;
       }
       supportPct = Math.max(SUPPORT_MIN, Math.min(SUPPORT_MAX, supportPct));
 
@@ -616,11 +952,18 @@ class KromiEngine {
       reason = 'Motor off >25km/h';
     }
 
-    // ── Pre-adjustment ramp (from lookahead) — Gap #12: adaptive duration ──
+    // ── Pre-adjustment ramp (from lookahead) — Gap #12: adaptive duration, Gap #2: reactive ramps ──
     const gradientDelta = smoothedGrad - this.lastGradientForRamp;
     this.lastGradientForRamp = smoothedGrad;
     const rampDuration = this.calculateRampDuration(gradientDelta);
     if (this.preAdjustTarget && this.preAdjustCountdown > 0 && this.preAdjustCountdown <= rampDuration) {
+      // Gap #2: Check if gradient changed significantly mid-ramp — recalculate target
+      const gradientDivergence = Math.abs(smoothedGrad - this.preAdjustStartGradient);
+      if (gradientDivergence > 2) {
+        console.log(`[KromiEngine] Ramp recalc: gradient shifted ${gradientDivergence.toFixed(1)}%`);
+        this.recalculateRampTarget(smoothedGrad);
+      }
+
       const blend = 1 - (this.preAdjustCountdown / rampDuration); // 0→1 over rampDuration
       supportPct = supportPct + (this.preAdjustTarget.support - supportPct) * blend;
       torqueNm = torqueNm + (this.preAdjustTarget.torque - torqueNm) * blend;
@@ -720,6 +1063,15 @@ class KromiEngine {
     this.prevSupport = supportPct;
     this.prevTorque = torqueNm;
 
+    // ── Gap #5: Route budget enforcement — cap support to guarantee route completion ──
+    const nav = useRouteStore.getState().navigation;
+    if (nav.active && nav.distanceRemaining_m > 0 && input.batterySoc > 0) {
+      const bikeConf = safeBikeConfig(useSettingsStore.getState().bikeConfig);
+      const capacityWh = bikeConf.battery_capacity_wh || (bikeConf.main_battery_wh + (bikeConf.has_range_extender ? bikeConf.sub_battery_wh : 0));
+      const remainingWh = (input.batterySoc / 100) * capacityWh;
+      supportPct = this.enforceRouteBudget(supportPct, remainingWh, nav.distanceRemaining_m / 1000);
+    }
+
     // Clamp final values
     supportPct = Math.max(SUPPORT_MIN, Math.min(SUPPORT_MAX, supportPct));
     torqueNm = Math.max(TORQUE_MIN, Math.min(TORQUE_MAX, torqueNm));
@@ -731,6 +1083,27 @@ class KromiEngine {
     this.learning.recordEngineCommand(supportPct, torqueNm, launchLvl);
 
     // Track sustained effort for CP calibration
+
+    // ── Gap #14: Track climb patterns within this ride ──
+    this.trackClimbPatterns(smoothedGrad, input.power_watts, supportPct);
+    // Use climb learning to pre-set support for similar climbs
+    if (smoothedGrad > 3 && this.currentClimb && this.currentClimb.gradients.length <= 1) {
+      const similarSupport = this.getSimilarClimbSupport(smoothedGrad);
+      if (similarSupport != null) {
+        supportPct = supportPct * 0.7 + similarSupport * 0.3; // blend 30% from learned
+        factors.push({ name: 'ClimbLearn', value: similarSupport, detail: `Similar climb → ${similarSupport.toFixed(0)}% support` });
+      }
+    }
+
+    // ── Gap #14: Turn-aware pre-adjustment ──
+    const turnFactor = this.checkUpcomingTurn();
+    if (turnFactor < 1.0) {
+      supportPct *= turnFactor;
+      factors.push({ name: 'Turn', value: turnFactor, detail: `Turn approaching — ${(turnFactor * 100).toFixed(0)}% support` });
+    }
+
+    // ── Gap #15: Speed event logging for compliance ──
+    this.logSpeedEvent(input.speed_kmh, input.latitude, input.longitude, physics.speedZone !== 'free');
     this.trackSustainedEffort(physics.P_human);
 
     // Gap #9: Calculate rich gear suggestion from lookahead transition
@@ -746,6 +1119,9 @@ class KromiEngine {
     }
     // Push gear suggestion to store for UI consumption
     useAutoAssistStore.getState().setGearSuggestion(this.cachedGearSuggestion);
+
+    // ── Gap #1: Heartbeat re-broadcast to native KromiCore ──
+    this.pushParamsWithHeartbeat();
 
     return {
       supportPct, torqueNm, launchLvl, score, reason, factors,
@@ -786,6 +1162,9 @@ class KromiEngine {
       : calculateZones(rider.hr_max || 185);
 
     const params = {
+      // Gap #1: Version + timestamp for stale detection in KromiCore
+      paramVersion: this.paramVersion,
+      paramTimestamp: Date.now(),
       crr: this.learning.getAdjustedCrr(this.cachedCrr, getCachedTrail()?.category ?? 'unknown'),
       wind_component_ms: this.cachedWindComponent,
       air_density: this.cachedAirDensity,
@@ -841,6 +1220,11 @@ class KromiEngine {
     this.cachedFormMultiplier = 1.0;
     this.preAdjustTarget = null;
     this.preAdjustCountdown = 0;
+    this.preAdjustStartGradient = 0;
+    this.paramVersion = 0;
+    this.lastParamPushMs = 0;
+    this.paramsChanged = false;
+    this.smoothedBatteryFactor = 1.0;
     this.sustainedEffortStart = 0;
     this.sustainedEffortPowerSum = 0;
     this.sustainedEffortSamples = 0;
@@ -855,6 +1239,19 @@ class KromiEngine {
     this.speedHistory = [];
     this.manualTerrainOverride = null;
     this.lastAutoTerrain = 'dirt';
+    // Gap #12: Reset motor connection state
+    this.lastMotorTelemetryMs = 0;
+    this.motorConnected = true;
+    // Gap #14: Reset climb learning
+    this.rideClimbs = [];
+    this.currentClimb = null;
+    // Gap #15: Reset speed events
+    this.speedEvents = [];
+    this.speedExceedStartMs = 0;
+    this.lastManualTerrain = null;
+    this.terrainDetectionHistory = [];
+    this.trustAutoTerrain = true;
+    resetSpeedZone(); // Gap #8: reset hysteresis state
     this.physiology.reset();
     this.learning.resetRide();
     this.nutrition.reset();
@@ -968,6 +1365,7 @@ class KromiEngine {
           : SUPPORT_MIN;
         this.preAdjustTarget = { support: estSupport, torque: estTorque };
         this.preAdjustCountdown = la.seconds_to_transition;
+        this.preAdjustStartGradient = input.gradient_pct; // Gap #2: record starting gradient for reactive ramp
       }
     }
   }
@@ -1040,6 +1438,18 @@ class KromiEngine {
         this.sustainedEffortSamples = 0;
       }
     }
+  }
+
+  // ── Gap #10: Nutrition intake actions (callable from UI) ───
+
+  /** Log food intake (carbs in grams) — updates glycogen model */
+  logFoodIntake(carbsG: number): void {
+    this.nutrition.logFoodIntake(carbsG);
+  }
+
+  /** Log water intake (ml) — updates hydration model */
+  logWaterIntake(ml: number): void {
+    this.nutrition.logWaterIntake(ml);
   }
 
   // ── Accessories (smart light + radar) ─────────────────────

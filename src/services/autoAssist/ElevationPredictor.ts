@@ -106,9 +106,11 @@ export class LookaheadController {
     return baroAlt != null && baroAlt > 0 ? baroAlt : gpsAlt ?? 0;
   }
 
-  // ── Gap #2: Switchback detection ───────────────────────
+  // ── Gap #2 + Gap #9: Switchback detection (hardened) ───
   private headingHistory: number[] = [];
-  private readonly MAX_HEADING_HISTORY = 10;
+  private readonly MAX_HEADING_HISTORY = 20; // increased for stability check
+  private lastSwitchbackDist = 0; // km — distance filter
+  private currentDistKm = 0;
 
   /** Track heading for switchback detection */
   trackHeading(headingDeg: number): void {
@@ -118,16 +120,50 @@ export class LookaheadController {
     }
   }
 
-  /** Detect tight switchback from heading changes (>90deg in consecutive readings) */
+  /** Update current distance for switchback distance filter */
+  setCurrentDistance(distKm: number): void {
+    this.currentDistKm = distKm;
+  }
+
+  /**
+   * Detect tight switchback from heading changes (>90deg in consecutive readings).
+   * Gap #9: Hardened with distance filter (>0.3km between detections) and
+   * heading stability check (previous heading must be stable for 3+ readings).
+   */
   isSwitchback(): boolean {
     if (this.headingHistory.length < 3) return false;
+
+    // Distance filter: require >0.3km since last switchback detection
+    if (this.currentDistKm - this.lastSwitchbackDist < 0.3) return false;
+
     const recent = this.headingHistory.slice(-3);
     for (let i = 1; i < recent.length; i++) {
       let delta = Math.abs(recent[i]! - recent[i - 1]!);
       if (delta > 180) delta = 360 - delta;
-      if (delta > 90) return true;
+      if (delta > 90) {
+        // Heading stability check: require previous heading stable for 3+ readings
+        const stableCount = this.countStableHeadings(this.headingHistory.length - (recent.length - i + 1));
+        if (stableCount < 3) continue; // transient flip, not real switchback
+
+        this.lastSwitchbackDist = this.currentDistKm;
+        return true;
+      }
     }
     return false;
+  }
+
+  /** Count consecutive stable headings ending at endIdx (within 15 degrees) */
+  private countStableHeadings(endIdx: number): number {
+    if (endIdx < 0 || endIdx >= this.headingHistory.length) return 0;
+    let count = 0;
+    const refHeading = this.headingHistory[endIdx]!;
+    for (let i = endIdx; i >= 0; i--) {
+      let delta = Math.abs(this.headingHistory[i]! - refHeading);
+      if (delta > 180) delta = 360 - delta;
+      if (delta < 15) count++;
+      else break;
+    }
+    return count;
   }
 
   // ── Gap #3: Dead-reckoning in tunnels ──────────────────
@@ -202,29 +238,50 @@ export class LookaheadController {
     return this.deadReckoningActive;
   }
 
-  // ── Gap #5: Adaptive Lookahead Methods ──────────────────
+  // ── Gap #5 + Gap #13: Adaptive Lookahead Methods ────────
+
+  /** Confidence of last lookahead result (0-1) */
+  private lastLookaheadConfidence = 1.0;
+
+  /** Set lookahead confidence from last result quality */
+  setLookaheadConfidence(confidence: number): void {
+    this.lastLookaheadConfidence = Math.max(0, Math.min(1, confidence));
+  }
 
   /**
    * Calculate terrain-adaptive lookahead distance.
-   * Highly variable terrain (switchbacks) → short lookahead.
-   * Stable terrain (flat road, steady climb) → long lookahead.
+   * Gap #13: Improved with speed-based minimum (15s ahead),
+   * confidence adjustment, and better terrain variability response.
    */
   getAdaptiveLookaheadM(speed_kmh: number): number {
-    const terrainVariability = this.calculateTerrainVariability();
     const speedMs = speed_kmh / 3.6;
-    const minLookahead = Math.max(500, speedMs * 30);   // 30s ahead
-    const maxLookahead = Math.min(8000, speedMs * 120);  // 120s ahead
 
-    if (terrainVariability > 5) {
+    // Gap #13: Minimum: 15 seconds worth of travel (at least 300m)
+    const minLookahead = Math.max(300, speedMs * 15);
+
+    // Maximum: 120 seconds worth of travel, capped at 8km
+    const maxLookahead = Math.min(8000, speedMs * 120);
+
+    const variability = this.calculateTerrainVariability();
+
+    let distance: number;
+    if (variability > 5) {
       // Highly variable terrain (mountain switchbacks): short lookahead
-      return Math.min(1500, minLookahead);
-    } else if (terrainVariability > 2) {
+      distance = Math.max(minLookahead, Math.min(1500, minLookahead * 1.5));
+    } else if (variability > 2) {
       // Rolling terrain: medium lookahead
-      return Math.min(3000, (minLookahead + maxLookahead) / 2);
+      distance = (minLookahead + maxLookahead) / 2;
     } else {
       // Stable terrain (flat road, steady climb): long lookahead
-      return maxLookahead;
+      distance = maxLookahead;
     }
+
+    // Gap #13: Confidence adjustment — low confidence = shorter, more conservative
+    if (this.lastLookaheadConfidence < 0.5) {
+      distance = Math.max(minLookahead, distance * 0.7);
+    }
+
+    return Math.round(distance);
   }
 
   /** Standard deviation of gradient over recent segments */
@@ -373,22 +430,29 @@ export class LookaheadController {
   /**
    * Gap #2: Momentum-based lookahead — assumes gradient continues at current rate.
    * Used when switchback detected or during dead-reckoning (GPS lost).
+   * Gap #9: Confidence parameter based on whether barometric altitude is available.
    * Conservative: low confidence, no heading-based API call.
    */
   private buildMomentumLookahead(currentGradient: number, speed: number): LookaheadResult {
+    // Use higher confidence if we have altitude data backing up the gradient
+    const confidence = this.lastBaroAlt != null ? 0.5 : 0.3;
+
     const segments: LookaheadSegment[] = [];
     const speedMs = speed / 3.6;
     const grade = classifyGrade(currentGradient);
+    // Scale segment count by confidence — more data = more segments
+    const segmentCount = confidence >= 0.5 ? 5 : 3;
+    const segmentLength = 100;
 
-    for (let d = 0; d < 300; d += 100) {
+    for (let d = 0; d < segmentCount * segmentLength; d += segmentLength) {
       const time_est_s = speedMs > 0 ? 100 / speedMs : 999;
       segments.push({
         distance_start_m: d,
-        distance_end_m: d + 100,
-        gradient_pct: Math.round(currentGradient * 10) / 10,
+        distance_end_m: d + segmentLength,
+        gradient_pct: Math.round(currentGradient * confidence * 10) / 10,
         grade,
         elevation_start: d * (currentGradient / 100),
-        elevation_end: (d + 100) * (currentGradient / 100),
+        elevation_end: (d + segmentLength) * (currentGradient / 100),
         P_total_est: 0,
         wh_motor_est: 0,
         time_est_s: Math.round(time_est_s),
@@ -421,8 +485,10 @@ export class LookaheadController {
     // Gap #1
     this.lastBaroAlt = null;
     this.lastGpsAlt = null;
-    // Gap #2
+    // Gap #2 + Gap #9
     this.headingHistory = [];
+    this.lastSwitchbackDist = 0;
+    this.currentDistKm = 0;
     // Gap #3
     this.lastGpsTimestamp = 0;
     // Gap #5

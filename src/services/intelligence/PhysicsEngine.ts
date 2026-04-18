@@ -21,6 +21,7 @@
 const G = 9.81;
 const SPEED_LIMIT_KMH = 25;
 const FADE_START_KMH = 22;
+const SPEED_HYSTERESIS_KMH = 1.0;
 
 // ── CDA Presets (Drag Coefficient × Frontal Area) ─────────────
 
@@ -92,6 +93,10 @@ export interface PhysicsInput {
   airDensity: number;         // kg/m³
   windComponent: number;      // m/s headwind(+) tailwind(-)
   tire_pressure_bar?: number; // tire pressure for Crr adjustment
+  /** Gap #15: Regional compliance override for speed limits */
+  compliance_speedLimit_kmh?: number;
+  compliance_fadeStart_kmh?: number;
+  compliance_hardCutoff?: boolean;
 }
 
 export interface PhysicsOutput {
@@ -120,6 +125,59 @@ export interface PhysicsOutput {
   gearRatio: number;
 }
 
+// ── Gap #8: Speed Fade Zone with Hysteresis + Gradient Awareness ──
+
+/**
+ * Stateful speed zone calculator with hysteresis to prevent zone flicker
+ * at the fade boundary and gradient-aware fade reduction on climbs.
+ */
+class SpeedZoneCalculator {
+  private lastSpeedZone: 'active' | 'fade' | 'free' = 'active';
+
+  getSpeedZone(speed_kmh: number, gradient_pct: number): { zone: 'active' | 'fade' | 'free'; fadeFactor: number } {
+    // Hysteresis: use different thresholds depending on current zone
+    const effectiveFadeStart = this.lastSpeedZone === 'active'
+      ? FADE_START_KMH + SPEED_HYSTERESIS_KMH / 2   // 22.5 to enter fade
+      : FADE_START_KMH - SPEED_HYSTERESIS_KMH / 2;  // 21.5 to leave fade
+
+    // Gradient-aware fade: on climbs, motor is more important → reduce fade
+    let gradientBoost = 0;
+    if (gradient_pct > 3) {
+      gradientBoost = Math.min(0.3, gradient_pct * 0.03); // up to 30% fade reduction on climbs
+    }
+
+    let zone: 'active' | 'fade' | 'free';
+    let fadeFactor: number;
+
+    if (speed_kmh >= SPEED_LIMIT_KMH) {
+      zone = 'free';
+      fadeFactor = 0;
+    } else if (speed_kmh >= effectiveFadeStart) {
+      zone = 'fade';
+      const rawFade = (SPEED_LIMIT_KMH - speed_kmh) / (SPEED_LIMIT_KMH - FADE_START_KMH);
+      fadeFactor = Math.min(1, rawFade + gradientBoost);
+    } else {
+      zone = 'active';
+      fadeFactor = 1;
+    }
+
+    this.lastSpeedZone = zone;
+    return { zone, fadeFactor };
+  }
+
+  reset(): void {
+    this.lastSpeedZone = 'active';
+  }
+}
+
+/** Singleton speed zone calculator (stateful for hysteresis) */
+const speedZoneCalc = new SpeedZoneCalculator();
+
+/** Reset speed zone state (call on new ride) */
+export function resetSpeedZone(): void {
+  speedZoneCalc.reset();
+}
+
 // ── Core Functions ─────────────────────────────────────────────
 
 /** Calculate all resistive forces and power split */
@@ -143,15 +201,30 @@ export function computeForces(input: PhysicsInput): PhysicsOutput {
   // Power to maintain speed
   const P_total = Math.max(0, F_total * speedMs);
 
-  // Speed zone model (EU 25km/h cutoff)
-  let fadeFactor = 1.0;
-  let speedZone: PhysicsOutput['speedZone'] = 'active';
-  if (input.speed_kmh >= SPEED_LIMIT_KMH) {
-    fadeFactor = 0;
-    speedZone = 'free';
-  } else if (input.speed_kmh > FADE_START_KMH) {
-    fadeFactor = (SPEED_LIMIT_KMH - input.speed_kmh) / (SPEED_LIMIT_KMH - FADE_START_KMH);
-    speedZone = 'fade';
+  // Speed zone model — Gap #8: hysteresis + gradient-aware
+  // Gap #15: Regional compliance overrides (default: EU 25km/h)
+  let speedZone: PhysicsOutput['speedZone'];
+  let fadeFactor: number;
+
+  if (input.compliance_speedLimit_kmh != null) {
+    const limit = input.compliance_speedLimit_kmh;
+    const fadeStart = input.compliance_fadeStart_kmh ?? (limit - 3);
+    const hardCutoff = input.compliance_hardCutoff ?? false;
+
+    if (input.speed_kmh >= limit) {
+      speedZone = 'free';
+      fadeFactor = 0;
+    } else if (input.speed_kmh > fadeStart) {
+      speedZone = 'fade';
+      fadeFactor = hardCutoff ? 0 : (limit - input.speed_kmh) / (limit - fadeStart);
+    } else {
+      speedZone = 'active';
+      fadeFactor = 1;
+    }
+  } else {
+    const szResult = speedZoneCalc.getSpeedZone(input.speed_kmh, input.gradient_pct);
+    speedZone = szResult.zone;
+    fadeFactor = szResult.fadeFactor;
   }
 
   // Gear ratio

@@ -53,8 +53,11 @@ export class TerrainDiscovery {
   private segments: TerrainSegment[] = [];
   private currentSegment: { startDist: number; startAlt: number; startLat: number; startLng: number; speedSum: number; samples: number } | null = null;
 
-  /** Cached terrain grid: key = `lat_grid:lng_grid`, value = avg gradient */
-  private terrainCache: Map<string, { gradient: number; samples: number }> = new Map();
+  /** Cached terrain grid: key = `lat_grid:lng_grid`, value = avg gradient + timestamp */
+  private terrainCache: Map<string, { gradient: number; samples: number; timestamp: number }> = new Map();
+
+  /** Gap #3: Last barometric gradient (fallback when GPS gradient unavailable) */
+  private lastBaroGradient: number | null = null;
 
   /** Feed current position. Call every tick (~1s). */
   feed(lat: number, lng: number, altitude: number, distanceKm: number, speedKmh: number): void {
@@ -96,6 +99,11 @@ export class TerrainDiscovery {
     }
   }
 
+  /** Gap #3: Feed barometric gradient as fallback input */
+  feedBarometricGradient(baroGradient: number): void {
+    this.lastBaroGradient = baroGradient;
+  }
+
   /** Get terrain prediction for the next ~200m */
   predict(lat: number, lng: number, heading: number): TerrainPrediction {
     const pattern = this.detectPattern();
@@ -112,6 +120,18 @@ export class TerrainDiscovery {
           pattern_distance_m: 0,
           pre_adjust_support: cachedGrad > 3 ? Math.min(30, cachedGrad * 5) : 0,
           pre_adjust_torque: cachedGrad > 3 ? Math.min(10, cachedGrad * 1.5) : 0,
+        };
+      }
+      // Gap #3: Barometric gradient fallback when no GPS gradient and no cache
+      if (this.lastBaroGradient !== null) {
+        const bg = this.lastBaroGradient;
+        return {
+          predicted_gradient: Math.round(bg * 10) / 10,
+          confidence: 0.5,
+          pattern: bg > 2 ? 'climbing' : bg < -2 ? 'descending' : 'flat',
+          pattern_distance_m: 0,
+          pre_adjust_support: bg > 3 ? Math.min(30, bg * 5) : 0,
+          pre_adjust_torque: bg > 3 ? Math.min(10, bg * 1.5) : 0,
         };
       }
       return { predicted_gradient: 0, confidence: 0, pattern: 'flat', pattern_distance_m: 0, pre_adjust_support: 0, pre_adjust_torque: 0 };
@@ -219,18 +239,40 @@ export class TerrainDiscovery {
       const alpha = 0.3;
       existing.gradient = existing.gradient * (1 - alpha) + gradient * alpha;
       existing.samples++;
+      existing.timestamp = Date.now();
     } else {
-      this.terrainCache.set(key, { gradient, samples: 1 });
+      this.terrainCache.set(key, { gradient, samples: 1, timestamp: Date.now() });
     }
   }
 
-  /** Look ahead ~200m in the direction of travel using terrain cache */
+  /** Gap #3: Lookup cached terrain entry with temporal decay */
+  private lookupCached(key: string): { gradient: number; samples: number; timestamp: number; confidence: number } | null {
+    const entry = this.terrainCache.get(key);
+    if (!entry) return null;
+
+    // Temporal decay: entries older than 7 days get reduced weight
+    const ageMs = Date.now() - entry.timestamp;
+    const ageDays = ageMs / (1000 * 60 * 60 * 24);
+
+    if (ageDays > 30) {
+      // Too old — remove from cache
+      this.terrainCache.delete(key);
+      return null;
+    }
+
+    // Apply decay factor
+    const decayFactor = ageDays < 7 ? 1.0 : Math.max(0.3, 1 - (ageDays - 7) * 0.03);
+    const confidence = decayFactor; // base confidence from freshness
+    return { ...entry, confidence };
+  }
+
+  /** Look ahead ~200m in the direction of travel using terrain cache (with temporal decay) */
   private lookupAhead(lat: number, lng: number, heading: number): number | null {
     if (this.terrainCache.size === 0) return null;
 
     const headingRad = (heading * Math.PI) / 180;
     const lookDistances = [100, 200, 300]; // look 100, 200, 300m ahead
-    let totalGrad = 0, found = 0;
+    let totalGrad = 0, totalWeight = 0;
 
     for (const dist of lookDistances) {
       // Approximate position ahead (1° lat ≈ 111km, 1° lng ≈ 111km × cos(lat))
@@ -240,14 +282,15 @@ export class TerrainDiscovery {
       const aheadLng = lng + dLng;
 
       const key = `${Math.round(aheadLat / CACHE_GRID_SIZE) * CACHE_GRID_SIZE}:${Math.round(aheadLng / CACHE_GRID_SIZE) * CACHE_GRID_SIZE}`;
-      const cached = this.terrainCache.get(key);
+      // Gap #3: Use lookupCached with temporal decay instead of raw get
+      const cached = this.lookupCached(key);
       if (cached && cached.samples >= 2) {
-        totalGrad += cached.gradient;
-        found++;
+        totalGrad += cached.gradient * cached.confidence;
+        totalWeight += cached.confidence;
       }
     }
 
-    return found > 0 ? totalGrad / found : null;
+    return totalWeight > 0 ? totalGrad / totalWeight : null;
   }
 }
 

@@ -400,12 +400,15 @@ interface SettingsState {
   autoAssist: AutoAssistConfig;
   accessories: AccessoriesConfig;
   simulation_mode: boolean;
+  /** Gap #15: Regional speed/power compliance (default: EU 25km/h) */
+  compliance_region: 'eu' | 'us' | 'au' | 'jp';
 
   updateRiderProfile: (partial: Partial<RiderProfile>) => void;
   updateBikeConfig: (partial: Partial<BikeConfig>) => void;
   updateAutoAssist: (partial: Partial<AutoAssistConfig>) => void;
   updateAccessories: (partial: Partial<AccessoriesConfig>) => void;
   setSimulationMode: (v: boolean) => void;
+  setComplianceRegion: (region: 'eu' | 'us' | 'au' | 'jp') => void;
   addBike: (config: Partial<BikeConfig> & { name: string; bike_type: BikeConfig['bike_type'] }) => void;
   removeBike: (id: string) => void;
   selectBike: (id: string) => void;
@@ -436,6 +439,10 @@ export const useSettingsStore = create<SettingsState>()(
       accessories: { ...DEFAULT_ACCESSORIES_CONFIG },
 
       simulation_mode: false,
+
+      compliance_region: 'eu',
+
+      setComplianceRegion: (region) => set({ compliance_region: region }),
 
       updateRiderProfile: (partial) =>
         set((state) => ({

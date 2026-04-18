@@ -208,6 +208,12 @@ export function useMotorControl() {
       const decision = tuningIntelligence.evaluate(tuningInput);
       useIntelligenceStore.getState().setDecision(decision);
 
+      // Gap #12: Signal motor telemetry arrival to KromiEngine
+      // Any BLE data arriving means motor is connected
+      if (bike.ble_status === 'connected') {
+        kromiEngine.onMotorTelemetry();
+      }
+
       // === KROMI Intelligence v2 — 6-layer engine ===
       const kromi = kromiEngine.tick({
         speed_kmh: bike.speed_kmh,
