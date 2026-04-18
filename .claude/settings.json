@@ -1,0 +1,49 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hook": "bash -c 'FILE=\"$CLAUDE_FILE_PATH\"; if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE \"fetch\\s*\\(.*(/rest/v1/|supabase\\.co)\" 2>/dev/null; then echo \"BLOCK: Use supaFetch/supaGet/supaRpc from src/lib/supaFetch.ts — raw fetch bypasses KROMI JWT and RLS fails. See CLAUDE.md conventions.\" >&2; exit 2; fi'"
+      },
+      {
+        "matcher": "Write|Edit",
+        "hook": "bash -c 'if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE \"supabase\\.storage|from.*storage-js\" 2>/dev/null; then echo \"BLOCK: Use KromiFileStore.uploadFile() from src/services/storage/KromiFileStore.ts — never Supabase Storage directly. Backend is Google Drive.\" >&2; exit 2; fi'"
+      },
+      {
+        "matcher": "Write|Edit",
+        "hook": "bash -c 'if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE \"navigator\\.bluetooth\" 2>/dev/null && echo \"$CLAUDE_FILE_PATH\" | grep -qE \"components/|pages/|hooks/\" 2>/dev/null; then echo \"BLOCK: BLE access must go through GiantBLEService — never navigator.bluetooth in components/hooks.\" >&2; exit 2; fi'"
+      },
+      {
+        "matcher": "Write|Edit",
+        "hook": "bash -c 'if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE \"auth\\.uid\\(\\)\" 2>/dev/null; then echo \"BLOCK: KROMI uses kromi_uid() not auth.uid() — we have custom JWT, not Supabase Auth. See CLAUDE.md Auth section.\" >&2; exit 2; fi'"
+      },
+      {
+        "matcher": "Bash",
+        "hook": "bash -c 'if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE \"git push\" 2>/dev/null; then cd \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || true; echo \"[CI/CD] Pre-push check: running type-check + build...\" >&2; npm run type-check 2>&1 | tail -5; TC=$?; if [ $TC -ne 0 ]; then echo \"BLOCK: TypeScript errors found. Fix before pushing.\" >&2; exit 2; fi; npm run build 2>&1 | tail -5; BD=$?; if [ $BD -ne 0 ]; then echo \"BLOCK: Build failed. Fix before pushing.\" >&2; exit 2; fi; echo \"[CI/CD] type-check + build passed. Push allowed.\" >&2; fi'"
+      },
+      {
+        "matcher": "Bash",
+        "hook": "bash -c 'if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE \"gradlew.*assemble\" 2>/dev/null; then cd \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || true; LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null); if [ -z \"$LATEST_TAG\" ]; then echo \"BLOCK: No git tag found. APK versioning requires a tag. Run: git tag vX.Y.Z\" >&2; exit 2; fi; echo \"[APK] Building from tag $LATEST_TAG\" >&2; fi'"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hook": "bash -c 'if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE \"npm run build\" 2>/dev/null; then echo \"Build completed. Check for TypeScript errors above.\" >&2; fi'"
+      },
+      {
+        "matcher": "Bash",
+        "hook": "bash -c 'if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE \"git push.*main|git push.*origin\" 2>/dev/null; then echo \"\" >&2; echo \"=== DEPLOY STATUS ===\">&2; echo \"PWA: Vercel auto-deploys from main. Check https://vercel.com/dashboard\" >&2; echo \"APK: If needed, tag first (git tag vX.Y.Z) then build (cd ble-bridge-android && ./gradlew assembleDebug)\" >&2; echo \"Edge Functions: Deploy separately via Supabase MCP (mcp__claude_ai_Supabase__deploy_edge_function)\" >&2; echo \"====================\" >&2; fi'"
+      },
+      {
+        "matcher": "Bash",
+        "hook": "bash -c 'if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE \"gradlew.*assemble\" 2>/dev/null && [ $CLAUDE_TOOL_EXIT_CODE -eq 0 ] 2>/dev/null; then echo \"\" >&2; echo \"=== APK BUILD SUCCESS ===\">&2; echo \"APK at: ble-bridge-android/app/build/outputs/apk/debug/app-debug.apk\" >&2; echo \"To release: gh release create \\'$(git describe --tags --abbrev=0 2>/dev/null)\\' ble-bridge-android/app/build/outputs/apk/debug/app-debug.apk\" >&2; echo \"========================\" >&2; fi'"
+      }
+    ],
+    "Stop": [
+      {
+        "hook": "bash -c 'echo \"\" >&2; echo \"========================================\" >&2; echo \"  SESSION WRAP-UP OBRIGATORIO\" >&2; echo \"========================================\" >&2; echo \"\" >&2; echo \"Antes de terminar, executa o checklist:\" >&2; echo \"\" >&2; echo \"1. CLAUDE.md — Actualizar se:\" >&2; echo \"   - Novo ficheiro/servico/store criado\" >&2; echo \"   - Convencao alterada ou adicionada\" >&2; echo \"   - Nova tabela/edge function/RLS policy\" >&2; echo \"   - Estrutura do projecto mudou\" >&2; echo \"\" >&2; echo \"2. Memory — Guardar se aprendeste algo novo:\" >&2; echo \"   - Feedback do utilizador (correccoes, preferencias)\" >&2; echo \"   - Decisoes de arquitectura nao obvias\" >&2; echo \"   - Referencias externas descobertas\" >&2; echo \"   - Bugs encontrados e como foram resolvidos\" >&2; echo \"\" >&2; echo \"3. kromi-doc — Se houve commits, verificar:\" >&2; echo \"   - git hooks estao instalados (auto-sync)\" >&2; echo \"   - Se nao, lembrar o utilizador\" >&2; echo \"\" >&2; echo \"Le .claude/skills/15-session-documentation.md\" >&2; echo \"para o processo completo.\" >&2; echo \"========================================\" >&2'"
+      }
+    ]
+  }
+}
