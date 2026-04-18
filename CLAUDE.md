@@ -185,6 +185,7 @@ Usa a tabela abaixo para mapear o pedido do utilizador a skill correcta.
 | documentacao, Obsidian, kromi-doc, sync, vault | `.claude/skills/14-documentation-obsidian.md` | — |
 | fim sessao, session, CLAUDE.md update, memory, wrap-up | `.claude/skills/15-session-documentation.md` | — |
 | reverse, APK, decompile, JADX, protocolo novo, sniff, nRF | `.claude/skills/16-reverse-engineering.md` | — |
+| design, UI, cor, palette, tipografia, layout, brand, STEALTH-EV, mockup | `.claude/skills/17-design-system.md` | — |
 
 ### Processo (executar SEMPRE)
 

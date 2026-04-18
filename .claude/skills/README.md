@@ -43,6 +43,7 @@ project -- a PWA bike computer for the Giant Trance X E+ 2 (2023) eBike.
 | 14 | 14-documentation-obsidian.md    | Documentation & Obsidian  | kromi-doc CLI, Obsidian vault, git hooks, auto-sync                |
 | 15 | 15-session-documentation.md     | Session Documentation     | CLAUDE.md maintenance, memory updates, session wrap-up (Stop hook) |
 | 16 | 16-reverse-engineering.md       | Reverse Engineering       | APK decompilation, BLE protocol discovery, JADX, nRF validation    |
+| 17 | 17-design-system.md             | STEALTH-EV Design System  | Colors, typography, layout, components, brand rules, dark-first    |
 
 ## Usage
 
@@ -109,6 +110,8 @@ Skills are matched by keywords in the user's request. Examples:
 | Decompilar APK / descobrir protocolo BLE      | 16    |
 | Analisar source JADX / extrair UUIDs          | 16    |
 | Validar pacotes com nRF Connect               | 16    |
+| Design UI / cores / tipografia / mockup       | 17    |
+| Brand STEALTH-EV / layout / components        | 17    |
 
 ## Conventions (apply to ALL skills)
 
