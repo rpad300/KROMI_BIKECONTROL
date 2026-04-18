@@ -120,26 +120,52 @@ class AdaptiveBrightnessService {
     switch (mode) {
       case 'night':
         // Red-tinted for night vision preservation
+        // Override --ev-* tokens so ALL components using var(--ev-*) adapt
+        root.style.setProperty('--ev-primary', '#ff4444');
+        root.style.setProperty('--ev-primary-dim', '#cc3333');
+        root.style.setProperty('--ev-primary-glow', 'rgba(255, 68, 68, 0.15)');
+        root.style.setProperty('--ev-primary-shadow', 'rgba(255, 68, 68, 0.30)');
+        root.style.setProperty('--ev-secondary', '#ff6666');
+        root.style.setProperty('--ev-on-surface', '#cc8888');
+        root.style.setProperty('--ev-on-surface-variant', '#884444');
+        root.style.setProperty('--ev-on-surface-muted', '#663333');
+        root.style.setProperty('--ev-surface-low', '#1a0808');
+        root.style.setProperty('--ev-surface-container', '#120505');
+        root.style.setProperty('--ev-bg', '#0a0000');
+        root.style.setProperty('--ev-bg-hero', '#050000');
+        root.style.setProperty('--brightness-filter', 'brightness(0.6)');
+        // Legacy support
         root.style.setProperty('--accent-color', '#ff4444');
         root.style.setProperty('--accent-text', '#ff6666');
         root.style.setProperty('--text-primary', '#cc8888');
         root.style.setProperty('--text-secondary', '#884444');
         root.style.setProperty('--bg-card', '#1a0808');
         root.style.setProperty('--bg-surface', '#0a0000');
-        root.style.setProperty('--brightness-filter', 'brightness(0.6)');
         root.classList.add('night-mode');
         root.classList.remove('high-contrast-mode');
         break;
 
       case 'high-contrast':
         // Maximum visibility under direct sunlight
+        root.style.setProperty('--ev-primary', '#00ff88');
+        root.style.setProperty('--ev-primary-dim', '#00cc6a');
+        root.style.setProperty('--ev-primary-glow', 'rgba(0, 255, 136, 0.20)');
+        root.style.setProperty('--ev-primary-shadow', 'rgba(0, 255, 136, 0.40)');
+        root.style.setProperty('--ev-on-surface', '#ffffff');
+        root.style.setProperty('--ev-on-surface-variant', '#dddddd');
+        root.style.setProperty('--ev-on-surface-muted', '#aaaaaa');
+        root.style.setProperty('--ev-surface-low', '#000000');
+        root.style.setProperty('--ev-surface-container', '#000000');
+        root.style.setProperty('--ev-bg', '#000000');
+        root.style.setProperty('--ev-bg-hero', '#000000');
+        root.style.setProperty('--brightness-filter', 'brightness(1.2)');
+        // Legacy support
         root.style.setProperty('--accent-color', '#00ff88');
         root.style.setProperty('--accent-text', '#00ff88');
         root.style.setProperty('--text-primary', '#ffffff');
         root.style.setProperty('--text-secondary', '#cccccc');
         root.style.setProperty('--bg-card', '#000000');
         root.style.setProperty('--bg-surface', '#000000');
-        root.style.setProperty('--brightness-filter', 'brightness(1.2)');
         root.classList.remove('night-mode');
         root.classList.add('high-contrast-mode');
         break;
@@ -153,6 +179,14 @@ class AdaptiveBrightnessService {
 
   private resetTheme(): void {
     const root = document.documentElement;
+    // Remove --ev-* overrides (reverts to design-tokens.css defaults)
+    const evProps = [
+      '--ev-primary', '--ev-primary-dim', '--ev-primary-glow', '--ev-primary-shadow',
+      '--ev-secondary', '--ev-on-surface', '--ev-on-surface-variant', '--ev-on-surface-muted',
+      '--ev-surface-low', '--ev-surface-container', '--ev-bg', '--ev-bg-hero',
+    ];
+    evProps.forEach((p) => root.style.removeProperty(p));
+    // Remove legacy overrides
     root.style.removeProperty('--accent-color');
     root.style.removeProperty('--accent-text');
     root.style.removeProperty('--text-primary');
