@@ -37,6 +37,9 @@ class BLEBridgeService : Service() {
         instance = this
         createNotificationChannel()
 
+        // Start foreground FIRST to avoid ForegroundServiceDidNotStartInTimeException
+        startForeground(NOTIFICATION_ID, buildNotification("Initializing..."))
+
         bleManager = BLEManager(this)
         kromiCore = KromiCore(bleManager)
 
@@ -110,7 +113,7 @@ class BLEBridgeService : Service() {
             Log.e(TAG, "WebSocket server failed to start on port $WS_PORT", e)
         }
 
-        startForeground(NOTIFICATION_ID, buildNotification("Ready — waiting for connection"))
+        updateNotification("Ready — waiting for connection")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -128,7 +131,7 @@ class BLEBridgeService : Service() {
         specializedManager.destroy()
         shimanoMotorManager.destroy()
         sensorManager.destroy()
-        wsServer?.stop()
+        try { wsServer?.stop(1000) } catch (_: Exception) {}  // timeout 1s, don't block
         bleManager.disconnect()
         instance = null
         super.onDestroy()

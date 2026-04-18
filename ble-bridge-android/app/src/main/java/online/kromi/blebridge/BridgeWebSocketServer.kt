@@ -16,6 +16,11 @@ class BridgeWebSocketServer(
     // and may not be able to connect to 127.0.0.1. Security is handled via the
     // WebSocket handshake (bridgeInfo exchange) rather than bind address restriction.
 
+    init {
+        isReuseAddr = true                    // Allow restart if previous instance didn't clean up
+        connectionLostTimeout = 30            // Detect dead connections after 30s
+    }
+
     companion object {
         const val TAG = "WSServer"
     }
