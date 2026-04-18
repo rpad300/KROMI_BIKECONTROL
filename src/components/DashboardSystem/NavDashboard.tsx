@@ -35,10 +35,10 @@ export function NavDashboard() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
 
-      {/* ── Map Fullscreen (~82%) ── */}
-      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+      {/* ── Map Fullscreen (100% — overlays float on top) ── */}
+      <div style={{ position: 'absolute', inset: 0 }}>
         <MiniMap />
 
         {/* GPS status badge — top left */}
@@ -82,14 +82,17 @@ export function NavDashboard() {
         )}
       </div>
 
-      {/* ── Info Strip (~18%) — essential navigation data ── */}
+      {/* ── Info Strip — bottom overlay on top of map ── */}
       <div style={{
-        height: '18%',
-        flexShrink: 0,
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
         display: 'grid',
         gridTemplateColumns: '1fr 1fr 1fr 1fr',
         gap: '1px',
-        backgroundColor: 'var(--ev-outline-subtle)',
+        backgroundColor: 'rgba(14,14,14,0.85)',
+        zIndex: 10,
       }}>
         {/* Speed */}
         <NavCell label="SPEED" value={speed > 0 ? speed.toFixed(1) : '0'} unit="km/h" color="var(--ev-on-surface)" />
