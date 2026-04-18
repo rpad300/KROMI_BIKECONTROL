@@ -21,6 +21,12 @@ import { LightsPanel } from './LightsPanel';
 import { useNutritionStore } from '../../store/nutritionStore';
 import { kromiEngine } from '../../services/intelligence/KromiEngine';
 import { usePermission } from '../../hooks/usePermission';
+import { GearSuggestionOverlay } from './GearSuggestionOverlay';
+import { TerrainBadge } from './TerrainBadge';
+import { MotorTempGauge } from './MotorTempGauge';
+import { NutritionQuickTap } from './NutritionQuickTap';
+import { ClimbLearningIndicator } from './ClimbLearningIndicator';
+import { IntelligenceStatusBar } from './IntelligenceStatusBar';
 
 /**
  * STEALTH-EV Dashboard — Fullscreen, no-scroll, fixed height sections.
@@ -34,6 +40,10 @@ export function Dashboard() {
     <div className="h-full flex flex-col overflow-hidden bg-[#0e0e0e]">
       <TopBar />
 
+      {/* Floating overlays (auto-show/hide) */}
+      <GearSuggestionOverlay />
+      <ClimbLearningIndicator />
+
       {!expanded ? (
         /* === RIDE VIEW (default, no scroll) === */
         <main className="flex-1 flex flex-col min-h-0">
@@ -42,6 +52,7 @@ export function Dashboard() {
           <MetricsRow />
           <AssistBar />
           <InfoStrip />
+          <IntelligenceStatusBar />
           <NutritionAlertStrip />
           <ElevationSection />
           {/* Expand button */}
@@ -124,6 +135,7 @@ function ExpandedView({ onCollapse, autoAssistEnabled }: { onCollapse: () => voi
                   {canSeeNutrition && <div className="flex-1"><NutritionWidget /></div>}
                 </div>
               )}
+              {canSeeNutrition && <NutritionQuickTap />}
               <LightRadarWidget />
               <WeatherWidget />
               <TrailWidget />
@@ -267,6 +279,7 @@ function MapSection() {
         {gradient !== 0 && (
           <OverlayCard label="Grade" value={`${gradient > 0 ? '+' : ''}${gradient.toFixed(0)}`} unit="%" color="border-[#ff716c]" />
         )}
+        <TerrainBadge />
       </div>
       {range > 0 && (
         <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-4 py-2 border-l-2 border-[#3fff8b] z-10">
@@ -448,7 +461,7 @@ function InfoStrip() {
   }, []);
 
   return (
-    <section style={{ height: '8%', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', backgroundColor: '#1a1919', borderTop: '1px solid rgba(73,72,71,0.2)', borderBottom: '1px solid rgba(73,72,71,0.2)' }}>
+    <section style={{ height: '8%', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 0.7fr', backgroundColor: '#1a1919', borderTop: '1px solid rgba(73,72,71,0.2)', borderBottom: '1px solid rgba(73,72,71,0.2)' }}>
       {/* HR */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid rgba(73,72,71,0.1)' }}>
         <span ref={hrIconRef} className="material-symbols-outlined" style={{ fontSize: '14px', color: '#494847', fontVariationSettings: "'FILL' 1" }}>favorite</span>
@@ -491,11 +504,14 @@ function InfoStrip() {
       </div>
 
       {/* Time */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid rgba(73,72,71,0.1)' }}>
         <span className="material-symbols-outlined" style={{ fontSize: '14px', color: '#6e9bff' }}>timer</span>
         <span ref={timeValRef} className="font-headline font-bold tabular-nums" style={{ fontSize: '16px' }}>0:00</span>
         <span ref={timeLabelRef} style={{ fontSize: '8px', color: '#777575' }}>TIME</span>
       </div>
+
+      {/* Motor Temp */}
+      <MotorTempGauge />
     </section>
   );
 }

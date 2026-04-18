@@ -311,6 +311,33 @@ export class NutritionEngine {
     return this.config.products;
   }
 
+  // ── Gap #10: Direct food/water intake logging ───────────
+
+  /**
+   * Log arbitrary carb intake (g).
+   * Called from UI quick-action or bridge command.
+   * Adjusts glycogen estimate: ~4 kcal per gram carbs.
+   */
+  logFoodIntake(carbsG: number): void {
+    if (carbsG <= 0) return;
+    this.carbsIngested_g += carbsG;
+    this.glycogen_g = Math.min(this.initialGlycogen_g, this.glycogen_g + carbsG);
+    this.lastEatTs = Date.now();
+    console.log(`[Nutrition] Logged ${carbsG}g carbs (total: ${Math.round(this.carbsIngested_g)}g)`);
+  }
+
+  /**
+   * Log arbitrary water intake (ml).
+   * Called from UI quick-action or bridge command.
+   */
+  logWaterIntake(ml: number): void {
+    if (ml <= 0) return;
+    this.fluidIngested_ml += ml;
+    this.fluidDeficit_ml = Math.max(0, this.fluidDeficit_ml - ml);
+    this.lastDrinkTs = Date.now();
+    console.log(`[Nutrition] Logged ${ml}ml water (total: ${Math.round(this.fluidIngested_ml)}ml)`);
+  }
+
   /** Update config (e.g., products, sweat rate calibration) */
   updateConfig(config: Partial<NutritionConfig>): void {
     Object.assign(this.config, config);

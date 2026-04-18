@@ -6,6 +6,8 @@ import { FitImport } from '../Import/FitImport';
 import { simulateKromi, type SimulationSummary } from '../../services/simulation/KromiSimulator';
 import type { ImportedRecord } from '../../services/import/FitImportService';
 import { supaFetch, supaGet } from '../../lib/supaFetch';
+import { RideSummary } from './RideSummary';
+import type { AnalysisSnapshot } from '../../services/export/RideAnalysis';
 
 const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
@@ -146,6 +148,7 @@ export function RideHistory() {
   }, [filtered]);
 
   const [simulation, setSimulation] = useState<SimulationSummary | null>(null);
+  const [detailView, setDetailView] = useState<'overview' | 'analysis'>('overview');
 
   const handleSelect = async (ride: RideSession) => {
     setSelected(ride);
@@ -197,14 +200,41 @@ export function RideHistory() {
 
   // Detail view
   if (selected) {
+    if (detailView === 'analysis') {
+      const analysisSnaps: AnalysisSnapshot[] = snapshots.map((s) => ({
+        elapsed_s: s.elapsed_s,
+        lat: s.lat,
+        lng: s.lng,
+        altitude_m: s.altitude_m,
+        speed_kmh: s.speed_kmh,
+        power_watts: s.power_watts,
+        hr_bpm: s.hr_bpm,
+        cadence_rpm: s.cadence_rpm,
+        distance_km: s.distance_km,
+        gradient_pct: s.gradient_pct,
+      }));
+      return (
+        <RideSummary
+          snapshots={analysisSnaps}
+          rideDate={selected.started_at}
+          batteryStart={selected.battery_start}
+          batteryEnd={selected.battery_end}
+          onBack={() => setDetailView('overview')}
+          onExportGPX={handleExportGPX}
+          onDelete={() => handleDelete(selected)}
+        />
+      );
+    }
+
     return (
       <RideDetail
         ride={selected}
         snapshots={snapshots}
         simulation={simulation}
-        onBack={() => { setSelected(null); setSnapshots([]); setSimulation(null); }}
+        onBack={() => { setSelected(null); setSnapshots([]); setSimulation(null); setDetailView('overview'); }}
         onExport={handleExportGPX}
         onDelete={() => handleDelete(selected)}
+        onAnalysis={() => setDetailView('analysis')}
       />
     );
   }
@@ -413,9 +443,9 @@ export function RideHistory() {
   );
 }
 
-function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }: {
+function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete, onAnalysis }: {
   ride: RideSession; snapshots: Snapshot[]; simulation: SimulationSummary | null;
-  onBack: () => void; onExport: () => void; onDelete: () => void;
+  onBack: () => void; onExport: () => void; onDelete: () => void; onAnalysis: () => void;
 }) {
   const isFitImport = (ride.devices_connected as Record<string, unknown>)?.source === 'fit_import';
   const mapRef = useRef<HTMLDivElement>(null);
@@ -512,6 +542,13 @@ function RideDetail({ ride, snapshots, simulation, onBack, onExport, onDelete }:
           <span className="material-symbols-outlined text-lg">arrow_back</span> Voltar
         </button>
         <div className="flex gap-3">
+          <button
+            onClick={onAnalysis}
+            className="text-xs font-bold px-2.5 py-1 rounded-lg active:scale-95 transition-transform"
+            style={{ backgroundColor: 'rgba(63,255,139,0.12)', color: '#3fff8b' }}
+          >
+            Analise
+          </button>
           <button onClick={onExport} className="text-xs text-emerald-400 hover:text-emerald-300">
             GPX
           </button>

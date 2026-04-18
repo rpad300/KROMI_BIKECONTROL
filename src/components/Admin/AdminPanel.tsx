@@ -14,6 +14,7 @@ import { AdminDashboardPage } from './AdminDashboardPage';
 import { DriveStoragePage } from '../Settings/DriveStoragePage';
 import { expireDueSuspensions } from '../../services/rbac/RBACService';
 import { supaGet, supaRpc } from '../../lib/supaFetch';
+import { SpeedEventLog } from '../Settings/SpeedEventLog';
 
 export type AdminTab = 'dashboard' | 'users' | 'roles' | 'drive' | 'audit' | 'system';
 
@@ -133,6 +134,9 @@ function AdminSystemPage() {
       <h2 className="font-headline font-bold" style={{ fontSize: '16px', color: '#3fff8b', marginBottom: '12px' }}>
         Sistema
       </h2>
+
+      {/* Speed compliance log */}
+      <SpeedEventLog />
 
       {/* Cron health */}
       <CronHealthViewer />

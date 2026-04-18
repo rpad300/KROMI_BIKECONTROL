@@ -58,3 +58,10 @@ html.high-contrast-mode .text-gray-400 { color: #cccccc !important; }
 html.high-contrast-mode .text-gray-500 { color: #aaaaaa !important; }
 html.high-contrast-mode .bg-gray-800 { background-color: #000000 !important; }
 html.high-contrast-mode .bg-gray-950 { background-color: #000000 !important; }
+
+/* Slide-down animation for overlay banners */
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+.animate-slideDown { animation: slideDown 0.3s ease-out; }

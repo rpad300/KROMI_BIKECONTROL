@@ -402,6 +402,8 @@ interface SettingsState {
   simulation_mode: boolean;
   /** Gap #15: Regional speed/power compliance (default: EU 25km/h) */
   compliance_region: 'eu' | 'us' | 'au' | 'jp';
+  /** Voice commands enabled (Web Speech API) */
+  voice_enabled: boolean;
 
   updateRiderProfile: (partial: Partial<RiderProfile>) => void;
   updateBikeConfig: (partial: Partial<BikeConfig>) => void;
@@ -409,6 +411,7 @@ interface SettingsState {
   updateAccessories: (partial: Partial<AccessoriesConfig>) => void;
   setSimulationMode: (v: boolean) => void;
   setComplianceRegion: (region: 'eu' | 'us' | 'au' | 'jp') => void;
+  setVoiceEnabled: (v: boolean) => void;
   addBike: (config: Partial<BikeConfig> & { name: string; bike_type: BikeConfig['bike_type'] }) => void;
   removeBike: (id: string) => void;
   selectBike: (id: string) => void;
@@ -442,7 +445,11 @@ export const useSettingsStore = create<SettingsState>()(
 
       compliance_region: 'eu',
 
+      voice_enabled: false,
+
       setComplianceRegion: (region) => set({ compliance_region: region }),
+
+      setVoiceEnabled: (v) => set({ voice_enabled: v }),
 
       updateRiderProfile: (partial) =>
         set((state) => ({

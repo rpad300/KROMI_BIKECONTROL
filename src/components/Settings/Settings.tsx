@@ -37,6 +37,7 @@ import { saveRoute, listRoutes, getRoute, deleteRoute } from '../../services/rou
 import { supaFetch, supaGet } from '../../lib/supaFetch';
 import { analyzeRoute } from '../../services/routes/PreRideAnalysis';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { ComplianceSettings as ComplianceSettingsSection } from './ComplianceSettings';
 
 type Screen = NavScreen;
 type SettingsPage = SettingsPageId;
@@ -609,6 +610,8 @@ function BikeFitSection() {
 function KromiPage() {
   const autoAssist = useSettingsStore((s) => s.autoAssist);
   const updateAutoAssist = useSettingsStore((s) => s.updateAutoAssist);
+  const voiceEnabled = useSettingsStore((s) => s.voice_enabled);
+  const setVoiceEnabled = useSettingsStore((s) => s.setVoiceEnabled);
   const learning = useLearningStore();
 
   return (
@@ -620,6 +623,17 @@ function KromiPage() {
         <NumberField label="Pre-activação (m)" value={autoAssist.preempt_distance_m} onChange={(v) => updateAutoAssist({ preempt_distance_m: v })} />
         <NumberField label="Override timeout (s)" value={autoAssist.override_duration_s} onChange={(v) => updateAutoAssist({ override_duration_s: v })} />
       </Card>
+
+      <SectionLabel>Comandos de Voz</SectionLabel>
+      <Card>
+        <Toggle label="Activado" value={voiceEnabled} onChange={(v) => setVoiceEnabled(v)} />
+        <div style={{ fontSize: '10px', color: '#777575' }}>
+          Controla o motor com a voz: "modo eco", "bateria", "velocidade", "parar".
+          Requer microfone (Chrome Android).
+        </div>
+      </Card>
+
+      <ComplianceSettingsSection />
 
       <SectionLabel>Aprendizagem Adaptativa</SectionLabel>
       <Card>

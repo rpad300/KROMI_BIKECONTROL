@@ -172,6 +172,11 @@ class KromiEngine {
   private rideClimbs: ClimbPattern[] = [];
   private currentClimb: { startTime: number; gradients: number[]; powers: number[]; supports: number[] } | null = null;
 
+  // ── Low power mode — reduces processing when stopped/motor off ──
+  private lowPowerMode = false;
+  private tickSkipCounter = 0;
+  private lastTickOutput: KromiTickOutput | null = null;
+
   // ── Gap #15: Speed event logging ────────────────────────
   private speedEvents: SpeedEvent[] = [];
   private speedExceedStartMs = 0;
@@ -571,6 +576,21 @@ class KromiEngine {
     return 1.0;
   }
 
+  // ── Low power mode — skip ticks when stopped or motor off ──
+
+  private checkLowPowerMode(speed: number, assistMode: number): void {
+    const shouldBeLowPower = speed < 2 || assistMode === 0; // stopped or motor off
+
+    if (shouldBeLowPower && !this.lowPowerMode) {
+      console.log('[KromiEngine] Entering low power mode');
+      this.lowPowerMode = true;
+    } else if (!shouldBeLowPower && this.lowPowerMode) {
+      console.log('[KromiEngine] Exiting low power mode');
+      this.lowPowerMode = false;
+      this.tickSkipCounter = 0;
+    }
+  }
+
   // ── Gap #15: Speed event logging ─────────────────────────
 
   private logSpeedEvent(speed: number, lat?: number, lng?: number, assistActive?: boolean): void {
@@ -621,6 +641,18 @@ class KromiEngine {
         autoTerrain: this.lastAutoTerrain, activeCrr: this.cachedCrr,
         alerts: ['Motor desligado — a aguardar reconexao'],
       };
+    }
+
+    // ── Low power mode: skip 4 out of 5 ticks when stopped/motor off ──
+    const bikeAssistMode = useBikeStore.getState().assist_mode;
+    this.checkLowPowerMode(input.speed_kmh, bikeAssistMode);
+
+    if (this.lowPowerMode) {
+      this.tickSkipCounter++;
+      // In low power: only process every 5th tick (5s instead of 1s)
+      if (this.tickSkipCounter % 5 !== 0 && this.lastTickOutput) {
+        return this.lastTickOutput;
+      }
     }
 
     // ── Layer 3: Environment (every 60s) ──
@@ -1123,7 +1155,7 @@ class KromiEngine {
     // ── Gap #1: Heartbeat re-broadcast to native KromiCore ──
     this.pushParamsWithHeartbeat();
 
-    return {
+    const output: KromiTickOutput = {
       supportPct, torqueNm, launchLvl, score, reason, factors,
       speedZone: physics.speedZone,
       batteryFactor,
@@ -1135,6 +1167,11 @@ class KromiEngine {
       activeCrr: adjustedCrr,
       alerts: alerts.slice(0, 4), // max 4 alerts (motor + nutrition)
     };
+
+    // Cache for low power mode skip
+    this.lastTickOutput = output;
+
+    return output;
   }
 
   /**
@@ -1245,6 +1282,10 @@ class KromiEngine {
     // Gap #14: Reset climb learning
     this.rideClimbs = [];
     this.currentClimb = null;
+    // Low power mode reset
+    this.lowPowerMode = false;
+    this.tickSkipCounter = 0;
+    this.lastTickOutput = null;
     // Gap #15: Reset speed events
     this.speedEvents = [];
     this.speedExceedStartMs = 0;
