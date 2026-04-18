@@ -17,7 +17,7 @@ export function SpeedHero({ dangerThreshold }: { dangerThreshold?: number }) {
       }
       if (distRef.current) {
         const trip = useTripStore.getState();
-        const dist = trip.state === 'running' ? trip.tripKm : (s.trip_distance_km || s.distance_km);
+        const dist = trip.state === 'running' ? trip.tripKm : (s.trip_distance_km ?? 0);
         distRef.current.textContent = `${dist.toFixed(1)} KM`;
       }
       // Delta pill

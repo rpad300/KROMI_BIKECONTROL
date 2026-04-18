@@ -164,8 +164,8 @@ export function MiniMap() {
   const threatColor = radarThreat >= 3 ? '#ff4444' : radarThreat >= 2 ? '#fbbf24' : '#ff9f43';
 
   return (
-    <div className="bg-[#1a1919] rounded-sm overflow-hidden relative">
-      <div ref={mapRef} className="h-36 w-full" />
+    <div className="bg-[#1a1919] overflow-hidden relative h-full w-full">
+      <div ref={mapRef} className="h-full w-full" />
 
       {/* Radar threat overlay */}
       {radarConnected && radarThreat > 0 && (
