@@ -57,7 +57,22 @@ export const METRIC = {
   battery: { icon: 'battery_5_bar', iconColor: '#3fff8b', label: 'Battery', unit: '%', getValue: (s: ReturnType<typeof useBikeStore.getState>) => String(s.battery_percent) },
   cadence: { icon: 'speed', iconColor: '#e966ff', label: 'Cadence', unit: 'RPM', getValue: (s: ReturnType<typeof useBikeStore.getState>) => String(s.cadence_rpm) },
   torque: { icon: 'electric_bolt', iconColor: '#fbbf24', label: 'Torque', unit: 'Nm', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.torque_nm > 0 ? s.torque_nm.toFixed(1) : '0' },
-  range: { icon: 'route', iconColor: '#3fff8b', label: 'Range', unit: 'km', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.range_km > 0 ? Math.round(s.range_km).toString() : '--' },
+  range: {
+    icon: 'route', iconColor: '#3fff8b', label: 'Range', unit: 'km',
+    getValue: (s: ReturnType<typeof useBikeStore.getState>) => {
+      // When KROMI Intelligence active (mode 5), motor reports POWER range
+      // which is misleadingly low. Use weighted average of mode ranges instead.
+      if (s.assist_mode === 5 && s.range_per_mode) {
+        const rpm = s.range_per_mode as Record<string, number>;
+        const a = rpm.active ?? 0, sp = rpm.sport ?? 0, p = rpm.power ?? 0;
+        if (a > 0 && sp > 0 && p > 0) {
+          return `~${Math.round(a * 0.3 + sp * 0.4 + p * 0.3)}`;
+        }
+      }
+      if (s.range_km < 0) return '255+';
+      return s.range_km > 0 ? `~${Math.round(s.range_km)}` : '--';
+    },
+  },
   current: { icon: 'electric_bolt', iconColor: '#fbbf24', label: 'Current', unit: 'A', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.assist_current_a > 0 ? s.assist_current_a.toFixed(1) : '0' },
   whkm: { icon: 'ev_station', iconColor: '#6e9bff', label: 'Wh/km', unit: '', getValue: () => '--' }, // placeholder, needs calibration data
   hr: { icon: 'favorite', iconColor: '#ff716c', label: 'HR', unit: 'bpm', getValue: (s: ReturnType<typeof useBikeStore.getState>) => s.hr_bpm > 0 ? String(s.hr_bpm) : '--' },
@@ -84,6 +99,21 @@ export const METRIC = {
     getValue: (s: ReturnType<typeof useBikeStore.getState>) => {
       const g = s.gear || s.rear_gear;
       return g > 0 ? `${g}/${s.total_gears}` : '--';
+    },
+  },
+  terrain: {
+    icon: 'terrain', iconColor: '#fbbf24', label: 'Terrain', unit: '',
+    getValue: () => {
+      const t = useAutoAssistStore.getState().autoDetectedTerrain;
+      return t ? t.toUpperCase() : '--';
+    },
+    getColor: () => {
+      const t = useAutoAssistStore.getState().autoDetectedTerrain;
+      if (t === 'paved') return '#ffffff';
+      if (t === 'gravel') return '#adaaaa';
+      if (t === 'dirt') return '#fbbf24';
+      if (t === 'technical') return '#ff716c';
+      return '#adaaaa';
     },
   },
 } as const;

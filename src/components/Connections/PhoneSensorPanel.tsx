@@ -54,7 +54,7 @@ export function PhoneSensorPanel() {
       icon: 'light_mode',
       getValue: () => bike.light_lux > 0 ? `${Math.round(bike.light_lux)} lux` : '--',
       getStatus: () => bike.light_lux > 0 ? 'active' : 'idle',
-      color: 'var(--ev-amber)',
+      color: 'var(--ev-secondary)',
     },
     {
       name: 'Temperatura',
@@ -88,8 +88,8 @@ export function PhoneSensorPanel() {
         const steps = (bike as any).step_count ?? 0;
         return steps > 0 ? `${steps} passos` : '--';
       },
-      getStatus: () => 'active',
-      color: 'var(--ev-amber)',
+      getStatus: () => ((bike as any).step_count ?? 0) > 0 ? 'active' : 'idle',
+      color: 'var(--ev-primary)',
     },
     {
       name: 'Crash Detection',
@@ -102,11 +102,11 @@ export function PhoneSensorPanel() {
       name: 'Roughness',
       icon: 'landscape',
       getValue: () => {
-        const roughness = (bike as any).terrain_roughness_g;
+        const roughness = (bike as any).terrain_roughness_g ?? 0;
         return roughness > 0 ? `${roughness.toFixed(2)}g` : '--';
       },
-      getStatus: () => 'active',
-      color: 'var(--ev-amber)',
+      getStatus: () => ((bike as any).terrain_roughness_g ?? 0) > 0 ? 'active' : 'idle',
+      color: 'var(--ev-secondary)',
     },
   ];
 

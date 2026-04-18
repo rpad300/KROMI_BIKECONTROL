@@ -39,7 +39,7 @@ export function CruiseDashboard() {
 
       {/* Key metrics — 10% */}
       <div style={{ height: '10%', flexShrink: 0 }}>
-        <MetricGrid cols={5} metrics={[METRIC.power, METRIC.cadence, METRIC.gradient, METRIC.gear, METRIC.range]} />
+        <MetricGrid cols={5} metrics={[METRIC.power, METRIC.cadence, METRIC.gradient, METRIC.gear, METRIC.terrain]} />
       </div>
 
       {/* Battery strip — 5% */}
@@ -50,8 +50,8 @@ export function CruiseDashboard() {
       {/* KROMI Intelligence — 4% (gated by features.intelligence_v2) */}
       {canSeeIntelligence && <div style={{ height: '4%', flexShrink: 0 }}><CompactIntelligence /></div>}
 
-      {/* Elevation profile — 12% */}
-      <div style={{ height: '12%', flexShrink: 0, padding: '2px 4px', backgroundColor: '#131313' }}>
+      {/* Elevation profile — 7% (was 12% — too large, map needs more space) */}
+      <div style={{ height: '7%', flexShrink: 0, padding: '2px 4px', backgroundColor: '#131313' }}>
         <ElevationProfile />
       </div>
 
