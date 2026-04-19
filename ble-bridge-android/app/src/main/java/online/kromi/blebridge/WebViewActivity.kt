@@ -49,8 +49,8 @@ class WebViewActivity : AppCompatActivity() {
 
         // Keep screen on
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        // Transparent status bar — content draws behind it, PersistentBar handles padding
-        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        // Status bar bg = PersistentBar bg (#131313) so they look like one continuous bar
+        window.statusBarColor = 0xFF131313.toInt()
         window.navigationBarColor = 0xFF0e0e0e.toInt()
 
         // Build layout programmatically

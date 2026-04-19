@@ -14,20 +14,8 @@ html, body, #root {
   /* Edge-to-edge: viewport-fit=cover in index.html. No root padding. */
 }
 
-/* PersistentBar extends visually into the status bar area via a pseudo-element,
-   eliminating the visible gap between status bar and app content. */
-.persistent-bar {
-  position: relative !important;
-}
-.persistent-bar::before {
-  content: '';
-  position: absolute;
-  top: -100px;
-  left: 0;
-  right: 0;
-  height: 100px;
-  background: var(--ev-surface-low);
-}
+/* Status bar bg set to #131313 in WebViewActivity to match PersistentBar.
+   This makes the status bar look like a natural extension of the app header. */
 
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
