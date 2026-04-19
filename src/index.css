@@ -11,10 +11,8 @@ html, body, #root {
   background-color: #0e0e0e;
   font-family: 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
-  /* Note: safe-area padding NOT needed — Android status bar is handled by
-     setDecorFitsSystemWindows(true) in WebViewActivity.kt which pushes
-     content below the status bar automatically. Adding env(safe-area-inset-top)
-     here would DOUBLE the padding. */
+  /* Edge-to-edge: no padding — WebView viewport-fit=cover handles it.
+     The Android status bar overlays the top of the app transparently. */
 }
 
 .material-symbols-outlined {
