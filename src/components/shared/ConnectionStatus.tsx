@@ -7,28 +7,9 @@ import { DeviceScanner } from './DeviceScanner';
 export function ConnectionStatus() {
   const bleStatus = useBikeStore((s) => s.ble_status);
   const [showScanner, setShowScanner] = useState(false);
-  const [autoConnectAttempted, setAutoConnectAttempted] = useState(false);
-
-  const bridgeUp = bleMode === 'websocket' && wsClient.isConnected;
   const saved = getSavedDevice();
-
-  // Auto-connect to saved device when bridge becomes available
-  useEffect(() => {
-    if (bridgeUp && saved && bleStatus === 'disconnected' && !autoConnectAttempted) {
-      setAutoConnectAttempted(true);
-      console.log(`[Connection] Auto-connecting to saved device: ${saved.name} (${saved.address})`);
-      connectDevice(saved.address);
-    }
-  }, [bridgeUp, saved, bleStatus, autoConnectAttempted]);
-
-  // Reset auto-connect flag on disconnect so it retries next time
-  useEffect(() => {
-    if (bleStatus === 'disconnected') {
-      // Small delay to avoid immediate re-attempt on intentional disconnect
-      const t = setTimeout(() => setAutoConnectAttempted(false), 5000);
-      return () => clearTimeout(t);
-    }
-  }, [bleStatus]);
+  // Auto-connect is handled by initBLE() + autoConnectSensors() in BLEBridge.ts.
+  // This component only shows the manual connect UI when not connected.
 
   if (bleStatus === 'connected') return null;
 
