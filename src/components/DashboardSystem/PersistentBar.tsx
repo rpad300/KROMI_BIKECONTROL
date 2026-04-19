@@ -57,7 +57,7 @@ export function PersistentBar() {
   }, []);
 
   return (
-    <div style={{ height: '32px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', backgroundColor: 'var(--ev-surface-low)', borderBottom: '1px solid var(--ev-outline-subtle)', gap: '8px' }}>
+    <div className="persistent-bar" style={{ height: '32px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', backgroundColor: 'var(--ev-surface-low)', borderBottom: '1px solid var(--ev-outline-subtle)', gap: '8px' }}>
       {/* HR */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
         <span ref={hrIconRef} className="material-symbols-outlined" style={{ fontSize: '12px', color: 'var(--ev-outline-variant)', fontVariationSettings: "'FILL' 1" }}>favorite</span>

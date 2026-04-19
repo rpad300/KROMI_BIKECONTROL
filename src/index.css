@@ -11,8 +11,12 @@ html, body, #root {
   background-color: #0e0e0e;
   font-family: 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
-  /* Edge-to-edge: no padding — WebView viewport-fit=cover handles it.
-     The Android status bar overlays the top of the app transparently. */
+  /* Edge-to-edge: viewport-fit=cover in index.html. No root padding. */
+}
+
+/* PersistentBar: push content below status bar in edge-to-edge mode */
+.persistent-bar {
+  padding-top: env(safe-area-inset-top, 0px) !important;
 }
 
 .material-symbols-outlined {
