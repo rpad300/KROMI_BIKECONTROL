@@ -1,20 +1,31 @@
 import { useState } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
-import { bleMode, getSavedDevice, connectDevice } from '../../services/bluetooth/BLEBridge';
+import { bleMode, connectDevice } from '../../services/bluetooth/BLEBridge';
 import { wsClient } from '../../services/bluetooth/WebSocketBLEClient';
+import { useSettingsStore } from '../../store/settingsStore';
 import { DeviceScanner } from './DeviceScanner';
 
+/**
+ * ConnectionStatus — minimal, non-intrusive connection indicator.
+ *
+ * Design rules:
+ * - If bike is connected → HIDDEN (nothing to show)
+ * - If connecting/reconnecting → small status bar (non-blocking)
+ * - If bridge is up but bike not connected → discrete dot indicator,
+ *   NOT a full-width banner asking to connect (auto-connect handles it)
+ * - Full scanner only shown on explicit user action (tap the indicator)
+ */
 export function ConnectionStatus() {
   const bleStatus = useBikeStore((s) => s.ble_status);
   const [showScanner, setShowScanner] = useState(false);
-  const saved = getSavedDevice();
+  const bikeConfig = useSettingsStore((s) => s.bikeConfig);
+  const hasBikeConfigured = !!(bikeConfig?.sensors?.motor?.address);
   const bridgeUp = bleMode === 'websocket' && wsClient.isConnected;
-  // Auto-connect is handled by initBLE() + autoConnectSensors() in BLEBridge.ts.
-  // This component only shows the manual connect UI when not connected.
 
+  // Connected → hide completely
   if (bleStatus === 'connected') return null;
 
-  // Scanner overlay
+  // Scanner overlay (explicit user action)
   if (showScanner) {
     return (
       <DeviceScanner
@@ -24,51 +35,57 @@ export function ConnectionStatus() {
     );
   }
 
-  // Bridge up, bike not connected
-  if (bridgeUp) {
+  // Actively connecting → small non-blocking status
+  if (bleStatus === 'connecting' || bleStatus === 'reconnecting') {
     return (
-      <div className="fixed top-0 left-0 right-0 bg-yellow-900/90 px-4 py-3 flex items-center justify-between z-50">
-        <div className="flex-1">
-          <div className="text-white font-bold text-sm">
-            {saved ? `A ligar a ${saved.name}...` : 'Bridge activo'}
-          </div>
-          <div className="text-yellow-300 text-xs">
-            {saved ? saved.address : 'Nenhuma bike guardada'}
-          </div>
-        </div>
-        <div className="flex gap-2">
-          {saved && (
-            <button
-              onClick={() => connectDevice(saved.address)}
-              className="bg-[#0058ca] text-white px-3 py-1.5 rounded-lg font-bold text-xs active:scale-95 transition-transform"
-            >
-              Ligar
-            </button>
-          )}
-          <button
-            onClick={() => setShowScanner(true)}
-            className="bg-[#24f07e] text-white px-3 py-1.5 rounded-lg font-bold text-xs active:scale-95 transition-transform"
-          >
-            {saved ? 'Outra' : 'Scan'}
-          </button>
-        </div>
+      <div className="fixed top-0 left-0 right-0 bg-yellow-900/80 px-4 py-2 flex items-center gap-2 z-50">
+        <div className="w-3 h-3 border-2 border-yellow-300 border-t-transparent rounded-full animate-spin" />
+        <span className="text-yellow-300 text-xs font-bold">
+          {bleStatus === 'connecting' ? 'A ligar...' : 'A reconectar...'}
+        </span>
       </div>
     );
   }
 
-  // No bridge
-  const statusConfig = {
-    disconnected: { bg: 'bg-[#9f0519]/90', text: 'Desligado' },
-    connecting: { bg: 'bg-yellow-900/90', text: 'A ligar...' },
-    reconnecting: { bg: 'bg-orange-900/90', text: 'A reconectar...' },
-    connected: { bg: 'bg-green-900/90', text: 'Ligado' },
-  } as const;
+  // Bridge up, bike configured but not connected (auto-connect already tried)
+  // → show discrete indicator, NOT a big banner
+  if (bridgeUp && hasBikeConfigured) {
+    return (
+      <button
+        onClick={() => {
+          // Retry connection on tap
+          const motorAddr = bikeConfig?.sensors?.motor?.address;
+          if (motorAddr) connectDevice(motorAddr);
+        }}
+        className="fixed top-2 right-2 z-50 flex items-center gap-1.5 px-2 py-1 active:scale-95"
+        style={{ backgroundColor: 'rgba(159, 5, 25, 0.8)', border: '1px solid rgba(255,113,108,0.3)' }}
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-[#ff716c] animate-pulse" />
+        <span className="text-[9px] font-bold text-[#ff716c] uppercase">Bike offline</span>
+      </button>
+    );
+  }
 
-  const config = statusConfig[bleStatus];
+  // Bridge up, NO bike configured → show setup prompt
+  if (bridgeUp && !hasBikeConfigured) {
+    return (
+      <div className="fixed top-0 left-0 right-0 px-4 py-3 flex items-center justify-between z-50"
+           style={{ backgroundColor: 'rgba(14,14,14,0.9)', borderBottom: '1px solid var(--ev-outline-variant)' }}>
+        <div>
+          <div className="text-white font-bold text-sm">Configurar Bike</div>
+          <div className="text-xs" style={{ color: 'var(--ev-on-surface-muted)' }}>Nenhuma bike registada</div>
+        </div>
+        <button
+          onClick={() => setShowScanner(true)}
+          className="px-3 py-1.5 font-bold text-xs active:scale-95"
+          style={{ backgroundColor: 'var(--ev-primary)', color: '#000' }}
+        >
+          Scan
+        </button>
+      </div>
+    );
+  }
 
-  return (
-    <div className={`fixed top-0 left-0 right-0 ${config.bg} px-4 py-3 flex items-center justify-between z-50`}>
-      <div className="text-white font-bold text-sm">{config.text}</div>
-    </div>
-  );
+  // No bridge, disconnected → minimal indicator
+  return null;
 }
