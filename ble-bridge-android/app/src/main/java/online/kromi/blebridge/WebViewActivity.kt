@@ -49,22 +49,7 @@ class WebViewActivity : AppCompatActivity() {
 
         // Keep screen on
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
-        // STATUS BAR: ALWAYS VISIBLE — shows network, battery, time
-        // Content starts BELOW the status bar, not behind it.
-        // Navigation bar hidden (immersive — swipe up to reveal).
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(true)
-            window.insetsController?.let { ctrl ->
-                // SHOW status bar explicitly
-                ctrl.show(android.view.WindowInsets.Type.statusBars())
-                // White icons on dark bg
-                ctrl.setSystemBarsAppearance(0, android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        }
+        // Dark status bar + nav bar background (set BEFORE setContentView)
         window.statusBarColor = 0xFF0e0e0e.toInt()
         window.navigationBarColor = 0xFF0e0e0e.toInt()
 
@@ -88,6 +73,27 @@ class WebViewActivity : AppCompatActivity() {
         root.addView(webView)
         root.addView(progressBar)
         setContentView(root)
+
+        // STATUS BAR: MUST be set AFTER setContentView — insetsController is null before
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Content fits inside system bars (status bar visible, content below it)
+            window.setDecorFitsSystemWindows(true)
+            window.insetsController?.let { ctrl ->
+                // Explicitly SHOW status bar (undo any fullscreen from theme)
+                ctrl.show(android.view.WindowInsets.Type.statusBars())
+                // White icons on dark background
+                ctrl.setSystemBarsAppearance(0, android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_VISIBLE
+        }
+        // Also re-show on window focus change (some ROMs re-hide after permission dialogs)
+        window.decorView.setOnSystemUiVisibilityChangeListener {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.insetsController?.show(android.view.WindowInsets.Type.statusBars())
+            }
+        }
 
         Log.i(TAG, "onCreate — setting up WebView")
         setupWebView()
@@ -432,22 +438,9 @@ class WebViewActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         webView.onResume()
-        // Re-apply fullscreen on resume
+        // Re-show status bar on resume (some ROMs hide after permission dialogs)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.insetsController?.let { ctrl ->
-                ctrl.hide(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.navigationBars())
-                ctrl.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            )
+            window.insetsController?.show(android.view.WindowInsets.Type.statusBars())
         }
     }
 
