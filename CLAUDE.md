@@ -146,6 +146,13 @@ M14 Shop/Oficina        — workshop management, customer bikes, service orders
 - PWA: MUST request Wake Lock on mount, re-request on visibilitychange
 - Simulation: VITE_SIMULATION_MODE=true for development without bike
 - Deploy: HTTPS required (Web Bluetooth), Vercel or Netlify
+- **Sensors: belong to BIKE, not user. BikeConfig.sensors = { motor, hr, di2, light, radar }. Switch bike → auto-reconnect sensors.**
+- **Boot order: initBLE() MUST run AFTER startSettingsSync() completes. NEVER call initBLE in main.tsx.**
+- **Range: prefer rangePerMode (cmd 0x11) over range_km (FC23 0x41). When KROMI active (mode 5), show weighted avg.**
+- **Mode 5 = KROMI Intelligence, NEVER "PWR". Mode 6 = Giant SMART native.**
+- **Trip distance: use `trip_distance_km ?? 0`, NEVER `trip_distance_km || distance_km` (odo leak).**
+- **Design tokens: ALL colors via var(--ev-*) from src/styles/design-tokens.css. NEVER hardcode hex.**
+- **Adaptive brightness: overrides --ev-* tokens. Night (<50 lux) = red, High contrast (>500 lux) = bright green.**
 
 ## Custom Slash Commands
 ```
