@@ -104,13 +104,25 @@ function MainApp() {
   useDriveBootstrap();
 
   // Sync settings from/to DB + track login (once on mount)
+  // initBLE() runs AFTER settings are loaded so autoConnectSensors()
+  // reads the user's actual bike config instead of defaults.
   useEffect(() => {
     trackLogin();
     let unsub: (() => void) | undefined;
     (async () => {
       unsub = await startSettingsSync();
+      // NOW settings are loaded — safe to init BLE
+      const isMobile = /android|iphone|ipad|mobile/i.test(navigator.userAgent) || window.innerWidth < 768;
+      if (isMobile) {
+        const { initBLE } = await import('./services/bluetooth/BLEBridge');
+        initBLE();
+      }
     })();
-    return () => unsub?.();
+    return () => {
+      unsub?.();
+      // Clean up BLE watchers
+      import('./services/bluetooth/BLEBridge').then(({ cleanupBLE }) => cleanupBLE());
+    };
   }, []);
 
   return platform === 'mobile' ? <MobileApp /> : <DesktopApp />;

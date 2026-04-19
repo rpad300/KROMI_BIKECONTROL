@@ -20,11 +20,17 @@ export function useGeolocation() {
         store.setGpsActive(true);
         store.setGpsError(null);
 
+        // Don't update heading if accuracy is poor (>100m = unreliable GPS fix)
+        const accuracy = pos.coords.accuracy;
+        const heading = (accuracy < 100 && pos.coords.heading != null && pos.coords.heading >= 0)
+          ? pos.coords.heading
+          : store.heading; // keep old heading
+
         store.setPosition(
           pos.coords.latitude,
           pos.coords.longitude,
-          pos.coords.heading ?? store.heading, // Keep last heading if null
-          pos.coords.accuracy
+          heading,
+          accuracy
         );
 
         if (pos.coords.altitude !== null) {

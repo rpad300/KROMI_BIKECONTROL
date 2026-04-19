@@ -65,11 +65,12 @@ export function useAutoAssist() {
       if (decision.action === 'change_mode' && decision.new_mode !== undefined) {
         try {
           await sendAssistMode(decision.new_mode);
-          // Haptic feedback for mode change
-          try { navigator.vibrate?.([50, 30, 50]); } catch {}
         } catch (err) {
           console.warn('[AutoAssist] Failed to send assist mode:', err);
         }
+        // Haptic AFTER mode change, in separate try so vibrate failure
+        // does NOT make the mode change appear to have failed
+        try { navigator.vibrate?.([50, 30, 50]); } catch { /* vibrate unsupported */ }
       }
 
       // ── TorqueEngine — fine-tune torque/support for current terrain ──
@@ -99,9 +100,13 @@ export function useAutoAssist() {
           !autoAssistEngine.isOverrideActive() &&
           bike.assist_mode !== AssistMode.POWER
         ) {
-          await sendAssistMode(AssistMode.POWER);
-          // HR Zone 5 emergency — stronger haptic feedback
-          try { navigator.vibrate?.([200, 100, 200, 100, 200]); } catch {}
+          try {
+            await sendAssistMode(AssistMode.POWER);
+          } catch (err) {
+            console.warn('[AutoAssist] BiometricAssist send failed:', err);
+          }
+          // HR Zone 5 emergency — stronger haptic AFTER mode change, separate try
+          try { navigator.vibrate?.([200, 100, 200, 100, 200]); } catch { /* vibrate unsupported */ }
           aaStore.setLastDecision({
             action: 'change_mode',
             new_mode: AssistMode.POWER,

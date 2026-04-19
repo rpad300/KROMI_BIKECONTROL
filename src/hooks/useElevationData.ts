@@ -5,6 +5,8 @@ import { useSettingsStore } from '../store/settingsStore';
 import { elevationService } from '../services/maps/ElevationService';
 
 const ELEVATION_TICK_MS = 3000; // Fetch elevation every 3 seconds
+const ELEVATION_BACKOFF_MS = 30000; // After 10 failures, reduce to every 30s
+let elevationConsecutiveFailures = 0;
 
 /**
  * Always-on elevation data provider.
@@ -25,6 +27,12 @@ export function useElevationData() {
 
   useEffect(() => {
     intervalRef.current = setInterval(async () => {
+      // After 10 consecutive failures, back off to reduce API spam
+      if (elevationConsecutiveFailures >= 10) {
+        // Only run every ELEVATION_BACKOFF_MS during backoff
+        if (Date.now() % ELEVATION_BACKOFF_MS > ELEVATION_TICK_MS + 500) return;
+      }
+
       const map = useMapStore.getState();
       if (!map.gpsActive || map.latitude === 0) return;
 
@@ -39,6 +47,8 @@ export function useElevationData() {
           lookaheadM,
         );
 
+        elevationConsecutiveFailures = 0; // reset on success
+
         if (profile.length >= 2) {
           // Analyze terrain from profile
           const gradients = profile.map((p) => p.gradient_pct);
@@ -49,14 +59,16 @@ export function useElevationData() {
           // Find next transition (significant gradient change)
           let nextTransition = null;
           for (let i = 1; i < profile.length; i++) {
-            const delta = Math.abs(profile[i]!.gradient_pct - currentGrad);
-            if (delta > 3 && profile[i]!.distance_from_current > 50) {
-              const gradAfter = profile[i]!.gradient_pct;
+            const pt = profile[i];
+            if (!pt) continue;
+            const delta = Math.abs(pt.gradient_pct - currentGrad);
+            if (delta > 3 && pt.distance_from_current > 50) {
+              const gradAfter = pt.gradient_pct;
               nextTransition = {
-                distance_m: Math.round(profile[i]!.distance_from_current),
+                distance_m: Math.round(pt.distance_from_current),
                 gradient_after_pct: gradAfter,
                 type: gradAfter > currentGrad ? 'flat_to_climb' as const : 'climb_to_flat' as const,
-                is_preemptive: profile[i]!.distance_from_current < 150,
+                is_preemptive: pt.distance_from_current < 150,
                 target_mode: gradAfter > 12 ? 5 : gradAfter > 8 ? 4 : gradAfter > 5 ? 3 : gradAfter > 3 ? 2 : 1,
               };
               break;
@@ -72,7 +84,11 @@ export function useElevationData() {
           });
         }
       } catch (err) {
-        // Elevation API unavailable — don't crash, just skip this tick
+        elevationConsecutiveFailures++;
+        if (elevationConsecutiveFailures <= 3) {
+          console.warn('[ElevationData] Fetch failed:', err);
+        }
+        // After 10 failures, frequency is automatically reduced (see top of callback)
       }
     }, ELEVATION_TICK_MS);
 

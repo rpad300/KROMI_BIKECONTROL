@@ -93,6 +93,14 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     const bike = useBikeStore.getState();
     const speed = bike.speed_kmh;
     const currentKm = bike.trip_distance_km ?? 0;
+
+    // Detect motor distance reset (went backwards by >100m)
+    if (currentKm > 0 && currentKm < s.startKm - 0.1) {
+      console.warn('[Trip] Motor distance reset detected, recalibrating');
+      set({ startKm: currentKm });
+      return;
+    }
+
     const tripKm = Math.max(0, currentKm - s.startKm);
     const totalTime = Math.round((Date.now() - s.startedAt) / 1000);
 

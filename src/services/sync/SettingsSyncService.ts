@@ -89,7 +89,7 @@ export async function loadSettingsFromDB(): Promise<boolean> {
           console.log(`[Sync] Wheel circumference from DB: ${hw.wheel_circumference_mm}mm`);
         }
       }
-    } catch { /* bike_configs may not exist yet */ }
+    } catch (err) { console.debug('[Sync] bike_configs load skipped:', (err as Error)?.message ?? err); }
 
     // Merge DB settings into local stores. For bikes we use setBikes()
     // because the row holds the full array — that's required when switching
@@ -131,7 +131,7 @@ export async function loadSettingsFromDB(): Promise<boolean> {
         for (const [dashId, widgetIds] of Object.entries(row.dashboard_layouts as Record<string, string[]>)) {
           if (Array.isArray(widgetIds)) layoutStore.setLayout(dashId as 'cruise' | 'climb' | 'descent' | 'data' | 'map', widgetIds);
         }
-      } catch { /* layoutStore may not be available */ }
+      } catch (err) { console.debug('[Sync] layoutStore load skipped:', (err as Error)?.message ?? err); }
     }
 
     // Load active bike selection

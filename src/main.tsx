@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import { App } from './App';
-import { initBLE } from './services/bluetooth/BLEBridge';
+
 import { syncQueue } from './services/sync/SyncQueue';
 import { localRideStore } from './services/storage/LocalRideStore';
 import { rideSessionManager } from './services/storage/RideHistory';
@@ -13,6 +13,9 @@ import './index.css';
 // App version from git tag (injected at build time)
 declare const __APP_VERSION__: string;
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
+
+// NOTE: Global variables (__dlog, __mapStoreGet) are intentional for debug access.
+// They could be namespaced under a single KROMI object in the future.
 
 // Remote diagnostic log — fire-and-forget, includes version + GPS
 function dlog(msg: string) {
@@ -38,7 +41,7 @@ function dlog(msg: string) {
         lng: lng !== 0 ? Math.round(lng * 10000) / 10000 : null,
       },
     }),
-  }).catch(() => {});
+  }).catch((err) => console.debug('[dlog] Remote log failed:', err?.message ?? err));
 }
 (window as unknown as Record<string, unknown>).__dlog = dlog;
 
@@ -116,11 +119,12 @@ async function requestWakeLock(): Promise<void> {
   }
 }
 
-// Only init BLE + WakeLock on mobile (not desktop)
+// Only init WakeLock on mobile (not desktop)
+// NOTE: initBLE() moved to App.tsx MainApp — runs AFTER startSettingsSync()
+// so autoConnectSensors() reads the user's actual bike config, not defaults.
 const isMobile = /android|iphone|ipad|mobile/i.test(navigator.userAgent) || window.innerWidth < 768;
 if (isMobile) {
   requestWakeLock();
-  initBLE();
 }
 
 // Start adaptive brightness — auto-adjusts theme based on ambient light from BLE bridge

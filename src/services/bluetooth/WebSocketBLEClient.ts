@@ -97,13 +97,16 @@ export class WebSocketBLEClient {
         this._connected = false;
         this.startReconnect();
       };
-    } catch {
+    } catch (err) {
+      console.debug('[WSClient] WebSocket creation failed:', (err as Error)?.message ?? err);
       this._connected = false;
     }
   }
 
   disconnect(): void {
     this.stopReconnect();
+    this.scanListeners = [];
+    this.scanDoneListeners = [];
     this.ws?.close();
     this.ws = null;
     this._connected = false;
@@ -200,14 +203,20 @@ export class WebSocketBLEClient {
     this.send({ type: 'connectDevice', address });
   }
 
-  /** Register scan result listener — called per device found */
+  /** Register scan result listener — called per device found (deduped) */
   onScanResult(listener: ScanListener): () => void {
+    if (this.scanListeners.includes(listener)) {
+      return () => {}; // already registered
+    }
     this.scanListeners.push(listener);
     return () => { this.scanListeners = this.scanListeners.filter((l) => l !== listener); };
   }
 
-  /** Register scan done listener */
+  /** Register scan done listener (deduped) */
   onScanDone(listener: ScanDoneListener): () => void {
+    if (this.scanDoneListeners.includes(listener)) {
+      return () => {}; // already registered
+    }
     this.scanDoneListeners.push(listener);
     return () => { this.scanDoneListeners = this.scanDoneListeners.filter((l) => l !== listener); };
   }
@@ -309,7 +318,7 @@ export class WebSocketBLEClient {
 
       switch (msg.type) {
         case 'bridgeInfo':
-          this._bridgeVersion = (msg.version as string) || '';
+          this._bridgeVersion = (typeof msg.version === 'string' ? msg.version : '') || '';
           console.log(`[WSClient] Bridge v${this._bridgeVersion}`);
           if (this.isBridgeOutdated) {
             console.warn(`[WSClient] Bridge outdated! v${this._bridgeVersion} < required v${WebSocketBLEClient.REQUIRED_VERSION}`);
@@ -320,7 +329,7 @@ export class WebSocketBLEClient {
           this._bikeConnected = true;
           store.setBLEStatus('connected');
           // Set bike brand from bridge detection
-          if (msg.brand) {
+          if (typeof msg.brand === 'string' && msg.brand) {
             store.setBikeBrand(msg.brand as 'giant' | 'bosch' | 'shimano' | 'specialized');
             console.log(`[WSClient] Bike brand: ${msg.brand}`);
           }
@@ -328,8 +337,8 @@ export class WebSocketBLEClient {
           // Auto-add to deviceStore
           import('../../store/deviceStore').then(({ useDeviceStore }) => {
             useDeviceStore.getState().addDevice({
-              name: (msg.device as string) || 'Bike',
-              address: (msg.address as string) || '',
+              name: (typeof msg.device === 'string' ? msg.device : '') || 'Bike',
+              address: (typeof msg.address === 'string' ? msg.address : '') || '',
               category: 'bike',
               role: 'motor',
               brand: (msg.brand as string) || 'Giant',
@@ -362,22 +371,27 @@ export class WebSocketBLEClient {
         case 'battery':
           // BLE Battery Service (0x180F) — gateway battery, not motor SOC
           // Only use if we haven't received sgBattery/sgBatteryHealth yet
-          if (store.battery_main_pct === 0 && store.battery_sub_pct === 0) {
+          if (typeof msg.value === 'number' && isFinite(msg.value) && store.battery_main_pct === 0 && store.battery_sub_pct === 0) {
             store.setBatteryPercent(msg.value);
           }
           break;
 
         case 'speed':
-          store.setSpeed(msg.value);
-          batteryEstimationService.addSample(msg.value, store.power_watts, store.battery_percent);
-          store.setRange(batteryEstimationService.getEstimatedRange(store.battery_percent));
+          if (typeof msg.value === 'number' && isFinite(msg.value)) {
+            store.setSpeed(msg.value);
+            batteryEstimationService.addSample(msg.value, store.power_watts, store.battery_percent);
+            store.setRange(batteryEstimationService.getEstimatedRange(store.battery_percent));
+          }
           break;
 
         case 'distance':
-          store.setDistance(msg.value);
+          if (typeof msg.value === 'number' && isFinite(msg.value)) {
+            store.setDistance(msg.value);
+          }
           break;
 
         case 'cadence':
+          if (typeof msg.value !== 'number' || !isFinite(msg.value)) break;
           store.setCadence(msg.value);
           // If from external sensor, mark it so motor cadence doesn't override
           if (msg.source === 'external') {
@@ -389,7 +403,7 @@ export class WebSocketBLEClient {
         case 'power':
           // BLE Power Service (0x1818) — ignore on Giant e-bikes (no real power meter,
           // reports garbage data). Motor power comes from sgRiding (FC23 cmd 0x40) instead.
-          if (!this._bikeConnected) {
+          if (typeof msg.value === 'number' && isFinite(msg.value) && !this._bikeConnected) {
             // Only use 0x1818 power from standalone power meter sensors (not bike)
             store.setPower(msg.value);
             batteryEstimationService.addSample(store.speed_kmh, msg.value, store.battery_percent);
@@ -412,7 +426,9 @@ export class WebSocketBLEClient {
 
         case 'hr': {
           const bpm = msg.bpm as number;
-          const hrMax = useSettingsStore.getState().riderProfile.hr_max;
+          if (typeof bpm !== 'number' || !isFinite(bpm) || bpm <= 0) break;
+          const riderProfile = useSettingsStore.getState().riderProfile;
+          const hrMax = riderProfile?.hr_max ?? 0;
           const zones = calculateZones(hrMax > 0 ? hrMax : 185);
           let zone = 0;
           for (let i = zones.length - 1; i >= 0; i--) {
@@ -423,6 +439,7 @@ export class WebSocketBLEClient {
         }
 
         case 'sensorConnected': {
+          if (typeof msg.sensor !== 'string') break;
           // Remote diag log for debugging
           ((window as unknown as Record<string, unknown>).__dlog as ((msg: string) => void) | undefined)?.(`sensorConnected: ${msg.sensor} name=${msg.name} addr=${msg.address}`);
           const sensorServiceMap: Record<string, string> = {
@@ -498,6 +515,7 @@ export class WebSocketBLEClient {
         }
 
         case 'sensorDisconnected': {
+          if (typeof msg.sensor !== 'string') break;
           const svcMap: Record<string, string> = {
             hr: 'heartRate', di2: 'di2', sram: 'sram', power: 'power', cadence: 'cadence',
             light: 'light', radar: 'radar',
@@ -525,7 +543,9 @@ export class WebSocketBLEClient {
         }
 
         case 'gear':
-          store.setGear(msg.value);
+          if (typeof msg.value === 'number' && isFinite(msg.value)) {
+            store.setGear(msg.value);
+          }
           break;
 
         case 'gevBattery':
@@ -565,7 +585,9 @@ export class WebSocketBLEClient {
           break;
 
         case 'temperature':
-          store.setTemperature(msg.value);
+          if (typeof msg.value === 'number' && isFinite(msg.value)) {
+            store.setTemperature(msg.value);
+          }
           break;
 
         case 'crash':
@@ -1026,8 +1048,8 @@ export class WebSocketBLEClient {
           console.warn('[WSClient] Connect failed:', msg.reason);
           break;
       }
-    } catch {
-      // Ignore malformed messages
+    } catch (err) {
+      console.debug('[WSClient] Malformed message:', (err as Error)?.message ?? err);
     }
   }
 

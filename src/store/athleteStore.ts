@@ -71,10 +71,10 @@ export const useAthleteStore = create<AthleteState>()(
           // Sync physiology from rider profile settings
           const settings = (await import('./settingsStore')).useSettingsStore.getState();
           const rp = settings.riderProfile;
-          remote.physiology.weight_kg = rp.weight_kg || weight;
-          remote.physiology.age = rp.age || age;
+          remote.physiology.weight_kg = rp.weight_kg ?? weight;
+          remote.physiology.age = rp.age ?? age;
           if (rp.hr_max > 0) {
-            remote.physiology.hr_max_theoretical = 220 - (rp.age || age);
+            remote.physiology.hr_max_theoretical = 220 - (rp.age ?? age);
             // Only update observed if user manually set HR max different from formula
             if (rp.zones_source === 'manual' && rp.hr_max !== remote.physiology.hr_max_observed) {
               remote.physiology.hr_max_observed = rp.hr_max;
@@ -88,10 +88,10 @@ export const useAthleteStore = create<AthleteState>()(
         // Create new default profile from rider settings
         const settings = (await import('./settingsStore')).useSettingsStore.getState();
         const rp = settings.riderProfile;
-        const p = createDefaultProfile(rp.age || age, rp.weight_kg || weight);
+        const p = createDefaultProfile(rp.age ?? age, rp.weight_kg ?? weight);
         if (rp.hr_max > 0) {
           p.physiology.hr_max_observed = rp.hr_max;
-          p.physiology.hr_max_theoretical = 220 - (rp.age || age);
+          p.physiology.hr_max_theoretical = 220 - (rp.age ?? age);
           p.physiology.hr_aerobic_threshold = Math.round(rp.hr_max * 0.7);
           p.physiology.hr_anaerobic_threshold = Math.round(rp.hr_max * 0.85);
         }

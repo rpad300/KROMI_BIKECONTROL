@@ -9,6 +9,19 @@ import {
   getUserById,
 } from '../services/rbac/RBACService';
 
+/** Race a promise against a timeout — rejects with Error('Timeout') if ms exceeded. */
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('Timeout')), ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId!);
+  }
+}
+
 /** Detect whether this tab was opened as an impersonation session. */
 function isImpersonationTab(): boolean {
   if (typeof window === 'undefined') return false;
@@ -170,7 +183,7 @@ export const useAuthStore = create<AuthState>()(
             // refresh in the background for a longer TTL.
             set((s) => ({ user: viewerOf(localUser, s.impersonatedUser), loading: false }));
             try {
-              const verified = await verifySession(sessionToken);
+              const verified = await withTimeout(verifySession(sessionToken), 10000);
               if (verified) {
                 publishJwtGlobal(verified.jwt);
                 set((s) => ({
@@ -181,7 +194,7 @@ export const useAuthStore = create<AuthState>()(
                 }));
               }
             } catch {
-              // Network error — keep local session (offline-first)
+              // Network error or timeout — keep local session (offline-first)
             }
             return true;
           }
@@ -192,7 +205,7 @@ export const useAuthStore = create<AuthState>()(
           // best-effort render with no JWT — REST writes will 401 but
           // reads hit the anon key and degrade gracefully.
           try {
-            const verified = await verifySession(sessionToken);
+            const verified = await withTimeout(verifySession(sessionToken), 10000);
             if (verified) {
               publishJwtGlobal(verified.jwt);
               set((s) => ({
@@ -219,7 +232,7 @@ export const useAuthStore = create<AuthState>()(
             });
             return false;
           } catch {
-            // Network failure — render what we have so the app isn't
+            // Network failure or timeout — render what we have so the app isn't
             // frozen. Writes will fail until the next successful verify.
             set((s) => ({ user: viewerOf(localUser, s.impersonatedUser), loading: false }));
             return true;
@@ -227,7 +240,7 @@ export const useAuthStore = create<AuthState>()(
         }
 
         // No local user — must verify with server
-        const verified = await verifySession(sessionToken);
+        const verified = await withTimeout(verifySession(sessionToken), 10000);
         if (verified) {
           publishJwtGlobal(verified.jwt);
           set({

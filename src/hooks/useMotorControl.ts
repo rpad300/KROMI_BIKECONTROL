@@ -41,6 +41,7 @@ let lastKromiOutput: {
  * Uses real wheel distance (CSC sensor) which is centimetre-accurate,
  * combined with GPS altitude (which has ±2-3m noise).
  */
+const MAX_GRADIENT_SAMPLES = 100;
 const gradientSamples: { alt: number; dist_m: number; ts: number }[] = [];
 let smoothedGradient = 0;
 function getGpsGradient(altitude: number | null, speedKmh: number, distanceKm: number): number {
@@ -58,6 +59,10 @@ function getGpsGradient(altitude: number | null, speedKmh: number, distanceKm: n
   // Keep 20s window
   while (gradientSamples.length > 0 && now - gradientSamples[0]!.ts > 20000) {
     gradientSamples.shift();
+  }
+  // Hard cap to prevent unbounded growth
+  if (gradientSamples.length > MAX_GRADIENT_SAMPLES) {
+    gradientSamples.splice(0, gradientSamples.length - MAX_GRADIENT_SAMPLES);
   }
   if (gradientSamples.length < 3) return smoothedGradient;
 

@@ -9,6 +9,10 @@ import { DEFAULT_RIDER_PROFILE, type RiderProfile } from '../types/athlete.types
  *   2. Closing the tab automatically clears the impersonated state
  *   3. Refreshing the impersonation tab keeps it alive (sessionStorage
  *      persists across tab reloads but not across tabs)
+ *
+ * NOTE: Multi-tab impersonation isolation is incomplete.
+ * If admin opens two impersonation tabs, they share sessionStorage.
+ * This is a known limitation — fix would require per-tab UUID in storage key.
  */
 const IS_IMPERSONATION_TAB = (() => {
   if (typeof window === 'undefined') return false;
@@ -441,6 +445,9 @@ interface SettingsState {
   setBikes: (bikes: BikeConfig[], activeBikeId: string) => void;
 }
 
+// Prevent race condition when switching bikes rapidly
+let bikeSwitchTimeout: ReturnType<typeof setTimeout> | null = null;
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
@@ -537,17 +544,23 @@ export const useSettingsStore = create<SettingsState>()(
       selectBike: (id) => set((s) => {
         const bike = s.bikes.find((b) => b.id === id);
         if (!bike) return {};
+        // Cancel any pending auto-reconnect from previous switch
+        if (bikeSwitchTimeout) {
+          clearTimeout(bikeSwitchTimeout);
+          bikeSwitchTimeout = null;
+        }
         // Sync motor brand to bikeStore so Dashboard shows correct modes
         import('./bikeStore').then(({ useBikeStore }) => {
           const brand = bike.motor_brand === 'other' ? 'unknown' : bike.motor_brand;
           useBikeStore.getState().setBikeBrand(brand as 'giant' | 'bosch' | 'shimano' | 'specialized' | 'unknown');
         });
-        // Trigger sensor reconnect for the new bike's sensor config
-        setTimeout(() => {
+        // Trigger sensor reconnect for the new bike's sensor config (debounced)
+        bikeSwitchTimeout = setTimeout(() => {
+          bikeSwitchTimeout = null;
           import('../services/bluetooth/BLEBridge').then(({ autoConnectSensors }) => {
             autoConnectSensors();
           });
-        }, 500);
+        }, 600);
         return { activeBikeId: id, bikeConfig: bike };
       }),
 
@@ -572,15 +585,41 @@ export const useSettingsStore = create<SettingsState>()(
         ? { storage: createJSONStorage(() => sessionStorage) }
         : {}),
       // Deep merge on hydration — ensures new fields (tuning_max etc) get defaults
+      // Defensive: handles corrupted/outdated localStorage gracefully
       merge: (persisted, current) => {
-        const p = persisted as Partial<SettingsState> ?? {};
+        const p = (persisted as Partial<SettingsState>) ?? {};
+
+        // Ensure bikeConfig is always a valid object
+        const rawBikeConfig = p.bikeConfig ?? {};
+        const mergedBikeConfig = safeBikeConfig({
+          ...DEFAULT_BIKE_CONFIG,
+          ...(typeof rawBikeConfig === 'object' ? rawBikeConfig : {}),
+        });
+
+        // Ensure bikes array is valid
+        const bikes = Array.isArray(p.bikes) ? p.bikes : (current as SettingsState).bikes;
+
+        // Ensure riderProfile is valid
+        const riderProfile = (p.riderProfile && typeof p.riderProfile === 'object')
+          ? { ...(current as SettingsState).riderProfile, ...p.riderProfile }
+          : (current as SettingsState).riderProfile;
+
+        // Ensure autoAssist config is valid
+        const autoAssist = (p.autoAssist && typeof p.autoAssist === 'object')
+          ? { ...(current as SettingsState).autoAssist, ...p.autoAssist }
+          : (current as SettingsState).autoAssist;
+
         const merged = {
           ...current,
           ...p,
-          bikeConfig: safeBikeConfig(p.bikeConfig),
-          riderProfile: { ...(current as SettingsState).riderProfile, ...(p.riderProfile ?? {}) },
-          autoAssist: { ...(current as SettingsState).autoAssist, ...(p.autoAssist ?? {}) },
-          accessories: { ...DEFAULT_ACCESSORIES_CONFIG, ...(p.accessories ?? {}) },
+          bikeConfig: mergedBikeConfig,
+          bikes,
+          riderProfile,
+          autoAssist,
+          accessories: { ...DEFAULT_ACCESSORIES_CONFIG, ...(p.accessories && typeof p.accessories === 'object' ? p.accessories : {}) },
+          // Ensure new fields have defaults if missing from old data
+          compliance_region: p.compliance_region ?? (current as SettingsState).compliance_region,
+          voice_enabled: p.voice_enabled ?? (current as SettingsState).voice_enabled,
         };
         // Sync motor brand to bikeStore on hydration
         const brand = merged.bikeConfig.motor_brand;

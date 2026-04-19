@@ -31,8 +31,21 @@ import { useSettingsStore, type BikeSensors } from '../../store/settingsStore';
 
 export type BLEMode = 'websocket' | 'native' | 'web';
 
-/** Current active BLE mode */
+/** Current active BLE mode.
+ * TODO: Move bleMode to bikeStore for reactive UI updates — currently a
+ * module-level `let` that React components cannot subscribe to. */
 export let bleMode: BLEMode = 'web';
+
+/** Interval reference for WebSocket reconnection watcher — cleaned up by cleanupBLE() */
+let wsWatchInterval: ReturnType<typeof setInterval> | null = null;
+
+/** Clean up BLE watchers (call on unmount to prevent memory leaks) */
+export function cleanupBLE(): void {
+  if (wsWatchInterval) {
+    clearInterval(wsWatchInterval);
+    wsWatchInterval = null;
+  }
+}
 
 /** Initialize BLE subsystem — tries WebSocket bridge first */
 export async function initBLE(): Promise<void> {
@@ -46,8 +59,11 @@ export async function initBLE(): Promise<void> {
   // Try connecting to WebSocket bridge (middleware app)
   wsClient.connect();
 
-  // Wait for bridge — try twice with increasing timeout
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  // Wait up to 5s for WebSocket bridge, checking every 500ms
+  for (let i = 0; i < 10; i++) {
+    if (wsClient.isConnected) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
 
   if (wsClient.isConnected) {
     bleMode = 'websocket';
@@ -67,10 +83,13 @@ export async function initBLE(): Promise<void> {
     console.log('[BLE Bridge] Will auto-switch to WebSocket when bridge connects');
 
     // Listen for WS connection and auto-switch mode
-    const checkInterval = setInterval(() => {
+    if (wsWatchInterval) clearInterval(wsWatchInterval);
+    wsWatchInterval = setInterval(() => {
       if (wsClient.isConnected && bleMode === 'web') {
         bleMode = 'websocket';
-        console.log('[BLE Bridge] Mode switched: WebSocket Bridge now available!');
+        console.log('[BLE Bridge] WebSocket bridge connected (late)');
+        clearInterval(wsWatchInterval!);
+        wsWatchInterval = null;
         // Auto-connect bike + sensors (prefer bike config, fallback localStorage)
         const bikeMotor2 = useSettingsStore.getState().bikeConfig?.sensors?.motor;
         const savedBike = (bikeMotor2 && bikeMotor2.address) ? bikeMotor2 : getSavedDevice();
@@ -78,13 +97,17 @@ export async function initBLE(): Promise<void> {
           console.log(`[BLE Bridge] Auto-connecting to saved bike: ${savedBike.name} (${savedBike.address})`);
           wsClient.connectToDevice(savedBike.address);
         }
-        setTimeout(() => autoConnectSensors(), 1000);
-        clearInterval(checkInterval);
+        autoConnectSensors();
       }
     }, 2000);
 
-    // Stop checking after 2 minutes
-    setTimeout(() => clearInterval(checkInterval), 120_000);
+    // Auto-clear after 2 minutes to prevent memory leak
+    setTimeout(() => {
+      if (wsWatchInterval) {
+        clearInterval(wsWatchInterval);
+        wsWatchInterval = null;
+      }
+    }, 120_000);
   }
 }
 
@@ -141,8 +164,9 @@ export async function connectBike(): Promise<void> {
           // Default: Giant (uses its own scanner)
           await giantBLEService.connect();
         }
-      } catch {
+      } catch (err) {
         // Fallback: Giant-only picker
+        console.debug('[BLE Bridge] Multi-brand picker failed, falling back to Giant:', (err as Error)?.message ?? err);
         await giantBLEService.connect();
       }
       break;
