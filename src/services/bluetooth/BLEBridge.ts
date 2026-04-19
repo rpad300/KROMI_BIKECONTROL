@@ -27,6 +27,7 @@ import { SPEC_MCSP_SERVICE, BES3_SERVICE } from './SpecializedFlowService';
 import { TURBO_SERVICE_1 } from './SpecializedTurboService';
 import { SBI_SERVICE } from './ShimanoMotorService';
 import type { TuningLevels, TuningMode } from '../../store/tuningStore';
+import { useSettingsStore, type BikeSensors } from '../../store/settingsStore';
 
 export type BLEMode = 'websocket' | 'native' | 'web';
 
@@ -51,8 +52,9 @@ export async function initBLE(): Promise<void> {
   if (wsClient.isConnected) {
     bleMode = 'websocket';
     console.log('[BLE Bridge] Mode: WebSocket Bridge — full BLE via middleware');
-    // Auto-connect to saved bike device
-    const savedBike = getSavedDevice();
+    // Auto-connect to saved bike device (prefer bike config motor, fallback to localStorage)
+    const bikeMotor = useSettingsStore.getState().bikeConfig?.sensors?.motor;
+    const savedBike = (bikeMotor && bikeMotor.address) ? bikeMotor : getSavedDevice();
     if (savedBike && wsClient.isConnected) {
       console.log(`[BLE Bridge] Auto-connecting to saved bike: ${savedBike.name} (${savedBike.address})`);
       wsClient.connectToDevice(savedBike.address);
@@ -69,8 +71,9 @@ export async function initBLE(): Promise<void> {
       if (wsClient.isConnected && bleMode === 'web') {
         bleMode = 'websocket';
         console.log('[BLE Bridge] Mode switched: WebSocket Bridge now available!');
-        // Auto-connect bike + sensors
-        const savedBike = getSavedDevice();
+        // Auto-connect bike + sensors (prefer bike config, fallback localStorage)
+        const bikeMotor2 = useSettingsStore.getState().bikeConfig?.sensors?.motor;
+        const savedBike = (bikeMotor2 && bikeMotor2.address) ? bikeMotor2 : getSavedDevice();
         if (savedBike) {
           console.log(`[BLE Bridge] Auto-connecting to saved bike: ${savedBike.name} (${savedBike.address})`);
           wsClient.connectToDevice(savedBike.address);
@@ -468,6 +471,11 @@ export interface SavedDevice {
 /** Save connected device for auto-connect */
 export function saveDevice(device: SavedDevice): void {
   localStorage.setItem(SAVED_DEVICE_KEY, JSON.stringify(device));
+  // Also persist to active bike config as motor
+  useSettingsStore.getState().setBikeSensor('motor', {
+    name: device.name,
+    address: device.address,
+  });
 }
 
 /** Get saved device (null if none) */
@@ -490,6 +498,12 @@ type SensorType = typeof SENSOR_TYPES[number];
 /** Save sensor device for auto-connect */
 export function saveSensorDevice(sensor: SensorType, device: SavedDevice): void {
   localStorage.setItem(`kromi_saved_${sensor}`, JSON.stringify(device));
+  // Also persist to active bike config
+  const sensorKey = sensor as keyof BikeSensors;
+  useSettingsStore.getState().setBikeSensor(sensorKey, {
+    name: device.name,
+    address: device.address,
+  });
 }
 
 /** Get saved sensor device */
@@ -509,15 +523,31 @@ export const saveHRDevice = (d: SavedDevice) => saveSensorDevice('hr', d);
 export const getSavedHRDevice = () => getSavedSensorDevice('hr');
 export const clearHRDevice = () => clearSensorDevice('hr');
 
-/** Auto-connect all saved sensors via bridge */
+/** Auto-connect all saved sensors via bridge.
+ *  Prefers bike-scoped sensor config from settingsStore; falls back to
+ *  legacy localStorage entries for backward compatibility.
+ */
 export function autoConnectSensors(): void {
   if (bleMode !== 'websocket') return;
+
+  // Read sensors from active bike config (preferred source)
+  const bikeConfig = useSettingsStore.getState().bikeConfig;
+  const bikeSensors = bikeConfig?.sensors ?? {};
+
   for (const sensor of SENSOR_TYPES) {
-    const saved = getSavedSensorDevice(sensor);
+    const fromBike = bikeSensors[sensor as keyof typeof bikeSensors];
+    const saved = (fromBike && fromBike.address) ? fromBike : getSavedSensorDevice(sensor);
     if (saved) {
-      console.log(`[BLE Bridge] Auto-connecting ${sensor}: ${saved.name} (${saved.address})`);
+      console.log(`[BLE Bridge] Auto-connecting ${sensor} for bike "${bikeConfig?.name ?? '?'}": ${saved.name} (${saved.address})`);
       wsClient.send({ type: 'connectSensor', sensor, address: saved.address });
     }
+  }
+
+  // Also auto-connect the main motor from bike config
+  const motor = bikeSensors.motor;
+  if (motor && motor.address) {
+    console.log(`[BLE Bridge] Auto-connecting motor from bike config: ${motor.name}`);
+    wsClient.connectToDevice(motor.address);
   }
 }
 

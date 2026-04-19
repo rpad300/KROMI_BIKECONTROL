@@ -227,10 +227,14 @@ export function scheduleSave(): void {
   }, DEBOUNCE_MS);
 }
 
-/** Start auto-sync: subscribe to settings changes and save on change */
-export function startSettingsSync(): () => void {
-  // Load from DB on start
-  loadSettingsFromDB();
+/** Start auto-sync: subscribe to settings changes and save on change.
+ *  Returns a promise that resolves to the unsubscribe function after
+ *  the initial DB load completes (so callers can await hydration).
+ */
+export async function startSettingsSync(): Promise<() => void> {
+  // Load from DB on start — await so bike config (incl. sensors) is ready
+  // before auto-connect kicks in.
+  await loadSettingsFromDB();
 
   // Subscribe to settings store changes → auto-save
   const unsub = useSettingsStore.subscribe(() => {

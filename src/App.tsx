@@ -106,8 +106,11 @@ function MainApp() {
   // Sync settings from/to DB + track login (once on mount)
   useEffect(() => {
     trackLogin();
-    const unsub = startSettingsSync();
-    return unsub;
+    let unsub: (() => void) | undefined;
+    (async () => {
+      unsub = await startSettingsSync();
+    })();
+    return () => unsub?.();
   }, []);
 
   return platform === 'mobile' ? <MobileApp /> : <DesktopApp />;

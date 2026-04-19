@@ -12,7 +12,7 @@ export function DescentDashboard() {
   const leanAngle = useBikeStore((s) => s.lean_angle_deg);
   const tpmsFront = useBikeStore((s) => s.tpms_front_psi);
   const tpmsRear = useBikeStore((s) => s.tpms_rear_psi);
-  const tripDist = useBikeStore((s) => s.trip_distance_km || s.distance_km);
+  const tripDist = useBikeStore((s) => s.trip_distance_km ?? 0);
   const tripTime = useBikeStore((s) => s.trip_time_s);
   const speedMax = useBikeStore((s) => s.speed_max);
 

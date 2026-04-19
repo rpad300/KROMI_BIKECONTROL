@@ -51,7 +51,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
 
   startTrip: () => {
     const bike = useBikeStore.getState();
-    const startKm = bike.trip_distance_km || bike.distance_km;
+    const startKm = bike.trip_distance_km ?? 0;
     set({
       state: 'running',
       startedAt: Date.now(),
@@ -92,7 +92,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
 
     const bike = useBikeStore.getState();
     const speed = bike.speed_kmh;
-    const currentKm = bike.trip_distance_km || bike.distance_km;
+    const currentKm = bike.trip_distance_km ?? 0;
     const tripKm = Math.max(0, currentKm - s.startKm);
     const totalTime = Math.round((Date.now() - s.startedAt) / 1000);
 

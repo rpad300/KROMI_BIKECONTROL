@@ -32,7 +32,7 @@ export function DataDashboard() {
         // Row 6: Trip
         b.trip_distance_km > 0 ? b.trip_distance_km.toFixed(1) : b.distance_km.toFixed(1),
         b.trip_time_s > 0 ? `${Math.floor(b.trip_time_s/3600)}:${String(Math.floor((b.trip_time_s%3600)/60)).padStart(2,'0')}` : '0:00',
-        b.speed_kmh > 0 && b.trip_time_s > 0 ? ((b.trip_distance_km || b.distance_km) / (b.trip_time_s / 3600)).toFixed(1) : '--',
+        b.speed_kmh > 0 && b.trip_time_s > 0 ? ((b.trip_distance_km ?? 0) / (b.trip_time_s / 3600)).toFixed(1) : '--',
         String(b.speed_max > 0 ? b.speed_max.toFixed(0) : '--'),
         // Row 7: System
         String(b.motor_odo_km || '--'), String(b.motor_total_hours || '--'), b.tpms_front_psi > 0 ? String(b.tpms_front_psi) : '--', b.temperature_c > 0 ? `${b.temperature_c.toFixed(0)}°` : '--',

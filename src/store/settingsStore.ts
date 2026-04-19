@@ -34,10 +34,28 @@ export type BrakeType = 'disc_hydraulic' | 'disc_mechanical' | 'rim' | 'none';
 export type DrivetrainType = '1x' | '2x' | '3x';
 export type GroupsetBrand = 'shimano' | 'sram' | 'campagnolo' | 'other';
 
+// ── Bike-scoped sensor addresses ─────────────────────────────
+export interface BikeSensorEntry {
+  name: string;
+  address: string;
+}
+
+export interface BikeSensors {
+  motor?: BikeSensorEntry;
+  hr?: BikeSensorEntry;
+  di2?: BikeSensorEntry;
+  sram?: BikeSensorEntry;
+  power?: BikeSensorEntry;
+  light?: BikeSensorEntry;
+  radar?: BikeSensorEntry;
+}
+
 export interface BikeConfig {
   id: string;
   bike_type: 'ebike' | 'mechanical';
   name: string;
+  /** BLE sensors associated with this specific bike */
+  sensors: BikeSensors;
 
   // ── Classification ────────────────────────────────────────
   category: BikeCategory;
@@ -179,6 +197,7 @@ export const DEFAULT_BIKE_CONFIG: BikeConfig = {
   id: 'default',
   bike_type: 'ebike',
   name: 'Giant Trance X E+ 2 (2023)',
+  sensors: {},
 
   // Classification
   category: 'mtb',
@@ -308,6 +327,7 @@ export function safeBikeConfig(raw: Partial<BikeConfig> | undefined): BikeConfig
     ...d,
     ...raw,
     // Nested objects need explicit merge
+    sensors: { ...d.sensors, ...(raw.sensors ?? {}) },
     tuning_max: { ...d.tuning_max, ...(raw.tuning_max ?? {}) },
     tuning_mid: { ...d.tuning_mid, ...(raw.tuning_mid ?? {}) },
     tuning_min: { ...d.tuning_min, ...(raw.tuning_min ?? {}) },
@@ -412,6 +432,8 @@ interface SettingsState {
   setSimulationMode: (v: boolean) => void;
   setComplianceRegion: (region: 'eu' | 'us' | 'au' | 'jp') => void;
   setVoiceEnabled: (v: boolean) => void;
+  /** Set or clear a sensor on the active bike */
+  setBikeSensor: (sensorType: keyof BikeSensors, device: BikeSensorEntry | null) => void;
   addBike: (config: Partial<BikeConfig> & { name: string; bike_type: BikeConfig['bike_type'] }) => void;
   removeBike: (id: string) => void;
   selectBike: (id: string) => void;
@@ -484,6 +506,21 @@ export const useSettingsStore = create<SettingsState>()(
 
       setSimulationMode: (v) => set({ simulation_mode: v }),
 
+      setBikeSensor: (sensorType, device) =>
+        set((state) => {
+          const sensors: BikeSensors = { ...state.bikeConfig.sensors };
+          if (device) {
+            sensors[sensorType] = device;
+          } else {
+            delete sensors[sensorType];
+          }
+          const updated = { ...state.bikeConfig, sensors };
+          return {
+            bikeConfig: updated,
+            bikes: state.bikes.map((b) => b.id === state.activeBikeId ? updated : b),
+          };
+        }),
+
       addBike: (config) => set((s) => {
         const id = crypto.randomUUID();
         const newBike: BikeConfig = { ...DEFAULT_BIKE_CONFIG, ...config, id };
@@ -505,6 +542,12 @@ export const useSettingsStore = create<SettingsState>()(
           const brand = bike.motor_brand === 'other' ? 'unknown' : bike.motor_brand;
           useBikeStore.getState().setBikeBrand(brand as 'giant' | 'bosch' | 'shimano' | 'specialized' | 'unknown');
         });
+        // Trigger sensor reconnect for the new bike's sensor config
+        setTimeout(() => {
+          import('../services/bluetooth/BLEBridge').then(({ autoConnectSensors }) => {
+            autoConnectSensors();
+          });
+        }, 500);
         return { activeBikeId: id, bikeConfig: bike };
       }),
 

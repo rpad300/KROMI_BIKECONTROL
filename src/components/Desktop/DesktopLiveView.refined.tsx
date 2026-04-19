@@ -46,7 +46,7 @@ function HeroDashboard() {
   const rearGear = useBikeStore((s) => s.rear_gear);
   const range = useBikeStore((s) => s.range_km);
   const rangePerMode = useBikeStore((s) => s.range_per_mode);
-  const tripDist = useBikeStore((s) => s.trip_distance_km || s.distance_km);
+  const tripDist = useBikeStore((s) => s.trip_distance_km ?? 0);
   const tripTime = useBikeStore((s) => s.trip_time_s || 0);
   const bleStatus = useBikeStore((s) => s.ble_status);
 

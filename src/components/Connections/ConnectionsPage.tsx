@@ -18,6 +18,7 @@ import {
 import * as BLE from '../../services/bluetooth/BLEBridge';
 import { DeviceScanner, type ScanConnectedInfo } from '../shared/DeviceScanner';
 import { PhoneSensorPanel } from './PhoneSensorPanel';
+import { useSettingsStore, type BikeSensors } from '../../store/settingsStore';
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -170,6 +171,19 @@ export function ConnectionsPage() {
               brand: info.brand,
               brandColor: info.brandColor,
             });
+            // Persist sensor to active bike config for per-bike auto-connect
+            const sensorKeyMap: Partial<Record<DeviceRole, keyof BikeSensors>> = {
+              motor: 'motor', heart_rate: 'hr', di2: 'di2', sram_axs: 'sram',
+              power_meter: 'power', light_front: 'light', light_rear: 'light',
+              radar: 'radar',
+            };
+            const bikeKey = sensorKeyMap[role];
+            if (bikeKey) {
+              useSettingsStore.getState().setBikeSensor(bikeKey, {
+                name: info.name,
+                address: info.address,
+              });
+            }
             // Mark as pending connection (bridge is connecting it)
             setPendingIds((prev) => [...prev, saved.id]);
           }

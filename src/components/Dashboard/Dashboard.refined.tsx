@@ -276,7 +276,7 @@ function formatRange(range: number): string {
 /** Speed -- hero element (~15%) with delta pill and trip distance */
 function SpeedSection() {
   const speed = useBikeStore((s) => s.speed_kmh);
-  const tripDist = useBikeStore((s) => s.trip_distance_km || s.distance_km);
+  const tripDist = useBikeStore((s) => s.trip_distance_km ?? 0);
 
   // Track previous speed for delta pill
   const prevSpeedRef = useRef(0);

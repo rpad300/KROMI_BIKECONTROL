@@ -243,7 +243,7 @@ function TopBar() {
 /** Speed — hero element (~15%) */
 function SpeedSection() {
   const speed = useBikeStore((s) => s.speed_kmh);
-  const tripDist = useBikeStore((s) => s.trip_distance_km || s.distance_km);
+  const tripDist = useBikeStore((s) => s.trip_distance_km ?? 0);
 
   return (
     <section className="h-[15%] flex-none flex flex-col items-center justify-center bg-black">
