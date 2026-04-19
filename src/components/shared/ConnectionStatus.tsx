@@ -57,8 +57,8 @@ export function ConnectionStatus() {
           const motorAddr = bikeConfig?.sensors?.motor?.address;
           if (motorAddr) connectDevice(motorAddr);
         }}
-        className="fixed top-2 right-2 z-50 flex items-center gap-1.5 px-2 py-1 active:scale-95"
-        style={{ backgroundColor: 'rgba(159, 5, 25, 0.8)', border: '1px solid rgba(255,113,108,0.3)' }}
+        className="fixed right-2 z-40 flex items-center gap-1.5 px-2 py-1 active:scale-95"
+        style={{ top: '36px', backgroundColor: 'rgba(159, 5, 25, 0.8)', border: '1px solid rgba(255,113,108,0.3)' }}
       >
         <span className="w-1.5 h-1.5 rounded-full bg-[#ff716c] animate-pulse" />
         <span className="text-[9px] font-bold text-[#ff716c] uppercase">Bike offline</span>

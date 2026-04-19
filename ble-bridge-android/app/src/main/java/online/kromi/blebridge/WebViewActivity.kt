@@ -47,37 +47,26 @@ class WebViewActivity : AppCompatActivity() {
 
         super.onCreate(savedInstanceState)
 
-        // Keep screen on, show status bar (network/battery/time), hide nav bar only
+        // Keep screen on
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // STATUS BAR: ALWAYS VISIBLE — shows network, battery, time
+        // Content starts BELOW the status bar, not behind it.
+        // Navigation bar hidden (immersive — swipe up to reveal).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11+: edge-to-edge but KEEP status bar visible
-            window.setDecorFitsSystemWindows(false)
+            window.setDecorFitsSystemWindows(true)
             window.insetsController?.let { ctrl ->
-                // Only hide navigation bar, KEEP status bar visible
-                ctrl.hide(android.view.WindowInsets.Type.navigationBars())
-                ctrl.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                // Light status bar icons on dark background
+                // SHOW status bar explicitly
+                ctrl.show(android.view.WindowInsets.Type.statusBars())
+                // White icons on dark bg
                 ctrl.setSystemBarsAppearance(0, android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
             }
         } else {
             @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                // Keep status bar visible — only hide navigation
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            )
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
         }
-        // Transparent status bar so app bg shows through, dark nav bar
-        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.statusBarColor = 0xFF0e0e0e.toInt()
         window.navigationBarColor = 0xFF0e0e0e.toInt()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            // NEVER = don't extend content into the notch/camera cutout area
-            window.attributes.layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
-        }
 
         // Build layout programmatically
         val root = FrameLayout(this).apply { setBackgroundColor(0xFF0e0e0e.toInt()) }
