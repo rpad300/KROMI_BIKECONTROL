@@ -49,8 +49,8 @@ class WebViewActivity : AppCompatActivity() {
 
         // Keep screen on
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        // Dark status bar + nav bar background (set BEFORE setContentView)
-        window.statusBarColor = 0xFF0e0e0e.toInt()
+        // Transparent status bar — content draws behind it, PersistentBar handles padding
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = 0xFF0e0e0e.toInt()
 
         // Build layout programmatically
@@ -74,16 +74,20 @@ class WebViewActivity : AppCompatActivity() {
         root.addView(progressBar)
         setContentView(root)
 
-        // Edge-to-edge: content draws behind status bar, we handle the offset in CSS
+        // Edge-to-edge: draw behind status bar, handle padding in CSS
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(false)
             window.insetsController?.let { ctrl ->
-                // Show status bar, hide navigation bar
                 ctrl.show(android.view.WindowInsets.Type.statusBars())
                 ctrl.hide(android.view.WindowInsets.Type.navigationBars())
                 ctrl.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                // White icons on dark bg
                 ctrl.setSystemBarsAppearance(0, android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
+            }
+            // Force WebView to extend behind status bar by consuming insets
+            root.setOnApplyWindowInsetsListener { view, insets ->
+                // Don't let the root consume the top inset — let content draw behind status bar
+                view.setPadding(0, 0, 0, 0)
+                insets
             }
         } else {
             @Suppress("DEPRECATION")

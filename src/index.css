@@ -14,9 +14,20 @@ html, body, #root {
   /* Edge-to-edge: viewport-fit=cover in index.html. No root padding. */
 }
 
-/* Edge-to-edge: PersistentBar starts right after the Android status bar.
-   The status bar has bg #0e0e0e (set in WebViewActivity), so the ~24px
-   gap between status bar text and PersistentBar is the status bar itself. */
+/* PersistentBar extends visually into the status bar area via a pseudo-element,
+   eliminating the visible gap between status bar and app content. */
+.persistent-bar {
+  position: relative !important;
+}
+.persistent-bar::before {
+  content: '';
+  position: absolute;
+  top: -100px;
+  left: 0;
+  right: 0;
+  height: 100px;
+  background: var(--ev-surface-low);
+}
 
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
