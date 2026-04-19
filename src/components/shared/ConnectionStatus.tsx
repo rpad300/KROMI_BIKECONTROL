@@ -48,22 +48,10 @@ export function ConnectionStatus() {
   }
 
   // Bridge up, bike configured but not connected (auto-connect already tried)
-  // → show discrete indicator, NOT a big banner
+  // PersistentBar already shows "● OFF" and 0% battery — no need for extra pill.
+  // User can go to BLE tab to manually retry.
   if (bridgeUp && hasBikeConfigured) {
-    return (
-      <button
-        onClick={() => {
-          // Retry connection on tap
-          const motorAddr = bikeConfig?.sensors?.motor?.address;
-          if (motorAddr) connectDevice(motorAddr);
-        }}
-        className="fixed right-2 z-40 flex items-center gap-1.5 px-2 py-1 active:scale-95"
-        style={{ top: '36px', backgroundColor: 'rgba(159, 5, 25, 0.8)', border: '1px solid rgba(255,113,108,0.3)' }}
-      >
-        <span className="w-1.5 h-1.5 rounded-full bg-[#ff716c] animate-pulse" />
-        <span className="text-[9px] font-bold text-[#ff716c] uppercase">Bike offline</span>
-      </button>
-    );
+    return null;
   }
 
   // Bridge up, NO bike configured → show setup prompt
