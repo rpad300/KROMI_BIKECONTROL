@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import { bleMode, getSavedDevice, connectDevice } from '../../services/bluetooth/BLEBridge';
 import { wsClient } from '../../services/bluetooth/WebSocketBLEClient';
@@ -8,6 +8,7 @@ export function ConnectionStatus() {
   const bleStatus = useBikeStore((s) => s.ble_status);
   const [showScanner, setShowScanner] = useState(false);
   const saved = getSavedDevice();
+  const bridgeUp = bleMode === 'websocket' && wsClient.isConnected;
   // Auto-connect is handled by initBLE() + autoConnectSensors() in BLEBridge.ts.
   // This component only shows the manual connect UI when not connected.
 
