@@ -550,9 +550,21 @@ export const clearHRDevice = () => clearSensorDevice('hr');
 /** Auto-connect all saved sensors via bridge.
  *  Prefers bike-scoped sensor config from settingsStore; falls back to
  *  legacy localStorage entries for backward compatibility.
+ *  Debounced: ignores calls within 3s of the last execution.
  */
+let lastAutoConnectMs = 0;
+const AUTO_CONNECT_DEBOUNCE_MS = 3000;
+
 export function autoConnectSensors(): void {
   if (bleMode !== 'websocket') return;
+
+  // Debounce: prevent duplicate calls within 3s
+  const now = Date.now();
+  if (now - lastAutoConnectMs < AUTO_CONNECT_DEBOUNCE_MS) {
+    console.log('[BLE Bridge] Auto-connect debounced (called within 3s)');
+    return;
+  }
+  lastAutoConnectMs = now;
 
   // Read sensors from active bike config (preferred source)
   const bikeConfig = useSettingsStore.getState().bikeConfig;
@@ -567,12 +579,8 @@ export function autoConnectSensors(): void {
     }
   }
 
-  // Also auto-connect the main motor from bike config
-  const motor = bikeSensors.motor;
-  if (motor && motor.address) {
-    console.log(`[BLE Bridge] Auto-connecting motor from bike config: ${motor.name}`);
-    wsClient.connectToDevice(motor.address);
-  }
+  // Motor auto-connect is handled by initBLE (lines 72-77).
+  // Don't duplicate here — the debounce prevents double calls anyway.
 }
 
 /** Get current BLE mode description */
