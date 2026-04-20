@@ -428,8 +428,14 @@ class BLEBridgeService : Service() {
 
             // === Shimano STEPS / Di2 ===
             "shimanoScan" -> {
-                shimanoProtocol.excludeAddress = bleManager.connectedAddress
-                shimanoProtocol.scan()
+                // Don't scan if already connected — scan disconnects the active connection
+                if (shimanoProtocol.isConnected) {
+                    Log.i(TAG, "shimanoScan ignored — already connected, re-emitting state")
+                    shimanoProtocol.reEmitState()
+                } else {
+                    shimanoProtocol.excludeAddress = bleManager.connectedAddress
+                    shimanoProtocol.scan()
+                }
             }
             "shimanoConnect" -> {
                 val address = json.optString("address", "")
