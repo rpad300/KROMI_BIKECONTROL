@@ -211,6 +211,7 @@ class ShimanoProtocol(private val context: Context) {
         connectedAddress = address
         autoReconnect = true
         authenticated = false
+        currentGear = 0  // Reset so first notify always emits gear state
         Log.i(TAG, "Connecting to ${device.name ?: address}...")
         emitStatus("connecting")
 
