@@ -198,20 +198,21 @@ interface CategoryRule {
 
 const CATEGORY_RULES: CategoryRule[] = [
   {
-    category: 'bike',
-    label: 'E-Bike',
-    icon: 'electric_bike',
-    tags: ['GIANT', 'GEV', 'BIKE', 'BOSCH', 'SPECIALIZED', 'SHIMANO_STEPS', 'FAZUA', 'YAMAHA'],
-    uuids: ['f0ba3012', '424f5343', 'eaa2-11e9', '0000fe02', 'c0b11800', '18ef', '3731-3032-494d'],
-    namePatterns: [/^GBH/i, /bosch/i, /^nyon/i, /^kiox/i, /turbo/i, /^levo/i, /^creo/i, /^vado/i, /^como/i, /^ep[0-9]/i, /avinox/i, /fazua/i, /yamaha/i, /^pw-/i, /^pluto/i],
-  },
-  {
+    // Drivetrain MUST be checked before bike — devices can have both SHIMANO_STEPS and DI2 tags
     category: 'drivetrain',
     label: 'Drivetrain',
     icon: 'settings_suggest',
     tags: ['DI2', 'SRAM'],
     namePatterns: [/^di2/i, /^axs/i, /^etap/i, /^ew-/i, /^sram/i, /^shimano.*di2/i],
     uuids: ['6e40fec1', '4d500001'],
+  },
+  {
+    category: 'bike',
+    label: 'E-Bike',
+    icon: 'electric_bike',
+    tags: ['GIANT', 'GEV', 'BIKE', 'BOSCH', 'SPECIALIZED', 'SHIMANO_STEPS', 'FAZUA', 'YAMAHA'],
+    uuids: ['f0ba3012', '424f5343', 'eaa2-11e9', '0000fe02', 'c0b11800', '18ef', '3731-3032-494d'],
+    namePatterns: [/^GBH/i, /bosch/i, /^nyon/i, /^kiox/i, /turbo/i, /^levo/i, /^creo/i, /^vado/i, /^como/i, /^ep[0-9]/i, /avinox/i, /fazua/i, /yamaha/i, /^pw-/i, /^pluto/i],
   },
   {
     category: 'heart_rate',

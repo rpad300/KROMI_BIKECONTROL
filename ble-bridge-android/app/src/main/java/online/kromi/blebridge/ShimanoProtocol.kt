@@ -295,10 +295,34 @@ class ShimanoProtocol(private val context: Context) {
                 }
             }
 
-            emitStatus("authenticating")
+            // Check which services exist to determine auth path
+            val hasDevInfo = g.getService(SERVICE_DEVINFO) != null
+            val hasETube = g.getService(SERVICE_ETUBE) != null
+            val hasRealtime = g.getService(SERVICE_REALTIME) != null
 
-            // Step 1: Read device info (serial, firmware, manufacturer)
-            readCharacteristic(g, SERVICE_DEVINFO, CHAR_SERIAL)
+            bleLog("SERVICES_CHECK", "devInfo=$hasDevInfo eTube=$hasETube realtime=$hasRealtime")
+
+            if (hasDevInfo && hasETube) {
+                // Full Di2 auth path: read serial → firmware → auth → subscribe
+                emitStatus("authenticating")
+                readCharacteristic(g, SERVICE_DEVINFO, CHAR_SERIAL)
+            } else if (hasRealtime) {
+                // STEPS motor without E-Tube auth — skip auth, subscribe directly
+                bleLog("AUTH_SKIP", "No E-Tube service — subscribing to realtime channels directly")
+                authenticated = true
+                emitStatus("connected")
+                deviceName = g.device?.name ?: connectedAddress ?: "Shimano"
+                onData?.invoke(JSONObject().apply {
+                    put("type", "shimanoConnected")
+                    put("serial", deviceSerial.ifEmpty { connectedAddress ?: "" })
+                    put("firmware", "")
+                    put("name", deviceName)
+                })
+                subscribeToDataChannels(g)
+            } else {
+                bleLog("SERVICES_FAIL", "No usable Shimano services found")
+                disconnect()
+            }
         }
 
         override fun onCharacteristicRead(
