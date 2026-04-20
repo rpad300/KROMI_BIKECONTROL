@@ -214,7 +214,11 @@ class ShimanoProtocol(private val context: Context) {
         Log.i(TAG, "Connecting to ${device.name ?: address}...")
         emitStatus("connecting")
 
-        device.connectGatt(context, true, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        // Use TRANSPORT_AUTO for dual-mode devices (Classic+LE) that Android may classify as Classic
+        val transport = if (device.type == BluetoothDevice.DEVICE_TYPE_CLASSIC || device.type == BluetoothDevice.DEVICE_TYPE_DUAL)
+            BluetoothDevice.TRANSPORT_AUTO else BluetoothDevice.TRANSPORT_LE
+        Log.i(TAG, "Device type=${device.type} → transport=$transport")
+        device.connectGatt(context, true, gattCallback, transport)
     }
 
     fun disconnect() {
@@ -483,15 +487,16 @@ class ShimanoProtocol(private val context: Context) {
         handler.postDelayed({
             if (!authenticated) {
                 Log.w(TAG, "Shimano auth timed out — proceeding without authentication")
-                // Don't set authenticated = true — leave it false
-                // Still try to subscribe, but emit warning status
+                // Mark as authenticated anyway — data channels work without auth on many devices
+                authenticated = true
+                emitStatus("connected")
                 onData?.invoke(JSONObject().apply {
-                    put("type", "shimano_auth")
-                    put("status", "timeout_unauthenticated")
+                    put("type", "shimanoConnected")
                     put("serial", deviceSerial)
                     put("firmware", firmwareVersion)
+                    put("name", deviceName)
                 })
-                subscribeToDataChannels(g)  // Try anyway, device may not require auth
+                subscribeToDataChannels(g)
             }
         }, 3000)
     }

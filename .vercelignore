@@ -1,0 +1,9 @@
+ble-bridge-android
+node_modules
+.git
+.claude
+*.png
+*.apk
+kromi-doc
+claude-code-skills
+claude-code-blueprint
