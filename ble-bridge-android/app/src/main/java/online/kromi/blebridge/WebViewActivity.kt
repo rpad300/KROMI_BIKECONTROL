@@ -74,20 +74,12 @@ class WebViewActivity : AppCompatActivity() {
         root.addView(progressBar)
         setContentView(root)
 
-        // Edge-to-edge: draw behind status bar, handle padding in CSS
+        // FULLSCREEN: hide status bar + nav bar. App handles time/battery in its own UI.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(false)
             window.insetsController?.let { ctrl ->
-                ctrl.show(android.view.WindowInsets.Type.statusBars())
-                ctrl.hide(android.view.WindowInsets.Type.navigationBars())
+                ctrl.hide(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.navigationBars())
                 ctrl.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                ctrl.setSystemBarsAppearance(0, android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
-            }
-            // Force WebView to extend behind status bar by consuming insets
-            root.setOnApplyWindowInsetsListener { view, insets ->
-                // Don't let the root consume the top inset — let content draw behind status bar
-                view.setPadding(0, 0, 0, 0)
-                insets
             }
         } else {
             @Suppress("DEPRECATION")
@@ -95,9 +87,14 @@ class WebViewActivity : AppCompatActivity() {
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
             )
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
 
         Log.i(TAG, "onCreate — setting up WebView")
@@ -443,11 +440,10 @@ class WebViewActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         webView.onResume()
-        // Re-apply: show status bar, hide nav bar
+        // Re-apply fullscreen on resume
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.insetsController?.let { ctrl ->
-                ctrl.show(android.view.WindowInsets.Type.statusBars())
-                ctrl.hide(android.view.WindowInsets.Type.navigationBars())
+                ctrl.hide(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.navigationBars())
                 ctrl.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
         }

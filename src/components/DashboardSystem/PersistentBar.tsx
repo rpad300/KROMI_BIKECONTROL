@@ -21,6 +21,19 @@ export function PersistentBar() {
   const modeRef = useRef<HTMLSpanElement>(null);
   const kromiRef = useRef<HTMLSpanElement>(null);
   const kromiDotRef = useRef<HTMLDivElement>(null);
+  const clockRef = useRef<HTMLSpanElement>(null);
+
+  // Clock tick — update every 30s
+  useEffect(() => {
+    const updateClock = () => {
+      if (clockRef.current) {
+        clockRef.current.textContent = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+      }
+    };
+    updateClock();
+    const id = setInterval(updateClock, 30000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     const update = (s: ReturnType<typeof useBikeStore.getState>) => {
@@ -57,7 +70,11 @@ export function PersistentBar() {
   }, []);
 
   return (
-    <div className="persistent-bar" style={{ height: '32px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', backgroundColor: 'var(--ev-surface-low)', borderBottom: '1px solid var(--ev-outline-subtle)', gap: '8px' }}>
+    <div className="persistent-bar" style={{ height: '32px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px', backgroundColor: 'var(--ev-surface-low)', borderBottom: '1px solid var(--ev-outline-subtle)', gap: '6px' }}>
+      {/* Clock — replaces Android status bar time */}
+      <span ref={clockRef} className="font-mono tabular-nums" style={{ fontSize: '11px', color: 'var(--ev-on-surface-variant)', letterSpacing: '-0.02em' }}>
+        --:--
+      </span>
       {/* HR */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
         <span ref={hrIconRef} className="material-symbols-outlined" style={{ fontSize: '12px', color: 'var(--ev-outline-variant)', fontVariationSettings: "'FILL' 1" }}>favorite</span>
