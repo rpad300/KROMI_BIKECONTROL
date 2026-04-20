@@ -107,6 +107,14 @@ class BLEBridgeService : Service() {
         wsServer = BridgeWebSocketServer(WS_PORT, { command ->
             handleCommand(command)
         }, appVer)
+        wsServer?.onClientConnected = {
+            // Re-emit current Di2 state so late-connecting PWA shows correct status
+            if (shimanoProtocol.isConnected) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    shimanoProtocol.reEmitState()
+                }, 500)
+            }
+        }
         try {
             wsServer?.start()
             Log.i(TAG, "WebSocket server started on port $WS_PORT")

@@ -226,6 +226,27 @@ class ShimanoProtocol(private val context: Context) {
         emitStatus("disconnected")
     }
 
+    /** Re-emit current state for late-connecting PWA clients */
+    fun reEmitState() {
+        if (!isConnected) return
+        onData?.invoke(JSONObject().apply {
+            put("type", "shimanoConnected")
+            put("serial", deviceSerial)
+            put("firmware", firmwareVersion)
+            put("name", deviceName)
+        })
+        // Also re-emit current gear
+        if (currentGear > 0) {
+            onData?.invoke(JSONObject().apply {
+                put("type", "shimanoGear")
+                put("gear", currentGear)
+                put("total", totalGears)
+                put("shifting", isShifting)
+            })
+        }
+        Log.i(TAG, "Re-emitted state: connected, gear=$currentGear/$totalGears")
+    }
+
     // ══════════════════════════════════════════
     // GATT CALLBACK
     // ══════════════════════════════════════════

@@ -10,7 +10,8 @@ import java.net.InetSocketAddress
 class BridgeWebSocketServer(
     port: Int = 8765,
     private val onCommand: (JSONObject) -> Unit,
-    var appVersion: String = "unknown"
+    var appVersion: String = "unknown",
+    var onClientConnected: (() -> Unit)? = null
 ) : WebSocketServer(InetSocketAddress(port)) {
     // NOTE: Binds to 0.0.0.0 intentionally — Android WebView runs in a separate process
     // and may not be able to connect to 127.0.0.1. Security is handled via the
@@ -35,6 +36,8 @@ class BridgeWebSocketServer(
                 .put("package", "online.kromi.blebridge")
                 .toString())
         } catch (_: Exception) {}
+        // Notify service so it can re-emit current state to the new client
+        onClientConnected?.invoke()
     }
 
     override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
