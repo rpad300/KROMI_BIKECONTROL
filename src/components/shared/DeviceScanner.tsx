@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { wsClient, type ScanResultDevice } from '../../services/bluetooth/WebSocketBLEClient';
+import { wsClient, type ScanResultDevice, type BondedDevice } from '../../services/bluetooth/WebSocketBLEClient';
 import { connectDevice, saveDevice, saveSensorDevice, startScan, stopScan } from '../../services/bluetooth/BLEBridge';
 import { identifyDevice, getCategoryGroup } from '../../services/bluetooth/DeviceBrandDetector';
 
@@ -14,6 +14,8 @@ export interface ScanConnectedInfo {
 interface DeviceScannerProps {
   onConnected: (info?: ScanConnectedInfo) => void;
   onCancel: () => void;
+  /** Pre-selected role from ConnectionsPage — overrides auto-detection */
+  pendingRole?: string | null;
 }
 
 /**
@@ -21,14 +23,21 @@ interface DeviceScannerProps {
  * Shows live scan results from the bridge, user taps to connect.
  * Saves selected device MAC for future auto-connect.
  */
-export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
+export function DeviceScanner({ onConnected, onCancel, pendingRole }: DeviceScannerProps) {
   const [devices, setDevices] = useState<ScanResultDevice[]>([]);
+  const [bondedDevices, setBondedDevices] = useState<BondedDevice[]>([]);
   const [scanning, setScanning] = useState(true);
   const [connecting, setConnecting] = useState<string | null>(null);
 
   useEffect(() => {
-    // Start scan
+    // Start scan + request bonded devices
     startScan();
+    wsClient.requestBonded();
+
+    // Listen for bonded list
+    const unsubBonded = wsClient.onBondedList((bonded) => {
+      setBondedDevices(bonded);
+    });
 
     // Listen for results — deduplicate by address, keep strongest RSSI
     const unsubResult = wsClient.onScanResult((device) => {
@@ -52,6 +61,7 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
     });
 
     return () => {
+      unsubBonded();
       unsubResult();
       unsubDone();
       stopScan();
@@ -65,7 +75,16 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
 
     // Route to correct manager based on device identity
     const identity = identifyDevice(device.name, device.tags, device.uuids);
-    const sensorType = device.tags.includes('HR') || identity.category === 'heart_rate' ? 'hr'
+
+    // Use pendingRole if set (user pre-selected the device type)
+    const roleMap: Record<string, string | null> = {
+      di2: 'di2', sram_axs: 'sram', heart_rate: 'hr',
+      power_meter: 'power', cadence: 'cadence',
+      light_front: 'light', light_rear: 'light', radar: 'radar',
+    };
+    const sensorType = (pendingRole && roleMap[pendingRole] !== undefined)
+      ? roleMap[pendingRole]!
+      : device.tags.includes('HR') || identity.category === 'heart_rate' ? 'hr'
       : device.tags.includes('DI2') || (identity.category === 'drivetrain' && identity.brand === 'shimano') ? 'di2'
       : device.tags.includes('SRAM') || (identity.category === 'drivetrain' && identity.brand === 'sram') ? 'sram'
       : (device.tags.includes('POWER') && !device.tags.includes('GIANT')) || identity.category === 'power' ? 'power'
@@ -99,12 +118,58 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
       brandColor: identity.color || '',
     };
     setTimeout(() => onConnected(info), 500);
-  }, [onConnected]);
+  }, [onConnected, pendingRole]);
+
+  const handleSelectBonded = useCallback((device: BondedDevice) => {
+    setConnecting(device.address);
+    const identity = identifyDevice(device.name, [], device.uuids);
+
+    // Use pendingRole if set (user already chose the type), otherwise auto-detect
+    const roleMap: Record<string, string | null> = {
+      di2: 'di2', sram_axs: 'sram', heart_rate: 'hr',
+      power_meter: 'power', cadence: 'cadence',
+      light_front: 'light', light_rear: 'light', radar: 'radar',
+    };
+    const sensorType = (pendingRole && roleMap[pendingRole] !== undefined)
+      ? roleMap[pendingRole]!
+      : identity.category === 'heart_rate' ? 'hr'
+      : (identity.category === 'drivetrain' && identity.brand === 'shimano') ? 'di2'
+      : (identity.category === 'drivetrain' && identity.brand === 'sram') ? 'sram'
+      : identity.category === 'power' ? 'power'
+      : identity.category === 'cadence' ? 'cadence'
+      : identity.category === 'light' ? 'light'
+      : identity.category === 'radar' ? 'radar'
+      : null;
+
+    if (sensorType) {
+      if (sensorType !== 'cadence') {
+        saveSensorDevice(sensorType as 'hr' | 'di2' | 'sram' | 'power' | 'light' | 'radar', { name: device.name, address: device.address });
+      }
+      if (sensorType === 'di2') {
+        wsClient.send({ type: 'shimanoConnect', address: device.address });
+      } else {
+        wsClient.send({ type: 'connectSensor', sensor: sensorType, address: device.address });
+      }
+    } else {
+      saveDevice({ name: device.name, address: device.address });
+      connectDevice(device.address);
+    }
+
+    const info: ScanConnectedInfo = {
+      name: device.name,
+      address: device.address,
+      sensorType,
+      brand: identity.brandLabel || '',
+      brandColor: identity.color || '',
+    };
+    setTimeout(() => onConnected(info), 500);
+  }, [onConnected, pendingRole]);
 
   const handleRescan = useCallback(() => {
     setDevices([]);
     setScanning(true);
     startScan();
+    wsClient.requestBonded();
   }, []);
 
   // Sort: bikes first, then by RSSI (strongest first)
@@ -152,6 +217,27 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
 
       {/* Device list */}
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
+        {/* Bonded devices that aren't in scan results */}
+        {bondedDevices.filter(b => !devices.some(d => d.address === b.address)).length > 0 && (
+          <>
+            <div className="flex items-center gap-2 px-1 py-1.5">
+              <span className="material-symbols-outlined text-sm text-[#6e9bff]">link</span>
+              <span className="text-[11px] font-bold text-[#6e9bff] uppercase tracking-wide">Emparelhados</span>
+            </div>
+            {bondedDevices
+              .filter(b => !devices.some(d => d.address === b.address))
+              .map((device) => (
+                <BondedDeviceRow
+                  key={device.address}
+                  device={device}
+                  connecting={connecting === device.address}
+                  onSelect={() => handleSelectBonded(device)}
+                />
+              ))}
+            <div className="border-t border-[#333] my-2" />
+          </>
+        )}
+
         {sorted.map((device) => (
           <DeviceRow
             key={device.address}
@@ -185,6 +271,53 @@ export function DeviceScanner({ onConnected, onCancel }: DeviceScannerProps) {
         </button>
       </div>
     </div>
+  );
+}
+
+function BondedDeviceRow({ device, connecting, onSelect }: {
+  device: BondedDevice;
+  connecting: boolean;
+  onSelect: () => void;
+}) {
+  const identity = identifyDevice(device.name, [], device.uuids);
+
+  return (
+    <button
+      onClick={onSelect}
+      disabled={connecting}
+      className={`w-full flex items-center gap-3 p-3 rounded-sm active:scale-[0.98] transition-transform
+        bg-[#1a1919] border border-[#6e9bff]/20
+        ${connecting ? 'opacity-60' : ''}
+      `}
+    >
+      <span className="material-symbols-outlined text-2xl" style={{ color: identity.color }}>
+        {identity.icon}
+      </span>
+      <div className="flex-1 text-left">
+        <div className="text-white font-bold text-sm flex items-center gap-1.5">
+          {device.name}
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-[#6e9bff] bg-[#6e9bff]/10">
+            Paired
+          </span>
+          {identity.badge && (
+            <span
+              className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+              style={{ color: identity.color, backgroundColor: `${identity.color}20` }}
+            >
+              {identity.badge}
+            </span>
+          )}
+        </div>
+        <div className="text-[#777575] text-[10px]">{device.address}</div>
+      </div>
+      <div className="text-right">
+        {connecting ? (
+          <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        ) : (
+          <span className="material-symbols-outlined text-lg text-[#6e9bff]">bluetooth_connected</span>
+        )}
+      </div>
+    </button>
   );
 }
 

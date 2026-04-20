@@ -29,6 +29,13 @@ export interface ScanResultDevice {
   tags: string[];
 }
 
+export interface BondedDevice {
+  name: string;
+  address: string;
+  type: number; // 1=Classic, 2=LE, 3=Dual
+  uuids: string;
+}
+
 type ScanListener = (device: ScanResultDevice) => void;
 type ScanDoneListener = () => void;
 
@@ -50,6 +57,9 @@ export class WebSocketBLEClient {
   // Scan event listeners
   private scanListeners: ScanListener[] = [];
   private scanDoneListeners: ScanDoneListener[] = [];
+
+  // Bonded devices listeners
+  private bondedListeners: ((devices: BondedDevice[]) => void)[] = [];
 
   // Periodic range polling
   private rangePollingTimer: ReturnType<typeof setInterval> | null = null;
@@ -219,6 +229,19 @@ export class WebSocketBLEClient {
     }
     this.scanDoneListeners.push(listener);
     return () => { this.scanDoneListeners = this.scanDoneListeners.filter((l) => l !== listener); };
+  }
+
+  // === Bonded devices API ===
+
+  /** Request list of Android bonded (paired) BLE devices */
+  requestBonded(): void {
+    this.send({ type: 'listBonded' });
+  }
+
+  /** Register bonded devices list listener */
+  onBondedList(listener: (devices: BondedDevice[]) => void): () => void {
+    this.bondedListeners.push(listener);
+    return () => { this.bondedListeners = this.bondedListeners.filter((l) => l !== listener); };
   }
 
   // === Range polling (periodic cmd 17 to get updated ranges during ride) ===
@@ -1043,6 +1066,18 @@ export class WebSocketBLEClient {
           console.log('[WSClient] Scan complete');
           this.scanDoneListeners.forEach((l) => l());
           break;
+
+        case 'bondedList': {
+          const devices: BondedDevice[] = (msg.devices || []).map((d: { name?: string; address: string; type?: number; uuids?: string }) => ({
+            name: d.name || 'Unknown',
+            address: d.address,
+            type: d.type ?? 2,
+            uuids: d.uuids ?? '',
+          }));
+          console.log(`[WSClient] Bonded devices: ${devices.length}`, devices.map(d => d.name));
+          this.bondedListeners.forEach((l) => l(devices));
+          break;
+        }
 
         case 'connectFailed':
           console.warn('[WSClient] Connect failed:', msg.reason);

@@ -54,6 +54,20 @@ function roleToCategory(role: DeviceRole): DeviceCategory {
 function connectByRole(role: DeviceRole, address?: string): Promise<void> {
   // If we have an address and are in websocket mode, use the bridge
   if (BLE.bleMode === 'websocket' && address) {
+    // Di2 uses shimanoConnect (Shimano proprietary auth protocol)
+    if (role === 'di2') {
+      import('../../services/bluetooth/WebSocketBLEClient').then(({ wsClient }) => {
+        wsClient.send({ type: 'shimanoConnect', address });
+      });
+      return Promise.resolve();
+    }
+    // SRAM AXS — TODO: dedicated protocol when bridge supports it
+    if (role === 'sram_axs') {
+      import('../../services/bluetooth/WebSocketBLEClient').then(({ wsClient }) => {
+        wsClient.send({ type: 'connectSensor', sensor: 'sram', address });
+      });
+      return Promise.resolve();
+    }
     const sensorMap: Partial<Record<DeviceRole, string>> = {
       heart_rate: 'hr', cadence: 'cadence', power_meter: 'power',
       light_front: 'light', light_rear: 'light',
@@ -66,9 +80,16 @@ function connectByRole(role: DeviceRole, address?: string): Promise<void> {
       });
       return Promise.resolve();
     }
+    // Motor: connect by address via bridge
+    if (role === 'motor') {
+      import('../../services/bluetooth/WebSocketBLEClient').then(({ wsClient }) => {
+        wsClient.send({ type: 'connectDevice', address });
+      });
+      return Promise.resolve();
+    }
   }
 
-  // Role-specific connect functions
+  // Role-specific connect functions (Web BLE fallback)
   switch (role) {
     case 'motor': return BLE.connectBike();
     case 'di2': return BLE.connectDi2();
@@ -158,6 +179,7 @@ export function ConnectionsPage() {
   if (view === 'scanner') {
     return (
       <DeviceScanner
+        pendingRole={pendingRole}
         onConnected={(info?: ScanConnectedInfo) => {
           // Add device to deviceStore when selected from scanner
           if (info) {

@@ -575,7 +575,12 @@ export function autoConnectSensors(): void {
     const saved = (fromBike && fromBike.address) ? fromBike : getSavedSensorDevice(sensor);
     if (saved) {
       console.log(`[BLE Bridge] Auto-connecting ${sensor} for bike "${bikeConfig?.name ?? '?'}": ${saved.name} (${saved.address})`);
-      wsClient.send({ type: 'connectSensor', sensor, address: saved.address });
+      // Di2 uses shimanoConnect (requires Shimano protocol auth, not generic sensor)
+      if (sensor === 'di2') {
+        wsClient.send({ type: 'shimanoConnect', address: saved.address });
+      } else {
+        wsClient.send({ type: 'connectSensor', sensor, address: saved.address });
+      }
     }
   }
 

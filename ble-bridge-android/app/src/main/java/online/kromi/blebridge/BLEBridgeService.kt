@@ -191,6 +191,28 @@ class BLEBridgeService : Service() {
                 wsServer?.broadcastData(done)
             }
 
+            // === List Android bonded (paired) BLE devices ===
+            "listBonded" -> {
+                val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+                val bonded = adapter?.bondedDevices ?: emptySet()
+                val arr = org.json.JSONArray()
+                for (device in bonded) {
+                    val d = JSONObject().apply {
+                        put("name", device.name ?: "Unknown")
+                        put("address", device.address)
+                        put("type", device.type) // 1=Classic, 2=LE, 3=Dual
+                        put("uuids", (device.uuids ?: emptyArray()).joinToString(",") { it.uuid.toString() })
+                    }
+                    arr.put(d)
+                }
+                val msg = JSONObject().apply {
+                    put("type", "bondedList")
+                    put("devices", arr)
+                }
+                wsServer?.broadcastData(msg)
+                Log.i(TAG, "listBonded: ${bonded.size} devices")
+            }
+
             // === Connect to specific device by MAC address (PWA device picker) ===
             "connectDevice" -> {
                 val address = json.optString("address", "")

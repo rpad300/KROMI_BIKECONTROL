@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
-import { bleMode, connectDevice } from '../../services/bluetooth/BLEBridge';
+import { bleMode } from '../../services/bluetooth/BLEBridge';
 import { wsClient } from '../../services/bluetooth/WebSocketBLEClient';
 import { useSettingsStore } from '../../store/settingsStore';
 import { DeviceScanner } from './DeviceScanner';
