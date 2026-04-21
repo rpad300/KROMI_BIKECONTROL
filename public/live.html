@@ -449,6 +449,9 @@ function renderPage(session, points) {
 
   // Emergency contacts
   html += `<div class="emergency-section">`;
+  // Distance from home — how long to reach the rider by car
+  html += `<div id="home-distance-section"></div>`;
+
   html += `<div class="emergency-title">&#9888; Emergencia</div>`;
   html += `<a href="tel:112" class="call-btn call-emergency">&#128222; 112 — Numero Europeu de Emergencia</a>`;
   html += `<div style="margin-top:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#ff716c;margin-bottom:8px">&#128205; Servicos mais proximos do rider</div>`;
@@ -473,9 +476,10 @@ function renderPage(session, points) {
   requestAnimationFrame(() => {
     initMap(points, isActive);
 
-    // Fetch nearby places if we have a position
+    // Fetch nearby places + home distance if we have a position
     if (lastPoint?.lat && lastPoint?.lng) {
       fetchNearbyPlaces(lastPoint.lat, lastPoint.lng);
+      calculateHomeDistance(lastPoint.lat, lastPoint.lng);
     }
   });
 }
@@ -750,6 +754,65 @@ function updateKPIs(session, lastPoint) {
 // ═══════════════════════════════════════════════════════════
 // NEARBY PLACES (Google Places)
 // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// HOME DISTANCE — calculate drive time from rider's home to current position
+// ═══════════════════════════════════════════════════════════
+function calculateHomeDistance(riderLat, riderLng) {
+  if (!window.google?.maps) return;
+  if (!medicalProfile) return;
+
+  const homeCity = medicalProfile.address_city;
+  const homeCountry = medicalProfile.address_country;
+  if (!homeCity) return;
+
+  const container = document.getElementById('home-distance-section');
+  if (!container) return;
+
+  const homeAddress = homeCity + (homeCountry ? ', ' + homeCountry : '');
+  const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(homeAddress)}&destination=${riderLat},${riderLng}&travelmode=driving`;
+
+  const service = new google.maps.DirectionsService();
+  service.route({
+    origin: homeAddress,
+    destination: { lat: riderLat, lng: riderLng },
+    travelMode: google.maps.TravelMode.DRIVING,
+  }, (result, status) => {
+    if (status !== google.maps.DirectionsStatus.OK || !result.routes[0]?.legs[0]) {
+      // Fallback — show just the address
+      container.innerHTML = `
+        <div style="background:#1a1919;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #262626">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:6px">&#127968; Casa do Rider</div>
+          <div style="font-size:13px;color:#adaaaa">${esc(homeAddress)}</div>
+        </div>`;
+      return;
+    }
+
+    const leg = result.routes[0].legs[0];
+    const duration = leg.duration?.text || '--';
+    const distance = leg.distance?.text || '--';
+
+    container.innerHTML = `
+      <div style="background:#1a1919;border-radius:10px;padding:14px;margin-bottom:12px;border:1px solid #262626">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:10px">&#128663; Tempo ate ao Rider (de carro)</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          <div style="text-align:center;flex:1">
+            <div style="font-size:28px;font-weight:900;color:#fbbf24;font-family:monospace">${esc(duration)}</div>
+            <div style="font-size:9px;color:#888;margin-top:2px">TEMPO</div>
+          </div>
+          <div style="width:1px;height:40px;background:#333"></div>
+          <div style="text-align:center;flex:1">
+            <div style="font-size:28px;font-weight:900;color:#adaaaa;font-family:monospace">${esc(distance)}</div>
+            <div style="font-size:9px;color:#888;margin-top:2px">DISTANCIA</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#666;margin-bottom:8px">Desde: ${esc(homeAddress)}</div>
+        <a href="${directionsUrl}" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;background:#262626;border:1px solid #fbbf2444;border-radius:6px;color:#fbbf24;font-size:12px;font-weight:700;text-decoration:none">
+          &#128204; Navegar ate ao Rider
+        </a>
+      </div>`;
+  });
+}
+
 function fetchNearbyPlaces(lat, lng) {
   if (!window.google?.maps?.places) return;
 
