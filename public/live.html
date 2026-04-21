@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0e0e0e">
+<title>KROMI Live Tracking</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0e0e0e; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; min-height: 100dvh; }
+
+  /* Header */
+  .header { background: #131313; padding: 14px 16px; border-bottom: 1px solid #262626; }
+  .header-title { font-size: 11px; font-weight: 900; letter-spacing: 2px; color: #3fff8b; text-transform: uppercase; }
+  .header-rider { font-size: 14px; color: #adaaaa; margin-top: 2px; }
+
+  /* Map */
+  #map-container { width: 100%; height: 55vh; min-height: 280px; background: #111; position: relative; }
+  .map-overlay { position: absolute; top: 10px; right: 10px; z-index: 10; display: flex; flex-direction: column; gap: 6px; }
+
+  /* Live badge */
+  .live-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; background: rgba(255,51,51,0.15); border: 1px solid rgba(255,51,51,0.4); border-radius: 20px; font-size: 11px; font-weight: 800; color: #ff716c; letter-spacing: 1px; }
+  .live-dot { width: 8px; height: 8px; background: #ff3333; border-radius: 50%; animation: pulse-dot 1.5s ease-in-out infinite; }
+  @keyframes pulse-dot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
+
+  .ended-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; background: rgba(251,191,36,0.15); border: 1px solid rgba(251,191,36,0.4); border-radius: 20px; font-size: 11px; font-weight: 800; color: #fbbf24; letter-spacing: 1px; }
+
+  /* Container */
+  .container { padding: 0 12px 12px; max-width: 520px; margin: 0 auto; }
+
+  /* KPI Grid */
+  .kpi-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: #262626; border-radius: 10px; overflow: hidden; margin-top: 12px; }
+  .kpi-cell { background: #1a1919; padding: 10px 8px; position: relative; padding-left: 14px; }
+  .kpi-cell::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; }
+  .kpi-cell.green::before { background: #3fff8b; }
+  .kpi-cell.amber::before { background: #fbbf24; }
+  .kpi-cell.red::before { background: #ff716c; }
+  .kpi-cell.blue::before { background: #6e9bff; }
+  .kpi-cell.purple::before { background: #a78bfa; }
+  .kpi-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #666; margin-bottom: 2px; }
+  .kpi-value { font-size: 20px; font-weight: 900; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; line-height: 1.2; }
+  .kpi-unit { font-size: 10px; font-weight: 500; color: #666; margin-left: 2px; }
+
+  /* Route progress */
+  .route-section { background: #1a1919; border-radius: 10px; padding: 14px; margin-top: 12px; border: 1px solid #262626; }
+  .route-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #3fff8b; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .progress-bar { width: 100%; height: 8px; background: #262626; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #3fff8b, #22c55e); border-radius: 4px; transition: width 0.5s ease; }
+  .route-stats { display: flex; justify-content: space-between; font-size: 12px; color: #adaaaa; }
+  .route-name { font-size: 13px; color: #888; margin-top: 6px; font-style: italic; }
+
+  /* Emergency section */
+  .emergency-section { background: #1a1919; border-radius: 10px; padding: 14px; margin-top: 12px; border: 1px solid #262626; }
+  .emergency-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #ff716c; margin-bottom: 10px; }
+  .call-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; margin-bottom: 8px; text-decoration: none; color: inherit; }
+  .call-emergency { background: #ff3333; color: #fff; font-size: 18px; }
+  .nearby-place { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #1f1f1f; font-size: 13px; }
+  .nearby-place:last-child { border-bottom: none; }
+  .nearby-place .icon { font-size: 16px; }
+  .nearby-place .name { flex: 1; color: #adaaaa; }
+  .nearby-place .dist { color: #888; font-size: 11px; font-weight: 600; }
+
+  /* Footer */
+  .footer-bar { background: #131313; border-top: 1px solid #262626; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; margin-top: 12px; border-radius: 10px; }
+  .last-update { font-size: 11px; color: #666; }
+  .last-update span { color: #adaaaa; font-weight: 600; }
+
+  /* Loading / Error states */
+  .loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 16px; }
+  .spinner { width: 40px; height: 40px; border: 3px solid #262626; border-top-color: #3fff8b; border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error-state { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 12px; text-align: center; padding: 20px; }
+  .error-state .icon { font-size: 48px; }
+  .error-state .title { font-size: 18px; font-weight: 700; }
+  .error-state .msg { font-size: 13px; color: #888; max-width: 300px; }
+
+  /* Session ended overlay */
+  .session-ended-banner { background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3); border-radius: 10px; padding: 14px; margin-top: 12px; text-align: center; }
+  .session-ended-banner .title { font-size: 14px; font-weight: 800; color: #fbbf24; margin-bottom: 4px; }
+  .session-ended-banner .sub { font-size: 12px; color: #888; }
+
+  /* Pulsing marker CSS for map */
+  .pulse-marker { position: relative; }
+  .pulse-marker::after { content: ''; position: absolute; width: 30px; height: 30px; border-radius: 50%; background: rgba(63,255,139,0.3); top: 50%; left: 50%; transform: translate(-50%,-50%); animation: marker-pulse 2s ease-out infinite; }
+  @keyframes marker-pulse { 0% { transform: translate(-50%,-50%) scale(0.5); opacity: 1; } 100% { transform: translate(-50%,-50%) scale(2.5); opacity: 0; } }
+
+  /* Mode badge */
+  .mode-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; }
+  .mode-eco { background: rgba(34,197,94,0.2); color: #22c55e; }
+  .mode-tour { background: rgba(59,130,246,0.2); color: #3b82f6; }
+  .mode-active { background: rgba(251,191,36,0.2); color: #fbbf24; }
+  .mode-sport { background: rgba(239,68,68,0.2); color: #ef4444; }
+  .mode-kromi { background: rgba(63,255,139,0.2); color: #3fff8b; }
+  .mode-smart { background: rgba(167,139,250,0.2); color: #a78bfa; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="loading">
+    <div class="spinner"></div>
+    <div style="color:#888;font-size:13px">A carregar tracking...</div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════
+const SB_URL = 'https://ctsuupvmmyjlrtjnxagv.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0c3V1cHZtbXlqbHJ0am54YWd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Njg3MTgsImV4cCI6MjA5MDU0NDcxOH0.VgpKrjxYirb9Gc7OZX-aHGJmGJ3QdDM5I7iXaWDmBXQ';
+const MAPS_KEY = 'AIzaSyAeeHw69Wzy3OQuN6SbAhXjlhSxBlJPfa0';
+
+const sbHeaders = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` };
+
+const MODE_LABELS = { 1: 'ECO', 2: 'TOUR', 3: 'ACTIVE', 4: 'SPORT', 5: 'KROMI', 6: 'SMART' };
+const MODE_CLASSES = { 1: 'mode-eco', 2: 'mode-tour', 3: 'mode-active', 4: 'mode-sport', 5: 'mode-kromi', 6: 'mode-smart' };
+
+// State
+let map = null;
+let trailPolyline = null;
+let positionMarker = null;
+let positionCircle = null;
+let lastPointId = null;
+let sessionData = null;
+let pollInterval = null;
+
+// ═══════════════════════════════════════════════════════════
+// MAIN
+// ═══════════════════════════════════════════════════════════
+async function init() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('t');
+
+  if (!token) {
+    showError('Link invalido', 'Este link nao contem um token de tracking valido.');
+    return;
+  }
+
+  try {
+    // 1. Fetch tracking session
+    const sessionRes = await fetch(
+      `${SB_URL}/rest/v1/tracking_sessions?token=eq.${encodeURIComponent(token)}&select=*&limit=1`,
+      { headers: sbHeaders }
+    );
+    const sessions = await sessionRes.json();
+
+    if (!Array.isArray(sessions) || !sessions.length) {
+      showError('Sessao nao encontrada', 'Esta sessao de tracking nao existe ou ja expirou.');
+      return;
+    }
+
+    sessionData = sessions[0];
+
+    // 2. Fetch tracking points (breadcrumb trail)
+    const pointsRes = await fetch(
+      `${SB_URL}/rest/v1/tracking_points?session_id=eq.${sessionData.id}&order=recorded_at.asc&limit=10000`,
+      { headers: sbHeaders }
+    );
+    const points = await pointsRes.json();
+    const trackPoints = Array.isArray(points) ? points : [];
+
+    // 3. Load Google Maps
+    await loadGoogleMaps();
+
+    // 4. Render
+    renderPage(sessionData, trackPoints);
+
+    // 5. Start polling if active
+    if (sessionData.is_active) {
+      pollInterval = setInterval(() => pollUpdates(sessionData), 10000);
+    }
+
+  } catch (err) {
+    console.error('Init error:', err);
+    showError('Erro de ligacao', 'Nao foi possivel carregar os dados de tracking. Tente novamente.');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════
+function renderPage(session, points) {
+  const isActive = session.is_active;
+  const riderName = session.rider_name || 'Ciclista';
+  const bikeName = session.bike_name || '';
+  const lastPoint = points.length ? points[points.length - 1] : null;
+
+  // Extract KPIs from session or last point
+  const speed = lastPoint?.speed_kmh ?? session.current_speed_kmh ?? null;
+  const avgSpeed = session.avg_speed_kmh ?? null;
+  const distance = session.distance_km ?? lastPoint?.distance_km ?? null;
+  const battery = lastPoint?.battery_pct ?? session.battery_pct ?? null;
+  const range = session.range_km ?? null;
+  const hr = lastPoint?.hr_bpm ?? session.hr_bpm ?? null;
+  const power = lastPoint?.power_w ?? session.power_w ?? null;
+  const cadence = lastPoint?.cadence_rpm ?? session.cadence_rpm ?? null;
+  const gear = session.gear_display ?? (lastPoint?.gear ? lastPoint.gear : null);
+  const elevation = lastPoint?.altitude_m ?? session.altitude_m ?? null;
+  const eleGain = session.elevation_gain_m ?? null;
+  const mode = lastPoint?.assist_mode ?? session.assist_mode ?? null;
+
+  // Route progress
+  const routeName = session.route_name ?? null;
+  const routeTotalKm = session.route_total_km ?? null;
+  const routeProgressPct = (routeTotalKm && distance) ? Math.min(100, (distance / routeTotalKm) * 100) : null;
+  const routeEta = session.route_eta_min ?? null;
+
+  let html = '';
+
+  // Header
+  html += `<div class="header">`;
+  html += `<div class="header-title">KROMI LIVE TRACKING</div>`;
+  html += `<div class="header-rider">${esc(riderName)}${bikeName ? ' &middot; ' + esc(bikeName) : ''}</div>`;
+  html += `</div>`;
+
+  // Map
+  html += `<div id="map-container">`;
+  html += `<div class="map-overlay">`;
+  if (isActive) {
+    html += `<div class="live-badge"><span class="live-dot"></span>LIVE</div>`;
+  } else {
+    html += `<div class="ended-badge">TERMINADA</div>`;
+  }
+  html += `</div>`;
+  html += `</div>`;
+
+  html += `<div class="container">`;
+
+  // Session ended banner
+  if (!isActive) {
+    const endedAt = session.ended_at ? new Date(session.ended_at) : null;
+    html += `<div class="session-ended-banner">`;
+    html += `<div class="title">Sessao Terminada</div>`;
+    html += `<div class="sub">${endedAt ? 'Terminada a ' + endedAt.toLocaleString('pt-PT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Dados finais da sessao'}</div>`;
+    html += `</div>`;
+  }
+
+  // KPI Grid
+  html += `<div class="kpi-grid" id="kpi-grid">`;
+  html += kpiCell('Velocidade', formatNum(speed, 1), 'km/h', 'green');
+  html += kpiCell('Vel. Media', formatNum(avgSpeed, 1), 'km/h', 'green');
+  html += kpiCell('Distancia', formatNum(distance, 1), 'km', 'green');
+  html += kpiCell('Bateria', battery != null ? battery + '' : '--', '%', batteryColor(battery));
+  html += kpiCell('Autonomia', formatNum(range, 0), 'km', 'amber');
+  html += kpiCell('FC', hr != null ? hr + '' : '--', 'bpm', 'red');
+  html += kpiCell('Potencia', formatNum(power, 0), 'W', 'blue');
+  html += kpiCell('Cadencia', formatNum(cadence, 0), 'rpm', 'blue');
+  html += kpiCell('Gear', gear || '--', '', 'purple');
+  html += kpiCell('Elevacao', formatNum(elevation, 0), 'm', 'green');
+  html += kpiCell('Desnivel', eleGain != null ? '\u25B2' + Math.round(eleGain) : '--', 'm', 'green');
+  html += kpiCellMode('Modo', mode);
+  html += `</div>`;
+
+  // Route progress (only if route data exists)
+  if (routeName || routeTotalKm) {
+    const pct = routeProgressPct ?? 0;
+    const done = distance ?? 0;
+    const total = routeTotalKm ?? 0;
+    const remaining = Math.max(0, total - done);
+    const etaStr = routeEta != null ? formatEta(routeEta) : '--';
+
+    html += `<div class="route-section" id="route-section">`;
+    html += `<div class="route-title">&#9873; Progresso da Rota</div>`;
+    html += `<div class="progress-bar"><div class="progress-fill" style="width:${pct.toFixed(1)}%"></div></div>`;
+    html += `<div class="route-stats">`;
+    html += `<span>${done.toFixed(1)}/${total.toFixed(1)} km</span>`;
+    html += `<span style="font-weight:700;color:#3fff8b">${Math.round(pct)}%</span>`;
+    html += `<span>ETA ${etaStr}</span>`;
+    html += `</div>`;
+    if (routeName) html += `<div class="route-name">${esc(routeName)}</div>`;
+    html += `</div>`;
+  }
+
+  // Emergency contacts
+  html += `<div class="emergency-section">`;
+  html += `<div class="emergency-title">&#9888; Contactos de Emergencia</div>`;
+  html += `<a href="tel:112" class="call-btn call-emergency">&#128222; 112 — Emergencia</a>`;
+  html += `<div id="nearby-places" style="margin-top:8px"></div>`;
+  html += `</div>`;
+
+  // Footer
+  html += `<div class="footer-bar" id="footer-bar">`;
+  html += `<div class="last-update">Ultima atualizacao: <span id="last-update-time">${formatTime(new Date())}</span></div>`;
+  if (isActive) {
+    html += `<div class="live-badge" style="font-size:9px;padding:3px 8px"><span class="live-dot" style="width:6px;height:6px"></span>LIVE</div>`;
+  }
+  html += `</div>`;
+
+  html += `</div>`; // container
+
+  document.getElementById('app').innerHTML = html;
+
+  // Init map after DOM is ready
+  requestAnimationFrame(() => {
+    initMap(points, isActive);
+
+    // Fetch nearby places if we have a position
+    if (lastPoint?.lat && lastPoint?.lng) {
+      fetchNearbyPlaces(lastPoint.lat, lastPoint.lng);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// KPI CELLS
+// ═══════════════════════════════════════════════════════════
+function kpiCell(label, value, unit, colorClass) {
+  return `<div class="kpi-cell ${colorClass}">
+    <div class="kpi-label">${label}</div>
+    <div class="kpi-value">${value}<span class="kpi-unit">${unit}</span></div>
+  </div>`;
+}
+
+function kpiCellMode(label, mode) {
+  const modeLabel = mode != null ? (MODE_LABELS[mode] || mode) : '--';
+  const modeClass = mode != null ? (MODE_CLASSES[mode] || '') : '';
+  return `<div class="kpi-cell green">
+    <div class="kpi-label">${label}</div>
+    <div class="kpi-value"><span class="mode-badge ${modeClass}">${modeLabel}</span></div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAP
+// ═══════════════════════════════════════════════════════════
+function loadGoogleMaps() {
+  return new Promise((resolve, reject) => {
+    if (window.google?.maps) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=geometry,places`;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Failed to load Google Maps'));
+    document.head.appendChild(script);
+  });
+}
+
+function initMap(points, isActive) {
+  const container = document.getElementById('map-container');
+  if (!container || !window.google?.maps) return;
+
+  const pts = points.filter(p => p.lat && p.lng);
+
+  // Default center (Porto, Portugal) if no points
+  const defaultCenter = { lat: 41.1579, lng: -8.6291 };
+  const center = pts.length ? { lat: pts[pts.length - 1].lat, lng: pts[pts.length - 1].lng } : defaultCenter;
+
+  map = new google.maps.Map(container, {
+    center: center,
+    zoom: pts.length ? 14 : 10,
+    mapTypeId: 'hybrid',
+    disableDefaultUI: true,
+    zoomControl: true,
+    gestureHandling: 'greedy',
+    styles: [],
+  });
+
+  if (!pts.length) return;
+
+  // Breadcrumb trail polyline
+  const path = pts.map(p => ({ lat: p.lat, lng: p.lng }));
+  trailPolyline = new google.maps.Polyline({
+    path: path,
+    strokeColor: '#3fff8b',
+    strokeOpacity: 0.9,
+    strokeWeight: 4,
+    map: map,
+  });
+
+  // Start marker
+  new google.maps.Marker({
+    position: path[0],
+    map: map,
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 6,
+      fillColor: '#ffffff',
+      fillOpacity: 1,
+      strokeColor: '#3fff8b',
+      strokeWeight: 2,
+    },
+    title: 'Inicio',
+  });
+
+  // Current position marker (pulsing)
+  const lastPos = path[path.length - 1];
+  const heading = pts.length > 1 ? computeHeading(pts[pts.length - 2], pts[pts.length - 1]) : 0;
+
+  positionMarker = new google.maps.Marker({
+    position: lastPos,
+    map: map,
+    icon: {
+      path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+      scale: 6,
+      fillColor: isActive ? '#3fff8b' : '#fbbf24',
+      fillOpacity: 1,
+      strokeColor: '#fff',
+      strokeWeight: 2,
+      rotation: heading,
+    },
+    title: isActive ? 'Posicao actual' : 'Ultima posicao',
+    zIndex: 100,
+  });
+
+  // Accuracy/pulse circle
+  positionCircle = new google.maps.Circle({
+    center: lastPos,
+    radius: 25,
+    map: map,
+    fillColor: isActive ? '#3fff8b' : '#fbbf24',
+    fillOpacity: 0.15,
+    strokeColor: isActive ? '#3fff8b' : '#fbbf24',
+    strokeOpacity: 0.4,
+    strokeWeight: 1,
+  });
+
+  // Fit bounds
+  const bounds = new google.maps.LatLngBounds();
+  pts.forEach(p => bounds.extend({ lat: p.lat, lng: p.lng }));
+  map.fitBounds(bounds, 40);
+
+  // Store last point id for incremental fetch
+  if (pts.length) {
+    lastPointId = points[points.length - 1].id;
+  }
+}
+
+function computeHeading(p1, p2) {
+  if (!p1 || !p2) return 0;
+  const dLng = (p2.lng - p1.lng) * Math.PI / 180;
+  const lat1 = p1.lat * Math.PI / 180;
+  const lat2 = p2.lat * Math.PI / 180;
+  const x = Math.sin(dLng) * Math.cos(lat2);
+  const y = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+}
+
+// ═══════════════════════════════════════════════════════════
+// POLLING
+// ═══════════════════════════════════════════════════════════
+async function pollUpdates(session) {
+  try {
+    // Re-fetch session data
+    const sessionRes = await fetch(
+      `${SB_URL}/rest/v1/tracking_sessions?id=eq.${session.id}&select=*&limit=1`,
+      { headers: sbHeaders }
+    );
+    const sessions = await sessionRes.json();
+    if (!Array.isArray(sessions) || !sessions.length) return;
+
+    const updatedSession = sessions[0];
+    sessionData = updatedSession;
+
+    // Check if session ended
+    if (!updatedSession.is_active) {
+      clearInterval(pollInterval);
+    }
+
+    // Fetch new tracking points
+    let newPointsQuery = `${SB_URL}/rest/v1/tracking_points?session_id=eq.${session.id}&order=recorded_at.asc`;
+    if (lastPointId) {
+      newPointsQuery += `&id=gt.${lastPointId}`;
+    }
+    newPointsQuery += `&limit=500`;
+
+    const pointsRes = await fetch(newPointsQuery, { headers: sbHeaders });
+    const newPoints = await pointsRes.json();
+    const pts = Array.isArray(newPoints) ? newPoints : [];
+
+    // Update map with new points
+    if (pts.length && trailPolyline && positionMarker && map) {
+      const path = trailPolyline.getPath();
+      pts.forEach(p => {
+        if (p.lat && p.lng) {
+          path.push(new google.maps.LatLng(p.lat, p.lng));
+        }
+      });
+
+      const lastPt = pts.filter(p => p.lat && p.lng).pop();
+      if (lastPt) {
+        const pos = { lat: lastPt.lat, lng: lastPt.lng };
+        positionMarker.setPosition(pos);
+        if (positionCircle) positionCircle.setCenter(pos);
+
+        // Update heading arrow
+        if (pts.length > 1) {
+          const prev = pts[pts.length - 2];
+          if (prev?.lat && prev?.lng) {
+            const heading = computeHeading(prev, lastPt);
+            const icon = positionMarker.getIcon();
+            icon.rotation = heading;
+            positionMarker.setIcon(icon);
+          }
+        }
+
+        // Smooth pan to new position
+        map.panTo(pos);
+      }
+
+      lastPointId = pts[pts.length - 1].id;
+    }
+
+    // Update KPIs
+    updateKPIs(updatedSession, pts.length ? pts[pts.length - 1] : null);
+
+    // Update timestamp
+    const timeEl = document.getElementById('last-update-time');
+    if (timeEl) timeEl.textContent = formatTime(new Date());
+
+    // If session ended, re-render to show ended state
+    if (!updatedSession.is_active) {
+      // Fetch all points for final render
+      const allRes = await fetch(
+        `${SB_URL}/rest/v1/tracking_points?session_id=eq.${session.id}&order=recorded_at.asc&limit=10000`,
+        { headers: sbHeaders }
+      );
+      const allPoints = await allRes.json();
+      renderPage(updatedSession, Array.isArray(allPoints) ? allPoints : []);
+    }
+
+  } catch (err) {
+    console.error('Poll error:', err);
+  }
+}
+
+function updateKPIs(session, lastPoint) {
+  const grid = document.getElementById('kpi-grid');
+  if (!grid) return;
+
+  const speed = lastPoint?.speed_kmh ?? session.current_speed_kmh ?? null;
+  const avgSpeed = session.avg_speed_kmh ?? null;
+  const distance = session.distance_km ?? lastPoint?.distance_km ?? null;
+  const battery = lastPoint?.battery_pct ?? session.battery_pct ?? null;
+  const range = session.range_km ?? null;
+  const hr = lastPoint?.hr_bpm ?? session.hr_bpm ?? null;
+  const power = lastPoint?.power_w ?? session.power_w ?? null;
+  const cadence = lastPoint?.cadence_rpm ?? session.cadence_rpm ?? null;
+  const gear = session.gear_display ?? (lastPoint?.gear ? lastPoint.gear : null);
+  const elevation = lastPoint?.altitude_m ?? session.altitude_m ?? null;
+  const eleGain = session.elevation_gain_m ?? null;
+  const mode = lastPoint?.assist_mode ?? session.assist_mode ?? null;
+
+  let html = '';
+  html += kpiCell('Velocidade', formatNum(speed, 1), 'km/h', 'green');
+  html += kpiCell('Vel. Media', formatNum(avgSpeed, 1), 'km/h', 'green');
+  html += kpiCell('Distancia', formatNum(distance, 1), 'km', 'green');
+  html += kpiCell('Bateria', battery != null ? battery + '' : '--', '%', batteryColor(battery));
+  html += kpiCell('Autonomia', formatNum(range, 0), 'km', 'amber');
+  html += kpiCell('FC', hr != null ? hr + '' : '--', 'bpm', 'red');
+  html += kpiCell('Potencia', formatNum(power, 0), 'W', 'blue');
+  html += kpiCell('Cadencia', formatNum(cadence, 0), 'rpm', 'blue');
+  html += kpiCell('Gear', gear || '--', '', 'purple');
+  html += kpiCell('Elevacao', formatNum(elevation, 0), 'm', 'green');
+  html += kpiCell('Desnivel', eleGain != null ? '\u25B2' + Math.round(eleGain) : '--', 'm', 'green');
+  html += kpiCellMode('Modo', mode);
+  grid.innerHTML = html;
+
+  // Update route progress if present
+  const routeSection = document.getElementById('route-section');
+  if (routeSection && session.route_total_km && distance != null) {
+    const pct = Math.min(100, (distance / session.route_total_km) * 100);
+    const fill = routeSection.querySelector('.progress-fill');
+    if (fill) fill.style.width = pct.toFixed(1) + '%';
+    const stats = routeSection.querySelector('.route-stats');
+    if (stats) {
+      const etaStr = session.route_eta_min != null ? formatEta(session.route_eta_min) : '--';
+      stats.innerHTML = `<span>${distance.toFixed(1)}/${session.route_total_km.toFixed(1)} km</span><span style="font-weight:700;color:#3fff8b">${Math.round(pct)}%</span><span>ETA ${etaStr}</span>`;
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// NEARBY PLACES (Google Places)
+// ═══════════════════════════════════════════════════════════
+function fetchNearbyPlaces(lat, lng) {
+  if (!window.google?.maps?.places) return;
+
+  const container = document.getElementById('nearby-places');
+  if (!container) return;
+
+  const service = new google.maps.places.PlacesService(map);
+  const location = new google.maps.LatLng(lat, lng);
+
+  let allResults = [];
+  let completed = 0;
+
+  const types = ['hospital', 'police'];
+  types.forEach(type => {
+    service.nearbySearch({
+      location: location,
+      rankBy: google.maps.places.RankBy.DISTANCE,
+      type: type,
+    }, (results, status) => {
+      completed++;
+      if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+        // Take top 2 of each type
+        results.slice(0, 2).forEach(r => {
+          const dist = google.maps.geometry.spherical.computeDistanceBetween(
+            location,
+            r.geometry.location
+          );
+          allResults.push({
+            name: r.name,
+            type: type,
+            distance: dist,
+            icon: type === 'hospital' ? '\uD83C\uDFE5' : '\uD83D\uDE93',
+          });
+        });
+      }
+
+      if (completed === types.length) {
+        allResults.sort((a, b) => a.distance - b.distance);
+        let html = '';
+        allResults.forEach(r => {
+          const distStr = r.distance < 1000
+            ? Math.round(r.distance) + 'm'
+            : (r.distance / 1000).toFixed(1) + 'km';
+          html += `<div class="nearby-place">
+            <span class="icon">${r.icon}</span>
+            <span class="name">${esc(r.name)}</span>
+            <span class="dist">${distStr}</span>
+          </div>`;
+        });
+        container.innerHTML = html;
+      }
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════
+function formatNum(val, decimals) {
+  if (val == null || val === '') return '--';
+  return Number(val).toFixed(decimals);
+}
+
+function formatTime(date) {
+  return date.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function formatEta(minutes) {
+  if (minutes == null) return '--';
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}` : `${m}min`;
+}
+
+function batteryColor(pct) {
+  if (pct == null) return 'amber';
+  if (pct <= 15) return 'red';
+  if (pct <= 30) return 'amber';
+  return 'green';
+}
+
+function esc(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = String(str);
+  return div.innerHTML;
+}
+
+function showError(title, msg) {
+  document.getElementById('app').innerHTML = `
+    <div class="error-state">
+      <div class="icon">&#128270;</div>
+      <div class="title">${esc(title)}</div>
+      <div class="msg">${esc(msg)}</div>
+      <div style="margin-top:20px;font-size:11px;color:#494847">KROMI BikeControl</div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+init();
+</script>
+</body>
+</html>
