@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0e0e0e">
+<meta property="og:title" content="KROMI Live Tracking">
+<meta property="og:description" content="Acompanhe este ciclista em tempo real — posição, velocidade, bateria e dados da ride.">
+<meta property="og:image" content="https://www.kromi.online/pwa-512x512.png">
+<meta property="og:url" content="https://www.kromi.online/live.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
 <title>KROMI Live Tracking</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -190,6 +196,10 @@ let lastPointId = null;
 let sessionData = null;
 let pollInterval = null;
 let medicalProfile = null;
+let lastMovingTs = Date.now();
+let wasActive = false;
+let weatherLastFetch = 0;
+let allTrackPoints = [];
 
 // ═══════════════════════════════════════════════════════════
 // MAIN
@@ -258,7 +268,10 @@ async function init() {
     // 5. Render
     renderPage(sessionData, trackPoints);
 
-    // 6. Start polling if active
+    // 6. Track initial active state for sound notification
+    wasActive = sessionData.is_active;
+
+    // 7. Start polling if active
     if (sessionData.is_active) {
       pollInterval = setInterval(() => pollUpdates(sessionData), 10000);
     }
@@ -338,6 +351,11 @@ function renderPage(session, points) {
     html += `</div>`;
   }
 
+  // Inactivity alert (only when session is active)
+  if (isActive) {
+    html += `<div id="inactivity-alert"></div>`;
+  }
+
   // KPI Grid
   html += `<div class="kpi-grid" id="kpi-grid">`;
   html += kpiCell('Velocidade', formatNum(speed, 1), 'km/h', 'green');
@@ -353,6 +371,15 @@ function renderPage(session, points) {
   html += kpiCell('Desnivel', eleGain != null ? '\u25B2' + Math.round(eleGain) : '--', 'm', 'green');
   html += kpiCellMode('Modo', mode);
   html += `</div>`;
+
+  // Store tracking points for sparklines
+  allTrackPoints = points;
+
+  // Sparklines (Speed + HR history)
+  html += renderSparklines(points);
+
+  // Weather section
+  html += `<div id="weather-section"></div>`;
 
   // Route progress (only if route data exists)
   if (routeName || routeTotalKm) {
@@ -431,6 +458,11 @@ function renderPage(session, points) {
     html += `</div>`;
   }
 
+  // ETA to home (only in exploration mode — no active route)
+  if (!routeName) {
+    html += `<div id="eta-home-section"></div>`;
+  }
+
   // Medical profile section (fallback to session data if no emergency_profiles)
   if (medicalProfile) {
     html += renderMedicalSection(medicalProfile);
@@ -480,6 +512,10 @@ function renderPage(session, points) {
     if (lastPoint?.lat && lastPoint?.lng) {
       fetchNearbyPlaces(lastPoint.lat, lastPoint.lng);
       calculateHomeDistance(lastPoint.lat, lastPoint.lng);
+      // ETA to home (cycling) — only in exploration mode
+      if (!session.route_name) calculateETAToHome(lastPoint.lat, lastPoint.lng);
+      // Weather at rider location
+      fetchRiderWeather(lastPoint.lat, lastPoint.lng);
     }
   });
 }
@@ -682,8 +718,40 @@ async function pollUpdates(session) {
       lastPointId = pts[pts.length - 1].id;
     }
 
+    // Sound notification when rider starts moving
+    if (updatedSession.is_active && !wasActive) {
+      playNotificationPing();
+    }
+    wasActive = updatedSession.is_active;
+
     // Update KPIs
     updateKPIs(updatedSession, pts.length ? pts[pts.length - 1] : null);
+
+    // Inactivity alert
+    const speed = updatedSession.speed_kmh || updatedSession.current_speed_kmh || 0;
+    if (speed > 1) lastMovingTs = Date.now();
+    const stoppedMin = Math.round((Date.now() - lastMovingTs) / 60000);
+
+    const inactEl = document.getElementById('inactivity-alert');
+    if (inactEl) {
+      if (stoppedMin >= 15) {
+        inactEl.innerHTML = `<div style="background:rgba(255,51,51,0.12);border:1px solid rgba(255,51,51,0.3);border-radius:8px;padding:10px;text-align:center;margin-bottom:12px">
+          <span style="font-size:14px;font-weight:800;color:#ff716c">&#9888; Sem movimento ha ${stoppedMin} min</span>
+        </div>`;
+      } else if (stoppedMin >= 5) {
+        inactEl.innerHTML = `<div style="background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);border-radius:8px;padding:10px;text-align:center;margin-bottom:12px">
+          <span style="font-size:14px;font-weight:800;color:#fbbf24">&#9208; Parado ha ${stoppedMin} min</span>
+        </div>`;
+      } else {
+        inactEl.innerHTML = '';
+      }
+    }
+
+    // Refresh weather every 5 minutes
+    const lastPt = pts.filter(p => p.lat && p.lng).pop();
+    if (lastPt && (Date.now() - weatherLastFetch) > 300000) {
+      fetchRiderWeather(lastPt.lat, lastPt.lng);
+    }
 
     // Update timestamp
     const timeEl = document.getElementById('last-update-time');
@@ -1063,6 +1131,140 @@ function showNoSession(profile) {
   }
   html += `</div>`;
   document.getElementById('app').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════
+// ETA TO HOME (bicycling mode — rider→home)
+// ═══════════════════════════════════════════════════════════
+function calculateETAToHome(riderLat, riderLng) {
+  if (!window.google?.maps || !medicalProfile?.address_city) return;
+  const container = document.getElementById('eta-home-section');
+  if (!container) return;
+
+  const homeAddress = medicalProfile.address_city + (medicalProfile.address_country ? ', ' + medicalProfile.address_country : '');
+
+  const service = new google.maps.DirectionsService();
+  service.route({
+    origin: { lat: riderLat, lng: riderLng },
+    destination: homeAddress,
+    travelMode: google.maps.TravelMode.BICYCLING,
+  }, (result, status) => {
+    if (status !== 'OK' || !result.routes[0]?.legs[0]) return;
+    const leg = result.routes[0].legs[0];
+    container.innerHTML = `
+      <div style="background:#1a1919;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #262626;border-left:3px solid #3fff8b">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#3fff8b;margin-bottom:8px">&#127968; ETA a Casa (bicicleta)</div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="text-align:center;flex:1">
+            <div style="font-size:24px;font-weight:900;color:#3fff8b;font-family:monospace">${leg.duration?.text || '--'}</div>
+            <div style="font-size:8px;color:#888">TEMPO</div>
+          </div>
+          <div style="width:1px;height:30px;background:#333"></div>
+          <div style="text-align:center;flex:1">
+            <div style="font-size:24px;font-weight:900;color:#adaaaa;font-family:monospace">${leg.distance?.text || '--'}</div>
+            <div style="font-size:8px;color:#888">DISTANCIA</div>
+          </div>
+        </div>
+      </div>`;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// SPARKLINES (Speed + HR history)
+// ═══════════════════════════════════════════════════════════
+function renderSparklines(points) {
+  if (!points || points.length < 3) return '';
+
+  const w = 460, h = 50;
+  const speeds = points.map(p => p.speed_kmh || 0);
+  const hrs = points.map(p => p.heart_rate || p.hr_bpm || 0);
+  const maxSpd = Math.max(...speeds, 1);
+  const maxHr = Math.max(...hrs, 1);
+
+  let spdPath = '', hrPath = '';
+  points.forEach((p, i) => {
+    const x = (i / (points.length - 1)) * w;
+    const ySpd = h - (speeds[i] / maxSpd) * h;
+    const yHr = h - (hrs[i] / maxHr) * h;
+    spdPath += (i === 0 ? 'M' : 'L') + ` ${x.toFixed(1)} ${ySpd.toFixed(1)}`;
+    if (hrs[i] > 0) hrPath += (i === 0 || (i > 0 && hrs[i-1] === 0) ? 'M' : 'L') + ` ${x.toFixed(1)} ${yHr.toFixed(1)}`;
+  });
+
+  let html = `<div class="route-section">`;
+  html += `<div class="route-title">&#128200; Historico da Sessao</div>`;
+  html += `<div style="position:relative;background:#111;border-radius:6px;padding:6px">`;
+  html += `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">`;
+  html += `<path d="${spdPath}" stroke="#3fff8b" stroke-width="1.5" fill="none" opacity="0.8"/>`;
+  if (hrPath) html += `<path d="${hrPath}" stroke="#ff716c" stroke-width="1.5" fill="none" opacity="0.6"/>`;
+  html += `</svg>`;
+  html += `<div style="position:absolute;top:3px;right:8px;display:flex;gap:8px;font-size:8px">`;
+  html += `<span style="color:#3fff8b">&#9679; Vel. (max ${Math.round(maxSpd)})</span>`;
+  if (maxHr > 0) html += `<span style="color:#ff716c">&#9679; FC (max ${Math.round(maxHr)})</span>`;
+  html += `</div></div></div>`;
+  return html;
+}
+
+// ═══════════════════════════════════════════════════════════
+// WEATHER (Open-Meteo, free, no API key)
+// ═══════════════════════════════════════════════════════════
+async function fetchRiderWeather(lat, lng) {
+  const container = document.getElementById('weather-section');
+  if (!container) return;
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&current=temperature_2m,windspeed_10m,precipitation,weathercode`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const cur = data.current;
+    if (!cur) return;
+
+    const temp = cur.temperature_2m;
+    const wind = cur.windspeed_10m;
+    const precip = cur.precipitation;
+    const code = cur.weathercode;
+
+    const weatherEmoji = code <= 3 ? '&#9728;&#65039;' : code <= 48 ? '&#127787;&#65039;' : code <= 67 ? '&#127783;&#65039;' : code <= 77 ? '&#10052;&#65039;' : '&#9928;&#65039;';
+    const weatherText = code <= 3 ? 'Limpo' : code <= 48 ? 'Nublado' : code <= 67 ? 'Chuva' : code <= 77 ? 'Neve' : 'Trovoada';
+
+    container.innerHTML = `
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <div style="flex:1;background:#1a1919;border-radius:8px;padding:8px 10px;text-align:center;border:1px solid #262626">
+          <div style="font-size:20px">${weatherEmoji}</div>
+          <div style="font-size:10px;color:#888">${weatherText}</div>
+        </div>
+        <div style="flex:1;background:#1a1919;border-radius:8px;padding:8px 10px;text-align:center;border:1px solid #262626">
+          <div style="font-size:18px;font-weight:900;color:#fbbf24">${temp}&deg;</div>
+          <div style="font-size:10px;color:#888">Temp</div>
+        </div>
+        <div style="flex:1;background:#1a1919;border-radius:8px;padding:8px 10px;text-align:center;border:1px solid #262626">
+          <div style="font-size:18px;font-weight:900;color:#6e9bff">${wind}<span style="font-size:10px">km/h</span></div>
+          <div style="font-size:10px;color:#888">Vento</div>
+        </div>
+        ${precip > 0 ? `<div style="flex:1;background:#1a1919;border-radius:8px;padding:8px 10px;text-align:center;border:1px solid #262626">
+          <div style="font-size:18px;font-weight:900;color:#ff716c">${precip}<span style="font-size:10px">mm</span></div>
+          <div style="font-size:10px;color:#888">Precip</div>
+        </div>` : ''}
+      </div>`;
+    weatherLastFetch = Date.now();
+  } catch(e) { console.warn('Weather fetch failed:', e); }
+}
+
+// ═══════════════════════════════════════════════════════════
+// SOUND NOTIFICATION (rider starts moving)
+// ═══════════════════════════════════════════════════════════
+function playNotificationPing() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    osc.type = 'sine';
+    gain.gain.value = 0.3;
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.5);
+  } catch(e) {}
 }
 
 // ═══════════════════════════════════════════════════════════
