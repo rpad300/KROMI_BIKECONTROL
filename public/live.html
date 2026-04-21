@@ -84,6 +84,11 @@
   .pulse-marker::after { content: ''; position: absolute; width: 30px; height: 30px; border-radius: 50%; background: rgba(63,255,139,0.3); top: 50%; left: 50%; transform: translate(-50%,-50%); animation: marker-pulse 2s ease-out infinite; }
   @keyframes marker-pulse { 0% { transform: translate(-50%,-50%) scale(0.5); opacity: 1; } 100% { transform: translate(-50%,-50%) scale(2.5); opacity: 0; } }
 
+  /* Tracking mode tags */
+  .mode-tag { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 5px; font-size: 10px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; }
+  .mode-tag-route { background: rgba(63,255,139,0.12); color: #3fff8b; border: 1px solid rgba(63,255,139,0.25); }
+  .mode-tag-explore { background: rgba(110,155,255,0.12); color: #6e9bff; border: 1px solid rgba(110,155,255,0.25); }
+
   /* Mode badge */
   .mode-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; }
   .mode-eco { background: rgba(34,197,94,0.2); color: #22c55e; }
@@ -299,6 +304,11 @@ function renderPage(session, points) {
   html += `<div class="header">`;
   html += `<div class="header-title">KROMI LIVE TRACKING</div>`;
   html += `<div class="header-rider">${esc(riderName)}${bikeName ? ' &middot; ' + esc(bikeName) : ''}</div>`;
+  if (routeName) {
+    html += `<div style="margin-top:4px"><span class="mode-tag mode-tag-route">&#9873; ROTA: ${esc(routeName)}</span></div>`;
+  } else {
+    html += `<div style="margin-top:4px"><span class="mode-tag mode-tag-explore">&#127757; EXPLORAÇÃO LIVRE</span></div>`;
+  }
   html += `</div>`;
 
   // Desktop: two-column grid wrapper
@@ -361,6 +371,63 @@ function renderPage(session, points) {
     html += `<span>ETA ${etaStr}</span>`;
     html += `</div>`;
     if (routeName) html += `<div class="route-name">${esc(routeName)}</div>`;
+    html += `</div>`;
+  }
+
+  // Elevation profile (when route has elevation data)
+  if (session.route_elevation_profile && session.route_elevation_profile.length > 2) {
+    const elevData = session.route_elevation_profile;
+    const totalDist = elevData[elevData.length - 1].d;
+    let minEle = Infinity, maxEle = -Infinity;
+    elevData.forEach(p => { if (p.e < minEle) minEle = p.e; if (p.e > maxEle) maxEle = p.e; });
+    const eleRange = maxEle - minEle || 1;
+
+    const w = 460, h = 80, pad = 4;
+    const hInner = h - pad * 2;
+
+    // Build SVG path
+    let pathD = '', fillD = '';
+    elevData.forEach((p, i) => {
+      const x = (p.d / totalDist) * w;
+      const y = pad + hInner - ((p.e - minEle) / eleRange) * hInner;
+      pathD += (i === 0 ? 'M' : 'L') + ` ${x.toFixed(1)} ${y.toFixed(1)} `;
+    });
+    fillD = pathD + ` L ${w} ${pad + hInner} L 0 ${pad + hInner} Z`;
+
+    // Current position on profile
+    const doneDist = (session.distance_km || 0) * 1000;
+    const markerX = totalDist > 0 ? (doneDist / totalDist) * w : 0;
+    // Find elevation at current distance
+    let markerY = pad + hInner / 2;
+    for (let i = 0; i < elevData.length - 1; i++) {
+      if (elevData[i].d <= doneDist && elevData[i+1].d >= doneDist) {
+        const t = (doneDist - elevData[i].d) / (elevData[i+1].d - elevData[i].d);
+        const ele = elevData[i].e + t * (elevData[i+1].e - elevData[i].e);
+        markerY = pad + hInner - ((ele - minEle) / eleRange) * hInner;
+        break;
+      }
+    }
+
+    html += `<div class="route-section">`;
+    html += `<div class="route-title">&#9968; Perfil de Altimetria</div>`;
+    html += `<div style="position:relative;background:#111;border-radius:6px;padding:6px;overflow:hidden">`;
+    html += `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">`;
+    html += `<defs><linearGradient id="eGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3fff8b"/><stop offset="100%" stop-color="#0e0e0e"/></linearGradient></defs>`;
+    html += `<path d="${fillD}" fill="url(#eGrad)" opacity="0.25"/>`;
+    // Done portion (bright)
+    html += `<clipPath id="doneClip"><rect x="0" y="0" width="${markerX}" height="${h}"/></clipPath>`;
+    html += `<path d="${pathD}" stroke="#3fff8b" stroke-width="2" fill="none" clip-path="url(#doneClip)"/>`;
+    // Remaining (dim)
+    html += `<clipPath id="remClip"><rect x="${markerX}" y="0" width="${w - markerX}" height="${h}"/></clipPath>`;
+    html += `<path d="${pathD}" stroke="#3fff8b" stroke-width="1" fill="none" opacity="0.3" clip-path="url(#remClip)"/>`;
+    // Position marker
+    html += `<line x1="${markerX}" y1="0" x2="${markerX}" y2="${h}" stroke="#fff" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>`;
+    html += `<circle cx="${markerX}" cy="${markerY}" r="4" fill="#3fff8b" stroke="#fff" stroke-width="1.5"/>`;
+    html += `</svg>`;
+    // Labels
+    html += `<div style="position:absolute;top:4px;left:10px;font-size:8px;color:#666">${Math.round(maxEle)}m</div>`;
+    html += `<div style="position:absolute;bottom:4px;right:10px;font-size:8px;color:#666">${Math.round(minEle)}m</div>`;
+    html += `</div>`;
     html += `</div>`;
   }
 

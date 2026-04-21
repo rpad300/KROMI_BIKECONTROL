@@ -295,6 +295,7 @@ async function broadcastUpdate(): Promise<void> {
   let routeProgressPct: number | null = null;
 
   const nav = route.navigation;
+  const routePoints = route.activeRoutePoints;
   if (nav.active && route.activeRoute) {
     routeName = route.activeRoute.name ?? null;
     routeTotalKm = route.activeRoute.total_distance_km ?? null;
@@ -309,6 +310,22 @@ async function broadcastUpdate(): Promise<void> {
       routeEtaMin = Math.round(
         route.preRideAnalysis.estimated_time_min * remainingFraction,
       );
+    }
+  }
+
+  // ── Sample elevation profile (~30 points) for live viewer ──────
+  let elevProfile: { d: number; e: number }[] | null = null;
+  if (nav.active && routePoints.length > 2) {
+    const step = Math.max(1, Math.floor(routePoints.length / 30));
+    elevProfile = [];
+    for (let i = 0; i < routePoints.length; i += step) {
+      const p = routePoints[i]!;
+      elevProfile.push({ d: p.distance_from_start_m, e: p.elevation });
+    }
+    // Ensure last point is included
+    const last = routePoints[routePoints.length - 1]!;
+    if (elevProfile[elevProfile.length - 1]?.d !== last.distance_from_start_m) {
+      elevProfile.push({ d: last.distance_from_start_m, e: last.elevation });
     }
   }
 
@@ -340,6 +357,7 @@ async function broadcastUpdate(): Promise<void> {
     route_remaining_km: routeRemainingKm,
     route_eta_min: routeEtaMin,
     route_progress_pct: routeProgressPct,
+    route_elevation_profile: elevProfile,
     updated_at: now,
     rider_name: riderName,
     bike_name: bikeName,
