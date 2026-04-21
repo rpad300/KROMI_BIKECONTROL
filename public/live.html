@@ -339,9 +339,10 @@ function renderPage(session, points) {
 
   // Emergency contacts
   html += `<div class="emergency-section">`;
-  html += `<div class="emergency-title">&#9888; Contactos de Emergencia</div>`;
-  html += `<a href="tel:112" class="call-btn call-emergency">&#128222; 112 — Emergencia</a>`;
-  html += `<div id="nearby-places" style="margin-top:8px"></div>`;
+  html += `<div class="emergency-title">&#9888; Emergencia</div>`;
+  html += `<a href="tel:112" class="call-btn call-emergency">&#128222; 112 — Numero Europeu de Emergencia</a>`;
+  html += `<div style="margin-top:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#ff716c;margin-bottom:8px">&#128205; Servicos mais proximos do rider</div>`;
+  html += `<div id="nearby-places" style="margin-top:4px"></div>`;
   html += `</div>`;
 
   // Footer
@@ -651,7 +652,7 @@ function fetchNearbyPlaces(lat, lng) {
   let allResults = [];
   let completed = 0;
 
-  const types = ['hospital', 'police'];
+  const types = ['hospital', 'police', 'fire_station'];
   types.forEach(type => {
     service.nearbySearch({
       location: location,
@@ -660,7 +661,6 @@ function fetchNearbyPlaces(lat, lng) {
     }, (results, status) => {
       completed++;
       if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-        // Take top 2 of each type
         results.slice(0, 2).forEach(r => {
           const dist = google.maps.geometry.spherical.computeDistanceBetween(
             location,
@@ -670,7 +670,13 @@ function fetchNearbyPlaces(lat, lng) {
             name: r.name,
             type: type,
             distance: dist,
-            icon: type === 'hospital' ? '\uD83C\uDFE5' : '\uD83D\uDE93',
+            placeId: r.place_id,
+            lat: r.geometry.location.lat(),
+            lng: r.geometry.location.lng(),
+            vicinity: r.vicinity || '',
+            icon: type === 'hospital' ? '\uD83C\uDFE5' : type === 'police' ? '\uD83D\uDE93' : '\uD83D\uDE92',
+            typeLabel: type === 'hospital' ? 'Hospital' : type === 'police' ? 'Policia' : 'Bombeiros',
+            color: type === 'hospital' ? '#ff716c' : type === 'police' ? '#6e9bff' : '#ff9f43',
           });
         });
       }
@@ -682,15 +688,40 @@ function fetchNearbyPlaces(lat, lng) {
           const distStr = r.distance < 1000
             ? Math.round(r.distance) + 'm'
             : (r.distance / 1000).toFixed(1) + 'km';
-          html += `<div class="nearby-place">
-            <span class="icon">${r.icon}</span>
-            <span class="name">${esc(r.name)}</span>
-            <span class="dist">${distStr}</span>
-          </div>`;
+          const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${lat},${lng}&destination=${r.lat},${r.lng}&travelmode=driving`;
+
+          html += `<div style="background:#1a1919;border-radius:8px;padding:10px 12px;margin-bottom:6px;border-left:3px solid ${r.color}">`;
+          html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">`;
+          html += `<div style="flex:1;min-width:0">`;
+          html += `<div style="font-size:12px;font-weight:700;color:#fff">${r.icon} ${esc(r.name)}</div>`;
+          html += `<div style="font-size:10px;color:#888;margin-top:2px">${esc(r.typeLabel)} · ${distStr}${r.vicinity ? ' · ' + esc(r.vicinity) : ''}</div>`;
+          html += `</div>`;
+          html += `</div>`;
+          // Action buttons
+          html += `<div style="display:flex;gap:6px">`;
+          // Get phone via PlaceDetails
+          html += `<button onclick="callPlace('${r.placeId}', this)" style="flex:1;padding:8px;background:#262626;border:1px solid ${r.color}44;border-radius:6px;color:${r.color};font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">&#128222; Ligar</button>`;
+          html += `<a href="${directionsUrl}" target="_blank" style="flex:1;padding:8px;background:#262626;border:1px solid #3fff8b44;border-radius:6px;color:#3fff8b;font-size:11px;font-weight:700;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:4px">&#128204; Direcoes</a>`;
+          html += `</div>`;
+          html += `</div>`;
         });
         container.innerHTML = html;
       }
     });
+  });
+}
+
+// Fetch phone number and initiate call
+function callPlace(placeId, btn) {
+  if (!map || !window.google?.maps?.places) return;
+  const service = new google.maps.places.PlacesService(map);
+  service.getDetails({ placeId: placeId, fields: ['formatted_phone_number'] }, (place, status) => {
+    if (status === google.maps.places.PlacesServiceStatus.OK && place?.formatted_phone_number) {
+      window.location.href = 'tel:' + place.formatted_phone_number;
+    } else {
+      btn.textContent = 'Sem telefone';
+      btn.style.color = '#666';
+    }
   });
 }
 
@@ -704,30 +735,37 @@ function renderMedicalSection(profile) {
   html += `<div class="medical-title">&#9829; PERFIL MEDICO</div>`;
   html += `<div class="medical-grid">`;
 
-  // Blood type with large badge
-  if (profile.blood_type) {
-    html += `<div class="medical-item" style="text-align:center">`;
-    html += `<span class="medical-label">Tipo Sanguineo</span>`;
-    html += `<div style="margin-top:4px"><span class="blood-badge">${esc(profile.blood_type)}</span></div>`;
-    if (profile.organ_donor) html += `<div style="margin-top:6px"><span class="donor-badge">&#9829; Dador de Orgaos</span></div>`;
-    html += `</div>`;
+  // Athlete photo + blood type + ID — hero row
+  html += `<div class="medical-item" style="grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:14px">`;
+
+  // Photo
+  if (profile.avatar_url) {
+    html += `<img src="${esc(profile.avatar_url)}" alt="Atleta" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #3fff8b;flex-shrink:0" />`;
+  } else {
+    html += `<div style="width:72px;height:72px;border-radius:50%;background:#262626;border:3px solid #494847;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:28px;color:#555">&#9786;</div>`;
   }
 
-  // Identification summary
-  if (profile.name || profile.weight_kg || profile.height_cm) {
-    html += `<div class="medical-item">`;
-    html += `<span class="medical-label">Identificacao</span>`;
-    const parts = [];
-    if (profile.name) parts.push(esc(profile.name));
-    if (profile.birthdate) {
-      const age = Math.floor((Date.now() - new Date(profile.birthdate).getTime()) / (365.25*24*60*60*1000));
-      parts.push(age + ' anos');
-    }
-    if (profile.weight_kg) parts.push(profile.weight_kg + ' kg');
-    if (profile.height_cm) parts.push(profile.height_cm + ' cm');
-    html += `<span class="medical-value">${parts.join(' &middot; ')}</span>`;
-    html += `</div>`;
+  // Name + vitals + blood type
+  html += `<div style="flex:1;min-width:0">`;
+  if (profile.name) html += `<div style="font-size:16px;font-weight:900;color:#fff;margin-bottom:4px">${esc(profile.name)}</div>`;
+  const vitals = [];
+  if (profile.birthdate) {
+    const age = Math.floor((Date.now() - new Date(profile.birthdate).getTime()) / (365.25*24*60*60*1000));
+    vitals.push(age + ' anos');
   }
+  if (profile.gender) vitals.push(esc(profile.gender));
+  if (profile.weight_kg) vitals.push(profile.weight_kg + ' kg');
+  if (profile.height_cm) vitals.push(profile.height_cm + ' cm');
+  if (vitals.length) html += `<div style="font-size:11px;color:#888;margin-bottom:6px">${vitals.join(' · ')}</div>`;
+  // Blood type badge inline
+  if (profile.blood_type) {
+    html += `<span class="blood-badge">${esc(profile.blood_type)}</span> `;
+  }
+  if (profile.organ_donor) {
+    html += `<span class="donor-badge">&#9829; Dador</span>`;
+  }
+  html += `</div>`;
+  html += `</div>`;
 
   // Allergies
   if (profile.allergies && profile.allergies.length) {
