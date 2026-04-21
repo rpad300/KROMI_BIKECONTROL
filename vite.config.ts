@@ -52,6 +52,8 @@ export default defineConfig({
         clientsClaim: true,
         // Clean old precache on update
         cleanupOutdatedCaches: true,
+        // Don't intercept standalone HTML pages (served as static files, not SPA)
+        navigateFallbackDenylist: [/^\/live\.html/, /^\/emergency\.html/],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/maps\.googleapis\.com\/.*/i,
