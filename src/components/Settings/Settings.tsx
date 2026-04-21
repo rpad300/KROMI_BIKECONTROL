@@ -1177,8 +1177,10 @@ function EmergencyPage() {
     if (!user?.id) return;
     setSyncing(true);
 
-    const token = qrToken || crypto.randomUUID().slice(0, 12);
-    if (!qrToken) { setQrToken(token); updateProfile({ emergency_qr_token: token }); }
+    // Regenerate if token was truncated by old bug (.slice(0,12))
+    const validToken = qrToken && qrToken.length >= 32 ? qrToken : null;
+    const token = validToken || crypto.randomUUID();
+    if (!validToken) { setQrToken(token); updateProfile({ emergency_qr_token: token }); }
 
     const body = {
       user_id: user.id,
