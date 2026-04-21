@@ -32,7 +32,10 @@ import { trackLogin } from './services/sync/LoginTracker';
 import { useGlanceStore } from './store/glanceStore';
 import { AmbientGlance } from './components/DashboardSystem/AmbientGlance';
 import { RescueAlert } from './components/shared/RescueAlert';
+import { CrashAlertOverlay } from './components/shared/CrashAlertOverlay';
 import { DiagBadge } from './components/shared/DiagBadge';
+import { startCrashMonitoring, stopCrashMonitoring } from './services/emergency/CrashDetectionService';
+import { useBikeStore } from './store/bikeStore';
 import { Component, type ReactNode } from 'react';
 
 class DiagSafe extends Component<{ children: ReactNode }, { error: boolean }> {
@@ -134,11 +137,22 @@ function MainApp() {
 
 function MobileApp() {
   const [screen, setScreen] = useState<MobileScreen>('dashboard');
+  const bleStatus = useBikeStore((s) => s.ble_status);
 
   useGeolocation();
   useElevationData();  // Always-on: gradient, climb profile, elevation chart (independent of auto-assist)
   useMotorControl();
   useRouteNavigation();
+
+  // Start/stop crash monitoring based on BLE connection
+  useEffect(() => {
+    if (bleStatus === 'connected') {
+      startCrashMonitoring();
+    } else {
+      stopCrashMonitoring();
+    }
+    return () => stopCrashMonitoring();
+  }, [bleStatus]);
 
   // Glance mode — tick idle counter every 1s
   useEffect(() => {
@@ -180,6 +194,7 @@ function MobileApp() {
       <BridgeSetup />
       <AmbientGlance />
       <RescueAlert />
+      <CrashAlertOverlay />
     </div>
   );
 }
