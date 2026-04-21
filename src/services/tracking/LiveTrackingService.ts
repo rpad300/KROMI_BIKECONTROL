@@ -434,7 +434,7 @@ async function broadcastUpdate(): Promise<void> {
     );
   }
 
-  await Promise.allSettled(requests)).then((results) => {
+  await Promise.allSettled(requests).then((results) => {
     for (const r of results) {
       if (r.status === 'rejected') {
         console.warn('[LiveTracking] Broadcast partial failure:', r.reason);
