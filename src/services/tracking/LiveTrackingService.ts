@@ -403,8 +403,9 @@ async function broadcastUpdate(): Promise<void> {
     bike_name: bikeName,
   };
 
-  // ── INSERT tracking_points ─────────────────────────────────────
-  const point = {
+  // ── INSERT tracking_points (only when moving — avoids GPS noise) ──
+  const isMoving = speedKmh > 1.5 || (map.speed != null && map.speed > 0.5);
+  const point = isMoving ? {
     session_id: _sessionId,
     lat,
     lng,
@@ -412,21 +413,28 @@ async function broadcastUpdate(): Promise<void> {
     speed_kmh: speedKmh,
     heart_rate: heartRate,
     recorded_at: now,
-  };
+  } : null;
 
-  // Fire both in parallel; failures are logged but don't crash the app
-  await Promise.allSettled([
+  // Fire requests in parallel; failures are logged but don't crash the app
+  const requests: Promise<Response>[] = [
     supaFetch(`${SESSIONS_PATH}?id=eq.${_sessionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sessionPatch),
     }),
-    supaFetch(POINTS_PATH, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(point),
-    }),
-  ]).then((results) => {
+  ];
+  // Only insert tracking point when rider is moving (avoids GPS jitter when stationary)
+  if (point) {
+    requests.push(
+      supaFetch(POINTS_PATH, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(point),
+      }),
+    );
+  }
+
+  await Promise.allSettled(requests)).then((results) => {
     for (const r of results) {
       if (r.status === 'rejected') {
         console.warn('[LiveTracking] Broadcast partial failure:', r.reason);

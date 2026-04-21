@@ -324,7 +324,7 @@ async function init() {
     if (sessionData.user_id) {
       try {
         const photosRes = await fetch(
-          `${SB_URL}/rest/v1/ride_photos?user_id=eq.${sessionData.user_id}&order=created_at.desc&limit=50&select=*`,
+          `${SB_URL}/rest/v1/ride_photos?tracking_session_id=eq.${sessionData.id}&order=created_at.desc&limit=50&select=*`,
           { headers: sbHeaders }
         );
         const photos = await photosRes.json();
@@ -1081,7 +1081,7 @@ async function pollUpdates(session) {
     if (sessionData.user_id) {
       try {
         const photosRes = await fetch(
-          `${SB_URL}/rest/v1/ride_photos?user_id=eq.${sessionData.user_id}&order=created_at.desc&limit=50&select=*`,
+          `${SB_URL}/rest/v1/ride_photos?tracking_session_id=eq.${sessionData.id}&order=created_at.desc&limit=50&select=*`,
           { headers: sbHeaders }
         );
         const photos = await photosRes.json();
