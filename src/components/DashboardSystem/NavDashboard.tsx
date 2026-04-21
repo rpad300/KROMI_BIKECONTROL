@@ -15,9 +15,12 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 import { useRouteStore } from '../../store/routeStore';
+import { useAuthStore } from '../../store/authStore';
 import { initGoogleMaps, isMapsLoaded } from '../../services/maps/GoogleMapsService';
 import { ElevationMiniProfile } from '../Dashboard/ElevationMiniProfile';
 import { navigationExtras } from '../../services/routes/NavigationEngine';
+import { getActiveGroupRide } from '../../services/tracking/LiveTrackingService';
+import { supaGet } from '../../lib/supaFetch';
 import type { RoutePoint } from '../../services/routes/GPXParser';
 import {
   calculateExplorationRoutes,
@@ -141,7 +144,10 @@ export function NavDashboard() {
   const posMarkerRef = useRef<google.maps.Marker | null>(null);
   const polylinesRef = useRef<google.maps.Polyline[]>([]);
   const poiMarkersRef = useRef<google.maps.Marker[]>([]);
+  const groupMarkersRef = useRef<google.maps.Marker[]>([]);
   const [ready, setReady] = useState(false);
+  const [showGroupMembers, setShowGroupMembers] = useState(true);
+  const _activeGroupRideId = getActiveGroupRide();
 
   // Store data
   const lat = useMapStore((s) => s.latitude);
@@ -322,6 +328,62 @@ export function NavDashboard() {
     }
   });
 
+  // ── Group members on map ──────────────────────────────────────
+  useEffect(() => {
+    if (!showGroupMembers || !_activeGroupRideId || !mapInstance.current) {
+      // Clear markers when toggled off or no group ride
+      groupMarkersRef.current.forEach(m => m.setMap(null));
+      groupMarkersRef.current = [];
+      return;
+    }
+
+    let active = true;
+
+    async function fetchGroupPositions() {
+      try {
+        const res = await supaGet<any[]>(
+          `/rest/v1/club_ride_participants?club_ride_id=eq.${_activeGroupRideId}&select=*`
+        );
+        if (!active || !Array.isArray(res)) return;
+
+        const userId = useAuthStore.getState().user?.id;
+        const others = res.filter(p => p.user_id !== userId);
+
+        // Clear old markers
+        groupMarkersRef.current.forEach(m => m.setMap(null));
+        groupMarkersRef.current = [];
+
+        for (const p of others) {
+          if (!p.last_lat || !p.last_lng) continue;
+          const marker = new google.maps.Marker({
+            position: { lat: Number(p.last_lat), lng: Number(p.last_lng) },
+            map: mapInstance.current,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: '#6e9bff',
+              fillOpacity: 1,
+              strokeColor: '#fff',
+              strokeWeight: 2,
+            },
+            title: p.display_name || 'Rider',
+            zIndex: 50,
+          });
+          groupMarkersRef.current.push(marker);
+        }
+      } catch { /* no-op */ }
+    }
+
+    fetchGroupPositions();
+    const interval = setInterval(fetchGroupPositions, 15000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+      groupMarkersRef.current.forEach(m => m.setMap(null));
+      groupMarkersRef.current = [];
+    };
+  }, [showGroupMembers, _activeGroupRideId]);
+
   // ── No route → exploration mode ─────────────────────────────
   if (routePoints.length < 2) {
     return <ExplorationView />;
@@ -366,6 +428,26 @@ export function NavDashboard() {
           <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 20, background: 'rgba(239,68,68,0.92)', padding: '8px 16px', borderRadius: 8 }}>
             <span style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>FORA DA ROTA — {Math.round(deviation)}m</span>
           </div>
+        )}
+
+        {/* Group members toggle — only show when in a group ride */}
+        {_activeGroupRideId && (
+          <button
+            onClick={() => setShowGroupMembers(v => !v)}
+            style={{
+              position: 'absolute', bottom: 8, left: 8, zIndex: 10,
+              background: 'rgba(14,14,14,0.88)', padding: '6px 10px',
+              borderRadius: 6, border: `1px solid ${showGroupMembers ? '#6e9bff44' : '#33333344'}`,
+              display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer',
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 14, color: showGroupMembers ? '#6e9bff' : '#555' }}>
+              group
+            </span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: showGroupMembers ? '#6e9bff' : '#555' }}>
+              {showGroupMembers ? 'GRUPO' : 'GRUPO OFF'}
+            </span>
+          </button>
         )}
       </div>
 

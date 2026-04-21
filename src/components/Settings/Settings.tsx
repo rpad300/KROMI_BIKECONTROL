@@ -442,6 +442,9 @@ function ClubPage() {
   const [rideTime, setRideTime] = useState('');
   const [rideMeetingAddress, setRideMeetingAddress] = useState('');
   const [loadingRides, setLoadingRides] = useState(false);
+  const [rideGpxFile, setRideGpxFile] = useState<File | null>(null);
+  const [rideGpxName, setRideGpxName] = useState('');
+  const rideGpxRef = useRef<HTMLInputElement>(null);
 
   const userId = useAuthStore.getState().getUserId();
 
@@ -524,6 +527,10 @@ function ClubPage() {
     if (!rideName.trim() || !rideDate || !rideTime || !profile.club_id) return;
     try {
       const scheduled = new Date(`${rideDate}T${rideTime}`).toISOString();
+      let gpxContent: string | null = null;
+      if (rideGpxFile) {
+        gpxContent = await rideGpxFile.text();
+      }
       const res = await supaFetch('/rest/v1/club_rides', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
@@ -534,6 +541,7 @@ function ClubPage() {
           description: rideDesc.trim() || null,
           scheduled_at: scheduled,
           meeting_address: rideMeetingAddress.trim() || null,
+          route_gpx: gpxContent,
           status: 'planned',
         }),
       });
@@ -544,6 +552,7 @@ function ClubPage() {
       }
       setCreatingRide(false);
       setRideName(''); setRideDesc(''); setRideDate(''); setRideTime(''); setRideMeetingAddress('');
+      setRideGpxFile(null); setRideGpxName('');
     } catch {}
   };
 
@@ -591,6 +600,22 @@ function ClubPage() {
       import('../../services/tracking/LiveTrackingService').then(({ setActiveGroupRide }) => {
         setActiveGroupRide(rideId);
       });
+      // If ride has GPX, load it as active route
+      const ride = rides.find(r => r.id === rideId);
+      if (ride?.route_gpx) {
+        import('../../services/routes/GPXParser').then(({ parseGPX }) => {
+          const parsed = parseGPX(ride.route_gpx);
+          if (parsed) {
+            import('../../store/routeStore').then(({ useRouteStore }) => {
+              useRouteStore.getState().setActiveRoute(
+                { id: ride.id, name: ride.name, points: parsed.points, total_distance_km: parsed.total_distance_km, total_elevation_gain_m: parsed.total_elevation_gain_m, total_elevation_loss_m: parsed.total_elevation_loss_m, max_gradient_pct: parsed.max_gradient_pct, avg_gradient_pct: parsed.avg_gradient_pct } as any,
+                parsed.points
+              );
+              useRouteStore.getState().startNavigation();
+            });
+          }
+        });
+      }
     } catch {}
   };
 
@@ -666,6 +691,7 @@ function ClubPage() {
                     </div>
                     {ride.description && <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>{ride.description}</div>}
                     {ride.meeting_address && <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>{ride.meeting_address}</div>}
+                    {ride.route_gpx && <div style={{ fontSize: '9px', color: '#3fff8b', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}><span className="material-symbols-outlined" style={{ fontSize: '12px' }}>route</span> Rota GPX incluida</div>}
                   </div>
                   <span style={{
                     fontSize: '9px', fontWeight: 800, padding: '2px 8px', borderRadius: '4px',
@@ -747,6 +773,23 @@ function ClubPage() {
               </div>
             </div>
             <TextField label="Local de encontro" value={rideMeetingAddress} onChange={setRideMeetingAddress} />
+            <div style={{ marginTop: '4px' }}>
+              <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>Rota GPX (opcional)</div>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <button onClick={() => rideGpxRef.current?.click()} style={{
+                  padding: '8px 12px', backgroundColor: '#262626', color: '#3fff8b',
+                  border: '1px solid rgba(63,255,139,0.3)', fontSize: '11px', fontWeight: 700, cursor: 'pointer', borderRadius: '4px',
+                }}>
+                  {'\uD83D\uDCC1'} {rideGpxName || 'Escolher GPX'}
+                </button>
+                <input ref={rideGpxRef} type="file" accept=".gpx" style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) { setRideGpxFile(f); setRideGpxName(f.name); }
+                  }} />
+                {rideGpxName && <span style={{ fontSize: '10px', color: '#3fff8b' }}>{'\u2713'} {rideGpxName}</span>}
+              </div>
+            </div>
             <textarea value={rideDesc} onChange={(e) => setRideDesc(e.target.value)} placeholder="Descri\u00E7\u00E3o (opcional)..."
               style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: '1px solid #333', fontSize: '12px', minHeight: '50px', resize: 'vertical', borderRadius: '4px' }} />
             <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>

@@ -757,6 +757,48 @@ function initMap(points, isActive) {
 // ═══════════════════════════════════════════════════════════
 // GROUP MEMBERS ON MAP
 // ═══════════════════════════════════════════════════════════
+async function createAvatarIcon(avatarUrl, size = 40) {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      // Draw circular clip
+      ctx.beginPath();
+      ctx.arc(size/2, size/2, size/2 - 2, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(img, 0, 0, size, size);
+      // Draw border
+      ctx.beginPath();
+      ctx.arc(size/2, size/2, size/2 - 1, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      resolve({
+        url: canvas.toDataURL(),
+        scaledSize: new google.maps.Size(size, size),
+        anchor: new google.maps.Point(size/2, size/2),
+      });
+    };
+    img.onerror = () => {
+      // Fallback to circle
+      resolve({
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 10,
+        fillColor: '#6e9bff',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 2,
+      });
+    };
+    img.src = avatarUrl;
+  });
+}
+
 async function showGroupMembers() {
   // Clear old markers
   groupMarkers.forEach(m => m.setMap(null));
@@ -798,18 +840,22 @@ async function showGroupMembers() {
       distStr = dist < 1000 ? Math.round(dist) + 'm' : (dist/1000).toFixed(1) + 'km';
     }
 
-    // Create marker with blue color for group members
+    // Create marker — use avatar if available, fallback to blue circle
+    const markerIcon = p.avatar_url
+      ? await createAvatarIcon(p.avatar_url, 40)
+      : {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: '#6e9bff',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+        };
+
     const marker = new google.maps.Marker({
       position: { lat, lng },
       map: map,
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 8,
-        fillColor: '#6e9bff',
-        fillOpacity: 1,
-        strokeColor: '#ffffff',
-        strokeWeight: 2,
-      },
+      icon: markerIcon,
       title: name,
       zIndex: 50,
     });
