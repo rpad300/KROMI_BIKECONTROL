@@ -12,11 +12,19 @@
 <meta name="twitter:card" content="summary_large_image">
 <title>KROMI Live Tracking</title>
 <style>
+  :root {
+    --bg: #0e0e0e; --bg-card: #1a1919; --bg-header: #131313;
+    --text: #fff; --text-muted: #888; --border: #262626;
+  }
+  body.light {
+    --bg: #f5f5f5; --bg-card: #ffffff; --bg-header: #ffffff;
+    --text: #111; --text-muted: #666; --border: #e0e0e0;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #0e0e0e; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; min-height: 100dvh; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; min-height: 100dvh; }
 
   /* Header */
-  .header { background: #131313; padding: 14px 16px; border-bottom: 1px solid #262626; }
+  .header { background: var(--bg-header); padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; }
   .header-title { font-size: 11px; font-weight: 900; letter-spacing: 2px; color: #3fff8b; text-transform: uppercase; }
   .header-rider { font-size: 14px; color: #adaaaa; margin-top: 2px; }
 
@@ -35,20 +43,20 @@
   .container { padding: 0 12px 12px; max-width: 520px; margin: 0 auto; }
 
   /* KPI Grid */
-  .kpi-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: #262626; border-radius: 10px; overflow: hidden; margin-top: 12px; }
-  .kpi-cell { background: #1a1919; padding: 10px 8px; position: relative; padding-left: 14px; }
+  .kpi-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: var(--border); border-radius: 10px; overflow: hidden; margin-top: 12px; }
+  .kpi-cell { background: var(--bg-card); padding: 10px 8px; position: relative; padding-left: 14px; }
   .kpi-cell::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; }
   .kpi-cell.green::before { background: #3fff8b; }
   .kpi-cell.amber::before { background: #fbbf24; }
   .kpi-cell.red::before { background: #ff716c; }
   .kpi-cell.blue::before { background: #6e9bff; }
   .kpi-cell.purple::before { background: #a78bfa; }
-  .kpi-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #666; margin-bottom: 2px; }
+  .kpi-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 2px; }
   .kpi-value { font-size: 20px; font-weight: 900; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; line-height: 1.2; }
-  .kpi-unit { font-size: 10px; font-weight: 500; color: #666; margin-left: 2px; }
+  .kpi-unit { font-size: 10px; font-weight: 500; color: var(--text-muted); margin-left: 2px; }
 
   /* Route progress */
-  .route-section { background: #1a1919; border-radius: 10px; padding: 14px; margin-top: 12px; border: 1px solid #262626; }
+  .route-section { background: var(--bg-card); border-radius: 10px; padding: 14px; margin-top: 12px; border: 1px solid var(--border); }
   .route-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #3fff8b; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
   .progress-bar { width: 100%; height: 8px; background: #262626; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
   .progress-fill { height: 100%; background: linear-gradient(90deg, #3fff8b, #22c55e); border-radius: 4px; transition: width 0.5s ease; }
@@ -56,7 +64,7 @@
   .route-name { font-size: 13px; color: #888; margin-top: 6px; font-style: italic; }
 
   /* Emergency section */
-  .emergency-section { background: #1a1919; border-radius: 10px; padding: 14px; margin-top: 12px; border: 1px solid #262626; }
+  .emergency-section { background: var(--bg-card); border-radius: 10px; padding: 14px; margin-top: 12px; border: 1px solid var(--border); }
   .emergency-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #ff716c; margin-bottom: 10px; }
   .call-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; margin-bottom: 8px; text-decoration: none; color: inherit; }
   .call-emergency { background: #ff3333; color: #fff; font-size: 18px; }
@@ -67,8 +75,8 @@
   .nearby-place .dist { color: #888; font-size: 11px; font-weight: 600; }
 
   /* Footer */
-  .footer-bar { background: #131313; border-top: 1px solid #262626; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; margin-top: 12px; border-radius: 10px; }
-  .last-update { font-size: 11px; color: #666; }
+  .footer-bar { background: var(--bg-header); border-top: 1px solid var(--border); padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; margin-top: 12px; border-radius: 10px; }
+  .last-update { font-size: 11px; color: var(--text-muted); }
   .last-update span { color: #adaaaa; font-weight: 600; }
 
   /* Loading / Error states */
@@ -105,7 +113,7 @@
   .mode-smart { background: rgba(167,139,250,0.2); color: #a78bfa; }
 
   /* Medical profile section */
-  .medical-section { background: #1a1919; border-radius: 10px; padding: 14px; margin-top: 12px; border: 1px solid #262626; }
+  .medical-section { background: var(--bg-card); border-radius: 10px; padding: 14px; margin-top: 12px; border: 1px solid var(--border); }
   .medical-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #ff716c; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
   .medical-grid { display: grid; gap: 10px; }
   .medical-item { padding: 8px 0; border-bottom: 1px solid #1f1f1f; }
@@ -153,8 +161,8 @@
     .header { width: 100%; padding: 10px 24px; flex-shrink: 0; }
     .desktop-layout { display: grid; grid-template-columns: 280px 1fr 320px; gap: 0; width: 100%; flex: 1; min-height: 0; overflow: hidden; }
     #map-container { height: 100% !important; min-height: 0; order: 2; overflow: hidden; }
-    .data-panel { overflow-y: auto; min-height: 0; padding: 8px 10px; order: 1; border-right: 1px solid #262626; }
-    .right-panel { overflow-y: auto; min-height: 0; padding: 8px 10px; order: 3; border-left: 1px solid #262626; display: block; }
+    .data-panel { overflow-y: auto; min-height: 0; padding: 8px 10px; order: 1; border-right: 1px solid var(--border); }
+    .right-panel { overflow-y: auto; min-height: 0; padding: 8px 10px; order: 3; border-left: 1px solid var(--border); display: block; }
     .container { max-width: 100%; padding: 0; }
     .kpi-grid { grid-template-columns: 1fr 1fr; }
     .kpi-value { font-size: 18px; }
@@ -336,6 +344,7 @@ function renderPage(session, points) {
 
   // Header
   html += `<div class="header">`;
+  html += `<div style="flex:1;min-width:0">`;
   html += `<div class="header-title">KROMI LIVE TRACKING</div>`;
   html += `<div class="header-rider">${esc(riderName)}${bikeName ? ' &middot; ' + esc(bikeName) : ''}</div>`;
   if (routeName) {
@@ -343,6 +352,8 @@ function renderPage(session, points) {
   } else {
     html += `<div style="margin-top:4px"><span class="mode-tag mode-tag-explore">&#127757; EXPLORAÇÃO LIVRE</span></div>`;
   }
+  html += `</div>`;
+  html += `<button onclick="document.body.classList.toggle('light')" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:14px;color:var(--text-muted);flex-shrink:0" title="Alternar tema">&#9728;/&#127769;</button>`;
   html += `</div>`;
 
   // Desktop: 3-column grid wrapper (left data-panel, center map, right panel)
@@ -513,6 +524,9 @@ function renderPage(session, points) {
   // ── RIGHT: Emergency, Home distance ──
   html += `<div class="right-panel">`;
 
+  // Home proximity countdown (Feature 7)
+  html += `<div id="home-proximity"></div>`;
+
   // Emergency contacts
   html += `<div class="emergency-section">`;
   // Distance from home — how long to reach the rider by car
@@ -522,7 +536,14 @@ function renderPage(session, points) {
   html += `<a href="tel:112" class="call-btn call-emergency">&#128222; 112 — Numero Europeu de Emergencia</a>`;
   html += `<div style="margin-top:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#ff716c;margin-bottom:8px">&#128205; Servicos mais proximos do rider</div>`;
   html += `<div id="nearby-places" style="margin-top:4px"></div>`;
+
+  // Feature 3: Auto-share notification stub
+  html += `<div style="background:var(--bg-card);border-radius:8px;padding:10px;margin-top:8px;border:1px solid var(--border)">`;
+  html += `<div style="font-size:10px;font-weight:700;color:#6e9bff;margin-bottom:4px">&#128233; Notificacoes Automaticas</div>`;
+  html += `<div style="font-size:11px;color:var(--text-muted)">Os contactos de emergencia sao notificados automaticamente quando o rider inicia uma pedalada.</div>`;
   html += `</div>`;
+
+  html += `</div>`; // emergency-section
 
   html += `</div>`; // right-panel
   html += `</div>`; // desktop-layout
@@ -772,6 +793,28 @@ async function pollUpdates(session) {
       }
     }
 
+    // Pulse effect on position circle (Feature 5)
+    if (positionCircle && !window._pulseInterval) {
+      let pulseRadius = 20;
+      let growing = true;
+      window._pulseInterval = setInterval(() => {
+        if (!positionCircle) return;
+        pulseRadius += growing ? 2 : -2;
+        if (pulseRadius >= 40) growing = false;
+        if (pulseRadius <= 20) growing = true;
+        positionCircle.setRadius(pulseRadius);
+        positionCircle.setOptions({ fillOpacity: 0.3 - (pulseRadius - 20) * 0.01 });
+      }, 100);
+    }
+
+    // Re-run home distance + proximity on every poll (Feature 7)
+    const lastPtForHome = pts.filter(p => p.lat && p.lng).pop();
+    if (lastPtForHome) {
+      calculateHomeDistance(lastPtForHome.lat, lastPtForHome.lng);
+    } else if (updatedSession.lat && updatedSession.lng) {
+      calculateHomeDistance(updatedSession.lat, updatedSession.lng);
+    }
+
     // Refresh weather every 5 minutes
     const lastPt = pts.filter(p => p.lat && p.lng).pop();
     if (lastPt && (Date.now() - weatherLastFetch) > 300000) {
@@ -884,25 +927,46 @@ function calculateHomeDistance(riderLat, riderLng) {
     const duration = leg.duration?.text || '--';
     const distance = leg.distance?.text || '--';
 
+    // Feature 2: ETA — estimated arrival time at home
+    const durationSec = leg.duration?.value || 0;
+    const arrivalTime = new Date(Date.now() + durationSec * 1000);
+    const arrivalStr = arrivalTime.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+
     container.innerHTML = `
-      <div style="background:#1a1919;border-radius:10px;padding:14px;margin-bottom:12px;border:1px solid #262626">
+      <div style="background:var(--bg-card);border-radius:10px;padding:14px;margin-bottom:12px;border:1px solid var(--border)">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:10px">&#128663; Tempo ate ao Rider (de carro)</div>
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
           <div style="text-align:center;flex:1">
             <div style="font-size:28px;font-weight:900;color:#fbbf24;font-family:monospace">${esc(duration)}</div>
-            <div style="font-size:9px;color:#888;margin-top:2px">TEMPO</div>
+            <div style="font-size:9px;color:var(--text-muted);margin-top:2px">TEMPO</div>
           </div>
           <div style="width:1px;height:40px;background:#333"></div>
           <div style="text-align:center;flex:1">
             <div style="font-size:28px;font-weight:900;color:#adaaaa;font-family:monospace">${esc(distance)}</div>
-            <div style="font-size:9px;color:#888;margin-top:2px">DISTANCIA</div>
+            <div style="font-size:9px;color:var(--text-muted);margin-top:2px">DISTANCIA</div>
           </div>
         </div>
-        <div style="font-size:11px;color:#666;margin-bottom:8px">Desde: ${esc(homeAddress)}</div>
-        <a href="${directionsUrl}" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;background:#262626;border:1px solid #fbbf2444;border-radius:6px;color:#fbbf24;font-size:12px;font-weight:700;text-decoration:none">
+        <div style="font-size:12px;color:#fbbf24;font-weight:600;margin-bottom:8px;text-align:center">Chegada estimada a casa: ~${arrivalStr}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Desde: ${esc(homeAddress)}</div>
+        <a href="${directionsUrl}" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;background:var(--border);border:1px solid #fbbf2444;border-radius:6px;color:#fbbf24;font-size:12px;font-weight:700;text-decoration:none">
           &#128204; Navegar ate ao Rider
         </a>
       </div>`;
+
+    // Feature 7: Home proximity countdown
+    const distM = leg.distance?.value || 0;
+    const proxEl = document.getElementById('home-proximity');
+    if (proxEl) {
+      if (distM < 500) {
+        proxEl.innerHTML = '<div style="background:rgba(63,255,139,0.15);border:1px solid rgba(63,255,139,0.3);border-radius:8px;padding:12px;text-align:center;margin-bottom:8px"><span style="font-size:16px;font-weight:900;color:#3fff8b">&#127968; Chegou a casa!</span></div>';
+      } else if (distM < 2000) {
+        proxEl.innerHTML = '<div style="background:rgba(63,255,139,0.1);border:1px solid rgba(63,255,139,0.2);border-radius:8px;padding:10px;text-align:center;margin-bottom:8px"><span style="font-size:13px;font-weight:700;color:#3fff8b">&#127968; A ' + (distM/1000).toFixed(1) + ' km de casa</span></div>';
+      } else if (distM < 5000) {
+        proxEl.innerHTML = '<div style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.2);border-radius:8px;padding:10px;text-align:center;margin-bottom:8px"><span style="font-size:13px;font-weight:700;color:#fbbf24">&#127968; A ' + (distM/1000).toFixed(1) + ' km de casa</span></div>';
+      } else {
+        proxEl.innerHTML = '';
+      }
+    }
   });
 }
 

@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
 import { ASSIST_MODE_LABELS } from '../../types/bike.types';
+import { getShareUrl } from '../../services/tracking/LiveTrackingService';
 
 const ZONE_COLORS = ['#777575', '#adaaaa', '#6e9bff', '#3fff8b', '#fbbf24', '#ff716c'];
 
@@ -22,6 +23,24 @@ export function PersistentBar() {
   const kromiRef = useRef<HTMLSpanElement>(null);
   const kromiDotRef = useRef<HTMLDivElement>(null);
   const clockRef = useRef<HTMLSpanElement>(null);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+
+  // Check for share URL periodically
+  useEffect(() => {
+    const check = () => setShareUrl(getShareUrl());
+    check();
+    const id = setInterval(check, 10000);
+    return () => clearInterval(id);
+  }, []);
+
+  const handleShareLive = useCallback(() => {
+    const url = getShareUrl();
+    if (url && navigator.share) {
+      navigator.share({ title: 'KROMI Live', url }).catch(() => {});
+    } else if (url) {
+      navigator.clipboard.writeText(url).catch(() => {});
+    }
+  }, []);
 
   // Clock tick — update every 30s
   useEffect(() => {
@@ -106,6 +125,17 @@ export function PersistentBar() {
         <div ref={kromiDotRef} style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--ev-outline-variant)' }} />
         <span ref={kromiRef} className="text-label-sm" style={{ color: 'var(--ev-on-surface-muted)' }}>OFF</span>
       </div>
+
+      {/* Live share button */}
+      {shareUrl && (
+        <button
+          onClick={handleShareLive}
+          style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+          title="Partilhar live tracking"
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '14px', color: '#555' }}>share</span>
+        </button>
+      )}
     </div>
   );
 }
