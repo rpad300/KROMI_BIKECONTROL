@@ -125,49 +125,30 @@
   /* MOBILE DEFAULT                                            */
   /* ═══════════════════════════════════════════════════════════ */
   .desktop-layout { display: block; }
-  .right-panel { display: block; padding: 0 12px; }
 
   /* ═══════════════════════════════════════════════════════════ */
-  /* TABLET: 2-column (768–1023px)                             */
+  /* DESKTOP: 2-column — data left (scroll), map right         */
   /* ═══════════════════════════════════════════════════════════ */
-  @media (min-width: 768px) and (max-width: 1023px) {
+  @media (min-width: 768px) {
     body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
     .header { width: 100%; padding: 10px 24px; flex-shrink: 0; }
-    .desktop-layout { display: grid; grid-template-columns: 1fr 380px; gap: 0; width: 100%; flex: 1; min-height: 0; overflow: hidden; }
-    #map-container { height: 100% !important; min-height: 0; grid-column: 1; grid-row: 1 / 3; }
-    .data-panel { grid-column: 2; grid-row: 1; overflow-y: auto; padding: 0 12px 0; min-height: 0; }
-    .right-panel { grid-column: 2; grid-row: 2; overflow-y: auto; padding: 0 12px 12px; min-height: 0; }
-    .container { max-width: 100%; padding: 0; }
-    .kpi-grid { grid-template-columns: 1fr 1fr; }
-    .medical-grid { grid-template-columns: 1fr 1fr; }
-    .footer-bar { margin: 12px 0; }
-  }
-
-  /* ═══════════════════════════════════════════════════════════ */
-  /* DESKTOP: 3-column (≥1024px)                               */
-  /* ═══════════════════════════════════════════════════════════ */
-  @media (min-width: 1024px) {
-    body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-    .header { width: 100%; padding: 10px 24px; flex-shrink: 0; }
-    .desktop-layout { display: grid; grid-template-columns: 280px 1fr 320px; gap: 0; width: 100%; flex: 1; min-height: 0; }
+    .desktop-layout { display: grid; grid-template-columns: 420px 1fr; gap: 0; width: 100%; flex: 1; min-height: 0; }
     #map-container { height: 100% !important; min-height: 0; order: 2; }
-    .data-panel { overflow-y: auto; height: 100%; padding: 8px 10px; order: 1; border-right: 1px solid #262626; }
-    .right-panel { overflow-y: auto; height: 100%; padding: 8px 10px; order: 3; border-left: 1px solid #262626; display: block; }
+    .data-panel { overflow-y: auto; height: 100%; padding: 8px 12px; order: 1; border-right: 1px solid #262626; }
     .container { max-width: 100%; padding: 0; }
-    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .kpi-grid { grid-template-columns: 1fr 1fr 1fr; }
     .kpi-value { font-size: 18px; }
-    .medical-grid { grid-template-columns: 1fr; }
+    .medical-grid { grid-template-columns: 1fr 1fr; }
     .footer-bar { display: none; }
   }
 
   /* ═══════════════════════════════════════════════════════════ */
   /* WIDE DESKTOP (≥1400px)                                    */
   /* ═══════════════════════════════════════════════════════════ */
-  @media (min-width: 1400px) {
-    .desktop-layout { grid-template-columns: 320px 1fr 380px; }
-    .kpi-grid { grid-template-columns: 1fr 1fr 1fr; }
+  @media (min-width: 1200px) {
+    .desktop-layout { grid-template-columns: 500px 1fr; }
+    .kpi-grid { grid-template-columns: 1fr 1fr 1fr 1fr; }
     .kpi-value { font-size: 20px; }
-    .medical-grid { grid-template-columns: 1fr 1fr; }
   }
 </style>
 </head>
@@ -479,10 +460,34 @@ function renderPage(session, points) {
   }
   html += `</div>`;
 
+  // ── Medical profile (inside data-panel, scrollable) ──
+  if (medicalProfile) {
+    html += renderMedicalSection(medicalProfile);
+  } else {
+    html += `<div class="medical-section">`;
+    html += `<div class="medical-title">&#9786; Rider</div>`;
+    html += `<div style="display:flex;align-items:center;gap:12px;padding:8px">`;
+    html += `<div style="width:56px;height:56px;border-radius:50%;background:#262626;border:2px solid #494847;display:flex;align-items:center;justify-content:center;font-size:22px;color:#555;flex-shrink:0">&#9786;</div>`;
+    html += `<div>`;
+    if (riderName) html += `<div style="font-size:15px;font-weight:800;color:#fff">${esc(riderName)}</div>`;
+    if (bikeName) html += `<div style="font-size:11px;color:#888;margin-top:2px">${esc(bikeName)}</div>`;
+    html += `<div style="font-size:10px;color:#555;margin-top:4px">Perfil medico nao disponivel</div>`;
+    html += `</div></div></div>`;
+  }
+
+  // ── Emergency section (inside data-panel) ──
+  html += `<div class="emergency-section">`;
+  html += `<div id="home-distance-section"></div>`;
+  html += `<div class="emergency-title">&#9888; Emergencia</div>`;
+  html += `<a href="tel:112" class="call-btn call-emergency">&#128222; 112 — Numero Europeu de Emergencia</a>`;
+  html += `<div style="margin-top:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#ff716c;margin-bottom:8px">&#128205; Servicos mais proximos do rider</div>`;
+  html += `<div id="nearby-places" style="margin-top:4px"></div>`;
+  html += `</div>`;
+
   html += `</div>`; // container
   html += `</div>`; // data-panel
 
-  // ── CENTER: Map ──
+  // ── MAP ──
   html += `<div id="map-container">`;
   html += `<div class="map-overlay">`;
   if (isActive) {
@@ -493,37 +498,6 @@ function renderPage(session, points) {
   html += `</div>`;
   html += `</div>`;
 
-  // ── RIGHT: Medical profile, Emergency, Home distance ──
-  html += `<div class="right-panel">`;
-
-  // Medical profile section (fallback to session data if no emergency_profiles)
-  if (medicalProfile) {
-    html += renderMedicalSection(medicalProfile);
-  } else {
-    // Minimal rider card from tracking_sessions data
-    html += `<div class="medical-section">`;
-    html += `<div class="medical-title">&#9786; Rider</div>`;
-    html += `<div style="display:flex;align-items:center;gap:12px;padding:8px">`;
-    html += `<div style="width:56px;height:56px;border-radius:50%;background:#262626;border:2px solid #494847;display:flex;align-items:center;justify-content:center;font-size:22px;color:#555;flex-shrink:0">&#9786;</div>`;
-    html += `<div>`;
-    if (riderName) html += `<div style="font-size:15px;font-weight:800;color:#fff">${esc(riderName)}</div>`;
-    if (bikeName) html += `<div style="font-size:11px;color:#888;margin-top:2px">${esc(bikeName)}</div>`;
-    html += `<div style="font-size:10px;color:#555;margin-top:4px">Perfil medico nao disponivel — pedir ao rider para sincronizar em Settings → Emergencia + QR</div>`;
-    html += `</div></div></div>`;
-  }
-
-  // Emergency contacts
-  html += `<div class="emergency-section">`;
-  // Distance from home — how long to reach the rider by car
-  html += `<div id="home-distance-section"></div>`;
-
-  html += `<div class="emergency-title">&#9888; Emergencia</div>`;
-  html += `<a href="tel:112" class="call-btn call-emergency">&#128222; 112 — Numero Europeu de Emergencia</a>`;
-  html += `<div style="margin-top:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#ff716c;margin-bottom:8px">&#128205; Servicos mais proximos do rider</div>`;
-  html += `<div id="nearby-places" style="margin-top:4px"></div>`;
-  html += `</div>`;
-
-  html += `</div>`; // right-panel
   html += `</div>`; // desktop-layout
 
   document.getElementById('app').innerHTML = html;
