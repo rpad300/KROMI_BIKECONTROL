@@ -92,6 +92,48 @@
   .mode-sport { background: rgba(239,68,68,0.2); color: #ef4444; }
   .mode-kromi { background: rgba(63,255,139,0.2); color: #3fff8b; }
   .mode-smart { background: rgba(167,139,250,0.2); color: #a78bfa; }
+
+  /* Medical profile section */
+  .medical-section { background: #1a1919; border-radius: 10px; padding: 14px; margin-top: 12px; border: 1px solid #262626; }
+  .medical-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #ff716c; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .medical-grid { display: grid; gap: 10px; }
+  .medical-item { padding: 8px 0; border-bottom: 1px solid #1f1f1f; }
+  .medical-item:last-child { border-bottom: none; }
+  .medical-label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #666; margin-bottom: 4px; }
+  .medical-value { font-size: 13px; color: #adaaaa; font-weight: 500; }
+  .blood-badge { display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 50%; background: rgba(255,51,51,0.15); border: 2px solid rgba(255,51,51,0.5); font-size: 22px; font-weight: 900; color: #ff3333; }
+  .alert-tag { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; margin: 2px; }
+  .tag-red { background: rgba(255,51,51,0.2); color: #ff5555; border: 1px solid rgba(255,51,51,0.3); }
+  .tag-amber { background: rgba(255,204,0,0.2); color: #ffcc00; border: 1px solid rgba(255,204,0,0.3); }
+  .tag-blue { background: rgba(110,155,255,0.2); color: #6e9bff; border: 1px solid rgba(110,155,255,0.3); }
+  .ice-contact { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: #262626; border-radius: 6px; margin-top: 6px; text-decoration: none; color: #3fff8b; font-size: 13px; font-weight: 600; }
+  .ice-contact:active { background: #333; }
+  .donor-badge { display: inline-block; padding: 3px 8px; background: rgba(63,255,139,0.15); color: #3fff8b; border: 1px solid rgba(63,255,139,0.3); border-radius: 4px; font-size: 11px; font-weight: 700; }
+
+  /* ═══════════════════════════════════════════════════════════ */
+  /* RESPONSIVE DESKTOP LAYOUT (>768px)                        */
+  /* ═══════════════════════════════════════════════════════════ */
+  @media (min-width: 768px) {
+    body { display: flex; flex-direction: column; align-items: center; }
+
+    .header { width: 100%; max-width: 1400px; margin: 0 auto; padding: 14px 24px; }
+
+    .desktop-layout { display: grid; grid-template-columns: 60fr 40fr; gap: 0; width: 100%; max-width: 1400px; margin: 0 auto; min-height: calc(100vh - 50px); }
+
+    #map-container { height: 100% !important; min-height: 100vh; position: sticky; top: 0; }
+
+    .data-panel { padding: 0 16px 16px; overflow-y: auto; max-height: 100vh; position: sticky; top: 0; }
+
+    .container { max-width: 100%; padding: 0; }
+
+    .kpi-grid { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+    .kpi-value { font-size: 22px; }
+
+    .medical-grid { grid-template-columns: 1fr 1fr; }
+
+    .footer-bar { max-width: 1400px; margin: 12px auto; width: 100%; }
+  }
 </style>
 </head>
 <body>
@@ -124,6 +166,7 @@ let positionCircle = null;
 let lastPointId = null;
 let sessionData = null;
 let pollInterval = null;
+let medicalProfile = null;
 
 // ═══════════════════════════════════════════════════════════
 // MAIN
@@ -152,7 +195,21 @@ async function init() {
 
     sessionData = sessions[0];
 
-    // 2. Fetch tracking points (breadcrumb trail)
+    // 2. Fetch rider medical/emergency profile
+    if (sessionData.user_id) {
+      try {
+        const profileRes = await fetch(
+          `${SB_URL}/rest/v1/emergency_profiles?user_id=eq.${sessionData.user_id}&active=eq.true&select=*&limit=1`,
+          { headers: sbHeaders }
+        );
+        const profiles = await profileRes.json();
+        if (Array.isArray(profiles) && profiles.length) {
+          medicalProfile = profiles[0];
+        }
+      } catch (e) { console.warn('Could not fetch medical profile:', e); }
+    }
+
+    // 3. Fetch tracking points (breadcrumb trail)
     const pointsRes = await fetch(
       `${SB_URL}/rest/v1/tracking_points?session_id=eq.${sessionData.id}&order=recorded_at.asc&limit=10000`,
       { headers: sbHeaders }
@@ -160,13 +217,13 @@ async function init() {
     const points = await pointsRes.json();
     const trackPoints = Array.isArray(points) ? points : [];
 
-    // 3. Load Google Maps
+    // 4. Load Google Maps
     await loadGoogleMaps();
 
-    // 4. Render
+    // 5. Render
     renderPage(sessionData, trackPoints);
 
-    // 5. Start polling if active
+    // 6. Start polling if active
     if (sessionData.is_active) {
       pollInterval = setInterval(() => pollUpdates(sessionData), 10000);
     }
@@ -214,6 +271,9 @@ function renderPage(session, points) {
   html += `<div class="header-rider">${esc(riderName)}${bikeName ? ' &middot; ' + esc(bikeName) : ''}</div>`;
   html += `</div>`;
 
+  // Desktop: two-column grid wrapper
+  html += `<div class="desktop-layout">`;
+
   // Map
   html += `<div id="map-container">`;
   html += `<div class="map-overlay">`;
@@ -225,6 +285,8 @@ function renderPage(session, points) {
   html += `</div>`;
   html += `</div>`;
 
+  // Data panel (right column on desktop, stacked on mobile)
+  html += `<div class="data-panel">`;
   html += `<div class="container">`;
 
   // Session ended banner
@@ -272,6 +334,9 @@ function renderPage(session, points) {
     html += `</div>`;
   }
 
+  // Medical profile section
+  html += renderMedicalSection(medicalProfile);
+
   // Emergency contacts
   html += `<div class="emergency-section">`;
   html += `<div class="emergency-title">&#9888; Contactos de Emergencia</div>`;
@@ -288,6 +353,8 @@ function renderPage(session, points) {
   html += `</div>`;
 
   html += `</div>`; // container
+  html += `</div>`; // data-panel
+  html += `</div>`; // desktop-layout
 
   document.getElementById('app').innerHTML = html;
 
@@ -625,6 +692,102 @@ function fetchNearbyPlaces(lat, lng) {
       }
     });
   });
+}
+
+// ═══════════════════════════════════════════════════════════
+// MEDICAL PROFILE
+// ═══════════════════════════════════════════════════════════
+function renderMedicalSection(profile) {
+  if (!profile) return '';
+
+  let html = `<div class="medical-section">`;
+  html += `<div class="medical-title">&#9829; PERFIL MEDICO</div>`;
+  html += `<div class="medical-grid">`;
+
+  // Blood type with large badge
+  if (profile.blood_type) {
+    html += `<div class="medical-item" style="text-align:center">`;
+    html += `<span class="medical-label">Tipo Sanguineo</span>`;
+    html += `<div style="margin-top:4px"><span class="blood-badge">${esc(profile.blood_type)}</span></div>`;
+    if (profile.organ_donor) html += `<div style="margin-top:6px"><span class="donor-badge">&#9829; Dador de Orgaos</span></div>`;
+    html += `</div>`;
+  }
+
+  // Identification summary
+  if (profile.name || profile.weight_kg || profile.height_cm) {
+    html += `<div class="medical-item">`;
+    html += `<span class="medical-label">Identificacao</span>`;
+    const parts = [];
+    if (profile.name) parts.push(esc(profile.name));
+    if (profile.birthdate) {
+      const age = Math.floor((Date.now() - new Date(profile.birthdate).getTime()) / (365.25*24*60*60*1000));
+      parts.push(age + ' anos');
+    }
+    if (profile.weight_kg) parts.push(profile.weight_kg + ' kg');
+    if (profile.height_cm) parts.push(profile.height_cm + ' cm');
+    html += `<span class="medical-value">${parts.join(' &middot; ')}</span>`;
+    html += `</div>`;
+  }
+
+  // Allergies
+  if (profile.allergies && profile.allergies.length) {
+    html += `<div class="medical-item">`;
+    html += `<span class="medical-label">Alergias</span>`;
+    html += `<div>`;
+    profile.allergies.forEach(a => { html += `<span class="alert-tag tag-red">${esc(a)}</span> `; });
+    html += `</div></div>`;
+  }
+
+  // Medications
+  if (profile.medications && profile.medications.length) {
+    html += `<div class="medical-item">`;
+    html += `<span class="medical-label">Medicacao</span>`;
+    html += `<div>`;
+    profile.medications.forEach(m => { html += `<span class="alert-tag tag-amber">${esc(m)}</span> `; });
+    html += `</div></div>`;
+  }
+
+  // Medical conditions
+  if (profile.medical_conditions && profile.medical_conditions.length) {
+    html += `<div class="medical-item">`;
+    html += `<span class="medical-label">Condicoes</span>`;
+    html += `<div>`;
+    profile.medical_conditions.forEach(c => { html += `<span class="alert-tag tag-blue">${esc(c)}</span> `; });
+    html += `</div></div>`;
+  }
+
+  // Health insurance
+  if (profile.health_insurance) {
+    html += `<div class="medical-item">`;
+    html += `<span class="medical-label">Seguro Saude</span>`;
+    html += `<span class="medical-value">${esc(profile.health_insurance)}</span>`;
+    html += `</div>`;
+  }
+
+  // Medical notes
+  if (profile.medical_notes) {
+    html += `<div class="medical-item">`;
+    html += `<span class="medical-label">Notas Medicas</span>`;
+    html += `<span class="medical-value">${esc(profile.medical_notes)}</span>`;
+    html += `</div>`;
+  }
+
+  // ICE Emergency contacts
+  const contacts = profile.emergency_contacts || [];
+  if (contacts.length) {
+    html += `<div class="medical-item" style="grid-column: 1 / -1">`;
+    html += `<span class="medical-label">Contactos ICE</span>`;
+    contacts.forEach(c => {
+      html += `<a href="tel:${esc(c.phone)}" class="ice-contact">`;
+      html += `${esc(c.name)}${c.relation ? ' (' + esc(c.relation) + ')' : ''} &#128222; ${esc(c.phone)}`;
+      html += `</a>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `</div>`; // medical-grid
+  html += `</div>`; // medical-section
+  return html;
 }
 
 // ═══════════════════════════════════════════════════════════
