@@ -11,5 +11,8 @@
         { "key": "Service-Worker-Allowed", "value": "/" }
       ]
     }
+  ],
+  "rewrites": [
+    { "source": "/api/og", "destination": "/api/og.js" }
   ]
 }
