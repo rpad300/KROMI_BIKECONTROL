@@ -463,31 +463,45 @@ function renderPage(session, points) {
   // Sparklines (Speed + HR history)
   html += renderSparklines(points);
 
-  // Photo gallery
-  if (ridePhotos.length > 0) {
-    html += `<div class="route-section">`;
-    html += `<div class="route-title">&#128247; Fotos da Ride (${ridePhotos.length})</div>`;
-    html += `<div id="photo-gallery" style="display:flex;gap:6px;overflow-x:auto;padding:4px 0;-webkit-overflow-scrolling:touch">`;
+  // Photo gallery — always visible
+  html += `<div class="route-section">`;
+  html += `<div class="route-title">&#128247; Galeria da Ride${ridePhotos.length > 0 ? ' (' + ridePhotos.length + ')' : ''}</div>`;
+  html += `<div id="photo-gallery" style="display:flex;gap:6px;overflow-x:auto;padding:4px 0;-webkit-overflow-scrolling:touch;min-height:86px;align-items:center">`;
 
-    for (const photo of ridePhotos.slice(0, 20)) {
+  if (ridePhotos.length === 0) {
+    html += `<div style="flex:1;text-align:center;padding:16px 0">`;
+    html += `<div style="font-size:28px;opacity:0.3;margin-bottom:4px">&#128247;</div>`;
+    html += `<div style="font-size:10px;color:#555">Sem fotos ainda</div>`;
+    html += `<div style="font-size:9px;color:#444;margin-top:2px">As fotos aparecem aqui quando o rider as captura</div>`;
+    html += `</div>`;
+  } else {
+    for (const photo of ridePhotos.slice(0, 30)) {
       const thumbUrl = photo.drive_thumbnail_url || '';
       const viewUrl = photo.drive_view_url || '';
       const timeStr = new Date(photo.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
       const isVideo = photo.media_type === 'video';
 
-      html += `<a href="${esc(viewUrl)}" target="_blank" style="flex-shrink:0;position:relative;display:block;text-decoration:none">`;
+      html += `<div onclick="openPhotoModal('${esc(viewUrl)}', '${esc(thumbUrl)}', '${esc(photo.caption || '')}', '${timeStr}', ${photo.lat}, ${photo.lng})" style="flex-shrink:0;position:relative;cursor:pointer">`;
       if (thumbUrl) {
-        html += `<img src="${esc(thumbUrl)}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #333" alt="" />`;
+        html += `<img src="${esc(thumbUrl)}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #333" alt="" loading="lazy" />`;
       } else {
         html += `<div style="width:80px;height:80px;background:#262626;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;border:1px solid #333">${isVideo ? '&#127909;' : '&#128247;'}</div>`;
       }
       html += `<div style="position:absolute;bottom:2px;left:2px;right:2px;background:rgba(0,0,0,0.7);border-radius:0 0 5px 5px;padding:2px 4px;font-size:8px;color:#adaaaa;text-align:center">${timeStr}</div>`;
-      html += `</a>`;
+      html += `</div>`;
     }
-
-    html += `</div>`;
-    html += `</div>`;
   }
+
+  html += `</div>`;
+  html += `</div>`;
+
+  // Photo modal container (hidden by default)
+  html += `<div id="photo-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.95);flex-direction:column;align-items:center;justify-content:center" onclick="closePhotoModal(event)">`;
+  html += `<button onclick="closePhotoModal()" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.1);border:none;color:white;font-size:24px;width:44px;height:44px;border-radius:50%;cursor:pointer;z-index:10000">✕</button>`;
+  html += `<img id="photo-modal-img" src="" style="max-width:90vw;max-height:70vh;object-fit:contain;border-radius:8px" alt="" />`;
+  html += `<div id="photo-modal-info" style="text-align:center;margin-top:12px;padding:0 20px"></div>`;
+  html += `<a id="photo-modal-link" href="" target="_blank" style="margin-top:12px;padding:10px 24px;background:#e966ff;color:white;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700">Ver Original</a>`;
+  html += `</div>`;
 
   // Weather section
   html += `<div id="weather-section"></div>`;
@@ -1468,21 +1482,30 @@ function updatePhotoGallery() {
   const gallery = document.getElementById('photo-gallery');
   if (!gallery) return;
 
+  if (ridePhotos.length === 0) {
+    gallery.innerHTML = `<div style="flex:1;text-align:center;padding:16px 0">
+      <div style="font-size:28px;opacity:0.3;margin-bottom:4px">&#128247;</div>
+      <div style="font-size:10px;color:#555">Sem fotos ainda</div>
+      <div style="font-size:9px;color:#444;margin-top:2px">As fotos aparecem aqui quando o rider as captura</div>
+    </div>`;
+    return;
+  }
+
   let html = '';
-  for (const photo of ridePhotos.slice(0, 20)) {
+  for (const photo of ridePhotos.slice(0, 30)) {
     const thumbUrl = photo.drive_thumbnail_url || '';
     const viewUrl = photo.drive_view_url || '';
     const timeStr = new Date(photo.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
     const isVideo = photo.media_type === 'video';
 
-    html += `<a href="${esc(viewUrl)}" target="_blank" style="flex-shrink:0;position:relative;display:block;text-decoration:none">`;
+    html += `<div onclick="openPhotoModal('${esc(viewUrl)}', '${esc(thumbUrl)}', '${esc(photo.caption || '')}', '${timeStr}', ${photo.lat}, ${photo.lng})" style="flex-shrink:0;position:relative;cursor:pointer">`;
     if (thumbUrl) {
-      html += `<img src="${esc(thumbUrl)}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #333" alt="" />`;
+      html += `<img src="${esc(thumbUrl)}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #333" alt="" loading="lazy" />`;
     } else {
       html += `<div style="width:80px;height:80px;background:#262626;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;border:1px solid #333">${isVideo ? '&#127909;' : '&#128247;'}</div>`;
     }
     html += `<div style="position:absolute;bottom:2px;left:2px;right:2px;background:rgba(0,0,0,0.7);border-radius:0 0 5px 5px;padding:2px 4px;font-size:8px;color:#adaaaa;text-align:center">${timeStr}</div>`;
-    html += `</a>`;
+    html += `</div>`;
   }
   gallery.innerHTML = html;
 }
@@ -1683,6 +1706,43 @@ function playNotificationPing() {
     osc.start();
     osc.stop(ctx.currentTime + 0.5);
   } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════
+// PHOTO MODAL
+// ═══════════════════════════════════════════════════════════
+function openPhotoModal(viewUrl, thumbUrl, caption, time, lat, lng) {
+  const modal = document.getElementById('photo-modal');
+  const img = document.getElementById('photo-modal-img');
+  const info = document.getElementById('photo-modal-info');
+  const link = document.getElementById('photo-modal-link');
+  if (!modal || !img || !info || !link) return;
+
+  // Use view URL for full size, fallback to thumbnail
+  img.src = viewUrl || thumbUrl || '';
+  link.href = viewUrl || '';
+  link.style.display = viewUrl ? 'inline-block' : 'none';
+
+  let infoHtml = '';
+  if (caption) infoHtml += `<div style="font-size:14px;color:#fff;font-weight:600;margin-bottom:4px">${esc(caption)}</div>`;
+  infoHtml += `<div style="font-size:11px;color:#888">&#128247; ${time}`;
+  if (lat && lng) infoHtml += ` &middot; ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  infoHtml += `</div>`;
+  info.innerHTML = infoHtml;
+
+  modal.style.display = 'flex';
+
+  // Pan map to photo location
+  if (map && lat && lng) {
+    map.panTo({ lat, lng });
+    map.setZoom(17);
+  }
+}
+
+function closePhotoModal(event) {
+  if (event && event.target !== event.currentTarget && event.target.tagName !== 'BUTTON') return;
+  const modal = document.getElementById('photo-modal');
+  if (modal) modal.style.display = 'none';
 }
 
 // ═══════════════════════════════════════════════════════════
