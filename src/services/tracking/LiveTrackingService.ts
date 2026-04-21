@@ -1,9 +1,9 @@
 /**
- * LiveTrackingService — always-on auto-tracking using permanent user token.
+ * LiveTrackingService — trip-gated auto-tracking using permanent user token.
  *
  * Uses the rider's `emergency_qr_token` as a permanent share token.
- * Automatically starts broadcasting when BLE connects (bike on)
- * and stops when BLE disconnects (bike off / app closes).
+ * Automatically starts broadcasting when tripStore.state === 'running'
+ * and stops when the trip is paused, finished, or idle.
  *
  * The share URL never changes: `live.html?t={emergency_qr_token}`
  *
@@ -22,6 +22,7 @@ import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 import { useRouteStore } from '../../store/routeStore';
 import { useSettingsStore } from '../../store/settingsStore';
+import { useTripStore } from '../../store/tripStore';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -34,7 +35,7 @@ const POINTS_PATH = '/rest/v1/tracking_points';
 let _sessionId: string | null = null;
 let _token: string | null = null;
 let _intervalHandle: ReturnType<typeof setInterval> | null = null;
-let _bleUnsub: (() => void) | null = null;
+let _tripUnsub: (() => void) | null = null;
 let _broadcasting = false;
 let _activeGroupRideId: string | null = null;
 
@@ -65,12 +66,12 @@ interface TrackingSessionRow {
 
 /**
  * Initialize auto-tracking — call once on app boot.
- * Subscribes to bikeStore ble_status changes and auto-starts/stops
- * broadcasting when the bike connects/disconnects.
+ * Subscribes to tripStore state changes and auto-starts/stops
+ * broadcasting when a trip starts/stops.
  */
 export function initAutoTracking(): void {
   // Prevent double init
-  if (_bleUnsub) return;
+  if (_tripUnsub) return;
 
   const user = useAuthStore.getState().user;
   if (!user?.id) {
@@ -86,41 +87,44 @@ export function initAutoTracking(): void {
 
   _token = token;
 
-  // React to BLE status changes (plain subscribe — no subscribeWithSelector)
-  let prevBleStatus = useBikeStore.getState().ble_status;
-  _bleUnsub = useBikeStore.subscribe((state) => {
-    const status = state.ble_status;
-    if (status === prevBleStatus) return;
-    prevBleStatus = status;
+  // React to trip state changes
+  let wasBroadcasting = false;
+  _tripUnsub = useTripStore.subscribe((state) => {
+    const shouldBroadcast = state.state === 'running';
 
-    if (status === 'connected') {
+    if (shouldBroadcast && !wasBroadcasting) {
+      // Trip started — begin broadcasting
+      wasBroadcasting = true;
       startBroadcasting().catch((err) =>
         console.warn('[LiveTracking] Error starting broadcast:', err),
       );
-    } else {
+    } else if (!shouldBroadcast && wasBroadcasting) {
+      // Trip stopped/paused/finished — stop broadcasting
+      wasBroadcasting = false;
       stopBroadcasting().catch((err) =>
         console.warn('[LiveTracking] Error stopping broadcast:', err),
       );
     }
   });
 
-  // If already connected at init time, start immediately
-  if (useBikeStore.getState().ble_status === 'connected') {
+  // If trip is already running at init time, start immediately
+  if (useTripStore.getState().state === 'running') {
+    wasBroadcasting = true;
     startBroadcasting().catch((err) =>
       console.warn('[LiveTracking] Error starting broadcast on init:', err),
     );
   }
 
-  console.info('[LiveTracking] Auto-tracking initialized');
+  console.info('[LiveTracking] Auto-tracking initialized (trip-gated)');
 }
 
 /**
  * Stop tracking and cleanup — call on app unmount.
  */
 export function cleanupAutoTracking(): void {
-  if (_bleUnsub) {
-    _bleUnsub();
-    _bleUnsub = null;
+  if (_tripUnsub) {
+    _tripUnsub();
+    _tripUnsub = null;
   }
   stopBroadcasting().catch(() => {});
   _token = null;
@@ -138,10 +142,18 @@ export function getShareUrl(): string | null {
 }
 
 /**
- * Check if currently broadcasting (BLE connected + session active).
+ * Check if currently broadcasting (trip running + session active).
  */
 export function isLiveBroadcasting(): boolean {
   return _broadcasting;
+}
+
+/**
+ * Get the active tracking session ID (for associating photos, etc.).
+ * Returns null when not broadcasting.
+ */
+export function getActiveSessionId(): string | null {
+  return _broadcasting ? _sessionId : null;
 }
 
 // ─── Legacy compat exports (used by Settings page) ──────────────────────────

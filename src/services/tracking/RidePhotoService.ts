@@ -9,6 +9,7 @@ import { uploadFile, userFolderSlug } from '../storage/KromiFileStore';
 import { useAuthStore } from '../../store/authStore';
 import { useMapStore } from '../../store/mapStore';
 import { supaFetch } from '../../lib/supaFetch';
+import { getActiveSessionId } from './LiveTrackingService';
 
 /**
  * Upload a ride photo/video file with GPS metadata.
@@ -60,6 +61,7 @@ export async function uploadRidePhoto(
         headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({
           user_id: user.id,
+          tracking_session_id: getActiveSessionId(),
           lat: lat || 0,
           lng: lng || 0,
           altitude,

@@ -273,7 +273,7 @@ async function init() {
           return;
         }
       } catch (e) { console.warn('Could not fetch emergency profile:', e); }
-      showError('Nenhuma sessao de tracking', 'Este rider ainda nao iniciou nenhuma sessao de tracking.');
+      showError('Nenhuma atividade a correr', 'Este rider ainda nao iniciou nenhuma pedalada na app KROMI.');
       return;
     }
 
@@ -431,8 +431,8 @@ function renderPage(session, points) {
   if (!isActive) {
     const endedAt = session.ended_at ? new Date(session.ended_at) : null;
     html += `<div class="session-ended-banner">`;
-    html += `<div class="title">Ultima Sessao</div>`;
-    html += `<div class="sub">${endedAt ? 'Terminada a ' + endedAt.toLocaleString('pt-PT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'O tracking inicia automaticamente quando a bike liga'}</div>`;
+    html += `<div class="title">Nenhuma atividade a correr</div>`;
+    html += `<div class="sub">${endedAt ? 'Ultima pedalada terminada a ' + endedAt.toLocaleString('pt-PT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'O tracking inicia quando o rider comeca uma pedalada'}</div>`;
     html += `</div>`;
   }
 
@@ -1561,8 +1561,8 @@ function showNoSession(profile) {
   html += `</div>`;
   html += `<div style="max-width:520px;margin:0 auto;padding:40px 20px;text-align:center">`;
   html += `<div style="font-size:48px;margin-bottom:16px">&#128690;</div>`;
-  html += `<div style="font-size:18px;font-weight:800;color:#fbbf24;margin-bottom:8px">Nenhuma sessao de tracking</div>`;
-  html += `<div style="font-size:13px;color:#888;margin-bottom:24px">O tracking inicia automaticamente quando a bike do rider liga via Bluetooth.</div>`;
+  html += `<div style="font-size:18px;font-weight:800;color:#fbbf24;margin-bottom:8px">Nenhuma atividade a correr</div>`;
+  html += `<div style="font-size:13px;color:#888;margin-bottom:24px">O tracking inicia automaticamente quando o rider comeca uma pedalada na app KROMI.</div>`;
   if (profile.name || profile.phone) {
     html += `<div style="background:#1a1919;border-radius:10px;padding:14px;border:1px solid #262626;text-align:left">`;
     html += `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#3fff8b;margin-bottom:8px">Rider</div>`;
