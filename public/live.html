@@ -142,6 +142,19 @@
 </style>
 </head>
 <body>
+<script>
+// Unregister any PWA service worker so this page is served directly
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    regs.forEach(r => r.unregister());
+  }).then(() => {
+    // If we were served from SW cache (index.html), reload to get the real live.html
+    if (document.querySelector('#root') || document.querySelector('[data-reactroot]')) {
+      location.reload();
+    }
+  });
+}
+</script>
 
 <div id="app">
   <div class="loading">

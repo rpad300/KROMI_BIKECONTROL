@@ -89,6 +89,18 @@
 </style>
 </head>
 <body>
+<script>
+// Unregister any PWA service worker so this page is served directly
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    regs.forEach(r => r.unregister());
+  }).then(() => {
+    if (document.querySelector('#root') || document.querySelector('[data-reactroot]')) {
+      location.reload();
+    }
+  });
+}
+</script>
   <div class="emergency-header">
     <h1>PERFIL DE EMERGENCIA</h1>
     <div class="subtitle">KROMI BikeControl</div>
