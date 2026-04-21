@@ -122,33 +122,52 @@
   .donor-badge { display: inline-block; padding: 3px 8px; background: rgba(63,255,139,0.15); color: #3fff8b; border: 1px solid rgba(63,255,139,0.3); border-radius: 4px; font-size: 11px; font-weight: 700; }
 
   /* ═══════════════════════════════════════════════════════════ */
-  /* RESPONSIVE DESKTOP LAYOUT (>768px)                        */
+  /* MOBILE DEFAULT                                            */
   /* ═══════════════════════════════════════════════════════════ */
-  @media (min-width: 768px) {
+  .desktop-layout { display: block; }
+  .right-panel { display: block; padding: 0 12px; }
+
+  /* ═══════════════════════════════════════════════════════════ */
+  /* TABLET: 2-column (768–1023px)                             */
+  /* ═══════════════════════════════════════════════════════════ */
+  @media (min-width: 768px) and (max-width: 1023px) {
     body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-
     .header { width: 100%; padding: 10px 24px; flex-shrink: 0; }
-
-    .desktop-layout { display: grid; grid-template-columns: 1fr 420px; gap: 0; width: 100%; flex: 1; min-height: 0; }
-
-    #map-container { height: 100% !important; min-height: 0; }
-
-    .data-panel { overflow-y: auto; height: 100%; padding: 0 16px 16px; }
-
+    .desktop-layout { display: grid; grid-template-columns: 1fr 380px; gap: 0; width: 100%; flex: 1; min-height: 0; overflow: hidden; }
+    #map-container { height: 100% !important; min-height: 0; grid-column: 1; grid-row: 1 / 3; }
+    .data-panel { grid-column: 2; grid-row: 1; overflow-y: auto; padding: 0 12px 0; min-height: 0; }
+    .right-panel { grid-column: 2; grid-row: 2; overflow-y: auto; padding: 0 12px 12px; min-height: 0; }
     .container { max-width: 100%; padding: 0; }
-
     .kpi-grid { grid-template-columns: 1fr 1fr; }
-
-    .kpi-value { font-size: 22px; }
-
     .medical-grid { grid-template-columns: 1fr 1fr; }
-
     .footer-bar { margin: 12px 0; }
   }
 
-  @media (min-width: 1200px) {
-    .desktop-layout { grid-template-columns: 1fr 500px; }
+  /* ═══════════════════════════════════════════════════════════ */
+  /* DESKTOP: 3-column (≥1024px)                               */
+  /* ═══════════════════════════════════════════════════════════ */
+  @media (min-width: 1024px) {
+    body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    .header { width: 100%; padding: 10px 24px; flex-shrink: 0; }
+    .desktop-layout { display: grid; grid-template-columns: 280px 1fr 320px; gap: 0; width: 100%; flex: 1; min-height: 0; }
+    #map-container { height: 100% !important; min-height: 0; order: 2; }
+    .data-panel { overflow-y: auto; height: 100%; padding: 8px 10px; order: 1; border-right: 1px solid #262626; }
+    .right-panel { overflow-y: auto; height: 100%; padding: 8px 10px; order: 3; border-left: 1px solid #262626; display: block; }
+    .container { max-width: 100%; padding: 0; }
+    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .kpi-value { font-size: 18px; }
+    .medical-grid { grid-template-columns: 1fr; }
+    .footer-bar { display: none; }
+  }
+
+  /* ═══════════════════════════════════════════════════════════ */
+  /* WIDE DESKTOP (≥1400px)                                    */
+  /* ═══════════════════════════════════════════════════════════ */
+  @media (min-width: 1400px) {
+    .desktop-layout { grid-template-columns: 320px 1fr 380px; }
     .kpi-grid { grid-template-columns: 1fr 1fr 1fr; }
+    .kpi-value { font-size: 20px; }
+    .medical-grid { grid-template-columns: 1fr 1fr; }
   }
 </style>
 </head>
@@ -324,21 +343,10 @@ function renderPage(session, points) {
   }
   html += `</div>`;
 
-  // Desktop: two-column grid wrapper
+  // Desktop: 3-column grid wrapper (left data-panel, center map, right panel)
   html += `<div class="desktop-layout">`;
 
-  // Map
-  html += `<div id="map-container">`;
-  html += `<div class="map-overlay">`;
-  if (isActive) {
-    html += `<div class="live-badge"><span class="live-dot"></span>LIVE</div>`;
-  } else {
-    html += `<div class="ended-badge">TERMINADA</div>`;
-  }
-  html += `</div>`;
-  html += `</div>`;
-
-  // Data panel (right column on desktop, stacked on mobile)
+  // ── LEFT: Data panel (KPIs, sparklines, weather, route, elevation, ETA) ──
   html += `<div class="data-panel">`;
   html += `<div class="container">`;
 
@@ -463,6 +471,31 @@ function renderPage(session, points) {
     html += `<div id="eta-home-section"></div>`;
   }
 
+  // Footer (visible on mobile/tablet, hidden on desktop via CSS)
+  html += `<div class="footer-bar" id="footer-bar">`;
+  html += `<div class="last-update">Ultima atualizacao: <span id="last-update-time">${formatTime(new Date())}</span></div>`;
+  if (isActive) {
+    html += `<div class="live-badge" style="font-size:9px;padding:3px 8px"><span class="live-dot" style="width:6px;height:6px"></span>LIVE</div>`;
+  }
+  html += `</div>`;
+
+  html += `</div>`; // container
+  html += `</div>`; // data-panel
+
+  // ── CENTER: Map ──
+  html += `<div id="map-container">`;
+  html += `<div class="map-overlay">`;
+  if (isActive) {
+    html += `<div class="live-badge"><span class="live-dot"></span>LIVE</div>`;
+  } else {
+    html += `<div class="ended-badge">TERMINADA</div>`;
+  }
+  html += `</div>`;
+  html += `</div>`;
+
+  // ── RIGHT: Medical profile, Emergency, Home distance ──
+  html += `<div class="right-panel">`;
+
   // Medical profile section (fallback to session data if no emergency_profiles)
   if (medicalProfile) {
     html += renderMedicalSection(medicalProfile);
@@ -490,16 +523,7 @@ function renderPage(session, points) {
   html += `<div id="nearby-places" style="margin-top:4px"></div>`;
   html += `</div>`;
 
-  // Footer
-  html += `<div class="footer-bar" id="footer-bar">`;
-  html += `<div class="last-update">Ultima atualizacao: <span id="last-update-time">${formatTime(new Date())}</span></div>`;
-  if (isActive) {
-    html += `<div class="live-badge" style="font-size:9px;padding:3px 8px"><span class="live-dot" style="width:6px;height:6px"></span>LIVE</div>`;
-  }
-  html += `</div>`;
-
-  html += `</div>`; // container
-  html += `</div>`; // data-panel
+  html += `</div>`; // right-panel
   html += `</div>`; // desktop-layout
 
   document.getElementById('app').innerHTML = html;
