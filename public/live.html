@@ -1718,8 +1718,10 @@ function openPhotoModal(viewUrl, thumbUrl, caption, time, lat, lng) {
   const link = document.getElementById('photo-modal-link');
   if (!modal || !img || !info || !link) return;
 
-  // Use view URL for full size, fallback to thumbnail
-  img.src = viewUrl || thumbUrl || '';
+  // Use thumbnail for display (viewUrl is a Drive page, not a direct image)
+  // Request larger thumbnail by replacing =s220 with =s1200
+  const largeThumbnail = thumbUrl ? thumbUrl.replace(/=s\d+$/, '=s1200') : '';
+  img.src = largeThumbnail || thumbUrl || '';
   link.href = viewUrl || '';
   link.style.display = viewUrl ? 'inline-block' : 'none';
 
