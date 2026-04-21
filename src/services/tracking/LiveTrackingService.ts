@@ -75,13 +75,28 @@ export function initAutoTracking(): void {
 
   const user = useAuthStore.getState().user;
   if (!user?.id) {
-    console.warn('[LiveTracking] Cannot init — user not authenticated');
+    console.info('[LiveTracking] User not yet authenticated — will retry');
+    // Retry when user becomes available
+    const unsub = useAuthStore.subscribe((s) => {
+      if (s.user?.id) {
+        unsub();
+        initAutoTracking();
+      }
+    });
     return;
   }
 
   const token = useSettingsStore.getState().riderProfile?.emergency_qr_token;
   if (!token || token.length < 32) {
-    console.info('[LiveTracking] Skipping — no emergency_qr_token set');
+    console.info('[LiveTracking] No emergency_qr_token — will retry when settings sync');
+    // Retry when settings load
+    const unsub = useSettingsStore.subscribe((s) => {
+      const t = s.riderProfile?.emergency_qr_token;
+      if (t && t.length >= 32) {
+        unsub();
+        initAutoTracking();
+      }
+    });
     return;
   }
 
