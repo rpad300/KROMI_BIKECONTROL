@@ -179,6 +179,11 @@
     .kpi-value { font-size: 20px; }
     .medical-grid { grid-template-columns: 1fr 1fr; }
   }
+
+  /* Photo gallery scrollbar */
+  #photo-gallery::-webkit-scrollbar { height: 4px; }
+  #photo-gallery::-webkit-scrollbar-track { background: transparent; }
+  #photo-gallery::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
 </style>
 </head>
 <body>
@@ -232,6 +237,8 @@ let allTrackPoints = [];
 let groupRide = null;
 let groupParticipants = [];
 let groupMarkers = [];
+let ridePhotos = [];
+let photoMarkers = [];
 
 // ═══════════════════════════════════════════════════════════
 // MAIN
@@ -311,6 +318,18 @@ async function init() {
           }
         }
       } catch (e) { console.warn('Group ride fetch failed:', e); }
+    }
+
+    // 3b. Fetch ride photos for this session
+    if (sessionData.user_id) {
+      try {
+        const photosRes = await fetch(
+          `${SB_URL}/rest/v1/ride_photos?user_id=eq.${sessionData.user_id}&order=created_at.desc&limit=50&select=*`,
+          { headers: sbHeaders }
+        );
+        const photos = await photosRes.json();
+        if (Array.isArray(photos)) ridePhotos = photos;
+      } catch (e) { console.warn('Photos fetch failed:', e); }
     }
 
     // 4. Fetch tracking points (breadcrumb trail)
@@ -443,6 +462,32 @@ function renderPage(session, points) {
 
   // Sparklines (Speed + HR history)
   html += renderSparklines(points);
+
+  // Photo gallery
+  if (ridePhotos.length > 0) {
+    html += `<div class="route-section">`;
+    html += `<div class="route-title">&#128247; Fotos da Ride (${ridePhotos.length})</div>`;
+    html += `<div id="photo-gallery" style="display:flex;gap:6px;overflow-x:auto;padding:4px 0;-webkit-overflow-scrolling:touch">`;
+
+    for (const photo of ridePhotos.slice(0, 20)) {
+      const thumbUrl = photo.drive_thumbnail_url || '';
+      const viewUrl = photo.drive_view_url || '';
+      const timeStr = new Date(photo.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+      const isVideo = photo.media_type === 'video';
+
+      html += `<a href="${esc(viewUrl)}" target="_blank" style="flex-shrink:0;position:relative;display:block;text-decoration:none">`;
+      if (thumbUrl) {
+        html += `<img src="${esc(thumbUrl)}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #333" alt="" />`;
+      } else {
+        html += `<div style="width:80px;height:80px;background:#262626;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;border:1px solid #333">${isVideo ? '&#127909;' : '&#128247;'}</div>`;
+      }
+      html += `<div style="position:absolute;bottom:2px;left:2px;right:2px;background:rgba(0,0,0,0.7);border-radius:0 0 5px 5px;padding:2px 4px;font-size:8px;color:#adaaaa;text-align:center">${timeStr}</div>`;
+      html += `</a>`;
+    }
+
+    html += `</div>`;
+    html += `</div>`;
+  }
 
   // Weather section
   html += `<div id="weather-section"></div>`;
@@ -617,6 +662,11 @@ function renderPage(session, points) {
     // Show group member markers on map
     if (groupParticipants.length > 0) {
       showGroupMembers();
+    }
+
+    // Show photo markers on map
+    if (ridePhotos.length > 0) {
+      showPhotoMarkers();
     }
 
     // Fetch nearby places + home distance if we have a position
@@ -1013,6 +1063,22 @@ async function pollUpdates(session) {
       fetchRiderWeather(lastPt.lat, lastPt.lng);
     }
 
+    // Refresh photos
+    if (sessionData.user_id) {
+      try {
+        const photosRes = await fetch(
+          `${SB_URL}/rest/v1/ride_photos?user_id=eq.${sessionData.user_id}&order=created_at.desc&limit=50&select=*`,
+          { headers: sbHeaders }
+        );
+        const photos = await photosRes.json();
+        if (Array.isArray(photos) && photos.length !== ridePhotos.length) {
+          ridePhotos = photos;
+          showPhotoMarkers();
+          updatePhotoGallery();
+        }
+      } catch {}
+    }
+
     // Update timestamp
     const timeEl = document.getElementById('last-update-time');
     if (timeEl) timeEl.textContent = formatTime(new Date());
@@ -1348,6 +1414,77 @@ function renderMedicalSection(profile) {
   html += `</div>`; // medical-grid
   html += `</div>`; // medical-section
   return html;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PHOTO MARKERS + GALLERY
+// ═══════════════════════════════════════════════════════════
+function showPhotoMarkers() {
+  // Clear old markers
+  photoMarkers.forEach(m => m.setMap(null));
+  photoMarkers = [];
+
+  if (!map || !ridePhotos.length) return;
+
+  for (const photo of ridePhotos) {
+    if (!photo.lat || !photo.lng) continue;
+
+    const thumbUrl = photo.drive_thumbnail_url;
+
+    // Create a small photo marker
+    const marker = new google.maps.Marker({
+      position: { lat: photo.lat, lng: photo.lng },
+      map: map,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 8,
+        fillColor: '#e966ff',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 2,
+      },
+      title: photo.caption || 'Foto',
+      zIndex: 40,
+    });
+
+    // Info window with photo thumbnail
+    const timeStr = new Date(photo.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+    const content = `
+      <div style="background:#1a1919;padding:8px;border-radius:8px;max-width:200px">
+        ${thumbUrl ? `<img src="${esc(thumbUrl)}" style="width:100%;border-radius:4px;margin-bottom:6px" alt="Foto" />` : ''}
+        ${photo.caption ? `<div style="font-size:11px;color:#fff;margin-bottom:4px">${esc(photo.caption)}</div>` : ''}
+        <div style="font-size:9px;color:#888">${photo.media_type === 'video' ? '&#127909;' : '&#128247;'} ${timeStr}</div>
+        ${photo.drive_view_url ? `<a href="${esc(photo.drive_view_url)}" target="_blank" style="display:block;margin-top:6px;padding:4px;background:#262626;border-radius:4px;color:#e966ff;text-align:center;text-decoration:none;font-size:10px;font-weight:700">Ver original</a>` : ''}
+      </div>`;
+
+    const infoWindow = new google.maps.InfoWindow({ content });
+    marker.addListener('click', () => infoWindow.open(map, marker));
+
+    photoMarkers.push(marker);
+  }
+}
+
+function updatePhotoGallery() {
+  const gallery = document.getElementById('photo-gallery');
+  if (!gallery) return;
+
+  let html = '';
+  for (const photo of ridePhotos.slice(0, 20)) {
+    const thumbUrl = photo.drive_thumbnail_url || '';
+    const viewUrl = photo.drive_view_url || '';
+    const timeStr = new Date(photo.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+    const isVideo = photo.media_type === 'video';
+
+    html += `<a href="${esc(viewUrl)}" target="_blank" style="flex-shrink:0;position:relative;display:block;text-decoration:none">`;
+    if (thumbUrl) {
+      html += `<img src="${esc(thumbUrl)}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #333" alt="" />`;
+    } else {
+      html += `<div style="width:80px;height:80px;background:#262626;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;border:1px solid #333">${isVideo ? '&#127909;' : '&#128247;'}</div>`;
+    }
+    html += `<div style="position:absolute;bottom:2px;left:2px;right:2px;background:rgba(0,0,0,0.7);border-radius:0 0 5px 5px;padding:2px 4px;font-size:8px;color:#adaaaa;text-align:center">${timeStr}</div>`;
+    html += `</a>`;
+  }
+  gallery.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════════
