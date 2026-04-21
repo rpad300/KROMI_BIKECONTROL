@@ -40,6 +40,8 @@ class WebViewActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
     private var wakeLock: PowerManager.WakeLock? = null
     private var pwaLoaded = false
+    private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+    private val FILE_CHOOSER_REQUEST = 2001
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Remove ActionBar BEFORE calling super
@@ -280,6 +282,32 @@ class WebViewActivity : AppCompatActivity() {
                     callback?.invoke(origin, false, false)
                 }
             }
+
+            // File chooser — required for <input type="file"> to work in WebView
+            override fun onShowFileChooser(
+                webView: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
+            ): Boolean {
+                // Cancel any pending callback
+                fileChooserCallback?.onReceiveValue(null)
+                fileChooserCallback = filePathCallback
+
+                val intent = fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                }
+
+                try {
+                    startActivityForResult(intent, FILE_CHOOSER_REQUEST)
+                } catch (e: Exception) {
+                    Log.e(TAG, "File chooser failed: ${e.message}")
+                    fileChooserCallback?.onReceiveValue(null)
+                    fileChooserCallback = null
+                    return false
+                }
+                return true
+            }
         }
 
         // Enable Chrome DevTools remote debugging (debug builds only)
@@ -434,6 +462,19 @@ class WebViewActivity : AppCompatActivity() {
             webView.goBack()
         } else {
             moveTaskToBack(true) // don't kill app, keep service running
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == FILE_CHOOSER_REQUEST) {
+            val result = if (resultCode == RESULT_OK && data != null) {
+                val uri = data.data
+                if (uri != null) arrayOf(uri) else null
+            } else null
+            fileChooserCallback?.onReceiveValue(result)
+            fileChooserCallback = null
         }
     }
 
