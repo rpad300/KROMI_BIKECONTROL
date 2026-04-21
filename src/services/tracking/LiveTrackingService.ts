@@ -36,6 +36,19 @@ let _token: string | null = null;
 let _intervalHandle: ReturnType<typeof setInterval> | null = null;
 let _bleUnsub: (() => void) | null = null;
 let _broadcasting = false;
+let _activeGroupRideId: string | null = null;
+
+// ─── Group ride integration ───────────────────────────────────────────────────
+
+/** Set the active group ride — positions will be synced to club_ride_participants */
+export function setActiveGroupRide(rideId: string | null): void {
+  _activeGroupRideId = rideId;
+}
+
+/** Get the current active group ride ID */
+export function getActiveGroupRide(): string | null {
+  return _activeGroupRideId;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -393,4 +406,23 @@ async function broadcastUpdate(): Promise<void> {
       }
     }
   });
+
+  // Update group ride participant position if in a group ride
+  const userId = useAuthStore.getState().user?.id;
+  if (_activeGroupRideId && userId) {
+    supaFetch(
+      `/rest/v1/club_ride_participants?club_ride_id=eq.${_activeGroupRideId}&user_id=eq.${userId}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          last_lat: lat,
+          last_lng: lng,
+          last_speed: speedKmh,
+          last_update: now,
+          status: 'riding',
+        }),
+      }
+    ).catch(() => {});
+  }
 }
