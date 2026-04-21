@@ -41,6 +41,7 @@ class WebViewActivity : AppCompatActivity() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var pwaLoaded = false
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+    private var cameraPhotoUri: Uri? = null
     private val FILE_CHOOSER_REQUEST = 2001
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -284,6 +285,7 @@ class WebViewActivity : AppCompatActivity() {
             }
 
             // File chooser — required for <input type="file"> to work in WebView
+            @SuppressLint("QueryPermissionsNeeded")
             override fun onShowFileChooser(
                 webView: WebView?,
                 filePathCallback: ValueCallback<Array<Uri>>?,
@@ -293,13 +295,47 @@ class WebViewActivity : AppCompatActivity() {
                 fileChooserCallback?.onReceiveValue(null)
                 fileChooserCallback = filePathCallback
 
-                val intent = fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "*/*"
-                }
+                val acceptTypes = fileChooserParams?.acceptTypes ?: emptyArray()
+                val wantsImage = acceptTypes.any { it.startsWith("image") }
+                val wantsVideo = acceptTypes.any { it.startsWith("video") }
+                val hasCapture = fileChooserParams?.isCaptureEnabled == true
+
+                Log.i(TAG, "FileChooser: accept=${acceptTypes.joinToString()}, capture=$hasCapture")
 
                 try {
-                    startActivityForResult(intent, FILE_CHOOSER_REQUEST)
+                    if (hasCapture || wantsImage) {
+                        // Create a camera intent that saves to a temp file
+                        val photoFile = java.io.File.createTempFile(
+                            "ride_photo_", ".jpg",
+                            getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES)
+                        )
+                        cameraPhotoUri = androidx.core.content.FileProvider.getUriForFile(
+                            this@WebViewActivity,
+                            "${packageName}.fileprovider",
+                            photoFile
+                        )
+
+                        val cameraIntent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                            putExtra(android.provider.MediaStore.EXTRA_OUTPUT, cameraPhotoUri)
+                        }
+
+                        // Also offer gallery as fallback
+                        val galleryIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = if (wantsVideo) "image/*,video/*" else "image/*"
+                        }
+
+                        val chooser = Intent.createChooser(galleryIntent, "Foto da Ride")
+                        chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(cameraIntent))
+                        startActivityForResult(chooser, FILE_CHOOSER_REQUEST)
+                    } else {
+                        // Generic file picker
+                        val intent = fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                        }
+                        startActivityForResult(intent, FILE_CHOOSER_REQUEST)
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "File chooser failed: ${e.message}")
                     fileChooserCallback?.onReceiveValue(null)
@@ -469,12 +505,21 @@ class WebViewActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == FILE_CHOOSER_REQUEST) {
-            val result = if (resultCode == RESULT_OK && data != null) {
-                val uri = data.data
-                if (uri != null) arrayOf(uri) else null
+            val result = if (resultCode == RESULT_OK) {
+                // Check if camera was used (data is null when camera saves to EXTRA_OUTPUT)
+                val uri = data?.data
+                if (uri != null) {
+                    arrayOf(uri)
+                } else if (cameraPhotoUri != null) {
+                    // Camera captured to our temp file
+                    arrayOf(cameraPhotoUri!!)
+                } else null
             } else null
+
+            Log.i(TAG, "FileChooser result: ${result?.joinToString()}")
             fileChooserCallback?.onReceiveValue(result)
             fileChooserCallback = null
+            if (result == null) cameraPhotoUri = null
         }
     }
 
