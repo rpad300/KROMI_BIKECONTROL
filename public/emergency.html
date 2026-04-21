@@ -51,10 +51,18 @@
   .stat .lbl { font-size: 10px; color: #888; text-transform: uppercase; }
 
   /* Map */
-  #map-container { width: 100%; height: 280px; border-radius: 8px; overflow: hidden; background: #111; position: relative; }
+  #map-container { width: 100%; height: 340px; border-radius: 8px; overflow: hidden; background: #111; position: relative; }
   .map-legend { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
   .map-legend span { font-size: 9px; display: flex; align-items: center; gap: 3px; color: #888; }
   .map-legend .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* Live tracking button */
+  .live-track-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 8px; text-decoration: none; background: linear-gradient(135deg, #ff3333, #cc0000); color: #fff; }
+  .live-track-btn .pulse-dot { width: 8px; height: 8px; background: #fff; border-radius: 50%; animation: blink 1s infinite; flex-shrink: 0; }
+
+  /* Pulsing ring for live marker overlay */
+  @keyframes pulse-ring { 0% { transform: scale(0.5); opacity: 1; } 100% { transform: scale(2.5); opacity: 0; } }
+  .map-pulse-overlay { position: absolute; pointer-events: none; z-index: 10; }
 
   /* Canvas charts */
   .chart-canvas { width: 100%; height: 180px; display: block; border-radius: 6px; }
@@ -318,10 +326,16 @@ function render(p, session, isLive, snaps, nearbyRiders) {
   // ── MAP — route with HR zone coloring ──
   if (snaps.some(s => s.lat && s.lng)) {
     html += `<div class="card">`;
-    html += `<div class="card-title" style="color:#6e9bff"><span class="icon">&#127758;</span> Mapa do Percurso${isLive ? ' (LIVE)' : ''}</div>`;
+    html += `<div class="card-title" style="color:#6e9bff"><span class="icon">&#127758;</span> Mapa do Percurso${isLive ? ' <span style="color:#ff3333;font-size:10px;font-weight:700;background:rgba(255,51,51,0.15);padding:2px 6px;border-radius:8px;border:1px solid rgba(255,51,51,0.3)">LIVE</span>' : ''}</div>`;
     html += `<div id="map-container"></div>`;
-    html += `<div class="map-legend">`;
+    if (isLive) {
+      const token = window.location.pathname.split('/').pop() || new URLSearchParams(window.location.search).get('t');
+      html += `<a href="/live.html?t=${esc(token || '')}" target="_blank" class="live-track-btn"><span class="pulse-dot"></span>Ver Tracking ao Vivo</a>`;
+    }
+    html += `<div class="map-legend" style="margin-top:${isLive ? '6px' : '8px'}">`;
     ZONE_NAMES.forEach((name, i) => { html += `<span><span class="dot" style="background:${ZONE_COLORS[i]}"></span>${name}</span>`; });
+    html += `<span style="margin-left:auto"><span class="dot" style="background:#ef4444;border:1px solid #fff"></span>${isLive ? 'Posicao actual' : 'Ultima posicao'}</span>`;
+    html += `<span><span class="dot" style="background:#3fff8b"></span>Inicio</span>`;
     html += `</div></div>`;
   }
 
@@ -442,19 +456,8 @@ function render(p, session, isLive, snaps, nearbyRiders) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// GOOGLE MAPS
+// GOOGLE MAPS  (loadGoogleMaps defined after initMap below)
 // ═══════════════════════════════════════════════════════════
-function loadGoogleMaps() {
-  return new Promise((resolve, reject) => {
-    if (window.google?.maps) { resolve(); return; }
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=geometry`;
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-}
-
 function initMap(snapshots, session, isLive) {
   const container = document.getElementById('map-container');
   if (!container || !window.google?.maps) return;
@@ -468,18 +471,12 @@ function initMap(snapshots, session, isLive) {
   const map = new google.maps.Map(container, {
     center: bounds.getCenter(),
     zoom: 14,
-    mapTypeId: 'terrain',
+    mapTypeId: 'hybrid',   // satellite + labels
     disableDefaultUI: true,
     zoomControl: true,
-    styles: [
-      { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
-      { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a2e' }] },
-      { elementType: 'labels.text.fill', stylers: [{ color: '#8888aa' }] },
-      { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2a2a4a' }] },
-      { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
-      { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-      { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-    ],
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: false,
   });
   map.fitBounds(bounds, 30);
 
@@ -489,58 +486,110 @@ function initMap(snapshots, session, isLive) {
     new google.maps.Polyline({
       path: [{ lat: pts[i].lat, lng: pts[i].lng }, { lat: pts[i+1].lat, lng: pts[i+1].lng }],
       strokeColor: ZONE_COLORS[zone],
-      strokeOpacity: 0.9,
+      strokeOpacity: 0.95,
       strokeWeight: 4,
       map,
     });
   }
 
-  // Start marker
+  // Start marker (green circle)
   new google.maps.Marker({
     position: { lat: pts[0].lat, lng: pts[0].lng },
     map,
-    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: '#3fff8b', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
+    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#3fff8b', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
     title: 'Inicio',
+    zIndex: 10,
   });
 
-  // Last position marker with accuracy circle
+  // Last/current position marker — always RED (emergency context)
   const last = pts[pts.length - 1];
   const lastMarker = new google.maps.Marker({
     position: { lat: last.lat, lng: last.lng },
     map,
     icon: {
       path: google.maps.SymbolPath.CIRCLE,
-      scale: isLive ? 10 : 8,
-      fillColor: isLive ? '#ff3333' : '#fbbf24',
+      scale: 10,
+      fillColor: '#ff3333',
       fillOpacity: 1,
       strokeColor: '#fff',
-      strokeWeight: 2,
+      strokeWeight: 3,
     },
-    title: isLive ? 'Posicao actual' : 'Ultima posicao',
+    title: isLive ? 'Posicao actual' : 'Ultima posicao conhecida',
     animation: isLive ? google.maps.Animation.BOUNCE : null,
+    zIndex: 20,
   });
 
-  // Accuracy circle around last position
+  // Accuracy / uncertainty circle around last position
   new google.maps.Circle({
     center: { lat: last.lat, lng: last.lng },
     radius: last.gps_accuracy || 30,
     map,
-    fillColor: isLive ? '#ff3333' : '#fbbf24',
-    fillOpacity: 0.15,
-    strokeColor: isLive ? '#ff3333' : '#fbbf24',
-    strokeOpacity: 0.4,
-    strokeWeight: 1,
+    fillColor: '#ff3333',
+    fillOpacity: 0.12,
+    strokeColor: '#ff3333',
+    strokeOpacity: 0.5,
+    strokeWeight: 1.5,
   });
 
-  // Info window on last position
+  // Info window on last position (auto-open)
   const info = new google.maps.InfoWindow({
-    content: `<div style="color:#000;font-size:12px;padding:4px"><b>${isLive ? 'POSICAO ACTUAL' : 'ULTIMA POSICAO'}</b><br>${last.lat.toFixed(5)}, ${last.lng.toFixed(5)}<br>Alt: ${last.altitude_m ? Math.round(last.altitude_m) + 'm' : '?'} | Vel: ${last.speed_kmh ? last.speed_kmh.toFixed(0) + 'km/h' : '?'}</div>`,
+    content: `<div style="color:#000;font-size:12px;padding:4px;min-width:160px"><b style="color:#cc0000">${isLive ? '&#9679; POSICAO ACTUAL' : '&#9678; ULTIMA POSICAO'}</b><br>${last.lat.toFixed(5)}, ${last.lng.toFixed(5)}<br>Alt: ${last.altitude_m ? Math.round(last.altitude_m) + 'm' : '?'} | Vel: ${last.speed_kmh ? last.speed_kmh.toFixed(0) + 'km/h' : '?'}</div>`,
   });
   lastMarker.addListener('click', () => info.open(map, lastMarker));
-  if (isLive) info.open(map, lastMarker);
+  info.open(map, lastMarker);
 
   window._emergencyMap = map;
   window._lastMarker = lastMarker;
+
+  // Search for nearby hospitals and police stations on the map
+  if (window.google.maps.places) {
+    const service = new google.maps.places.PlacesService(map);
+    const center = { lat: last.lat, lng: last.lng };
+
+    const serviceTypes = [
+      { type: 'hospital', color: '#ff6666', label: 'H', title: 'Hospital' },
+      { type: 'police',   color: '#6699ff', label: 'P', title: 'Policia'  },
+    ];
+
+    serviceTypes.forEach(({ type, color, label, title }) => {
+      service.nearbySearch({ location: center, radius: 5000, type }, (results, status) => {
+        if (status !== google.maps.places.PlacesServiceStatus.OK || !results) return;
+        results.slice(0, 3).forEach(place => {
+          if (!place.geometry?.location) return;
+          const marker = new google.maps.Marker({
+            position: place.geometry.location,
+            map,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: color,
+              fillOpacity: 0.95,
+              strokeColor: '#fff',
+              strokeWeight: 2,
+            },
+            title: `${title}: ${place.name}`,
+            zIndex: 5,
+          });
+          const placeInfo = new google.maps.InfoWindow({
+            content: `<div style="color:#000;font-size:11px;padding:3px;max-width:160px"><b>${label === 'H' ? '&#127973;' : '&#128170;'} ${place.name}</b>${place.vicinity ? '<br>' + place.vicinity : ''}</div>`,
+          });
+          marker.addListener('click', () => placeInfo.open(map, marker));
+        });
+      });
+    });
+  }
+}
+
+// Load Google Maps with Places library
+function loadGoogleMaps() {
+  return new Promise((resolve, reject) => {
+    if (window.google?.maps) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=geometry,places`;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
