@@ -1,137 +1,428 @@
+// src/components/DashboardSystem/NavDashboard.tsx
 /**
- * NAV Dashboard — fullscreen navigation with route tracking.
+ * NAV Dashboard — world-class GPX navigation.
  *
- * Purpose: Ride navigation with minimal distractions.
- * - Map fills ~80% of screen
- * - Route line showing path taken (GPS track)
- * - Current position with direction marker
- * - Minimal info strip: speed, distance, direction, battery
- * - No heavy overlays, no widgets
- *
- * Designed for handlebar mount: large touch targets, high contrast,
- * minimal eye movement required.
+ * Layout (portrait, 70/30):
+ *   - Satellite map 70% with GPX route (gradient-colored), position marker
+ *   - Floating overlays: speed (top-right), mode+gear (top-left)
+ *   - Progress bar (done/remaining/total)
+ *   - Elevation mini profile with position
+ *   - KPI grid 3x2: Battery, Range, ETA, Power, HR, Cadence
+ *   - Intelligence footer: W' balance + route feasibility
  */
+
+import { useEffect, useRef, useState } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 import { useRouteStore } from '../../store/routeStore';
-import { MiniMap } from '../Dashboard/MiniMap';
+import { initGoogleMaps, isMapsLoaded } from '../../services/maps/GoogleMapsService';
+import { ElevationMiniProfile } from '../Dashboard/ElevationMiniProfile';
+import { navigationExtras } from '../../services/routes/NavigationEngine';
+import type { RoutePoint } from '../../services/routes/GPXParser';
+
+// ── Gradient color for route segments ────────────────────────
+function gradientColor(gradient: number): string {
+  const abs = Math.abs(gradient);
+  if (abs < 3) return '#3fff8b';   // flat — green
+  if (abs < 8) return '#fbbf24';   // moderate — yellow
+  return '#ff716c';                 // steep — red
+}
+
+// ── Build gradient-colored polyline segments ─────────────────
+function buildGradientSegments(points: RoutePoint[], splitIdx: number): {
+  doneSegments: { path: google.maps.LatLngLiteral[]; color: string }[];
+  remainSegments: { path: google.maps.LatLngLiteral[]; color: string }[];
+} {
+  const doneSegments: { path: google.maps.LatLngLiteral[]; color: string }[] = [];
+  const remainSegments: { path: google.maps.LatLngLiteral[]; color: string }[] = [];
+
+  let currentColor = '#3fff8b';
+  let currentPath: google.maps.LatLngLiteral[] = [];
+  let isDone = true;
+
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]!;
+    const pos = { lat: p.lat, lng: p.lng };
+
+    if (i === splitIdx) isDone = false;
+
+    // Calculate gradient
+    let grad = 0;
+    if (i > 0) {
+      const prev = points[i - 1]!;
+      const dist = p.distance_from_start_m - prev.distance_from_start_m;
+      if (dist > 5) grad = ((p.elevation - prev.elevation) / dist) * 100;
+    }
+
+    const color = isDone ? '#3fff8b' : gradientColor(grad);
+
+    if (color !== currentColor && currentPath.length > 0) {
+      // Push segment
+      const target = isDone || (i <= splitIdx) ? doneSegments : remainSegments;
+      target.push({ path: [...currentPath, pos], color: currentColor });
+      currentPath = [pos];
+      currentColor = color;
+    } else {
+      currentPath.push(pos);
+    }
+  }
+
+  // Push final segment
+  if (currentPath.length > 1) {
+    const target = doneSegments.length === 0 ? doneSegments : remainSegments;
+    target.push({ path: currentPath, color: currentColor });
+  }
+
+  return { doneSegments, remainSegments };
+}
+
+// ── POI detection ────────────────────────────────────────────
+interface RoutePOI {
+  type: 'summit' | 'descent_start' | 'finish';
+  lat: number;
+  lng: number;
+  label: string;
+  icon: string;
+}
+
+function detectPOIs(points: RoutePoint[]): RoutePOI[] {
+  if (points.length < 10) return [];
+  const pois: RoutePOI[] = [];
+
+  // Summit — highest elevation point
+  let maxEle = -Infinity, maxIdx = 0;
+  for (let i = 0; i < points.length; i++) {
+    if (points[i]!.elevation > maxEle) {
+      maxEle = points[i]!.elevation;
+      maxIdx = i;
+    }
+  }
+  if (maxIdx > 0 && maxIdx < points.length - 1) {
+    pois.push({ type: 'summit', lat: points[maxIdx]!.lat, lng: points[maxIdx]!.lng, label: `${Math.round(maxEle)}m`, icon: '\u26F0\uFE0F' });
+  }
+
+  // Longest descent — find longest continuous negative gradient
+  let bestDescentStart = 0, bestDescentLen = 0, curStart = 0, curLen = 0;
+  for (let i = 1; i < points.length; i++) {
+    const dist = points[i]!.distance_from_start_m - points[i - 1]!.distance_from_start_m;
+    const grad = dist > 5 ? ((points[i]!.elevation - points[i - 1]!.elevation) / dist) * 100 : 0;
+    if (grad < -3) {
+      if (curLen === 0) curStart = i;
+      curLen++;
+    } else {
+      if (curLen > bestDescentLen) { bestDescentLen = curLen; bestDescentStart = curStart; }
+      curLen = 0;
+    }
+  }
+  if (curLen > bestDescentLen) { bestDescentLen = curLen; bestDescentStart = curStart; }
+  if (bestDescentLen > 5) {
+    pois.push({ type: 'descent_start', lat: points[bestDescentStart]!.lat, lng: points[bestDescentStart]!.lng, label: 'Descida', icon: '\u2B07\uFE0F' });
+  }
+
+  // Finish
+  const last = points[points.length - 1]!;
+  pois.push({ type: 'finish', lat: last.lat, lng: last.lng, label: 'Chegada', icon: '\uD83C\uDFC1' });
+
+  return pois;
+}
+
+// ── Main component ───────────────────────────────────────────
 
 export function NavDashboard() {
-  const speed = useBikeStore((s) => s.speed_kmh);
-  const battery = useBikeStore((s) => s.battery_percent);
-  const tripDist = useBikeStore((s) => s.trip_distance_km ?? 0);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<google.maps.Map | null>(null);
+  const posMarkerRef = useRef<google.maps.Marker | null>(null);
+  const polylinesRef = useRef<google.maps.Polyline[]>([]);
+  const poiMarkersRef = useRef<google.maps.Marker[]>([]);
+  const [ready, setReady] = useState(false);
+
+  // Store data
+  const lat = useMapStore((s) => s.latitude);
+  const lng = useMapStore((s) => s.longitude);
   const heading = useMapStore((s) => s.heading);
   const gpsActive = useMapStore((s) => s.gpsActive);
-  const nav = useRouteStore((s) => s.navigation);
-  const routeActive = nav?.active ?? false;
-  const distRemaining = nav?.distanceRemaining_m ?? 0;
-  const nextEvent = nav?.distanceToNextEvent_m ?? 0;
 
-  // Compass direction from heading
-  const compassDir = (deg: number | null): string => {
-    if (deg == null) return '--';
-    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-    return dirs[Math.round(((deg % 360) + 360) % 360 / 45) % 8] ?? 'N';
-  };
+  const speed = useBikeStore((s) => s.speed_kmh);
+  const battery = useBikeStore((s) => s.battery_percent);
+  const rangeKm = useBikeStore((s) => s.range_km);
+  const power = useBikeStore((s) => s.power_watts);
+  const hr = useBikeStore((s) => s.hr_bpm);
+  const cadence = useBikeStore((s) => s.cadence_rpm);
+  const assistMode = useBikeStore((s) => s.assist_mode);
+  const gear = useBikeStore((s) => s.gear);
+  const totalGears = useBikeStore((s) => s.total_gears);
+  const ambientLux = useBikeStore((s) => s.light_lux);
+
+  const routePoints = useRouteStore((s) => s.activeRoutePoints);
+  const nav = useRouteStore((s) => s.navigation);
+
+  const navActive = nav?.active ?? false;
+  const currentIdx = nav?.currentIndex ?? 0;
+  const distDone = nav?.distanceFromStart_m ?? 0;
+  const distRemaining = nav?.distanceRemaining_m ?? 0;
+  const progress = nav?.progress_pct ?? 0;
+  const deviation = nav?.deviationM ?? 0;
+
+  const totalDistKm = routePoints.length > 1 ? routePoints[routePoints.length - 1]!.distance_from_start_m / 1000 : 0;
+  const doneKm = distDone / 1000;
+  const remainKm = distRemaining / 1000;
+
+  // Mode label (Mode 5 = KROMI Intelligence, Mode 6 = SMART Giant native)
+  const modeLabels: Record<number, string> = { 0: 'MAN', 1: 'ECO', 2: 'TOUR', 3: 'ACTIVE', 4: 'SPORT', 5: 'KROMI', 6: 'SMART' };
+  const modeLabel = modeLabels[assistMode] ?? '--';
+  const modeColor = assistMode === 5 ? '#3fff8b' : assistMode === 6 ? '#6e9bff' : '#fbbf24';
+
+  // Battery color
+  const batColor = battery > 30 ? '#3fff8b' : battery > 15 ? '#fbbf24' : '#ff716c';
+
+  // Range vs remaining feasibility
+  const rangeSufficient = rangeKm >= remainKm;
+  const rangeColor = rangeSufficient ? '#3fff8b' : rangeKm >= remainKm * 0.8 ? '#fbbf24' : '#ff716c';
+
+  // Map brightness based on ambient light sensor
+  const mapFilter = ambientLux != null
+    ? ambientLux < 50 ? 'brightness(0.6)' : ambientLux > 500 ? 'brightness(1.2) contrast(1.1)' : 'none'
+    : 'none';
+
+  // ETA
+  const etaMin = navigationExtras.etaMin;
+  const etaStr = etaMin > 0 ? `${Math.floor(etaMin / 60)}:${String(etaMin % 60).padStart(2, '0')}` : '--';
+
+  // Init Google Maps
+  useEffect(() => {
+    initGoogleMaps().then(() => setReady(true)).catch(() => { /* no-op */ });
+  }, []);
+
+  // Create map
+  useEffect(() => {
+    if (!ready || !mapRef.current || mapInstance.current) return;
+    if (!isMapsLoaded()) return;
+
+    mapInstance.current = new google.maps.Map(mapRef.current, {
+      center: { lat: lat || 41.19, lng: lng || -8.43 },
+      zoom: 16,
+      mapTypeId: 'hybrid',
+      disableDefaultUI: true,
+      gestureHandling: 'greedy',
+      tilt: 15,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  // Draw route polylines (gradient-colored)
+  useEffect(() => {
+    if (!mapInstance.current || !isMapsLoaded() || routePoints.length < 2) return;
+
+    // Clear old polylines
+    polylinesRef.current.forEach(p => p.setMap(null));
+    polylinesRef.current = [];
+    poiMarkersRef.current.forEach(m => m.setMap(null));
+    poiMarkersRef.current = [];
+
+    const { doneSegments, remainSegments } = buildGradientSegments(routePoints, currentIdx);
+
+    // Draw done segments (solid)
+    for (const seg of doneSegments) {
+      const pl = new google.maps.Polyline({
+        path: seg.path,
+        map: mapInstance.current,
+        strokeColor: seg.color,
+        strokeOpacity: 0.9,
+        strokeWeight: 4,
+      });
+      polylinesRef.current.push(pl);
+    }
+
+    // Draw remaining segments (gradient-colored, slightly thinner)
+    for (const seg of remainSegments) {
+      const pl = new google.maps.Polyline({
+        path: seg.path,
+        map: mapInstance.current,
+        strokeColor: seg.color,
+        strokeOpacity: 0.6,
+        strokeWeight: 3,
+      });
+      polylinesRef.current.push(pl);
+    }
+
+    // POIs
+    const pois = detectPOIs(routePoints);
+    for (const poi of pois) {
+      const m = new google.maps.Marker({
+        position: { lat: poi.lat, lng: poi.lng },
+        map: mapInstance.current,
+        label: { text: poi.icon, fontSize: '16px' },
+        title: poi.label,
+      });
+      poiMarkersRef.current.push(m);
+    }
+
+    // Fit bounds on first draw
+    if (currentIdx === 0) {
+      const bounds = new google.maps.LatLngBounds();
+      routePoints.forEach(p => bounds.extend({ lat: p.lat, lng: p.lng }));
+      mapInstance.current.fitBounds(bounds, 30);
+    }
+  }, [routePoints, ready, currentIdx]);
+
+  // Update position marker + pan
+  useEffect(() => {
+    if (!mapInstance.current || !lat || !lng) return;
+    const pos = { lat, lng };
+
+    if (!posMarkerRef.current) {
+      posMarkerRef.current = new google.maps.Marker({
+        map: mapInstance.current,
+        position: pos,
+        icon: {
+          path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          scale: 6,
+          fillColor: '#3fff8b',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+          rotation: heading || 0,
+        },
+        zIndex: 100,
+      });
+    } else {
+      posMarkerRef.current.setPosition(pos);
+      posMarkerRef.current.setIcon({
+        ...(posMarkerRef.current.getIcon() as google.maps.Symbol),
+        rotation: heading || 0,
+      });
+    }
+
+    // Pan map to follow rider (only when navigating)
+    if (navActive) {
+      mapInstance.current.panTo(pos);
+      if ((mapInstance.current.getZoom() ?? 0) < 15) mapInstance.current.setZoom(16);
+    }
+  }, [lat, lng, heading, navActive]);
+
+  // Off-route alert + vibrate
+  useEffect(() => {
+    if (navigationExtras.isOffRoute && navigationExtras.offRouteDurationS < 1) {
+      try { navigator.vibrate?.([200, 100, 200]); } catch { /* no-op */ }
+    }
+  });
+
+  // Route complete
+  useEffect(() => {
+    if (navigationExtras.isComplete && navActive) {
+      const totalKm = totalDistKm.toFixed(1);
+      console.log(`[NAV] Route complete! ${totalKm} km`);
+    }
+  });
+
+  // ── No route fallback ──────────────────────────────────────
+  if (routePoints.length < 2) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: '#777', padding: 20 }}>
+        <span className="material-symbols-outlined" style={{ fontSize: 48, color: '#494847' }}>route</span>
+        <p style={{ fontSize: 14, textAlign: 'center' }}>Nenhuma rota activa</p>
+        <p style={{ fontSize: 11, textAlign: 'center', color: '#555' }}>Vai a Settings &rarr; Rotas para importar um GPX</p>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: '#0e0e0e' }}>
 
-      {/* ── Map Fullscreen (100% — overlays float on top) ── */}
-      <div style={{ position: 'absolute', inset: 0 }}>
-        <MiniMap />
+      {/* MAP (flex-grow fills ~70%) */}
+      <div style={{ flex: '1 1 0', position: 'relative', minHeight: 0 }}>
+        <div ref={mapRef} style={{ width: '100%', height: '100%', filter: mapFilter }} />
 
-        {/* GPS status badge — top left */}
-        <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 px-2 py-1"
-             style={{ backgroundColor: 'rgba(14,14,14,0.85)', border: '1px solid var(--ev-outline-variant)' }}>
-          <span className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: gpsActive ? 'var(--ev-primary)' : 'var(--ev-error)' }} />
-          <span className="text-[9px] font-display font-bold uppercase" style={{ color: gpsActive ? 'var(--ev-primary)' : 'var(--ev-error)' }}>
-            {gpsActive ? 'GPS' : 'NO GPS'}
-          </span>
-        </div>
-
-        {/* Speed overlay — top right, large for quick glance */}
-        <div className="absolute top-2 right-2 z-10 px-3 py-1.5"
-             style={{ backgroundColor: 'rgba(14,14,14,0.85)', border: '1px solid var(--ev-outline-variant)' }}>
-          <div className="flex items-baseline gap-1">
-            <span className="font-mono font-bold text-3xl tabular-nums" style={{ color: 'var(--ev-on-surface)' }}>
-              {speed > 0 ? speed.toFixed(0) : '0'}
-            </span>
-            <span className="text-unit" style={{ color: 'var(--ev-on-surface-muted)' }}>KM/H</span>
+        {/* GPS badge — top center */}
+        {!gpsActive && (
+          <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 10, background: 'rgba(239,68,68,0.9)', padding: '4px 12px', borderRadius: 6 }}>
+            <span style={{ color: '#fff', fontSize: 10, fontWeight: 'bold' }}>SEM GPS</span>
           </div>
+        )}
+
+        {/* Speed — top right */}
+        <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10, background: 'rgba(14,14,14,0.88)', padding: '6px 12px', borderRadius: 6, border: '1px solid #333' }}>
+          <span style={{ color: '#fff', fontSize: 28, fontWeight: 'bold', fontFamily: 'monospace' }}>{speed > 0 ? speed.toFixed(0) : '0'}</span>
+          <span style={{ color: '#777', fontSize: 10, marginLeft: 3 }}>KM/H</span>
         </div>
 
-        {/* Route info — bottom left */}
-        <div className="absolute bottom-2 left-2 z-10 px-3 py-2"
-             style={{ backgroundColor: 'rgba(14,14,14,0.85)', border: '1px solid var(--ev-outline-variant)', borderLeft: `2px solid ${routeActive ? 'var(--ev-primary)' : 'var(--ev-secondary)'}` }}>
-          {routeActive && distRemaining > 0 ? (
-            <>
-              <p className="text-eyebrow" style={{ color: 'var(--ev-on-surface-muted)' }}>RESTANTE</p>
-              <p className="font-mono font-bold text-lg tabular-nums" style={{ color: 'var(--ev-on-surface)' }}>
-                {distRemaining > 1000
-                  ? `${(distRemaining / 1000).toFixed(1)} km`
-                  : `${Math.round(distRemaining)} m`}
-              </p>
-              {nextEvent > 0 && nextEvent < 500 && (
-                <p className="text-[9px] mt-1" style={{ color: 'var(--ev-amber)' }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: '10px', verticalAlign: 'middle' }}>turn_right</span>
-                  {' '}{Math.round(nextEvent)}m
-                </p>
-              )}
-            </>
-          ) : (
-            <>
-              <p className="text-eyebrow" style={{ color: 'var(--ev-on-surface-muted)' }}>PERCORRIDO</p>
-              <p className="font-mono font-bold text-lg tabular-nums" style={{ color: 'var(--ev-on-surface)' }}>
-                {tripDist.toFixed(1)} km
-              </p>
-            </>
+        {/* Mode + Gear — top left */}
+        <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 10, display: 'flex', gap: 4 }}>
+          <div style={{ background: 'rgba(14,14,14,0.88)', padding: '5px 8px', borderRadius: 6, border: `1px solid ${modeColor}30` }}>
+            <span style={{ color: modeColor, fontSize: 9, fontWeight: 'bold', letterSpacing: 0.5 }}>{modeLabel}</span>
+          </div>
+          {gear > 0 && (
+            <div style={{ background: 'rgba(14,14,14,0.88)', padding: '5px 8px', borderRadius: 6, border: '1px solid #6e9bff30' }}>
+              <span style={{ color: '#6e9bff', fontSize: 14, fontWeight: 'bold', fontFamily: 'monospace' }}>
+                {gear}<span style={{ color: '#555', fontSize: 10 }}>/{totalGears || 12}</span>
+              </span>
+            </div>
           )}
+        </div>
+
+        {/* Off-route alert */}
+        {navigationExtras.isOffRoute && (
+          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 20, background: 'rgba(239,68,68,0.92)', padding: '8px 16px', borderRadius: 8 }}>
+            <span style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>FORA DA ROTA — {Math.round(deviation)}m</span>
+          </div>
+        )}
+      </div>
+
+      {/* PROGRESS BAR */}
+      <div style={{ padding: '0 10px', background: '#0e0e0e', flexShrink: 0 }}>
+        <div style={{ background: '#262626', height: 6, borderRadius: 3, overflow: 'hidden', margin: '6px 0 2px' }}>
+          <div style={{ width: `${Math.min(100, progress)}%`, height: '100%', background: '#3fff8b', borderRadius: 3, transition: 'width 1s ease' }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 2px' }}>
+          <span style={{ color: '#3fff8b', fontSize: 9, fontWeight: 'bold' }}>{doneKm.toFixed(1)} km feito</span>
+          <span style={{ color: '#777', fontSize: 9 }}>{totalDistKm.toFixed(1)} km total</span>
+          <span style={{ color: '#fbbf24', fontSize: 9, fontWeight: 'bold' }}>{remainKm.toFixed(1)} km falta</span>
         </div>
       </div>
 
-      {/* ── Info Strip — bottom overlay on top of map ── */}
-      <div style={{
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr 1fr 1fr',
-        gap: '1px',
-        backgroundColor: 'rgba(14,14,14,0.85)',
-        zIndex: 10,
-      }}>
-        {/* Speed */}
-        <NavCell label="SPEED" value={speed > 0 ? speed.toFixed(1) : '0'} unit="km/h" color="var(--ev-on-surface)" />
+      {/* ELEVATION PROFILE */}
+      <div style={{ padding: '4px 10px', background: '#0e0e0e', flexShrink: 0 }}>
+        <ElevationMiniProfile points={routePoints} currentIndex={currentIdx} height={56} />
+      </div>
 
-        {/* Distance */}
-        <NavCell label="TRIP" value={tripDist.toFixed(1)} unit="km" color="var(--ev-secondary)" />
+      {/* KPI GRID 3x2 */}
+      <div style={{ padding: '4px 10px 4px', background: '#0e0e0e', flexShrink: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 3 }}>
+          <NavKPI label="BATTERY" value={String(battery)} unit="%" color={batColor} />
+          <NavKPI label="RANGE" value={rangeKm > 0 ? rangeKm.toFixed(0) : '--'} unit="km" color={rangeColor} />
+          <NavKPI label="ETA" value={etaStr} unit="" color="#fbbf24" />
+          <NavKPI label="POWER" value={power > 0 ? String(power) : '--'} unit="W" color="#6e9bff" />
+          <NavKPI label="HR" value={hr > 0 ? String(hr) : '--'} unit="bpm" color="#ff716c" />
+          <NavKPI label="CADENCE" value={cadence > 0 ? String(cadence) : '--'} unit="rpm" color="#e966ff" />
+        </div>
 
-        {/* Direction */}
-        <NavCell label="DIR" value={compassDir(heading)} unit={heading != null ? `${Math.round(heading)}°` : ''} color="var(--ev-tertiary)" />
-
-        {/* Battery */}
-        <NavCell
-          label="BAT"
-          value={String(battery)}
-          unit="%"
-          color={battery > 30 ? 'var(--ev-primary)' : battery > 15 ? 'var(--ev-amber)' : 'var(--ev-error)'}
-        />
+        {/* Intelligence footer */}
+        <div style={{ background: '#1a1919', marginTop: 3, padding: '5px 8px', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: '#3fff8b', fontSize: 8, fontWeight: 'bold' }}>W&apos;</span>
+            <div style={{ width: 60, height: 4, background: '#333', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ width: '72%', height: '100%', background: '#3fff8b', borderRadius: 2 }} />
+            </div>
+            <span style={{ color: '#777', fontSize: 8 }}>72%</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ color: rangeSufficient ? '#3fff8b' : '#ff716c', fontSize: 8 }}>{'\u25CF'}</span>
+            <span style={{ color: rangeSufficient ? '#3fff8b' : '#ff716c', fontSize: 8, fontWeight: 'bold' }}>
+              {rangeSufficient ? 'ROTA VIAVEL' : rangeKm >= remainKm * 0.8 ? 'BATERIA JUSTA' : 'BAT. INSUFICIENTE'}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function NavCell({ label, value, unit, color }: { label: string; value: string; unit: string; color: string }) {
+function NavKPI({ label, value, unit, color }: { label: string; value: string; unit: string; color: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-1"
-         style={{ backgroundColor: 'var(--ev-surface-low)' }}>
-      <span className="text-eyebrow" style={{ color: 'var(--ev-on-surface-muted)' }}>{label}</span>
-      <div className="flex items-baseline gap-0.5">
-        <span className="font-mono font-bold text-xl tabular-nums" style={{ color }}>{value}</span>
-        <span className="text-[8px]" style={{ color: 'var(--ev-on-surface-muted)' }}>{unit}</span>
+    <div style={{ background: '#1a1919', padding: '8px 6px', textAlign: 'center', borderRadius: 4, borderLeft: `2px solid ${color}` }}>
+      <div style={{ color: '#777', fontSize: 7, fontWeight: 'bold', letterSpacing: 0.5 }}>{label}</div>
+      <div style={{ color, fontSize: 20, fontWeight: 'bold', fontFamily: 'monospace' }}>
+        {value}<span style={{ color: '#777', fontSize: 11 }}>{unit}</span>
       </div>
     </div>
   );
