@@ -229,6 +229,9 @@ let lastMovingTs = Date.now();
 let wasActive = false;
 let weatherLastFetch = 0;
 let allTrackPoints = [];
+let groupRide = null;
+let groupParticipants = [];
+let groupMarkers = [];
 
 // ═══════════════════════════════════════════════════════════
 // MAIN
@@ -283,7 +286,34 @@ async function init() {
       } catch (e) { console.warn('Could not fetch medical profile:', e); }
     }
 
-    // 3. Fetch tracking points (breadcrumb trail)
+    // 3. Check if rider is in an active group ride
+    if (sessionData.user_id) {
+      try {
+        const partRes = await fetch(
+          `${SB_URL}/rest/v1/club_ride_participants?user_id=eq.${sessionData.user_id}&status=in.(confirmed,riding)&select=*,club_rides:club_ride_id(id,name,status,club_id)`,
+          { headers: sbHeaders }
+        );
+        const parts = await partRes.json();
+
+        if (Array.isArray(parts) && parts.length > 0) {
+          const activePart = parts.find(p => p.club_rides?.status === 'active') || parts[0];
+          if (activePart?.club_rides) {
+            groupRide = activePart.club_rides;
+
+            const allPartRes = await fetch(
+              `${SB_URL}/rest/v1/club_ride_participants?club_ride_id=eq.${groupRide.id}&select=*`,
+              { headers: sbHeaders }
+            );
+            const allParts = await allPartRes.json();
+            if (Array.isArray(allParts)) {
+              groupParticipants = allParts.filter(p => p.user_id !== sessionData.user_id);
+            }
+          }
+        }
+      } catch (e) { console.warn('Group ride fetch failed:', e); }
+    }
+
+    // 4. Fetch tracking points (breadcrumb trail)
     const pointsRes = await fetch(
       `${SB_URL}/rest/v1/tracking_points?session_id=eq.${sessionData.id}&order=recorded_at.asc&limit=10000`,
       { headers: sbHeaders }
@@ -291,16 +321,16 @@ async function init() {
     const points = await pointsRes.json();
     const trackPoints = Array.isArray(points) ? points : [];
 
-    // 4. Load Google Maps
+    // 5. Load Google Maps
     await loadGoogleMaps();
 
-    // 5. Render
+    // 6. Render
     renderPage(sessionData, trackPoints);
 
-    // 6. Track initial active state for sound notification
+    // 7. Track initial active state for sound notification
     wasActive = sessionData.is_active;
 
-    // 7. Start polling if active
+    // 8. Start polling if active
     if (sessionData.is_active) {
       pollInterval = setInterval(() => pollUpdates(sessionData), 10000);
     }
@@ -521,11 +551,41 @@ function renderPage(session, points) {
   html += `</div>`;
   html += `</div>`;
 
-  // ── RIGHT: Emergency, Home distance ──
+  // ── RIGHT: Emergency, Home distance, Group ──
   html += `<div class="right-panel">`;
 
   // Home proximity countdown (Feature 7)
   html += `<div id="home-proximity"></div>`;
+
+  // Group ride section
+  if (groupRide && groupParticipants.length > 0) {
+    html += `<div class="emergency-section">`;
+    html += `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#6e9bff;margin-bottom:10px">&#128101; Grupo: ${esc(groupRide.name)}</div>`;
+    html += `<div style="font-size:10px;color:#888;margin-bottom:8px">${groupParticipants.length} membro${groupParticipants.length > 1 ? 's' : ''} no grupo</div>`;
+
+    for (const p of groupParticipants) {
+      const name = p.display_name || 'Rider';
+      const isOnline = p.status === 'riding';
+
+      html += `<div style="background:#262626;border-radius:8px;padding:10px;margin-bottom:6px;border-left:3px solid ${isOnline ? '#3fff8b' : '#494847'}">`;
+      html += `<div style="display:flex;align-items:center;gap:8px">`;
+      if (p.avatar_url) {
+        html += `<img src="${esc(p.avatar_url)}" style="width:32px;height:32px;border-radius:50%;object-fit:cover" />`;
+      } else {
+        html += `<div style="width:32px;height:32px;border-radius:50%;background:#333;display:flex;align-items:center;justify-content:center;font-size:14px;color:#666">&#128100;</div>`;
+      }
+      html += `<div style="flex:1">`;
+      html += `<div style="font-size:12px;font-weight:700;color:#fff">${esc(name)}</div>`;
+      html += `<div style="font-size:10px;color:${isOnline ? '#3fff8b' : '#666'}">${isOnline ? '&#9679; Online' : '&#9675; Offline'}</div>`;
+      html += `</div>`;
+      if (p.phone) {
+        html += `<a href="tel:${esc(p.phone)}" style="padding:6px 10px;background:#1a1919;border-radius:6px;color:#6e9bff;text-decoration:none;font-size:10px;font-weight:700">&#128222;</a>`;
+      }
+      html += `</div></div>`;
+    }
+
+    html += `</div>`;
+  }
 
   // Emergency contacts
   html += `<div class="emergency-section">`;
@@ -553,6 +613,11 @@ function renderPage(session, points) {
   // Init map after DOM is ready
   requestAnimationFrame(() => {
     initMap(points, isActive);
+
+    // Show group member markers on map
+    if (groupParticipants.length > 0) {
+      showGroupMembers();
+    }
 
     // Fetch nearby places + home distance if we have a position
     if (lastPoint?.lat && lastPoint?.lng) {
@@ -689,6 +754,82 @@ function initMap(points, isActive) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════
+// GROUP MEMBERS ON MAP
+// ═══════════════════════════════════════════════════════════
+async function showGroupMembers() {
+  // Clear old markers
+  groupMarkers.forEach(m => m.setMap(null));
+  groupMarkers = [];
+
+  if (!groupParticipants.length || !map) return;
+
+  const riderPos = positionMarker?.getPosition();
+
+  for (const p of groupParticipants) {
+    let lat = p.last_lat, lng = p.last_lng, speed = p.last_speed;
+    let name = p.display_name || 'Rider';
+
+    // Try to get live position from their tracking_session
+    if (p.tracking_token) {
+      try {
+        const tsRes = await fetch(
+          `${SB_URL}/rest/v1/tracking_sessions?token=eq.${encodeURIComponent(p.tracking_token)}&order=started_at.desc&limit=1&select=lat,lng,speed_kmh,is_active,rider_name`,
+          { headers: sbHeaders }
+        );
+        const tsList = await tsRes.json();
+        if (Array.isArray(tsList) && tsList.length && tsList[0].lat) {
+          lat = tsList[0].lat;
+          lng = tsList[0].lng;
+          speed = tsList[0].speed_kmh;
+          if (tsList[0].rider_name) name = tsList[0].rider_name;
+        }
+      } catch {}
+    }
+
+    if (!lat || !lng) continue;
+
+    // Calculate distance from main rider
+    let distStr = '';
+    if (riderPos) {
+      const dist = google.maps.geometry.spherical.computeDistanceBetween(
+        riderPos, new google.maps.LatLng(lat, lng)
+      );
+      distStr = dist < 1000 ? Math.round(dist) + 'm' : (dist/1000).toFixed(1) + 'km';
+    }
+
+    // Create marker with blue color for group members
+    const marker = new google.maps.Marker({
+      position: { lat, lng },
+      map: map,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 8,
+        fillColor: '#6e9bff',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 2,
+      },
+      title: name,
+      zIndex: 50,
+    });
+
+    // Info window with name, distance, speed, contact
+    const content = `
+      <div style="background:#1a1919;color:#fff;padding:10px;border-radius:8px;min-width:150px;font-family:system-ui">
+        <div style="font-weight:800;font-size:14px;margin-bottom:4px">${esc(name)}</div>
+        ${speed != null ? `<div style="font-size:11px;color:#3fff8b">${Math.round(speed)} km/h</div>` : ''}
+        ${distStr ? `<div style="font-size:11px;color:#888;margin-top:2px">A ${distStr} de distancia</div>` : ''}
+        ${p.phone ? `<a href="tel:${esc(p.phone)}" style="display:block;margin-top:6px;padding:6px;background:#262626;border-radius:4px;color:#6e9bff;text-align:center;text-decoration:none;font-size:11px;font-weight:700">&#128222; Ligar</a>` : ''}
+      </div>`;
+
+    const infoWindow = new google.maps.InfoWindow({ content });
+    marker.addListener('click', () => infoWindow.open(map, marker));
+
+    groupMarkers.push(marker);
+  }
+}
+
 function computeHeading(p1, p2) {
   if (!p1 || !p2) return 0;
   const dLng = (p2.lng - p1.lng) * Math.PI / 180;
@@ -813,6 +954,11 @@ async function pollUpdates(session) {
       calculateHomeDistance(lastPtForHome.lat, lastPtForHome.lng);
     } else if (updatedSession.lat && updatedSession.lng) {
       calculateHomeDistance(updatedSession.lat, updatedSession.lng);
+    }
+
+    // Refresh group member positions
+    if (groupParticipants.length > 0) {
+      showGroupMembers();
     }
 
     // Refresh weather every 5 minutes
