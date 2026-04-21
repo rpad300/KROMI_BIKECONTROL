@@ -2,6 +2,9 @@ import { useEffect } from 'react';
 import { useDashboardStore } from '../../store/dashboardStore';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
 import { useLayoutStore } from '../../store/layoutStore';
+import { startNavigationEngine, stopNavigationEngine } from '../../services/routes/NavigationEngine';
+import { startPacing, stopPacing } from '../../services/routes/RoutePacingService';
+import { useRouteStore } from '../../store/routeStore';
 import { PersistentBar } from './PersistentBar';
 import { DashboardDots } from './DashboardDots';
 import { DashboardSwipeContainer } from './DashboardSwipeContainer';
@@ -39,6 +42,19 @@ export function DashboardController() {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Start/stop NavigationEngine + RoutePacingService when route navigation changes
+  const navActive = useRouteStore((s) => s.navigation.active);
+  useEffect(() => {
+    if (navActive) {
+      startNavigationEngine();
+      startPacing();
+    } else {
+      stopNavigationEngine();
+      stopPacing();
+    }
+    return () => { stopNavigationEngine(); stopPacing(); };
+  }, [navActive]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', backgroundColor: '#0e0e0e' }}>
