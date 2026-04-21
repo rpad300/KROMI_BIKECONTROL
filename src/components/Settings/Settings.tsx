@@ -433,6 +433,15 @@ function ClubPage() {
   const [newWebsite, setNewWebsite] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [clubDetail, setClubDetail] = useState<{ name: string; color: string; location: string; website?: string; description?: string; member_count: number } | null>(null);
+  const [rides, setRides] = useState<any[]>([]);
+  const [rideParticipants, setRideParticipants] = useState<Record<string, any[]>>({});
+  const [creatingRide, setCreatingRide] = useState(false);
+  const [rideName, setRideName] = useState('');
+  const [rideDesc, setRideDesc] = useState('');
+  const [rideDate, setRideDate] = useState('');
+  const [rideTime, setRideTime] = useState('');
+  const [rideMeetingAddress, setRideMeetingAddress] = useState('');
+  const [loadingRides, setLoadingRides] = useState(false);
 
   const userId = useAuthStore.getState().getUserId();
 
@@ -443,6 +452,27 @@ function ClubPage() {
       .then((d) => { if (d[0]) setClubDetail(d[0] as unknown as typeof clubDetail); }).catch(() => {});
     supaGet<typeof members>(`/rest/v1/club_members?club_id=eq.${profile.club_id}&select=display_name,role,joined_at&order=joined_at.asc`)
       .then((d) => { if (Array.isArray(d)) setMembers(d); }).catch(() => {});
+  }, [profile.club_id]);
+
+  // Load group rides for the club
+  useEffect(() => {
+    if (!profile.club_id) return;
+    setLoadingRides(true);
+    supaGet<any[]>(`/rest/v1/club_rides?club_id=eq.${profile.club_id}&status=in.(planned,active)&order=scheduled_at.asc`)
+      .then(async (data) => {
+        if (!Array.isArray(data)) return;
+        setRides(data);
+        const parts: Record<string, any[]> = {};
+        for (const ride of data) {
+          try {
+            const p = await supaGet<any[]>(`/rest/v1/club_ride_participants?club_ride_id=eq.${ride.id}&select=*`);
+            if (Array.isArray(p)) parts[ride.id] = p;
+          } catch {}
+        }
+        setRideParticipants(parts);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingRides(false));
   }, [profile.club_id]);
 
   const searchClubs = async (q: string) => {
@@ -490,6 +520,88 @@ function ClubPage() {
     setClubDetail(null); setMembers([]);
   };
 
+  const createRide = async () => {
+    if (!rideName.trim() || !rideDate || !rideTime || !profile.club_id) return;
+    try {
+      const scheduled = new Date(`${rideDate}T${rideTime}`).toISOString();
+      const res = await supaFetch('/rest/v1/club_rides', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+        body: JSON.stringify({
+          club_id: profile.club_id,
+          created_by: userId,
+          name: rideName.trim(),
+          description: rideDesc.trim() || null,
+          scheduled_at: scheduled,
+          meeting_address: rideMeetingAddress.trim() || null,
+          status: 'planned',
+        }),
+      });
+      const [newRide] = await res.json();
+      if (newRide) {
+        setRides(prev => [...prev, newRide]);
+        await joinRide(newRide.id);
+      }
+      setCreatingRide(false);
+      setRideName(''); setRideDesc(''); setRideDate(''); setRideTime(''); setRideMeetingAddress('');
+    } catch {}
+  };
+
+  const joinRide = async (rideId: string) => {
+    if (!userId) return;
+    const token = profile.emergency_qr_token || null;
+    try {
+      await supaFetch('/rest/v1/club_ride_participants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({
+          club_ride_id: rideId,
+          user_id: userId,
+          status: 'confirmed',
+          display_name: profile.name || 'Rider',
+          tracking_token: token,
+          phone: profile.phone || null,
+          avatar_url: profile.avatar_url || null,
+        }),
+      });
+      const p = await supaGet<any[]>(`/rest/v1/club_ride_participants?club_ride_id=eq.${rideId}&select=*`);
+      if (Array.isArray(p)) setRideParticipants(prev => ({ ...prev, [rideId]: p }));
+    } catch {}
+  };
+
+  const leaveRide = async (rideId: string) => {
+    if (!userId) return;
+    try {
+      await supaFetch(`/rest/v1/club_ride_participants?club_ride_id=eq.${rideId}&user_id=eq.${userId}`, { method: 'DELETE' });
+      setRideParticipants(prev => ({
+        ...prev,
+        [rideId]: (prev[rideId] || []).filter((p: any) => p.user_id !== userId),
+      }));
+    } catch {}
+  };
+
+  const activateRide = async (rideId: string) => {
+    try {
+      await supaFetch(`/rest/v1/club_rides?id=eq.${rideId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'active' }),
+      });
+      setRides(prev => prev.map(r => r.id === rideId ? { ...r, status: 'active' } : r));
+      import('../../services/tracking/LiveTrackingService').then(({ setActiveGroupRide }) => {
+        setActiveGroupRide(rideId);
+      });
+    } catch {}
+  };
+
+  const deleteRide = async (rideId: string) => {
+    try {
+      await supaFetch(`/rest/v1/club_ride_participants?club_ride_id=eq.${rideId}`, { method: 'DELETE' });
+      await supaFetch(`/rest/v1/club_rides?id=eq.${rideId}`, { method: 'DELETE' });
+      setRides(prev => prev.filter(r => r.id !== rideId));
+    } catch {}
+  };
+
   // Has club — show club info
   if (profile.club_id && clubDetail) {
     return (
@@ -528,17 +640,137 @@ function ClubPage() {
           {members.length === 0 && <div style={{ fontSize: '11px', color: '#777575', textAlign: 'center' }}>A carregar membros...</div>}
         </Card>
 
-        {/* Rides em grupo — coming soon */}
-        <SectionLabel>Rides em Grupo</SectionLabel>
-        <Card>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span className="material-symbols-outlined" style={{ fontSize: '20px', color: '#e966ff' }}>group_work</span>
-            <div>
-              <div style={{ fontSize: '12px', color: '#adaaaa' }}>Em breve — rides em grupo com tracking em tempo real</div>
-              <div style={{ fontSize: '9px', color: '#494847', marginTop: '2px' }}>Planear rotas, ver membros no mapa, comparar performance</div>
+        {/* Group Rides */}
+        <SectionLabel>Rides em Grupo ({rides.length})</SectionLabel>
+
+        {loadingRides && <div style={{ fontSize: '11px', color: '#777', textAlign: 'center', padding: '8px' }}>A carregar rides...</div>}
+
+        {rides.map((ride) => {
+          const parts = rideParticipants[ride.id] || [];
+          const isJoined = parts.some((p: any) => p.user_id === userId);
+          const isCreator = ride.created_by === userId;
+          const isActive = ride.status === 'active';
+          const scheduledDate = new Date(ride.scheduled_at);
+          const dateStr = scheduledDate.toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' });
+          const timeStr = scheduledDate.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+
+          return (
+            <Card key={ride.id}>
+              <div style={{ borderLeft: `3px solid ${isActive ? '#3fff8b' : '#6e9bff'}`, paddingLeft: '10px' }}>
+                {/* Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: 'white' }}>{ride.name}</div>
+                    <div style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>
+                      {dateStr} · {timeStr}
+                    </div>
+                    {ride.description && <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>{ride.description}</div>}
+                    {ride.meeting_address && <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>{ride.meeting_address}</div>}
+                  </div>
+                  <span style={{
+                    fontSize: '9px', fontWeight: 800, padding: '2px 8px', borderRadius: '4px',
+                    backgroundColor: isActive ? 'rgba(63,255,139,0.15)' : 'rgba(110,155,255,0.15)',
+                    color: isActive ? '#3fff8b' : '#6e9bff',
+                  }}>
+                    {isActive ? 'ATIVA' : 'PLANEADA'}
+                  </span>
+                </div>
+
+                {/* Participants */}
+                <div style={{ marginTop: '8px' }}>
+                  <div style={{ fontSize: '9px', color: '#777', fontWeight: 700, marginBottom: '4px' }}>
+                    PARTICIPANTES ({parts.length})
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    {parts.map((p: any, i: number) => (
+                      <div key={i} style={{
+                        display: 'flex', alignItems: 'center', gap: '4px',
+                        padding: '3px 8px', backgroundColor: '#262626', borderRadius: '12px',
+                        fontSize: '10px', color: p.user_id === userId ? '#3fff8b' : '#adaaaa',
+                      }}>
+                        <span style={{ fontSize: '8px' }}>{p.status === 'riding' ? '\u{1F7E2}' : '\u26AA'}</span>
+                        {p.display_name || 'Rider'}
+                      </div>
+                    ))}
+                    {parts.length === 0 && <span style={{ fontSize: '10px', color: '#555' }}>Nenhum participante</span>}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+                  {!isJoined ? (
+                    <button onClick={() => joinRide(ride.id)} style={{
+                      flex: 1, padding: '8px', backgroundColor: '#3fff8b', color: 'black',
+                      border: 'none', fontWeight: 700, fontSize: '11px', cursor: 'pointer', borderRadius: '4px',
+                    }}>Juntar-me</button>
+                  ) : (
+                    <button onClick={() => leaveRide(ride.id)} style={{
+                      flex: 1, padding: '8px', backgroundColor: '#262626', color: '#ff716c',
+                      border: '1px solid rgba(255,113,108,0.3)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', borderRadius: '4px',
+                    }}>Sair</button>
+                  )}
+                  {isCreator && !isActive && (
+                    <button onClick={() => activateRide(ride.id)} style={{
+                      padding: '8px 12px', backgroundColor: 'rgba(63,255,139,0.15)', color: '#3fff8b',
+                      border: '1px solid rgba(63,255,139,0.3)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', borderRadius: '4px',
+                    }}>Iniciar</button>
+                  )}
+                  {isCreator && (
+                    <button onClick={() => { if (confirm('Apagar esta ride?')) deleteRide(ride.id); }} style={{
+                      padding: '8px', backgroundColor: '#262626', color: '#ff716c',
+                      border: 'none', cursor: 'pointer', borderRadius: '4px',
+                    }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>delete</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+
+        {/* Create new ride */}
+        {creatingRide ? (
+          <Card>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#e966ff', marginBottom: '8px' }}>NOVA RIDE EM GRUPO</div>
+            <TextField label="Nome da Ride" value={rideName} onChange={setRideName} />
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>Data</div>
+                <input type="date" value={rideDate} onChange={(e) => setRideDate(e.target.value)}
+                  style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: '1px solid #333', fontSize: '12px', borderRadius: '4px' }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>Hora</div>
+                <input type="time" value={rideTime} onChange={(e) => setRideTime(e.target.value)}
+                  style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: '1px solid #333', fontSize: '12px', borderRadius: '4px' }} />
+              </div>
             </div>
-          </div>
-        </Card>
+            <TextField label="Local de encontro" value={rideMeetingAddress} onChange={setRideMeetingAddress} />
+            <textarea value={rideDesc} onChange={(e) => setRideDesc(e.target.value)} placeholder="Descri\u00E7\u00E3o (opcional)..."
+              style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: '1px solid #333', fontSize: '12px', minHeight: '50px', resize: 'vertical', borderRadius: '4px' }} />
+            <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+              <button onClick={createRide} style={{
+                flex: 1, padding: '10px', backgroundColor: '#e966ff', color: 'white',
+                border: 'none', fontWeight: 700, fontSize: '12px', cursor: 'pointer', borderRadius: '4px',
+              }}>Criar Ride</button>
+              <button onClick={() => setCreatingRide(false)} style={{
+                padding: '10px', backgroundColor: '#262626', color: '#adaaaa',
+                border: 'none', cursor: 'pointer', borderRadius: '4px',
+              }}>Cancelar</button>
+            </div>
+          </Card>
+        ) : (
+          <button onClick={() => setCreatingRide(true)} style={{
+            width: '100%', padding: '12px', backgroundColor: '#1a1919',
+            border: '1px dashed #494847', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+            color: '#e966ff', fontSize: '12px', fontWeight: 700, borderRadius: '4px',
+          }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>add</span>
+            Criar Ride em Grupo
+          </button>
+        )}
 
         {/* Leave */}
         <button onClick={() => { if (confirm(`Sair de ${clubDetail.name}?`)) leaveClub(); }} style={{ width: '100%', padding: '10px', backgroundColor: '#262626', color: '#ff716c', border: '1px solid rgba(255,113,108,0.3)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
