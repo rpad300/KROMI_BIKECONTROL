@@ -35,6 +35,7 @@ import { RescueAlert } from './components/shared/RescueAlert';
 import { CrashAlertOverlay } from './components/shared/CrashAlertOverlay';
 import { DiagBadge } from './components/shared/DiagBadge';
 import { startCrashMonitoring, stopCrashMonitoring } from './services/emergency/CrashDetectionService';
+import { initAutoTracking, cleanupAutoTracking } from './services/tracking/LiveTrackingService';
 import { useBikeStore } from './store/bikeStore';
 import { Component, type ReactNode } from 'react';
 
@@ -153,6 +154,12 @@ function MobileApp() {
     }
     return () => stopCrashMonitoring();
   }, [bleStatus]);
+
+  // Auto-tracking — always-on live broadcasting when BLE connected
+  useEffect(() => {
+    initAutoTracking();
+    return () => cleanupAutoTracking();
+  }, []);
 
   // Glance mode — tick idle counter every 1s
   useEffect(() => {

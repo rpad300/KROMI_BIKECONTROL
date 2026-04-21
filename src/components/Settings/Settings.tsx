@@ -37,7 +37,7 @@ import { saveRoute, listRoutes, deleteRoute } from '../../services/routes/RouteS
 import { supaFetch, supaGet } from '../../lib/supaFetch';
 import { analyzeRoute } from '../../services/routes/PreRideAnalysis';
 import { ComplianceSettings as ComplianceSettingsSection } from './ComplianceSettings';
-import { startTracking, stopTracking, isTracking, getTrackingToken } from '../../services/tracking/LiveTrackingService';
+import { isLiveBroadcasting, getShareUrl } from '../../services/tracking/LiveTrackingService';
 
 type Screen = NavScreen;
 type SettingsPage = SettingsPageId;
@@ -1220,15 +1220,13 @@ function EmergencyPage() {
 
   const emergencyUrl = qrToken ? `${window.location.origin}/emergency.html?t=${qrToken}` : '';
 
-  // ── Live Tracking state ─────────────────────────────────────
-  const [liveActive, setLiveActive] = useState(isTracking());
-  const [liveToken, setLiveToken] = useState(getTrackingToken());
-  const [liveStarting, setLiveStarting] = useState(false);
+  // ── Live Tracking state (always-on) ─────────────────────────
+  const bleStatus = useBikeStore((s) => s.ble_status);
+  const liveActive = isLiveBroadcasting();
+  const liveUrl = getShareUrl() ?? '';
   const liveCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  const liveUrl = liveToken ? `https://www.kromi.online/live.html?t=${liveToken}` : '';
-
-  // Render QR when token changes
+  // Render QR when URL is available
   useEffect(() => {
     if (liveCanvasRef.current && liveUrl) {
       QRCode.toCanvas(liveCanvasRef.current, liveUrl, {
@@ -1240,96 +1238,83 @@ function EmergencyPage() {
     }
   }, [liveUrl]);
 
-  const handleStartTracking = async () => {
-    setLiveStarting(true);
-    const token = await startTracking();
-    if (token) {
-      setLiveToken(token);
-      setLiveActive(true);
-    }
-    setLiveStarting(false);
-  };
-
-  const handleStopTracking = async () => {
-    await stopTracking();
-    setLiveActive(false);
-    setLiveToken(null);
-  };
-
   return (
     <div className="space-y-4">
-      {/* Live Tracking */}
+      {/* Live Tracking — always-on */}
       <SectionLabel>Live Tracking</SectionLabel>
       <Card>
-        {!liveActive ? (
-          <button
-            onClick={handleStartTracking}
-            disabled={liveStarting}
-            style={{
-              width: '100%', height: '52px', fontWeight: 700, fontSize: '15px', border: 'none', cursor: 'pointer', borderRadius: '6px',
-              backgroundColor: liveStarting ? '#262626' : '#3fff8b', color: liveStarting ? '#adaaaa' : 'black',
-            }}
-          >
-            {liveStarting ? 'A iniciar...' : 'Iniciar Live Tracking'}
-          </button>
-        ) : (
-          <div className="space-y-3">
-            {/* LIVE indicator */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{
-                display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%',
-                backgroundColor: '#ff3333', boxShadow: '0 0 8px #ff3333',
-                animation: 'pulse 1.5s ease-in-out infinite',
-              }} />
-              <span style={{ fontSize: '14px', fontWeight: 900, color: '#ff3333', letterSpacing: '0.1em' }}>LIVE</span>
-            </div>
-
-            {/* Share link */}
-            <div style={{ fontSize: '10px', color: '#adaaaa', wordBreak: 'break-all', padding: '8px', backgroundColor: '#1a1919', borderRadius: '4px' }}>
-              {liveUrl}
-            </div>
-
-            {/* Action buttons */}
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <button
-                onClick={() => navigator.clipboard.writeText(liveUrl)}
-                style={{
-                  flex: 1, padding: '10px', fontSize: '11px', fontWeight: 700, border: '1px solid rgba(63,255,139,0.25)', cursor: 'pointer', borderRadius: '4px',
-                  backgroundColor: 'rgba(63,255,139,0.12)', color: '#3fff8b',
-                }}
-              >
-                Copiar link
-              </button>
-              <button
-                onClick={() => navigator.share?.({ title: 'KROMI Live Tracking', url: liveUrl })}
-                style={{
-                  flex: 1, padding: '10px', fontSize: '11px', fontWeight: 700, border: '1px solid rgba(110,155,255,0.25)', cursor: 'pointer', borderRadius: '4px',
-                  backgroundColor: 'rgba(110,155,255,0.12)', color: '#6e9bff',
-                }}
-              >
-                Partilhar
-              </button>
-            </div>
-
-            {/* QR Code */}
-            <div style={{ textAlign: 'center', marginTop: '4px' }}>
-              <div style={{ display: 'inline-block', padding: '10px', backgroundColor: 'white', borderRadius: '8px' }}>
-                <canvas ref={liveCanvasRef} width={160} height={160} style={{ display: 'block' }} />
-              </div>
-            </div>
-
-            {/* Stop button */}
-            <button
-              onClick={handleStopTracking}
-              style={{
-                width: '100%', height: '48px', fontWeight: 700, fontSize: '14px', border: 'none', cursor: 'pointer', borderRadius: '6px',
-                backgroundColor: '#ff3333', color: 'white',
-              }}
-            >
-              Parar Tracking
-            </button>
+        <div className="space-y-3">
+          {/* Status indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {liveActive ? (
+              <>
+                <span style={{
+                  display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%',
+                  backgroundColor: '#ff3333', boxShadow: '0 0 8px #ff3333',
+                  animation: 'pulse 1.5s ease-in-out infinite',
+                }} />
+                <span style={{ fontSize: '14px', fontWeight: 900, color: '#ff3333', letterSpacing: '0.1em' }}>LIVE</span>
+              </>
+            ) : (
+              <>
+                <span style={{
+                  display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%',
+                  backgroundColor: bleStatus === 'connected' ? '#fbbf24' : '#494847',
+                }} />
+                <span style={{ fontSize: '14px', fontWeight: 700, color: '#888' }}>
+                  {bleStatus === 'connected' ? 'A ligar...' : 'Inactivo'}
+                </span>
+              </>
+            )}
           </div>
-        )}
+
+          {/* Explanation */}
+          <div style={{ fontSize: '11px', color: '#888', lineHeight: 1.5 }}>
+            O tracking inicia automaticamente quando a bike liga via Bluetooth.
+          </div>
+
+          {liveUrl ? (
+            <>
+              {/* Share link */}
+              <div style={{ fontSize: '10px', color: '#adaaaa', wordBreak: 'break-all', padding: '8px', backgroundColor: '#1a1919', borderRadius: '4px' }}>
+                {liveUrl}
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  onClick={() => navigator.clipboard.writeText(liveUrl)}
+                  style={{
+                    flex: 1, padding: '10px', fontSize: '11px', fontWeight: 700, border: '1px solid rgba(63,255,139,0.25)', cursor: 'pointer', borderRadius: '4px',
+                    backgroundColor: 'rgba(63,255,139,0.12)', color: '#3fff8b',
+                  }}
+                >
+                  Copiar link
+                </button>
+                <button
+                  onClick={() => navigator.share?.({ title: 'KROMI Live Tracking', url: liveUrl })}
+                  style={{
+                    flex: 1, padding: '10px', fontSize: '11px', fontWeight: 700, border: '1px solid rgba(110,155,255,0.25)', cursor: 'pointer', borderRadius: '4px',
+                    backgroundColor: 'rgba(110,155,255,0.12)', color: '#6e9bff',
+                  }}
+                >
+                  Partilhar
+                </button>
+              </div>
+
+              {/* QR Code */}
+              <div style={{ textAlign: 'center', marginTop: '4px' }}>
+                <div style={{ display: 'inline-block', padding: '10px', backgroundColor: 'white', borderRadius: '8px' }}>
+                  <canvas ref={liveCanvasRef} width={160} height={160} style={{ display: 'block' }} />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: '11px', color: '#ff716c' }}>
+              Configura o perfil de emergencia e sincroniza para activar o live tracking.
+            </div>
+          )}
+        </div>
         <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
       </Card>
 

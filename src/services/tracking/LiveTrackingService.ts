@@ -1,8 +1,14 @@
 /**
- * LiveTrackingService — broadcasts rider position + KPIs every 15s.
+ * LiveTrackingService — always-on auto-tracking using permanent user token.
+ *
+ * Uses the rider's `emergency_qr_token` as a permanent share token.
+ * Automatically starts broadcasting when BLE connects (bike on)
+ * and stops when BLE disconnects (bike off / app closes).
+ *
+ * The share URL never changes: `live.html?t={emergency_qr_token}`
  *
  * Uses Supabase REST (via supaFetch) to:
- *   - POST tracking_sessions to start a session (returns share token)
+ *   - GET/POST/PATCH tracking_sessions (one row per user, reused)
  *   - PATCH tracking_sessions every 15s with latest snapshot
  *   - INSERT tracking_points every 15s for the breadcrumb trail
  *
@@ -10,7 +16,7 @@
  * RLS: owner CRUD via kromi_uid(), public SELECT unrestricted.
  */
 
-import { supaFetch } from '../../lib/supaFetch';
+import { supaFetch, supaGet } from '../../lib/supaFetch';
 import { useAuthStore } from '../../store/authStore';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
@@ -28,53 +34,173 @@ const POINTS_PATH = '/rest/v1/tracking_points';
 let _sessionId: string | null = null;
 let _token: string | null = null;
 let _intervalHandle: ReturnType<typeof setInterval> | null = null;
+let _bleUnsub: (() => void) | null = null;
+let _broadcasting = false;
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface TrackingSessionRow {
+  id: string;
+  token: string;
+  user_id: string;
+  is_active: boolean;
+  started_at: string;
+  ended_at: string | null;
+}
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Start a live tracking session.
- * Creates a tracking_sessions row, starts the 15s broadcast loop.
- * Returns the share token, or null if the user is not authenticated.
+ * Initialize auto-tracking — call once on app boot.
+ * Subscribes to bikeStore ble_status changes and auto-starts/stops
+ * broadcasting when the bike connects/disconnects.
  */
-export async function startTracking(): Promise<string | null> {
-  if (_token) {
-    // Already tracking — return existing token
-    return _token;
-  }
+export function initAutoTracking(): void {
+  // Prevent double init
+  if (_bleUnsub) return;
 
   const user = useAuthStore.getState().user;
   if (!user?.id) {
-    console.warn('[LiveTracking] Cannot start — user not authenticated');
-    return null;
+    console.warn('[LiveTracking] Cannot init — user not authenticated');
+    return;
   }
+
+  const token = useSettingsStore.getState().riderProfile?.emergency_qr_token;
+  if (!token || token.length < 32) {
+    console.info('[LiveTracking] Skipping — no emergency_qr_token set');
+    return;
+  }
+
+  _token = token;
+
+  // React to BLE status changes (plain subscribe — no subscribeWithSelector)
+  let prevBleStatus = useBikeStore.getState().ble_status;
+  _bleUnsub = useBikeStore.subscribe((state) => {
+    const status = state.ble_status;
+    if (status === prevBleStatus) return;
+    prevBleStatus = status;
+
+    if (status === 'connected') {
+      startBroadcasting().catch((err) =>
+        console.warn('[LiveTracking] Error starting broadcast:', err),
+      );
+    } else {
+      stopBroadcasting().catch((err) =>
+        console.warn('[LiveTracking] Error stopping broadcast:', err),
+      );
+    }
+  });
+
+  // If already connected at init time, start immediately
+  if (useBikeStore.getState().ble_status === 'connected') {
+    startBroadcasting().catch((err) =>
+      console.warn('[LiveTracking] Error starting broadcast on init:', err),
+    );
+  }
+
+  console.info('[LiveTracking] Auto-tracking initialized');
+}
+
+/**
+ * Stop tracking and cleanup — call on app unmount.
+ */
+export function cleanupAutoTracking(): void {
+  if (_bleUnsub) {
+    _bleUnsub();
+    _bleUnsub = null;
+  }
+  stopBroadcasting().catch(() => {});
+  _token = null;
+}
+
+/**
+ * Get the permanent share URL for this user.
+ * Returns null if no emergency_qr_token is configured.
+ */
+export function getShareUrl(): string | null {
+  const token =
+    _token ?? useSettingsStore.getState().riderProfile?.emergency_qr_token;
+  if (!token || token.length < 32) return null;
+  return `https://www.kromi.online/live.html?t=${token}`;
+}
+
+/**
+ * Check if currently broadcasting (BLE connected + session active).
+ */
+export function isLiveBroadcasting(): boolean {
+  return _broadcasting;
+}
+
+// ─── Legacy compat exports (used by Settings page) ──────────────────────────
+
+/** @deprecated Use isLiveBroadcasting() */
+export function isTracking(): boolean {
+  return _broadcasting;
+}
+
+/** @deprecated Use getShareUrl() */
+export function getTrackingToken(): string | null {
+  return _token;
+}
+
+// ─── Internal: start/stop broadcasting ────────────────────────────────────────
+
+async function startBroadcasting(): Promise<void> {
+  if (_broadcasting) return;
+
+  const user = useAuthStore.getState().user;
+  if (!user?.id || !_token) return;
 
   const settings = useSettingsStore.getState();
   const riderName = settings.riderProfile?.name ?? null;
   const bikeName = settings.bikeConfig?.name ?? null;
 
   try {
-    const res = await supaFetch(SESSIONS_PATH, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify({
-        user_id: user.id,
-        rider_name: riderName,
-        bike_name: bikeName,
-      }),
-    });
+    // Try to find existing session row for this user+token
+    const existing = await supaGet<TrackingSessionRow[]>(
+      `${SESSIONS_PATH}?user_id=eq.${user.id}&token=eq.${encodeURIComponent(_token)}&limit=1`,
+    );
 
-    const rows = (await res.json()) as Array<{ id: string; token: string }>;
-    const row = rows[0];
-    if (!row?.id || !row?.token) {
-      console.error('[LiveTracking] Unexpected response from tracking_sessions POST', rows);
-      return null;
+    if (existing && existing.length > 0 && existing[0]) {
+      // Reuse existing row — PATCH to reactivate
+      _sessionId = existing[0].id;
+      await supaFetch(`${SESSIONS_PATH}?id=eq.${_sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          is_active: true,
+          started_at: new Date().toISOString(),
+          ended_at: null,
+          rider_name: riderName,
+          bike_name: bikeName,
+        }),
+      });
+    } else {
+      // Create new session row with permanent token
+      const res = await supaFetch(SESSIONS_PATH, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          token: _token,
+          rider_name: riderName,
+          bike_name: bikeName,
+        }),
+      });
+
+      const rows = (await res.json()) as TrackingSessionRow[];
+      const row = rows[0];
+      if (!row?.id) {
+        console.error('[LiveTracking] Unexpected response from POST', rows);
+        return;
+      }
+      _sessionId = row.id;
     }
 
-    _sessionId = row.id;
-    _token = row.token;
+    _broadcasting = true;
 
     // Broadcast immediately, then every 15s
     await broadcastUpdate();
@@ -84,58 +210,42 @@ export async function startTracking(): Promise<string | null> {
       );
     }, BROADCAST_INTERVAL_MS);
 
-    console.info(`[LiveTracking] Session started — token: ${_token}`);
-    return _token;
+    console.info(`[LiveTracking] Broadcasting started — session ${_sessionId}`);
   } catch (err) {
-    console.error('[LiveTracking] Failed to start session:', err);
-    return null;
+    console.error('[LiveTracking] Failed to start broadcasting:', err);
   }
 }
 
-/**
- * Stop the active tracking session.
- * Patches is_active=false + ended_at, clears the interval.
- */
-export async function stopTracking(): Promise<void> {
-  if (!_sessionId) return;
+async function stopBroadcasting(): Promise<void> {
+  if (!_broadcasting && !_sessionId) return;
 
-  // Clear interval immediately so no more broadcasts fire
+  // Clear interval immediately
   if (_intervalHandle !== null) {
     clearInterval(_intervalHandle);
     _intervalHandle = null;
   }
 
-  const sessionId = _sessionId;
-  _sessionId = null;
-  _token = null;
+  _broadcasting = false;
 
-  try {
-    await supaFetch(`${SESSIONS_PATH}?id=eq.${sessionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        is_active: false,
-        ended_at: new Date().toISOString(),
-      }),
-    });
-    console.info('[LiveTracking] Session stopped');
-  } catch (err) {
-    console.warn('[LiveTracking] Error stopping session:', err);
+  // Mark session as inactive (but keep the row for "last seen")
+  if (_sessionId) {
+    const sessionId = _sessionId;
+    try {
+      await supaFetch(`${SESSIONS_PATH}?id=eq.${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          is_active: false,
+          ended_at: new Date().toISOString(),
+        }),
+      });
+      console.info('[LiveTracking] Broadcasting stopped');
+    } catch (err) {
+      console.warn('[LiveTracking] Error marking session inactive:', err);
+    }
   }
-}
 
-/**
- * Return the current share token (null if not tracking).
- */
-export function getTrackingToken(): string | null {
-  return _token;
-}
-
-/**
- * Return true when a tracking session is active.
- */
-export function isTracking(): boolean {
-  return _token !== null && _sessionId !== null;
+  // Don't clear _sessionId — we'll reuse it on next connect
 }
 
 // ─── Internal broadcast ───────────────────────────────────────────────────────

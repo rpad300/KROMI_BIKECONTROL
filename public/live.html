@@ -199,15 +199,27 @@ async function init() {
   }
 
   try {
-    // 1. Fetch tracking session
+    // 1. Fetch latest tracking session for this permanent token
     const sessionRes = await fetch(
-      `${SB_URL}/rest/v1/tracking_sessions?token=eq.${encodeURIComponent(token)}&select=*&limit=1`,
+      `${SB_URL}/rest/v1/tracking_sessions?token=eq.${encodeURIComponent(token)}&order=started_at.desc&limit=1&select=*`,
       { headers: sbHeaders }
     );
     const sessions = await sessionRes.json();
 
     if (!Array.isArray(sessions) || !sessions.length) {
-      showError('Sessao nao encontrada', 'Esta sessao de tracking nao existe ou ja expirou.');
+      // No session yet — try to show rider info from emergency_profiles
+      try {
+        const profileRes = await fetch(
+          `${SB_URL}/rest/v1/emergency_profiles?token=eq.${encodeURIComponent(token)}&active=eq.true&select=*&limit=1`,
+          { headers: sbHeaders }
+        );
+        const profiles = await profileRes.json();
+        if (Array.isArray(profiles) && profiles.length) {
+          showNoSession(profiles[0]);
+          return;
+        }
+      } catch (e) { console.warn('Could not fetch emergency profile:', e); }
+      showError('Nenhuma sessao de tracking', 'Este rider ainda nao iniciou nenhuma sessao de tracking.');
       return;
     }
 
@@ -311,8 +323,8 @@ function renderPage(session, points) {
   if (!isActive) {
     const endedAt = session.ended_at ? new Date(session.ended_at) : null;
     html += `<div class="session-ended-banner">`;
-    html += `<div class="title">Sessao Terminada</div>`;
-    html += `<div class="sub">${endedAt ? 'Terminada a ' + endedAt.toLocaleString('pt-PT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Dados finais da sessao'}</div>`;
+    html += `<div class="title">Ultima Sessao</div>`;
+    html += `<div class="sub">${endedAt ? 'Terminada a ' + endedAt.toLocaleString('pt-PT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'O tracking inicia automaticamente quando a bike liga'}</div>`;
     html += `</div>`;
   }
 
@@ -900,6 +912,27 @@ function showError(title, msg) {
       <div class="msg">${esc(msg)}</div>
       <div style="margin-top:20px;font-size:11px;color:#494847">KROMI BikeControl</div>
     </div>`;
+}
+
+function showNoSession(profile) {
+  const name = profile.name || 'Ciclista';
+  let html = `<div class="header">`;
+  html += `<div class="header-title">KROMI LIVE TRACKING</div>`;
+  html += `<div class="header-rider">${esc(name)}</div>`;
+  html += `</div>`;
+  html += `<div style="max-width:520px;margin:0 auto;padding:40px 20px;text-align:center">`;
+  html += `<div style="font-size:48px;margin-bottom:16px">&#128690;</div>`;
+  html += `<div style="font-size:18px;font-weight:800;color:#fbbf24;margin-bottom:8px">Nenhuma sessao de tracking</div>`;
+  html += `<div style="font-size:13px;color:#888;margin-bottom:24px">O tracking inicia automaticamente quando a bike do rider liga via Bluetooth.</div>`;
+  if (profile.name || profile.phone) {
+    html += `<div style="background:#1a1919;border-radius:10px;padding:14px;border:1px solid #262626;text-align:left">`;
+    html += `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#3fff8b;margin-bottom:8px">Rider</div>`;
+    if (profile.name) html += `<div style="font-size:15px;font-weight:800;color:#fff">${esc(profile.name)}</div>`;
+    if (profile.phone) html += `<div style="font-size:12px;color:#888;margin-top:4px">${esc(profile.phone)}</div>`;
+    html += `</div>`;
+  }
+  html += `</div>`;
+  document.getElementById('app').innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════════
