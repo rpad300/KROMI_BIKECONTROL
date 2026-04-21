@@ -11,7 +11,7 @@
  *   - Intelligence footer: W' balance + route feasibility
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useBikeStore } from '../../store/bikeStore';
 import { useMapStore } from '../../store/mapStore';
 import { useRouteStore } from '../../store/routeStore';
@@ -19,6 +19,13 @@ import { initGoogleMaps, isMapsLoaded } from '../../services/maps/GoogleMapsServ
 import { ElevationMiniProfile } from '../Dashboard/ElevationMiniProfile';
 import { navigationExtras } from '../../services/routes/NavigationEngine';
 import type { RoutePoint } from '../../services/routes/GPXParser';
+import {
+  calculateExplorationRoutes,
+  shouldRecalculate,
+  getLastRoutes,
+  type ExplorationRoute,
+  type DifficultyLevel,
+} from '../../services/routes/ExplorationService';
 
 // ── Gradient color for route segments ────────────────────────
 function gradientColor(gradient: number): string {
@@ -315,15 +322,9 @@ export function NavDashboard() {
     }
   });
 
-  // ── No route fallback ──────────────────────────────────────
+  // ── No route → exploration mode ─────────────────────────────
   if (routePoints.length < 2) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: '#777', padding: 20 }}>
-        <span className="material-symbols-outlined" style={{ fontSize: 48, color: '#494847' }}>route</span>
-        <p style={{ fontSize: 14, textAlign: 'center' }}>Nenhuma rota activa</p>
-        <p style={{ fontSize: 11, textAlign: 'center', color: '#555' }}>Vai a Settings &rarr; Rotas para importar um GPX</p>
-      </div>
-    );
+    return <ExplorationView />;
   }
 
   return (
@@ -412,6 +413,342 @@ export function NavDashboard() {
             </span>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Difficulty labels (Portuguese) ───────────────────────────
+const DIFFICULTY_LABELS: Record<DifficultyLevel, string> = {
+  easy: 'Facil',
+  moderate: 'Moderado',
+  hard: 'Dificil',
+  extreme: 'Extremo',
+};
+
+const DIFFICULTY_LEGEND: { level: DifficultyLevel; color: string }[] = [
+  { level: 'easy', color: '#3fff8b' },
+  { level: 'moderate', color: '#fbbf24' },
+  { level: 'hard', color: '#ff716c' },
+  { level: 'extreme', color: '#a855f7' },
+];
+
+// ── Haversine for cumulative distance ────────────────────────
+function haversineDist(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number,
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 6_371_000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ── ExplorationView ──────────────────────────────────────────
+function ExplorationView() {
+  const [routes, setRoutes] = useState<ExplorationRoute[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedRoute, setSelectedRoute] = useState<ExplorationRoute | null>(null);
+  const [ready, setReady] = useState(false);
+
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<google.maps.Map | null>(null);
+  const posMarkerRef = useRef<google.maps.Marker | null>(null);
+  const routePolylinesRef = useRef<google.maps.Polyline[]>([]);
+
+  // GPS from stores
+  const lat = useMapStore((s) => s.latitude);
+  const lng = useMapStore((s) => s.longitude);
+  const heading = useMapStore((s) => s.heading);
+  const gpsActive = useMapStore((s) => s.gpsActive);
+  const speed = useBikeStore((s) => s.speed_kmh);
+  const battery = useBikeStore((s) => s.battery_percent);
+
+  // Battery color
+  const batColor = battery > 30 ? '#3fff8b' : battery > 15 ? '#fbbf24' : '#ff716c';
+
+  // Init Google Maps
+  useEffect(() => {
+    initGoogleMaps().then(() => setReady(true)).catch(() => { /* no-op */ });
+  }, []);
+
+  // Create map
+  useEffect(() => {
+    if (!ready || !mapRef.current || mapInstance.current) return;
+    if (!isMapsLoaded()) return;
+
+    mapInstance.current = new google.maps.Map(mapRef.current, {
+      center: { lat: lat || 41.19, lng: lng || -8.43 },
+      zoom: 14,
+      mapTypeId: 'hybrid',
+      disableDefaultUI: true,
+      gestureHandling: 'greedy',
+      tilt: 0,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  // Draw polylines on map
+  const drawRoutes = useCallback((routeList: ExplorationRoute[]) => {
+    if (!mapInstance.current) return;
+
+    // Clear old
+    routePolylinesRef.current.forEach((p) => p.setMap(null));
+    routePolylinesRef.current = [];
+
+    for (const route of routeList) {
+      const pl = new google.maps.Polyline({
+        path: route.points,
+        map: mapInstance.current,
+        strokeColor: route.color,
+        strokeOpacity: 0.7,
+        strokeWeight: 4,
+        clickable: true,
+      });
+      pl.addListener('click', () => setSelectedRoute(route));
+      routePolylinesRef.current.push(pl);
+    }
+
+    // Fit bounds to show all routes
+    if (routeList.length > 0) {
+      const bounds = new google.maps.LatLngBounds();
+      for (const r of routeList) {
+        for (const pt of r.points) bounds.extend(pt);
+      }
+      mapInstance.current.fitBounds(bounds, 30);
+    }
+  }, []);
+
+  // Load routes
+  const loadRoutes = useCallback(async () => {
+    if (!lat || !lng) return;
+    setLoading(true);
+    try {
+      const result = await calculateExplorationRoutes(lat, lng, 5);
+      setRoutes(result);
+      drawRoutes(result);
+    } catch {
+      /* no-op */
+    }
+    setLoading(false);
+  }, [lat, lng, drawRoutes]);
+
+  // Calculate routes on mount and when moved >500m
+  useEffect(() => {
+    if (!lat || !lng || !ready) return;
+    const cached = getLastRoutes();
+    if (cached.length > 0 && !shouldRecalculate(lat, lng)) {
+      setRoutes(cached);
+      drawRoutes(cached);
+      return;
+    }
+    loadRoutes();
+  }, [lat, lng, ready, drawRoutes, loadRoutes]);
+
+  // Update position marker
+  useEffect(() => {
+    if (!mapInstance.current || !lat || !lng) return;
+    const pos = { lat, lng };
+
+    if (!posMarkerRef.current) {
+      posMarkerRef.current = new google.maps.Marker({
+        map: mapInstance.current,
+        position: pos,
+        icon: {
+          path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          scale: 6,
+          fillColor: '#3fff8b',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+          rotation: heading || 0,
+        },
+        zIndex: 100,
+      });
+    } else {
+      posMarkerRef.current.setPosition(pos);
+      posMarkerRef.current.setIcon({
+        ...(posMarkerRef.current.getIcon() as google.maps.Symbol),
+        rotation: heading || 0,
+      });
+    }
+  }, [lat, lng, heading]);
+
+  // Highlight selected route
+  useEffect(() => {
+    routePolylinesRef.current.forEach((pl, i) => {
+      const route = routes[i];
+      if (!route) return;
+      const isSelected = selectedRoute?.label === route.label;
+      pl.setOptions({
+        strokeOpacity: isSelected ? 1 : 0.5,
+        strokeWeight: isSelected ? 6 : 3,
+        zIndex: isSelected ? 10 : 1,
+      });
+    });
+  }, [selectedRoute, routes]);
+
+  // Activate selected route as navigation
+  function activateRoute(route: ExplorationRoute) {
+    const routePointsList: RoutePoint[] = [];
+    let cumulDist = 0;
+
+    for (let i = 0; i < route.points.length; i++) {
+      const pt = route.points[i]!;
+      if (i > 0) {
+        const prev = route.points[i - 1]!;
+        cumulDist += haversineDist(prev.lat, prev.lng, pt.lat, pt.lng);
+      }
+      routePointsList.push({
+        lat: pt.lat,
+        lng: pt.lng,
+        elevation: 0,
+        distance_from_start_m: cumulDist,
+      });
+    }
+
+    useRouteStore.getState().setActiveRoute(
+      {
+        id: `exploration-${route.label}-${Date.now()}`,
+        name: `Explorar ${route.label} — ${route.distanceKm}km`,
+        description: `Rota de exploracao ${DIFFICULTY_LABELS[route.difficulty]}`,
+        source: 'manual' as const,
+        source_url: null,
+        points: routePointsList,
+        total_distance_km: route.distanceKm,
+        total_elevation_gain_m: route.elevationGain,
+        total_elevation_loss_m: route.elevationLoss,
+        surface_summary: null,
+        max_gradient_pct: route.maxGradientPct,
+        avg_gradient_pct: route.avgGradientPct,
+        estimated_wh: null,
+        estimated_time_min: route.durationMin,
+        estimated_glycogen_g: null,
+        bbox_north: Math.max(...route.points.map((p) => p.lat)),
+        bbox_south: Math.min(...route.points.map((p) => p.lat)),
+        bbox_east: Math.max(...route.points.map((p) => p.lng)),
+        bbox_west: Math.min(...route.points.map((p) => p.lng)),
+        is_favorite: false,
+        ride_count: 0,
+        last_ridden_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      routePointsList,
+    );
+    useRouteStore.getState().startNavigation();
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: '#0e0e0e' }}>
+
+      {/* MAP (fullscreen minus bottom panel) */}
+      <div style={{ flex: '1 1 0', position: 'relative', minHeight: 0 }}>
+        <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+
+        {/* GPS badge — top center */}
+        {!gpsActive && (
+          <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 10, background: 'rgba(239,68,68,0.9)', padding: '4px 12px', borderRadius: 6 }}>
+            <span style={{ color: '#fff', fontSize: 10, fontWeight: 'bold' }}>SEM GPS</span>
+          </div>
+        )}
+
+        {/* Speed — top right */}
+        <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10, background: 'rgba(14,14,14,0.88)', padding: '6px 12px', borderRadius: 6, border: '1px solid #333' }}>
+          <span style={{ color: '#fff', fontSize: 28, fontWeight: 'bold', fontFamily: 'monospace' }}>{speed > 0 ? speed.toFixed(0) : '0'}</span>
+          <span style={{ color: '#777', fontSize: 10, marginLeft: 3 }}>KM/H</span>
+        </div>
+
+        {/* Loading spinner */}
+        {loading && (
+          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 20, background: 'rgba(14,14,14,0.9)', padding: '12px 20px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 20, height: 20, border: '2px solid #3fff8b', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            <span style={{ color: '#ccc', fontSize: 12 }}>A calcular rotas...</span>
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        )}
+
+        {/* Difficulty legend — bottom left of map */}
+        {routes.length > 0 && (
+          <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 10, background: 'rgba(14,14,14,0.88)', padding: '6px 10px', borderRadius: 6, display: 'flex', gap: 10, border: '1px solid #333' }}>
+            {DIFFICULTY_LEGEND.map(({ level, color }) => (
+              <div key={level} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: color }} />
+                <span style={{ color: '#aaa', fontSize: 9 }}>{DIFFICULTY_LABELS[level]}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* SELECTED ROUTE INFO */}
+      {selectedRoute && (
+        <div style={{ padding: '8px 10px', background: '#1a1919', borderTop: `2px solid ${selectedRoute.color}`, flexShrink: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <div>
+              <span style={{ color: selectedRoute.color, fontSize: 14, fontWeight: 'bold' }}>{selectedRoute.label}</span>
+              <span style={{ color: '#777', fontSize: 11, marginLeft: 8 }}>
+                {selectedRoute.distanceKm}km
+                {' \u00B7 '}
+                <span style={{ color: '#fbbf24' }}>{'\u25B2'}{selectedRoute.elevationGain}m</span>
+                {' \u00B7 '}
+                {selectedRoute.durationMin}min
+              </span>
+            </div>
+            <span style={{ color: selectedRoute.color, fontSize: 11, fontWeight: 'bold', background: `${selectedRoute.color}20`, padding: '2px 8px', borderRadius: 4 }}>
+              {DIFFICULTY_LABELS[selectedRoute.difficulty]}
+            </span>
+          </div>
+          <button
+            onClick={() => activateRoute(selectedRoute)}
+            style={{
+              width: '100%',
+              padding: '10px 0',
+              background: '#3fff8b',
+              color: '#0e0e0e',
+              border: 'none',
+              borderRadius: 6,
+              fontSize: 13,
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              minHeight: 44,
+            }}
+          >
+            Navegar Esta Rota
+          </button>
+        </div>
+      )}
+
+      {/* FOOTER BAR */}
+      <div style={{ padding: '6px 10px', background: '#0e0e0e', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #262626' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ color: batColor, fontSize: 11, fontWeight: 'bold' }}>BAT</span>
+          <span style={{ color: batColor, fontSize: 14, fontWeight: 'bold', fontFamily: 'monospace' }}>{battery}%</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ color: '#777', fontSize: 11 }}>SPD</span>
+          <span style={{ color: '#fff', fontSize: 14, fontWeight: 'bold', fontFamily: 'monospace' }}>{speed > 0 ? speed.toFixed(0) : '0'}</span>
+        </div>
+        <button
+          onClick={loadRoutes}
+          disabled={loading}
+          style={{
+            padding: '8px 16px',
+            background: loading ? '#333' : '#3fff8b',
+            color: loading ? '#777' : '#0e0e0e',
+            border: 'none',
+            borderRadius: 6,
+            fontSize: 12,
+            fontWeight: 'bold',
+            cursor: loading ? 'default' : 'pointer',
+            minHeight: 44,
+          }}
+        >
+          {loading ? 'A calcular...' : 'Explorar'}
+        </button>
       </div>
     </div>
   );
