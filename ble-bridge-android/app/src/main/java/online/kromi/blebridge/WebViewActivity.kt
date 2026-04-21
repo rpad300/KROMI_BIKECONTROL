@@ -302,6 +302,11 @@ class WebViewActivity : AppCompatActivity() {
 
                 Log.i(TAG, "FileChooser: accept=${acceptTypes.joinToString()}, capture=$hasCapture")
 
+                // Ensure camera permission is granted
+                if (checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(android.Manifest.permission.CAMERA), 2002)
+                }
+
                 try {
                     if (hasCapture || wantsImage) {
                         // Create a camera intent that saves to a temp file
@@ -317,6 +322,18 @@ class WebViewActivity : AppCompatActivity() {
 
                         val cameraIntent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
                             putExtra(android.provider.MediaStore.EXTRA_OUTPUT, cameraPhotoUri)
+                            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+
+                        // Grant URI permission to all camera apps
+                        val resolvedActivities = packageManager.queryIntentActivities(cameraIntent, PackageManager.MATCH_DEFAULT_ONLY)
+                        for (resolvedIntentInfo in resolvedActivities) {
+                            grantUriPermission(
+                                resolvedIntentInfo.activityInfo.packageName,
+                                cameraPhotoUri,
+                                Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
                         }
 
                         // Also offer gallery as fallback
