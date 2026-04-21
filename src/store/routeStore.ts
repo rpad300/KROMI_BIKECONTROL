@@ -131,13 +131,23 @@ export const useRouteStore = create<RouteState>((set) => ({
     navigation: { ...s.navigation, ...nav },
   })),
 
-  startNavigation: () => set((s) => ({
-    navigation: { ...s.navigation, active: true, currentIndex: 0, progress_pct: 0 },
-  })),
+  startNavigation: () => {
+    set((s) => ({
+      navigation: { ...s.navigation, active: true, currentIndex: 0, progress_pct: 0 },
+    }));
+    // Notify dashboardStore to switch to nav context (dynamic import avoids circular dep)
+    import('./dashboardStore').then(({ useDashboardStore }) => {
+      useDashboardStore.getState().setRouteActive(true);
+    });
+  },
 
-  stopNavigation: () => set({
-    navigation: { ...initialNav },
-  }),
+  stopNavigation: () => {
+    set({ navigation: { ...initialNav } });
+    // Restore terrain-based auto context
+    import('./dashboardStore').then(({ useDashboardStore }) => {
+      useDashboardStore.getState().setRouteActive(false);
+    });
+  },
 
   clearActiveRoute: () => set({
     activeRoute: null,

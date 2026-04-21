@@ -1,16 +1,18 @@
 import { create } from 'zustand';
 
 export type DashboardId = 'cruise' | 'climb' | 'descent' | 'data' | 'map' | 'nav';
-export type AutoContext = 'cruise' | 'climb' | 'descent';
+export type AutoContext = 'cruise' | 'climb' | 'descent' | 'nav';
 
 interface DashboardState {
   /** Currently displayed dashboard */
   active: DashboardId;
-  /** What auto-switch would pick based on terrain */
+  /** What auto-switch would pick based on terrain (or 'nav' when route active) */
   autoContext: AutoContext;
   /** Manual override active (user swiped) */
   manualOverride: boolean;
   manualOverrideAt: number;
+  /** True while a GPX route navigation session is active */
+  routeActive: boolean;
 
   // Debounce counters (consecutive terrain readings)
   _climbCount: number;
@@ -21,6 +23,7 @@ interface DashboardState {
   manualSwitch: (d: DashboardId) => void;
   processGradient: (gradient: number) => void;
   tick: () => void;
+  setRouteActive: (v: boolean) => void;
 }
 
 const CLIMB_THRESHOLD = 3;    // >= 3% = climb
@@ -34,6 +37,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
   autoContext: 'cruise',
   manualOverride: false,
   manualOverrideAt: 0,
+  routeActive: false,
   _climbCount: 0,
   _descentCount: 0,
   _cruiseCount: 0,
@@ -44,8 +48,19 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
     manualOverrideAt: Date.now(),
   }),
 
+  setRouteActive: (v) => {
+    if (v) {
+      set({ routeActive: true, autoContext: 'nav', active: 'nav', manualOverride: false });
+    } else {
+      set({ routeActive: false, autoContext: 'cruise', active: 'cruise' });
+    }
+  },
+
   processGradient: (gradient) => {
     const s = get();
+    // Skip gradient logic while a GPX route is active — nav context takes priority
+    if (s.routeActive) return;
+
     let cc = s._climbCount;
     let dc = s._descentCount;
     let fc = s._cruiseCount;
@@ -89,10 +104,11 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
   tick: () => {
     const s = get();
     if (s.manualOverride && Date.now() - s.manualOverrideAt > MANUAL_TIMEOUT_MS) {
-      // Manual override expired — return to auto context
+      // Manual override expired — return to nav if route active, otherwise terrain auto context
+      const returnTo: DashboardId = s.routeActive ? 'nav' : s.autoContext as DashboardId;
       set({
         manualOverride: false,
-        active: s.autoContext,
+        active: returnTo,
       });
     }
   },
