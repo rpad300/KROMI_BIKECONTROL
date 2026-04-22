@@ -53,6 +53,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   startTrip: () => {
     // Reset GPS engine synchronously before anything else (Kalman, elevation gain, etc.)
     resetEngine();
+    useBikeStore.getState().setElevationGain(0);
     const bike = useBikeStore.getState();
     const startKm = bike.trip_distance_km ?? 0;
     set({

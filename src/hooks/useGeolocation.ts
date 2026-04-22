@@ -46,7 +46,7 @@ export function useGeolocation() {
         store.setGpsQuality(result.gpsQuality);
 
         if (result.altitude !== null) {
-          store.setAltitude(result.altitude);
+          store.setAltitude(result.altitude, pos.coords.altitude);
         }
         if (pos.coords.speed !== null) {
           store.setGpsSpeed(pos.coords.speed);

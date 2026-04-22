@@ -373,7 +373,7 @@ class RideSessionManager {
       snapshots: [],
       duration_s: elapsedS,
       total_km: totalKm,
-      total_elevation_m: 0,
+      total_elevation_m: bike.elevation_gain_m,
       avg_speed_kmh: avgSpeed,
       max_speed_kmh: maxSpeed,
       avg_power_w: avgPower,

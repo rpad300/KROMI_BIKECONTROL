@@ -6,7 +6,8 @@ interface MapState {
   longitude: number;
   heading: number; // 0-360 degrees
   accuracy: number; // meters
-  altitude: number | null;
+  altitude: number | null;       // smoothed (GPSFilterEngine median)
+  rawAltitude: number | null;    // raw GPS altitude (for motor gradient + ElevationPredictor)
   speed: number | null; // m/s from GPS
 
   // GPS status
@@ -22,7 +23,7 @@ interface MapState {
 
   // Actions
   setPosition: (lat: number, lng: number, heading: number, accuracy: number) => void;
-  setAltitude: (alt: number | null) => void;
+  setAltitude: (alt: number | null, raw?: number | null) => void;
   setGpsSpeed: (speed: number | null) => void;
   setGpsActive: (active: boolean) => void;
   setGpsError: (error: string | null) => void;
@@ -36,6 +37,7 @@ export const useMapStore = create<MapState>((set) => ({
   heading: 0,
   accuracy: 999,
   altitude: null,
+  rawAltitude: null,
   speed: null,
   gpsActive: false,
   gpsError: null,
@@ -54,7 +56,7 @@ export const useMapStore = create<MapState>((set) => ({
       accuracyMax: Math.max(s.accuracyMax, accuracy),
     })),
 
-  setAltitude: (alt) => set({ altitude: alt }),
+  setAltitude: (alt, raw) => set({ altitude: alt, ...(raw !== undefined ? { rawAltitude: raw } : {}) }),
 
   setGpsSpeed: (speed) => set({ speed }),
 

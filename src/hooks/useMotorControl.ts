@@ -170,7 +170,7 @@ export function useMotorControl() {
 
       // === Gather inputs ===
       const map = useMapStore.getState();
-      const altitude = map.altitude ?? bike.barometric_altitude_m;
+      const altitude = map.rawAltitude ?? map.altitude ?? bike.barometric_altitude_m;
       const liveGradient = getGpsGradient(altitude, bike.speed_kmh, bike.distance_km);
 
       const tuningInput: TuningInput = {
