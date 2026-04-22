@@ -3,10 +3,7 @@ node_modules/
 .git/
 .claude/
 .superpowers/
-*.png
 *.apk
-*.jpg
-*.jpeg
 kromi-doc/
 claude-code-skills/
 claude-code-blueprint/
