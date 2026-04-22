@@ -237,6 +237,11 @@ class LocalRideStore {
 
         // Handle DB close (e.g. version upgrade from another tab)
         this.db.onclose = () => { this.db = null; };
+        // Handle version change from another tab — close gracefully to unblock the upgrade
+        this.db.onversionchange = () => {
+          this.db?.close();
+          this.db = null;
+        };
 
         resolve();
       };

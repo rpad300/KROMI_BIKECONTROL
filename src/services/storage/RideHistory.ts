@@ -234,6 +234,7 @@ class RideSessionManager {
     this.sessionId = crypto.randomUUID();
     this.startedAt = Date.now();
     this.snapshotCount = 0;
+    useMapStore.getState().resetAccuracyStats();
     this.overrideCount = 0;
     this.snapshotBuffer = [];
     this.metrics = {

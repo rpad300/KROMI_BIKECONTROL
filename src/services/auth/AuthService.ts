@@ -1,4 +1,4 @@
-import { supaInvokeFunction } from '../../lib/supaFetch';
+import { supaFetch, supaInvokeFunction } from '../../lib/supaFetch';
 
 /** Get or create a persistent device ID (survives cache clears via localStorage) */
 export function getDeviceId(): string {
@@ -122,17 +122,13 @@ export async function loginByDevice(): Promise<LoginResult> {
  * verify-otp result) because authStore may not yet be updated when
  * this runs.
  */
-export async function registerDevice(user: AuthUser, jwt: string): Promise<void> {
+export async function registerDevice(user: AuthUser, _jwt: string): Promise<void> {
   const deviceId = getDeviceId();
-  const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-  const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-  if (!SB_URL || !SB_KEY) return;
+  if (!import.meta.env.VITE_SUPABASE_URL) return;
   try {
-    await fetch(`${SB_URL}/rest/v1/device_tokens`, {
+    await supaFetch('/rest/v1/device_tokens', {
       method: 'POST',
       headers: {
-        apikey: SB_KEY,
-        Authorization: `Bearer ${jwt}`,
         'Content-Type': 'application/json',
         Prefer: 'return=minimal,resolution=merge-duplicates',
       },

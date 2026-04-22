@@ -39,11 +39,18 @@ export let bleMode: BLEMode = 'web';
 /** Interval reference for WebSocket reconnection watcher — cleaned up by cleanupBLE() */
 let wsWatchInterval: ReturnType<typeof setInterval> | null = null;
 
+/** Timeout reference for auto-clearing wsWatchInterval — cleaned up by cleanupBLE() */
+let wsWatchTimeout: ReturnType<typeof setTimeout> | null = null;
+
 /** Clean up BLE watchers (call on unmount to prevent memory leaks) */
 export function cleanupBLE(): void {
   if (wsWatchInterval) {
     clearInterval(wsWatchInterval);
     wsWatchInterval = null;
+  }
+  if (wsWatchTimeout) {
+    clearTimeout(wsWatchTimeout);
+    wsWatchTimeout = null;
   }
 }
 
@@ -102,11 +109,12 @@ export async function initBLE(): Promise<void> {
     }, 2000);
 
     // Auto-clear after 2 minutes to prevent memory leak
-    setTimeout(() => {
+    wsWatchTimeout = setTimeout(() => {
       if (wsWatchInterval) {
         clearInterval(wsWatchInterval);
         wsWatchInterval = null;
       }
+      wsWatchTimeout = null;
     }, 120_000);
   }
 }

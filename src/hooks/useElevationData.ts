@@ -1,12 +1,15 @@
 import { useEffect, useRef } from 'react';
 import { useMapStore } from '../store/mapStore';
+import { useBikeStore } from '../store/bikeStore';
 import { useAutoAssistStore } from '../store/autoAssistStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { elevationService } from '../services/maps/ElevationService';
 
-const ELEVATION_TICK_MS = 3000; // Fetch elevation every 3 seconds
+const ELEVATION_TICK_MS = 3000; // Base tick (used at normal speeds)
+const ELEVATION_SLOW_MS = 10000; // Slower tick at <5 km/h
 const ELEVATION_BACKOFF_MS = 30000; // After 10 failures, reduce to every 30s
 let elevationConsecutiveFailures = 0;
+let lastElevationFetchAt = 0;
 
 /**
  * Always-on elevation data provider.
@@ -35,6 +38,13 @@ export function useElevationData() {
 
       const map = useMapStore.getState();
       if (!map.gpsActive || map.latitude === 0) return;
+
+      // Speed-gated: skip if moving slowly and fetched recently
+      const speed = useBikeStore.getState().speed_kmh;
+      const now = Date.now();
+      const interval = speed < 2 ? ELEVATION_BACKOFF_MS : speed < 5 ? ELEVATION_SLOW_MS : ELEVATION_TICK_MS;
+      if (now - lastElevationFetchAt < interval) return;
+      lastElevationFetchAt = now;
 
       const config = useSettingsStore.getState().autoAssist;
       const lookaheadM = config?.lookahead_m ?? 500;

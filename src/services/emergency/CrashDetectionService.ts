@@ -56,7 +56,7 @@ const HR_HIGH_THRESHOLD       = 100;   // bpm — "was riding hard"
 const HR_LOW_THRESHOLD        = 40;    // bpm — suspicious drop
 const HR_HISTORY_WINDOW_MS    = 15_000; // Window to compare HR before/after drop
 const DEBOUNCE_MS             = 5_000;  // Minimum time between consecutive triggers
-const POLL_INTERVAL_MS        = 500;    // How often we sample bikeStore state
+const POLL_INTERVAL_MS        = 1_000;  // How often we sample bikeStore state (was 500ms, 1s is sufficient for crash detection)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal state

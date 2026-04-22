@@ -240,31 +240,39 @@ export const useAuthStore = create<AuthState>()(
         }
 
         // No local user — must verify with server
-        const verified = await withTimeout(verifySession(sessionToken), 10000);
-        if (verified) {
-          publishJwtGlobal(verified.jwt);
+        try {
+          const verified = await withTimeout(verifySession(sessionToken), 10000);
+          if (verified) {
+            publishJwtGlobal(verified.jwt);
+            set({
+              realUser: verified.user,
+              user: verified.user,
+              jwt: verified.jwt,
+              jwtExpiresAt: verified.jwt_expires_at,
+              loading: false,
+            });
+            return true;
+          }
+
+          publishJwtGlobal(null);
           set({
-            realUser: verified.user,
-            user: verified.user,
-            jwt: verified.jwt,
-            jwtExpiresAt: verified.jwt_expires_at,
+            realUser: null,
+            impersonatedUser: null,
+            user: null,
+            sessionToken: null,
+            jwt: null,
+            jwtExpiresAt: null,
+            expiresAt: null,
             loading: false,
           });
-          return true;
+          return false;
+        } catch {
+          // Network error or timeout — clear session so the app shows login
+          // instead of freezing on the loading spinner.
+          publishJwtGlobal(null);
+          set({ user: null, loading: false });
+          return false;
         }
-
-        publishJwtGlobal(null);
-        set({
-          realUser: null,
-          impersonatedUser: null,
-          user: null,
-          sessionToken: null,
-          jwt: null,
-          jwtExpiresAt: null,
-          expiresAt: null,
-          loading: false,
-        });
-        return false;
       },
 
       isLoggedIn: () => {

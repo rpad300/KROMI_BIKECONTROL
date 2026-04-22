@@ -65,7 +65,10 @@ class GiantBLEService {
         this.handleDisconnect();
       });
 
-      this.server = await this.device.gatt!.connect();
+      if (!this.device.gatt) {
+        throw new Error('GATT server not available on this device');
+      }
+      this.server = await this.device.gatt.connect();
       this.reconnectAttempt = 0;
       store.setBLEStatus('connected');
 
@@ -424,6 +427,11 @@ class GiantBLEService {
     console.log('[BLE] Disconnected, attempting reconnect...');
 
     while (this.reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
+      if (!this.device) {
+        // User called disconnect() — abort reconnect
+        useBikeStore.getState().setBLEStatus('disconnected');
+        return;
+      }
       const delay = RECONNECT_DELAYS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS.length - 1)]!;
       await new Promise(r => setTimeout(r, delay));
       this.reconnectAttempt++;

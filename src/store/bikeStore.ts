@@ -169,7 +169,7 @@ interface BikeState {
   resetSession: () => void;
 }
 
-export const useBikeStore = create<BikeState>((set) => ({
+export const useBikeStore = create<BikeState>((set, get) => ({
   // Initial state
   battery_percent: 0,
   speed_kmh: 0,
@@ -379,6 +379,8 @@ export const useBikeStore = create<BikeState>((set) => ({
   setTotalGears: (n) => set({ total_gears: n }),
 
   setBikeBrand: (brand) => {
+    const prev = get().bike_brand;
+    if (prev === brand) return; // no-op guard breaks mutual import cycle
     set({ bike_brand: brand });
     // Also persist to active bike config
     import('./settingsStore').then(({ useSettingsStore }) => {
