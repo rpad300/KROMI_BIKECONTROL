@@ -103,7 +103,7 @@ export function CrashAlertOverlay() {
           boxShadow: '0 4px 24px rgba(63,255,139,0.4)',
         }}
       >
-        ESTOU BEM
+        {sosSent ? 'FECHAR' : 'ESTOU BEM'}
       </button>
 
       {/* GPS coordinates */}

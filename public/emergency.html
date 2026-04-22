@@ -252,9 +252,9 @@ async function load() {
 
     // 6. Live refresh if active session
     if (isLive) {
-      const liveInterval = setInterval(async () => {
+      window._emergencyLiveInterval = setInterval(async () => {
         const still = await refreshLiveData(profile.user_id, session.id);
-        if (still === false) clearInterval(liveInterval);
+        if (still === false) clearInterval(window._emergencyLiveInterval);
       }, 10000);
     }
 
@@ -550,17 +550,28 @@ function initMap(snapshots, session, isLive) {
   map.fitBounds(bounds, 30);
 
   // Color-coded polyline segments by HR zone (zone 0 = no HR data → neutral grey)
+  // Uses zone-run coalescing: one Polyline per consecutive same-zone run instead of
+  // one per segment — reduces ~2000 objects to typically 20-100 for a 2h ride.
   const NEUTRAL_COLOR = '#555555';
-  for (let i = 0; i < pts.length - 1; i++) {
-    const z = pts[i].hr_zone || 0;
-    const color = z > 0 ? ZONE_COLORS[Math.min(4, z - 1)] : NEUTRAL_COLOR;
-    new google.maps.Polyline({
-      path: [{ lat: pts[i].lat, lng: pts[i].lng }, { lat: pts[i+1].lat, lng: pts[i+1].lng }],
-      strokeColor: color,
-      strokeOpacity: 0.95,
-      strokeWeight: 4,
-      map,
-    });
+  let runStart = 0;
+  let runZone = pts[0].hr_zone || 0;
+  for (let i = 1; i <= pts.length; i++) {
+    const curZone = i < pts.length ? (pts[i].hr_zone || 0) : -1; // sentinel ends last run
+    if (curZone !== runZone || i === pts.length) {
+      // Emit one polyline for this run (include the first point of the next run as the
+      // closing vertex so segments join seamlessly with no gaps).
+      const runPts = pts.slice(runStart, Math.min(i + 1, pts.length));
+      const color = runZone > 0 ? ZONE_COLORS[Math.min(4, runZone - 1)] : NEUTRAL_COLOR;
+      new google.maps.Polyline({
+        path: runPts.map(p => ({ lat: p.lat, lng: p.lng })),
+        strokeColor: color,
+        strokeOpacity: 0.95,
+        strokeWeight: 4,
+        map,
+      });
+      runStart = i;
+      runZone = curZone;
+    }
   }
 
   // Start marker (green circle)

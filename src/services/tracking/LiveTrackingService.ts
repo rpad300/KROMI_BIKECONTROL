@@ -37,6 +37,7 @@ let _token: string | null = null;
 let _intervalHandle: ReturnType<typeof setInterval> | null = null;
 let _tripUnsub: (() => void) | null = null;
 let _broadcasting = false;
+let _starting = false;
 let _activeGroupRideId: string | null = null;
 let _lastBroadcastHeading: number | null = null;
 const HEADING_BOOST_DEG = 20;
@@ -188,10 +189,11 @@ export function getTrackingToken(): string | null {
 // ─── Internal: start/stop broadcasting ────────────────────────────────────────
 
 async function startBroadcasting(): Promise<void> {
-  if (_broadcasting) return;
+  if (_broadcasting || _starting) return;
+  _starting = true;
 
   const user = useAuthStore.getState().user;
-  if (!user?.id || !_token) return;
+  if (!user?.id || !_token) { _starting = false; return; }
 
   const settings = useSettingsStore.getState();
   const riderName = settings.riderProfile?.name ?? null;
@@ -256,6 +258,8 @@ async function startBroadcasting(): Promise<void> {
     console.info(`[LiveTracking] Broadcasting started — session ${_sessionId}`);
   } catch (err) {
     console.error('[LiveTracking] Failed to start broadcasting:', err);
+  } finally {
+    _starting = false;
   }
 }
 

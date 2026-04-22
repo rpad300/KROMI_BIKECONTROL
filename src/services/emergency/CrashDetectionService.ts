@@ -213,6 +213,42 @@ async function escalateToSOS(alert: CrashAlertState): Promise<void> {
     console.log('[CrashDetection] Emergency contacts notified:', emergencyContacts.length);
   } catch (err) {
     console.error('[CrashDetection] Failed to notify emergency contacts:', err);
+    // Store for offline retry — critical for mountain/tunnel scenarios
+    try {
+      localStorage.setItem('kromi_pending_sos', JSON.stringify({
+        trigger: alert.trigger,
+        position: alert.position,
+        timestamp: alert.timestamp,
+        contacts: emergencyContacts,
+        riderName: riderProfile.name ?? 'Ciclista KROMI',
+        token: riderProfile.emergency_qr_token ?? null,
+      }));
+      window.addEventListener('online', retryPendingSOS, { once: true });
+    } catch { /* localStorage may be unavailable */ }
+  }
+}
+
+/** Retry pending SOS when network comes back */
+async function retryPendingSOS(): Promise<void> {
+  const raw = localStorage.getItem('kromi_pending_sos');
+  if (!raw) return;
+  try {
+    const data = JSON.parse(raw);
+    const { supaInvokeFunction: invoke } = await import('../../lib/supaFetch');
+    await invoke('crash-notify', {
+      trigger: data.trigger,
+      position: data.position,
+      occurredAt: new Date(data.timestamp).toISOString(),
+      emergencyContacts: data.contacts,
+      riderName: data.riderName,
+      emergencyQrToken: data.token,
+    });
+    localStorage.removeItem('kromi_pending_sos');
+    console.log('[CrashDetection] Pending SOS retried successfully');
+  } catch (err) {
+    console.error('[CrashDetection] SOS retry failed:', err);
+    // Re-listen for next online event
+    window.addEventListener('online', retryPendingSOS, { once: true });
   }
 }
 
@@ -241,7 +277,8 @@ function triggerAlert(trigger: CrashTrigger): void {
 
   console.warn(`[CrashDetection] Alert triggered — trigger=${trigger} pos=${latitude.toFixed(5)},${longitude.toFixed(5)}`);
 
-  // Countdown tick
+  // Countdown tick — clear any existing interval before starting new one
+  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
   let remaining = COUNTDOWN_SECONDS;
   countdownInterval = setInterval(() => {
     remaining -= 1;

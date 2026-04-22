@@ -227,6 +227,8 @@ let trailPolyline = null;
 let positionMarker = null;
 let positionCircle = null;
 let lastPointId = null;
+let _lastHomeCalcLat = null;
+let _lastHomeCalcLng = null;
 let sessionData = null;
 let pollInterval = null;
 let medicalProfile = null;
@@ -482,7 +484,7 @@ function renderPage(session, points) {
       const timeStr = new Date(photo.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
       const isVideo = photo.media_type === 'video';
 
-      html += `<div onclick="openPhotoModal('${esc(viewUrl)}', '${esc(thumbUrl)}', '${esc(photo.caption || '')}', '${timeStr}', ${photo.lat}, ${photo.lng})" style="flex-shrink:0;position:relative;cursor:pointer">`;
+      html += `<div onclick="openPhotoModal('${esc(viewUrl)}', '${esc(thumbUrl)}', '${esc(photo.caption || '')}', '${timeStr}', ${parseFloat(photo.lat) || 0}, ${parseFloat(photo.lng) || 0})" style="flex-shrink:0;position:relative;cursor:pointer">`;
       if (thumbUrl) {
         html += `<img src="${esc(thumbUrl)}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #333" alt="" loading="lazy" />`;
       } else {
@@ -958,7 +960,7 @@ async function pollUpdates(session) {
   try {
     // Re-fetch session data
     const sessionRes = await fetch(
-      `${SB_URL}/rest/v1/tracking_sessions?id=eq.${session.id}&select=*&limit=1`,
+      `${SB_URL}/rest/v1/tracking_sessions?id=eq.${session.id}&select=lat,lng,altitude,heading,speed_kmh,avg_speed_kmh,distance_km,elevation_gain_m,battery_pct,heart_rate,power_watts,cadence_rpm,assist_mode,gear,total_gears,range_km,route_name,route_total_km,route_done_km,route_remaining_km,route_eta_min,route_progress_pct,route_elevation_profile,updated_at,rider_name,bike_name,is_active&limit=1`,
       { headers: sbHeaders }
     );
     const sessions = await sessionRes.json();
@@ -1060,12 +1062,22 @@ async function pollUpdates(session) {
       }, 100);
     }
 
-    // Re-run home distance + proximity on every poll (Feature 7)
+    // Re-run home distance + proximity on every poll (Feature 7), throttled to >500m movement
     const lastPtForHome = pts.filter(p => p.lat && p.lng).pop();
-    if (lastPtForHome) {
-      calculateHomeDistance(lastPtForHome.lat, lastPtForHome.lng);
-    } else if (updatedSession.lat && updatedSession.lng) {
-      calculateHomeDistance(updatedSession.lat, updatedSession.lng);
+    const homeLat = lastPtForHome?.lat ?? updatedSession.lat;
+    const homeLng = lastPtForHome?.lng ?? updatedSession.lng;
+    if (homeLat && homeLng) {
+      let shouldCalc = true;
+      if (_lastHomeCalcLat !== null) {
+        const dLat = (homeLat - _lastHomeCalcLat) * 111320;
+        const dLng = (homeLng - _lastHomeCalcLng) * 111320 * Math.cos(homeLat * Math.PI / 180);
+        if (Math.sqrt(dLat * dLat + dLng * dLng) < 500) shouldCalc = false;
+      }
+      if (shouldCalc) {
+        _lastHomeCalcLat = homeLat;
+        _lastHomeCalcLng = homeLng;
+        calculateHomeDistance(homeLat, homeLng);
+      }
     }
 
     // Refresh group member positions
