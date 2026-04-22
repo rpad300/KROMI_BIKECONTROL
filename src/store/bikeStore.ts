@@ -403,5 +403,6 @@ export const useBikeStore = create<BikeState>((set) => ({
       power_avg: 0,
       power_max: 0,
       speed_max: 0,
+      elevation_gain_m: 0,
     }),
 }));

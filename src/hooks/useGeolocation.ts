@@ -56,8 +56,8 @@ export function useGeolocation() {
         useBikeStore.getState().setElevationGain(result.elevationGain);
 
         // Notify RideSessionManager to record a point
-        if (result.shouldRecord && _onRecordCallback) {
-          _onRecordCallback();
+        if (result.shouldRecord && _onRecordCallbacks.size > 0) {
+          _onRecordCallbacks.forEach((cb) => cb());
         }
       },
       (err) => {
@@ -83,10 +83,10 @@ export function useGeolocation() {
 // ── Recording callback for RideSessionManager ──────────────────────
 
 type RecordCallback = () => void;
-let _onRecordCallback: RecordCallback | null = null;
+const _onRecordCallbacks = new Set<RecordCallback>();
 
 /** Register a callback to be called when GPSFilterEngine decides to record a point */
 export function onShouldRecord(cb: RecordCallback): () => void {
-  _onRecordCallback = cb;
-  return () => { _onRecordCallback = null; };
+  _onRecordCallbacks.add(cb);
+  return () => { _onRecordCallbacks.delete(cb); };
 }

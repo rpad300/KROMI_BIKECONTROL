@@ -189,10 +189,10 @@ export function processGPSFix(raw: RawGPSFix, bikeSpeed: number): GPSFixResult {
     }
     // (delta === 0 leaves the streak unchanged)
 
-    // Reduce threshold to 1m when slow-speed and same-direction for 5+ samples.
-    const highConfidence =
-      bikeSpeed > 5 && Math.abs(_consecutiveAltTrend) >= 5;
-    const threshold = highConfidence ? 1 : ELEV_THRESHOLD_M;
+    // Reduce threshold to 1m on consistent altitude trends (5+ same direction)
+    // at any speed — catches gradual climbs that individual 2m deltas miss.
+    const consistentTrend = Math.abs(_consecutiveAltTrend) >= 5;
+    const threshold = consistentTrend ? 1 : ELEV_THRESHOLD_M;
 
     if (delta > threshold) {
       _elevGain += delta;
@@ -214,20 +214,24 @@ export function processGPSFix(raw: RawGPSFix, bikeSpeed: number): GPSFixResult {
       shouldRecord = true;
     }
 
-    // b) Heading-change boost.
-    if (!shouldRecord && _lastRecorded !== null) {
-      const dist = haversineM(
+    // Compute distance from last recorded point once (reused by boost + gate)
+    let distFromLast: number | null = null;
+    if (_lastRecorded !== null) {
+      distFromLast = haversineM(
         { lat: _lastRecorded.lat, lng: _lastRecorded.lng },
         { lat: filteredLat, lng: filteredLng },
       );
-      if (
-        dist > MIN_DISTANCE_M &&
-        raw.heading !== null &&
-        _lastRecorded.heading !== null &&
-        headingDelta(raw.heading, _lastRecorded.heading) > HEADING_CHANGE_DEG
-      ) {
-        shouldRecord = true;
-      }
+    }
+
+    // b) Heading-change boost.
+    if (
+      !shouldRecord &&
+      distFromLast !== null && distFromLast > MIN_DISTANCE_M &&
+      raw.heading !== null &&
+      _lastRecorded !== null && _lastRecorded.heading !== null &&
+      headingDelta(raw.heading, _lastRecorded.heading) > HEADING_CHANGE_DEG
+    ) {
+      shouldRecord = true;
     }
 
     // c) Safety net: > MAX_INTERVAL_MS with no recorded point.
@@ -236,14 +240,8 @@ export function processGPSFix(raw: RawGPSFix, bikeSpeed: number): GPSFixResult {
     }
 
     // d) Minimum distance gate — override shouldRecord if too close.
-    if (shouldRecord && _lastRecorded !== null) {
-      const dist = haversineM(
-        { lat: _lastRecorded.lat, lng: _lastRecorded.lng },
-        { lat: filteredLat, lng: filteredLng },
-      );
-      if (dist < MIN_DISTANCE_M) {
-        shouldRecord = false;
-      }
+    if (shouldRecord && distFromLast !== null && distFromLast < MIN_DISTANCE_M) {
+      shouldRecord = false;
     }
   }
   // bikeSpeed < 2 km/h → shouldRecord remains false.

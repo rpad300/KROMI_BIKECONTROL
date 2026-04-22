@@ -68,7 +68,7 @@ export function buildGPXFromSimplified(
   const points: TrackPoint[] = simplifiedTrail.map((p) => ({
     lat: p.lat,
     lng: p.lng,
-    elevation: p.alt,
+    elevation: p.alt ?? 0,
     timestamp: startedAt + p.elapsed_s * 1000,
     speed: p.speed,
   }));

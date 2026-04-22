@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { useBikeStore } from './bikeStore';
 import { rideSessionManager } from '../services/storage/RideHistory';
+import { resetEngine } from '../services/gps/GPSFilterEngine';
 
 export type TripState = 'idle' | 'running' | 'paused' | 'finished';
 
@@ -50,8 +51,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   batteryStart: 0,
 
   startTrip: () => {
-    // Reset GPS engine for fresh session (Kalman state, elevation gain, etc.)
-    import('../services/gps/GPSFilterEngine').then(({ resetEngine }) => resetEngine());
+    // Reset GPS engine synchronously before anything else (Kalman, elevation gain, etc.)
+    resetEngine();
     const bike = useBikeStore.getState();
     const startKm = bike.trip_distance_km ?? 0;
     set({

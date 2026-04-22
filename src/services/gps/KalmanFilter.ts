@@ -103,10 +103,10 @@ export function updateKalman(
   const predLng = state.lng + state.vLng * dt;
 
   // Process noise: model uncertainty growth due to unknown acceleration.
-  // Q = (accel_deg * dt²)² = ((accel_ms2 * DEG_PER_METER) * dt²)²
+  // Q = (accel_deg * dt)² — position uncertainty from acceleration over time.
   // Using a simplified scalar Q shared across both axes.
   const accelDeg = PROCESS_ACCEL_MS2 * DEG_PER_METER;
-  const Q = (accelDeg * dt * dt) ** 2;
+  const Q = (accelDeg * dt) ** 2;
 
   const predP = state.p + Q;
 

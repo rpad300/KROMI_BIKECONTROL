@@ -258,12 +258,12 @@ export async function processRide(sessionId: string): Promise<PostRideResult> {
     t: pt.elapsed_s,
   }));
 
+  // Merge GPS post-processing data into devices_connected WITHOUT overwriting BLE manifest
+  const existingSession = await localRideStore.getSession(sessionId);
+  const existingDevices = (existingSession as unknown as Record<string, unknown>)?.devices_connected ?? {};
   await localRideStore.updateSession(sessionId, {
-    // Store as JSON-serialisable fields that the sync engine will forward to Supabase.
-    // Using the `metrics` partial-update path keeps things within the existing schema.
-    // The fields below are stored in the freeform `devices_connected` column for now
-    // (a dedicated column can be added via migration later).
     devices_connected: {
+      ...(typeof existingDevices === 'object' && existingDevices !== null ? existingDevices : {}),
       simplified_trail: simplifiedTrail,
       simplified_count: simplifiedCount,
       original_gps_count: originalCount,
