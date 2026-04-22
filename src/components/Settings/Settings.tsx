@@ -38,6 +38,10 @@ import { supaFetch, supaGet } from '../../lib/supaFetch';
 import { analyzeRoute } from '../../services/routes/PreRideAnalysis';
 import { ComplianceSettings as ComplianceSettingsSection } from './ComplianceSettings';
 import { isLiveBroadcasting, getShareUrl } from '../../services/tracking/LiveTrackingService';
+import { ClubSettingsTab } from '../Club/ClubSettingsTab';
+import ClubMembersTab from '../Club/ClubMembersTab';
+import ClubInvitesTab from '../Club/ClubInvitesTab';
+import ClubBackofficeTab from '../Club/ClubBackofficeTab';
 
 type Screen = NavScreen;
 type SettingsPage = SettingsPageId;
@@ -445,6 +449,9 @@ function ClubPage() {
   const [rideGpxFile, setRideGpxFile] = useState<File | null>(null);
   const [rideGpxName, setRideGpxName] = useState('');
   const rideGpxRef = useRef<HTMLInputElement>(null);
+  const [tab, setTab] = useState('geral');
+  const [userRole, setUserRole] = useState('member');
+  const [clubSlug, setClubSlug] = useState('');
 
   const userId = useAuthStore.getState().getUserId();
 
@@ -456,6 +463,15 @@ function ClubPage() {
     supaGet<typeof members>(`/rest/v1/club_members?club_id=eq.${profile.club_id}&select=display_name,role,joined_at&order=joined_at.asc`)
       .then((d) => { if (Array.isArray(d)) setMembers(d); }).catch(() => {});
   }, [profile.club_id]);
+
+  // Load user role + club slug
+  useEffect(() => {
+    if (!profile.club_id || !userId) return;
+    supaGet<{ role: string }[]>(`/rest/v1/club_members?club_id=eq.${profile.club_id}&user_id=eq.${userId}&select=role&limit=1`)
+      .then((d) => { if (d[0]) setUserRole(d[0].role); }).catch(() => {});
+    supaGet<{ slug: string }[]>(`/rest/v1/clubs?id=eq.${profile.club_id}&select=slug&limit=1`)
+      .then((d) => { if (d[0]) setClubSlug(d[0].slug); }).catch(() => {});
+  }, [profile.club_id, userId]);
 
   // Load group rides for the club
   useEffect(() => {
@@ -647,6 +663,25 @@ function ClubPage() {
           {clubDetail.description && <div style={{ fontSize: '11px', color: '#777575', marginTop: '8px' }}>{clubDetail.description}</div>}
         </div>
 
+        {/* Tab navigation */}
+        <div style={{ display: 'flex', gap: '2px', overflowX: 'auto', padding: '4px 0' }}>
+          {[
+            { id: 'geral', label: 'Geral', show: true },
+            { id: 'settings', label: 'Definicoes', show: userRole === 'owner' || userRole === 'admin' },
+            { id: 'members', label: 'Membros', show: ['owner', 'admin', 'moderator'].includes(userRole) },
+            { id: 'invites', label: 'Convites', show: ['owner', 'admin', 'moderator'].includes(userRole) },
+            { id: 'landing', label: 'Landing', show: userRole === 'owner' || userRole === 'admin' },
+          ].filter((t) => t.show).map((t) => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              style={{ padding: '6px 12px', fontSize: '11px', fontWeight: 700, border: 'none', cursor: 'pointer', borderRadius: '4px',
+                backgroundColor: tab === t.id ? '#3fff8b' : '#262626',
+                color: tab === t.id ? 'black' : '#adaaaa', whiteSpace: 'nowrap' }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'geral' && (<>
         {/* Members */}
         <SectionLabel>Membros ({members.length})</SectionLabel>
         <Card>
@@ -819,6 +854,15 @@ function ClubPage() {
         <button onClick={() => { if (confirm(`Sair de ${clubDetail.name}?`)) leaveClub(); }} style={{ width: '100%', padding: '10px', backgroundColor: '#262626', color: '#ff716c', border: '1px solid rgba(255,113,108,0.3)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
           Sair do clube
         </button>
+        </>)}
+
+        {tab === 'settings' && <ClubSettingsTab clubId={profile.club_id!} onUpdated={() => {
+          supaGet<typeof clubs>(`/rest/v1/clubs?id=eq.${profile.club_id}&select=name,color,location,website,description,member_count&limit=1`)
+            .then((d) => { if (d[0]) setClubDetail(d[0] as unknown as typeof clubDetail); }).catch(() => {});
+        }} />}
+        {tab === 'members' && <ClubMembersTab clubId={profile.club_id!} userRole={userRole} />}
+        {tab === 'invites' && <ClubInvitesTab clubId={profile.club_id!} clubSlug={clubSlug} />}
+        {tab === 'landing' && <ClubBackofficeTab clubId={profile.club_id!} />}
       </div>
     );
   }
