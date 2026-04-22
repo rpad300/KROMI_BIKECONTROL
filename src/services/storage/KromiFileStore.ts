@@ -42,6 +42,7 @@ export type FileCategory =
   | 'route'
   | 'shop_logo'
   | 'shop_photo'
+  | 'club_photo'
   | 'profile'
   | 'receipt'
   | 'ride_photo'
@@ -53,6 +54,7 @@ export type FileEntityType =
   | 'service_request'
   | 'service_item'
   | 'shop'
+  | 'club'
   | 'ride'
   | 'route'
   | 'user'
@@ -192,6 +194,9 @@ export function resolveFolderPath(opts: FolderResolveOptions): string[] {
     case 'shop_logo':
     case 'shop_photo':
       return ['shops', opts.shopSlug ?? 'unknown'];
+
+    case 'club_photo':
+      return ['clubs', opts.entityId ?? 'unknown'];
 
     case 'other':
     default:

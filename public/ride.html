@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0e0e0e">
+<meta property="og:title" id="og-title" content="KROMI BikeControl — Ride Report">
+<meta property="og:description" id="og-desc" content="Relatorio editorial de pedalada com altimetria, segmentos, estatisticas e galeria de fotos.">
+<meta property="og:image" content="https://www.kromi.online/pwa-512x512.png">
+<meta property="og:url" id="og-url" content="https://www.kromi.online/ride.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<title id="page-title">KROMI Ride Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0e0e0e;
+  --bg-card: #141414;
+  --bg-section: #1a1a1a;
+  --text: #f0f0f0;
+  --text-muted: #888;
+  --border: #262626;
+  --accent: #3fff8b;
+  --accent-rgb: 63,255,139;
+  --serif: 'Playfair Display', Georgia, serif;
+  --mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Loading */
+.loading {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; min-height: 100vh; gap: 16px;
+}
+.spinner {
+  width: 40px; height: 40px; border: 3px solid #262626;
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.error-state {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; min-height: 100vh; gap: 12px;
+  text-align: center; padding: 20px;
+}
+.error-state .icon { font-size: 48px; }
+.error-state .title { font-size: 18px; font-weight: 700; }
+.error-state .msg { font-size: 13px; color: #888; max-width: 300px; }
+
+/* Hero */
+.hero {
+  position: relative; overflow: hidden;
+  padding: 60px 20px 40px;
+  background: linear-gradient(180deg, #0a0a0a 0%, var(--bg) 100%);
+}
+.hero-accent-bar {
+  position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--accent);
+}
+.hero-inner { max-width: 720px; margin: 0 auto; }
+.club-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  text-decoration: none; color: var(--text);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.5px; margin-bottom: 24px;
+  transition: border-color 0.2s;
+}
+.club-badge:hover { border-color: var(--accent); }
+.club-avatar {
+  width: 24px; height: 24px; border-radius: 50%;
+  object-fit: cover; border: 1.5px solid var(--accent);
+}
+.club-avatar-placeholder {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--accent); display: flex;
+  align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 900; color: #000;
+}
+.ride-category {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 2px; color: var(--accent); margin-bottom: 12px;
+}
+.hero-title {
+  font-family: var(--serif);
+  font-size: clamp(28px, 6vw, 52px);
+  font-weight: 900; line-height: 1.1;
+  margin-bottom: 16px;
+  color: #fff;
+}
+.hero-meta {
+  display: flex; flex-wrap: wrap; gap: 16px;
+  font-size: 13px; color: var(--text-muted);
+  margin-bottom: 28px;
+}
+.hero-meta-item { display: flex; align-items: center; gap: 6px; }
+.hero-meta-item svg { opacity: 0.6; flex-shrink: 0; }
+
+/* Stats bar */
+.stats-bar {
+  display: flex; flex-wrap: wrap; gap: 1px;
+  background: var(--border); border-radius: 12px;
+  overflow: hidden; margin-top: 0;
+}
+.stat-cell {
+  background: var(--bg-card); padding: 14px 16px;
+  flex: 1; min-width: 80px;
+}
+.stat-label {
+  font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--text-muted); margin-bottom: 4px;
+}
+.stat-value {
+  font-family: var(--mono); font-size: 20px;
+  font-weight: 700; line-height: 1; color: #fff;
+}
+.stat-unit {
+  font-size: 10px; color: var(--text-muted);
+  font-family: var(--mono); margin-left: 2px;
+}
+
+/* Sections */
+.section {
+  max-width: 720px; margin: 32px auto; padding: 0 20px;
+  opacity: 0; transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.section.visible { opacity: 1; transform: translateY(0); }
+.section-title {
+  font-family: var(--serif); font-size: 20px; font-weight: 700;
+  color: #fff; margin-bottom: 16px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+.section-title .icon { font-size: 16px; opacity: 0.8; }
+
+/* Altimetry SVG */
+.altimetry-wrap {
+  background: var(--bg-card); border-radius: 12px;
+  border: 1px solid var(--border); overflow: hidden;
+}
+.altimetry-header {
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--text-muted);
+}
+.altimetry-svg-wrap { position: relative; padding: 8px 0 0; }
+#altimetry-svg { display: block; width: 100%; height: auto; }
+.altimetry-tooltip {
+  position: absolute; background: rgba(15,15,15,0.92);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; font-family: var(--mono); font-size: 11px;
+  pointer-events: none; display: none; white-space: nowrap;
+  color: #fff; z-index: 10; transform: translateX(-50%);
+}
+
+/* Segments */
+.segments-list { display: flex; flex-direction: column; gap: 10px; }
+.segment-card {
+  background: var(--bg-card); border-radius: 10px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--seg-color, #444);
+  padding: 14px 16px;
+  display: flex; align-items: flex-start; gap: 14px;
+}
+.segment-icon { font-size: 22px; flex-shrink: 0; margin-top: 2px; }
+.segment-info { flex: 1; min-width: 0; }
+.segment-name {
+  font-family: var(--serif); font-size: 15px; font-weight: 700;
+  color: #fff; margin-bottom: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.segment-stats { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; color: var(--text-muted); }
+.segment-stat strong { font-family: var(--mono); color: #ccc; font-size: 12px; }
+.diff-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 8px;
+  border-radius: 10px; text-transform: uppercase;
+  letter-spacing: 0.5px; flex-shrink: 0; align-self: flex-start;
+}
+.diff-easy    { background: rgba(34,197,94,0.15);  color: #22c55e; }
+.diff-moderate{ background: rgba(251,191,36,0.15); color: #fbbf24; }
+.diff-hard    { background: rgba(239,68,68,0.15);  color: #ef4444; }
+.diff-extreme { background: rgba(167,139,250,0.15);color: #a78bfa; }
+
+/* Rider Stats Table */
+.riders-table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
+table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13px;
+}
+thead { background: var(--bg-section); }
+th {
+  padding: 10px 12px; text-align: left;
+  font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--text-muted); white-space: nowrap;
+}
+td {
+  padding: 10px 12px; border-top: 1px solid var(--border);
+  color: var(--text);
+}
+td.mono-val { font-family: var(--mono); font-size: 13px; }
+tbody tr:hover { background: rgba(255,255,255,0.02); }
+.rider-name-cell { display: flex; align-items: center; gap: 8px; }
+.rider-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  object-fit: cover; flex-shrink: 0;
+}
+.rider-avatar-ph {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent); display: flex;
+  align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 900; color: #000;
+  flex-shrink: 0;
+}
+
+/* Photo Gallery */
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+.gallery-item {
+  position: relative; overflow: hidden; border-radius: 8px;
+  border: 1px solid var(--border); cursor: pointer;
+  aspect-ratio: 4/3;
+  background: var(--bg-card);
+}
+.gallery-item img {
+  width: 100%; height: 100%; object-fit: cover;
+  transition: transform 0.3s ease;
+  display: block;
+}
+.gallery-item:hover img { transform: scale(1.05); }
+.gallery-caption {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  padding: 6px 8px;
+  background: linear-gradient(0deg, rgba(0,0,0,0.8) 0%, transparent 100%);
+  font-size: 11px; color: #fff; line-height: 1.3;
+}
+
+/* Lightbox */
+.lightbox {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.95); align-items: center;
+  justify-content: center; flex-direction: column; gap: 12px;
+}
+.lightbox.open { display: flex; }
+.lightbox img {
+  max-width: 92vw; max-height: 80vh; object-fit: contain;
+  border-radius: 6px;
+}
+.lightbox-caption { color: #ccc; font-size: 13px; text-align: center; max-width: 80vw; }
+.lightbox-close {
+  position: absolute; top: 16px; right: 20px;
+  font-size: 28px; color: #888; cursor: pointer;
+  line-height: 1; background: none; border: none;
+  padding: 4px; transition: color 0.2s;
+}
+.lightbox-close:hover { color: #fff; }
+
+/* Footer */
+.ride-footer {
+  max-width: 720px; margin: 40px auto 60px; padding: 0 20px;
+  border-top: 1px solid var(--border); padding-top: 24px;
+  display: flex; flex-wrap: wrap; justify-content: space-between;
+  align-items: center; gap: 12px;
+}
+.footer-brand {
+  font-size: 11px; color: var(--text-muted); letter-spacing: 0.5px;
+}
+.footer-brand a { color: var(--accent); text-decoration: none; }
+.footer-actions { display: flex; gap: 8px; }
+.share-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 8px;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  border: none; transition: opacity 0.2s;
+}
+.share-btn:hover { opacity: 0.85; }
+.share-copy { background: var(--bg-card); color: #ccc; border: 1px solid var(--border); }
+.share-whatsapp { background: #25d366; color: #fff; }
+
+/* Pre-ride mode — planned route badge */
+.pre-ride-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 12px;
+  background: rgba(107,114,128,0.15); border: 1px solid rgba(107,114,128,0.3);
+  font-size: 11px; font-weight: 700; color: #9ca3af;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  margin-bottom: 16px;
+}
+
+/* Print */
+@media print {
+  .footer-actions, .lightbox, .share-btn, .club-badge svg { display: none !important; }
+  .hero-accent-bar { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .section { opacity: 1 !important; transform: none !important; }
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .hero { padding: 44px 16px 32px; }
+  .stats-bar { flex-direction: column; gap: 0; }
+  .stat-cell { padding: 10px 14px; }
+  .stat-value { font-size: 17px; }
+  .gallery-grid { grid-template-columns: repeat(2, 1fr); }
+  .section { margin: 24px auto; }
+}
+</style>
+</head>
+<body>
+
+<div class="loading" id="loading-state">
+  <div class="spinner"></div>
+  <div style="font-size:13px;color:#888">A carregar pedalada...</div>
+</div>
+
+<div class="error-state" id="error-state" style="display:none">
+  <div class="icon">⛰️</div>
+  <div class="title">Pedalada nao encontrada</div>
+  <div class="msg" id="error-msg">O link pode estar errado ou a pedalada foi removida.</div>
+</div>
+
+<!-- Main content injected here -->
+<div id="app" style="display:none">
+
+  <!-- Hero -->
+  <div class="hero" id="hero-section">
+    <div class="hero-accent-bar" id="hero-accent-bar"></div>
+    <div class="hero-inner">
+      <div id="pre-ride-badge" class="pre-ride-badge" style="display:none">
+        Pedalada Planeada
+      </div>
+      <a href="#" id="club-link" class="club-badge">
+        <div id="club-avatar-ph" class="club-avatar-placeholder">K</div>
+        <img id="club-avatar-img" class="club-avatar" src="" alt="" style="display:none">
+        <span id="club-name">KROMI Club</span>
+      </a>
+      <div class="ride-category" id="ride-category">Pedalada MTB</div>
+      <h1 class="hero-title" id="ride-title">Ride Report</h1>
+      <div class="hero-meta" id="hero-meta">
+        <!-- injected -->
+      </div>
+      <div class="stats-bar" id="stats-bar">
+        <!-- injected -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Altimetry -->
+  <div class="section" id="section-altimetry" style="display:none">
+    <div class="section-title">
+      <span class="icon">📈</span> Perfil de Altimetria
+    </div>
+    <div class="altimetry-wrap">
+      <div class="altimetry-header">
+        <span id="alti-range-label">—</span>
+        <span id="alti-gain-label" style="color:var(--accent)">+0m D+</span>
+      </div>
+      <div class="altimetry-svg-wrap" id="alti-svg-wrap">
+        <svg id="altimetry-svg" viewBox="0 0 800 200" preserveAspectRatio="none" aria-label="Perfil de altimetria"></svg>
+        <div class="altimetry-tooltip" id="alti-tooltip"></div>
+      </div>
+      <!-- X axis labels injected below SVG -->
+      <div id="alti-x-labels" style="display:flex;justify-content:space-between;padding:4px 12px 10px;font-family:var(--mono);font-size:10px;color:#555;"></div>
+    </div>
+  </div>
+
+  <!-- Segments -->
+  <div class="section" id="section-segments" style="display:none">
+    <div class="section-title">
+      <span class="icon">🏔️</span> Segmentos
+    </div>
+    <div class="segments-list" id="segments-list">
+      <!-- injected -->
+    </div>
+  </div>
+
+  <!-- Rider Stats -->
+  <div class="section" id="section-riders" style="display:none">
+    <div class="section-title">
+      <span class="icon">🚵</span> Estatisticas dos Ciclistas
+    </div>
+    <div class="riders-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Ciclista</th>
+            <th>Km</th>
+            <th>D+</th>
+            <th>Vel Avg</th>
+            <th>FC Avg</th>
+            <th>W Avg</th>
+          </tr>
+        </thead>
+        <tbody id="riders-tbody">
+          <!-- injected -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Photos -->
+  <div class="section" id="section-photos" style="display:none">
+    <div class="section-title">
+      <span class="icon">📸</span> Galeria de Fotos
+    </div>
+    <div class="gallery-grid" id="gallery-grid">
+      <!-- injected -->
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="ride-footer">
+    <div class="footer-brand">
+      Powered by <a href="https://www.kromi.online" target="_blank">kromi.online</a>
+    </div>
+    <div class="footer-actions">
+      <button class="share-btn share-copy" id="btn-copy">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        Copiar Link
+      </button>
+      <button class="share-btn share-whatsapp" id="btn-whatsapp">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+        WhatsApp
+      </button>
+    </div>
+  </footer>
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Visualizador de foto">
+  <button class="lightbox-close" id="lightbox-close" aria-label="Fechar">&times;</button>
+  <img id="lightbox-img" src="" alt="">
+  <div class="lightbox-caption" id="lightbox-caption"></div>
+</div>
+
+<script>
+'use strict';
+
+const SB_URL = 'https://ctsuupvmmyjlrtjnxagv.supabase.co';
+const ANON_KEY = 'ANON_KEY_PLACEHOLDER';
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
+const qs = (sel, ctx = document) => ctx.querySelector(sel);
+const el = id => document.getElementById(id);
+const fmt = (v, dec = 1) => v == null ? '—' : Number(v).toFixed(dec);
+const fmtInt = v => v == null ? '—' : Math.round(Number(v)).toString();
+
+function parseParams() {
+  const p = new URLSearchParams(location.search);
+  return { postId: p.get('id'), rideId: p.get('ride') };
+}
+
+async function sbGet(path) {
+  const r = await fetch(`${SB_URL}/rest/v1/${path}`, {
+    headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` }
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status} — ${path}`);
+  return r.json();
+}
+
+function showError(msg) {
+  el('loading-state').style.display = 'none';
+  el('error-state').style.display  = '';
+  el('error-msg').textContent = msg || 'Erro desconhecido.';
+}
+
+function showApp() {
+  el('loading-state').style.display = 'none';
+  el('error-state').style.display  = 'none';
+  el('app').style.display           = '';
+}
+
+// ── Intersection Observer for fade-in ─────────────────────────────────────────
+const io = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); } });
+}, { threshold: 0.05 });
+
+function observeSections() {
+  document.querySelectorAll('.section').forEach(s => io.observe(s));
+}
+
+// ── Date formatting ────────────────────────────────────────────────────────────
+function fmtDate(d) {
+  if (!d) return '—';
+  try {
+    return new Date(d).toLocaleDateString('pt-PT', { weekday: 'short', day: '2-digit', month: 'long', year: 'numeric' });
+  } catch { return d; }
+}
+
+// ── Render club badge ──────────────────────────────────────────────────────────
+function renderClub(club, postId, rideId) {
+  if (!club) return;
+  el('club-name').textContent = club.name || 'Club';
+  const link = el('club-link');
+  link.href = club.slug ? `https://www.kromi.online/club.html?slug=${club.slug}` : '#';
+  if (club.color) {
+    document.documentElement.style.setProperty('--accent', club.color);
+    el('hero-accent-bar').style.background = club.color;
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', club.color);
+  }
+  if (club.avatar_url) {
+    const img = el('club-avatar-img');
+    img.src = club.avatar_url;
+    img.alt = club.name || '';
+    img.style.display = '';
+    el('club-avatar-ph').style.display = 'none';
+  } else {
+    el('club-avatar-ph').textContent = (club.name || 'K').charAt(0).toUpperCase();
+  }
+}
+
+// ── Render hero from post/ride ─────────────────────────────────────────────────
+function renderHero(data, isPreRide) {
+  const name = data.name || data.title || 'Pedalada';
+  el('ride-title').textContent = name;
+  el('page-title').textContent = `${name} — KROMI`;
+  el('og-title').setAttribute('content', `${name} — KROMI BikeControl`);
+
+  if (isPreRide) el('pre-ride-badge').style.display = '';
+
+  const stats = data.stats || {};
+  const meta = [];
+
+  // Date
+  const dateStr = data.ride_date || data.scheduled_date || data.created_at;
+  if (dateStr) meta.push({ icon: calendarSVG(), text: fmtDate(dateStr) });
+
+  // Meeting point
+  const mp = data.meeting_point || (data.route_data && data.route_data.start_name);
+  if (mp) meta.push({ icon: pinSVG(), text: mp });
+
+  // Description / excerpt
+  const desc = data.description || data.summary;
+  if (desc) el('og-desc').setAttribute('content', desc.substring(0, 160));
+
+  const metaEl = el('hero-meta');
+  meta.forEach(m => {
+    const d = document.createElement('div');
+    d.className = 'hero-meta-item';
+    d.innerHTML = `${m.icon}<span>${m.text}</span>`;
+    metaEl.appendChild(d);
+  });
+
+  // Stats bar
+  const distance = stats.distance_km ?? data.distance_km;
+  const dPlus    = stats.elevation_gain ?? data.elevation_gain_m;
+  const dMinus   = stats.elevation_loss ?? data.elevation_loss_m;
+  const duration = stats.duration_min   ?? data.duration_min;
+  const avgSpeed = stats.avg_speed_kmh  ?? data.avg_speed_kmh;
+
+  const cells = [
+    { label: 'Distancia', value: fmt(distance), unit: 'km' },
+    { label: 'D+',        value: fmtInt(dPlus),  unit: 'm'  },
+    { label: 'D-',        value: fmtInt(dMinus),  unit: 'm'  },
+    { label: 'Duracao',   value: fmtDuration(duration), unit: '' },
+    { label: 'Vel Media', value: fmt(avgSpeed),   unit: 'km/h' },
+  ];
+  const bar = el('stats-bar');
+  cells.forEach(c => {
+    const d = document.createElement('div');
+    d.className = 'stat-cell';
+    d.innerHTML = `<div class="stat-label">${c.label}</div><div class="stat-value">${c.value}<span class="stat-unit">${c.unit}</span></div>`;
+    bar.appendChild(d);
+  });
+
+  // Ride type / category
+  const cat = data.ride_type || data.category;
+  if (cat) el('ride-category').textContent = cat;
+}
+
+function fmtDuration(min) {
+  if (min == null) return '—';
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return h > 0 ? `${h}h${m.toString().padStart(2,'0')}` : `${m}min`;
+}
+
+// ── SVG Icons ──────────────────────────────────────────────────────────────────
+function calendarSVG() {
+  return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+}
+function pinSVG() {
+  return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
+}
+
+// ── Altimetry SVG ──────────────────────────────────────────────────────────────
+function renderAltimetry(elevationProfile) {
+  if (!elevationProfile || elevationProfile.length < 2) return;
+  el('section-altimetry').style.display = '';
+
+  const W = 800, H = 200, PAD_Y = 16, PAD_X = 48;
+  const elevs = elevationProfile.map(p => p.elevation ?? p.alt ?? p.e ?? 0);
+  const dists = elevationProfile.map((p, i) => p.distance_km ?? p.dist ?? p.d ?? i / (elevationProfile.length - 1));
+
+  const minE = Math.min(...elevs), maxE = Math.max(...elevs);
+  const minD = dists[0], maxD = dists[dists.length - 1];
+  const rangeE = maxE - minE || 1, rangeD = maxD - minD || 1;
+
+  function xPx(d) { return PAD_X + ((d - minD) / rangeD) * (W - PAD_X * 2); }
+  function yPx(e) { return H - PAD_Y - ((e - minE) / rangeE) * (H - PAD_Y * 2 - 20); }
+
+  const pts = elevationProfile.map((p, i) => ({ x: xPx(dists[i]), y: yPx(elevs[i]), e: elevs[i], d: dists[i] }));
+
+  // Compute gain/loss
+  let gain = 0, loss = 0;
+  for (let i = 1; i < elevs.length; i++) {
+    const delta = elevs[i] - elevs[i - 1];
+    if (delta > 0) gain += delta; else loss += Math.abs(delta);
+  }
+  el('alti-range-label').textContent = `${Math.round(minE)}m – ${Math.round(maxE)}m`;
+  el('alti-gain-label').textContent   = `+${Math.round(gain)}m D+  -${Math.round(loss)}m D-`;
+
+  const svg = el('altimetry-svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  // Gradient definition
+  const ns = 'http://www.w3.org/2000/svg';
+  const defs = document.createElementNS(ns, 'defs');
+
+  // Linear gradient for fill
+  const grad = document.createElementNS(ns, 'linearGradient');
+  grad.setAttribute('id', 'alti-fill');
+  grad.setAttribute('x1', '0'); grad.setAttribute('y1', '0');
+  grad.setAttribute('x2', '0'); grad.setAttribute('y2', '1');
+  const s1 = document.createElementNS(ns, 'stop');
+  s1.setAttribute('offset', '0%'); s1.setAttribute('stop-color', 'var(--accent)'); s1.setAttribute('stop-opacity', '0.3');
+  const s2 = document.createElementNS(ns, 'stop');
+  s2.setAttribute('offset', '100%'); s2.setAttribute('stop-color', 'var(--accent)'); s2.setAttribute('stop-opacity', '0.02');
+  grad.appendChild(s1); grad.appendChild(s2);
+  defs.appendChild(grad);
+  svg.appendChild(defs);
+
+  // Grid lines
+  const gridGroup = document.createElementNS(ns, 'g');
+  gridGroup.setAttribute('stroke', '#222'); gridGroup.setAttribute('stroke-width', '1');
+  for (let i = 0; i <= 4; i++) {
+    const y = PAD_Y + (i / 4) * (H - PAD_Y * 2 - 20);
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', PAD_X); line.setAttribute('x2', W - PAD_X);
+    line.setAttribute('y1', y);     line.setAttribute('y2', y);
+    gridGroup.appendChild(line);
+
+    // Y label
+    const txt = document.createElementNS(ns, 'text');
+    const eVal = Math.round(maxE - (i / 4) * rangeE);
+    txt.textContent = eVal + 'm';
+    txt.setAttribute('x', PAD_X - 4); txt.setAttribute('y', y + 4);
+    txt.setAttribute('text-anchor', 'end'); txt.setAttribute('font-size', '10');
+    txt.setAttribute('fill', '#555'); txt.setAttribute('font-family', 'JetBrains Mono, monospace');
+    gridGroup.appendChild(txt);
+  }
+  svg.appendChild(gridGroup);
+
+  // Slope-colored segments
+  const slopeGroup = document.createElementNS(ns, 'g');
+  for (let i = 1; i < pts.length; i++) {
+    const prev = pts[i - 1], curr = pts[i];
+    const dDist = (dists[i] - dists[i - 1]) * 1000; // meters
+    const dElev = elevs[i] - elevs[i - 1];
+    const slope = dDist > 0 ? (dElev / dDist) * 100 : 0;
+    const color = slopeColor(slope);
+    const poly = document.createElementNS(ns, 'polygon');
+    const baseY = H - PAD_Y;
+    poly.setAttribute('points', `${prev.x},${baseY} ${prev.x},${prev.y} ${curr.x},${curr.y} ${curr.x},${baseY}`);
+    poly.setAttribute('fill', color); poly.setAttribute('opacity', '0.55');
+    slopeGroup.appendChild(poly);
+  }
+  svg.appendChild(slopeGroup);
+
+  // Fill area
+  const polyArea = document.createElementNS(ns, 'polygon');
+  const baseY = H - PAD_Y;
+  const areaPts = `${pts[0].x},${baseY} ` + pts.map(p => `${p.x},${p.y}`).join(' ') + ` ${pts[pts.length-1].x},${baseY}`;
+  polyArea.setAttribute('points', areaPts);
+  polyArea.setAttribute('fill', 'url(#alti-fill)');
+  svg.appendChild(polyArea);
+
+  // Line
+  const polyline = document.createElementNS(ns, 'polyline');
+  polyline.setAttribute('points', pts.map(p => `${p.x},${p.y}`).join(' '));
+  polyline.setAttribute('fill', 'none');
+  polyline.setAttribute('stroke', 'var(--accent)');
+  polyline.setAttribute('stroke-width', '2');
+  polyline.setAttribute('stroke-linejoin', 'round');
+  polyline.setAttribute('stroke-linecap', 'round');
+  svg.appendChild(polyline);
+
+  // Hover overlay
+  const hoverLine = document.createElementNS(ns, 'line');
+  hoverLine.setAttribute('y1', '0'); hoverLine.setAttribute('y2', H);
+  hoverLine.setAttribute('stroke', '#fff'); hoverLine.setAttribute('stroke-width', '1');
+  hoverLine.setAttribute('stroke-dasharray', '4 3'); hoverLine.setAttribute('opacity', '0');
+  svg.appendChild(hoverLine);
+
+  const hoverDot = document.createElementNS(ns, 'circle');
+  hoverDot.setAttribute('r', '5'); hoverDot.setAttribute('fill', '#fff');
+  hoverDot.setAttribute('stroke', '#0e0e0e'); hoverDot.setAttribute('stroke-width', '2');
+  hoverDot.setAttribute('opacity', '0');
+  svg.appendChild(hoverDot);
+
+  // Invisible interaction rect
+  const hitRect = document.createElementNS(ns, 'rect');
+  hitRect.setAttribute('x', PAD_X); hitRect.setAttribute('y', 0);
+  hitRect.setAttribute('width', W - PAD_X * 2); hitRect.setAttribute('height', H);
+  hitRect.setAttribute('fill', 'transparent'); hitRect.setAttribute('style', 'cursor:crosshair');
+  svg.appendChild(hitRect);
+
+  const tooltip = el('alti-tooltip');
+  const svgWrap = el('alti-svg-wrap');
+
+  hitRect.addEventListener('mousemove', function(e) {
+    const rect = svg.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const mx = (e.clientX - rect.left) * scaleX;
+    // Find nearest point
+    let nearest = pts[0], minDx = Infinity;
+    pts.forEach(p => { const dx = Math.abs(p.x - mx); if (dx < minDx) { minDx = dx; nearest = p; } });
+    // Show
+    hoverLine.setAttribute('x1', nearest.x); hoverLine.setAttribute('x2', nearest.x); hoverLine.setAttribute('opacity', '0.5');
+    hoverDot.setAttribute('cx', nearest.x);  hoverDot.setAttribute('cy', nearest.y);  hoverDot.setAttribute('opacity', '1');
+    // Tooltip
+    const pct = (nearest.x - PAD_X) / (W - PAD_X * 2);
+    const left = pct * rect.width + rect.left - svgWrap.getBoundingClientRect().left;
+    tooltip.style.left = left + 'px';
+    tooltip.style.top  = (nearest.y / H * rect.height - 44) + 'px';
+    tooltip.style.display = 'block';
+    tooltip.textContent = `${Math.round(nearest.e)}m  •  ${fmt(nearest.d)}km`;
+  });
+
+  hitRect.addEventListener('mouseleave', function() {
+    hoverLine.setAttribute('opacity', '0');
+    hoverDot.setAttribute('opacity', '0');
+    tooltip.style.display = 'none';
+  });
+
+  // X axis labels
+  const xLabels = el('alti-x-labels');
+  const steps = Math.min(6, pts.length);
+  for (let i = 0; i <= steps; i++) {
+    const d = minD + (i / steps) * rangeD;
+    const s = document.createElement('span');
+    s.textContent = fmt(d, 1) + 'km';
+    xLabels.appendChild(s);
+  }
+}
+
+function slopeColor(slope) {
+  const s = Math.abs(slope);
+  if (s < 4)  return '#22c55e';  // green — flat/easy
+  if (s < 8)  return '#fbbf24';  // amber — moderate
+  if (s < 12) return '#ef4444';  // red — hard
+  return '#a78bfa';              // purple — extreme
+}
+
+// ── Render Segments ────────────────────────────────────────────────────────────
+function renderSegments(segments) {
+  if (!segments || segments.length === 0) return;
+  el('section-segments').style.display = '';
+  const list = el('segments-list');
+
+  segments.forEach(seg => {
+    const avgGrad = seg.avg_gradient ?? seg.gradient ?? 0;
+    const diff = getDifficulty(avgGrad);
+    const isUp = (seg.elevation_gain ?? 0) >= 0;
+
+    const card = document.createElement('div');
+    card.className = 'segment-card';
+    card.style.setProperty('--seg-color', diff.color);
+    card.innerHTML = `
+      <div class="segment-icon">${isUp ? '⬆️' : '⬇️'}</div>
+      <div class="segment-info">
+        <div class="segment-name">${seg.name || 'Segmento'}</div>
+        <div class="segment-stats">
+          ${seg.distance_km != null ? `<span><strong>${fmt(seg.distance_km)}km</strong> distancia</span>` : ''}
+          ${seg.elevation_gain != null ? `<span><strong>+${fmtInt(seg.elevation_gain)}m</strong> D+</span>` : ''}
+          ${seg.avg_gradient != null ? `<span><strong>${fmt(seg.avg_gradient)}%</strong> media</span>` : ''}
+          ${seg.max_gradient != null ? `<span><strong>${fmt(seg.max_gradient)}%</strong> max</span>` : ''}
+        </div>
+      </div>
+      <span class="diff-badge ${diff.cls}">${diff.label}</span>`;
+    list.appendChild(card);
+  });
+}
+
+function getDifficulty(grad) {
+  const g = Math.abs(grad);
+  if (g < 4)  return { cls: 'diff-easy',     label: 'Facil',    color: '#22c55e' };
+  if (g < 8)  return { cls: 'diff-moderate', label: 'Moderado', color: '#fbbf24' };
+  if (g < 12) return { cls: 'diff-hard',     label: 'Dificil',  color: '#ef4444' };
+  return          { cls: 'diff-extreme',  label: 'Extremo',  color: '#a78bfa' };
+}
+
+// ── Render Rider Stats ─────────────────────────────────────────────────────────
+function renderRiders(riderStats) {
+  if (!riderStats || riderStats.length === 0) return;
+  el('section-riders').style.display = '';
+  const tbody = el('riders-tbody');
+
+  riderStats.forEach(r => {
+    const tr = document.createElement('tr');
+    const initial = (r.name || '?').charAt(0).toUpperCase();
+    const avatarHtml = r.avatar_url
+      ? `<img class="rider-avatar" src="${r.avatar_url}" alt="${r.name || ''}"`
+      : `<div class="rider-avatar-ph">${initial}</div>`;
+    tr.innerHTML = `
+      <td><div class="rider-name-cell">${avatarHtml}<span>${r.name || '—'}</span></div></td>
+      <td class="mono-val">${fmt(r.distance_km ?? r.distance, 1)}</td>
+      <td class="mono-val">${fmtInt(r.elevation_gain ?? r.dplus)}m</td>
+      <td class="mono-val">${fmt(r.avg_speed_kmh ?? r.avg_speed, 1)}</td>
+      <td class="mono-val">${fmtInt(r.avg_hr ?? r.fc_avg)}</td>
+      <td class="mono-val">${fmtInt(r.avg_power ?? r.watts_avg)}W</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Render Photos ──────────────────────────────────────────────────────────────
+function renderPhotos(photos) {
+  if (!photos || photos.length === 0) return;
+  el('section-photos').style.display = '';
+  const grid = el('gallery-grid');
+
+  photos.forEach((p, i) => {
+    const url   = p.url || p.drive_thumbnail_link || p.drive_view_link || p.src;
+    const fullUrl = p.full_url || p.drive_view_link || url;
+    const cap   = p.caption || p.description || '';
+    if (!url) return;
+
+    const item = document.createElement('div');
+    item.className = 'gallery-item';
+    item.innerHTML = `<img src="${url}" alt="${cap}" loading="lazy">${cap ? `<div class="gallery-caption">${cap}</div>` : ''}`;
+    item.addEventListener('click', () => openLightbox(fullUrl, cap));
+    grid.appendChild(item);
+  });
+}
+
+// ── Lightbox ──────────────────────────────────────────────────────────────────
+function openLightbox(url, cap) {
+  el('lightbox-img').src = url;
+  el('lightbox-caption').textContent = cap || '';
+  el('lightbox').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeLightbox() {
+  el('lightbox').classList.remove('open');
+  document.body.style.overflow = '';
+  el('lightbox-img').src = '';
+}
+
+el('lightbox-close').addEventListener('click', closeLightbox);
+el('lightbox').addEventListener('click', e => { if (e.target === el('lightbox')) closeLightbox(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+// ── Share buttons ─────────────────────────────────────────────────────────────
+el('btn-copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(location.href);
+    el('btn-copy').textContent = 'Copiado!';
+    setTimeout(() => { el('btn-copy').innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copiar Link`; }, 2000);
+  } catch { prompt('Copiar URL:', location.href); }
+});
+
+el('btn-whatsapp').addEventListener('click', () => {
+  const text = encodeURIComponent(`${document.title}\n${location.href}`);
+  window.open(`https://wa.me/?text=${text}`, '_blank');
+});
+
+// ── Main fetch & render ────────────────────────────────────────────────────────
+async function main() {
+  const { postId, rideId } = parseParams();
+  if (!postId && !rideId) { showError('Nenhum ID fornecido. Use ?id= ou ?ride='); return; }
+
+  try {
+    let data, club, isPreRide = false;
+
+    if (postId) {
+      // Post-ride mode
+      const rows = await sbGet(`club_ride_posts?id=eq.${encodeURIComponent(postId)}&select=*&limit=1`);
+      if (!rows || rows.length === 0) { showError('Post de pedalada nao encontrado.'); return; }
+      data = rows[0];
+
+      if (data.club_id) {
+        const clubRows = await sbGet(`clubs?id=eq.${encodeURIComponent(data.club_id)}&select=id,name,slug,color,avatar_url&limit=1`);
+        club = clubRows && clubRows[0];
+      }
+    } else {
+      // Pre-ride mode
+      isPreRide = true;
+      const rows = await sbGet(`club_rides?id=eq.${encodeURIComponent(rideId)}&select=*&limit=1`);
+      if (!rows || rows.length === 0) { showError('Pedalada planeada nao encontrada.'); return; }
+      data = rows[0];
+
+      if (data.club_id) {
+        const clubRows = await sbGet(`clubs?id=eq.${encodeURIComponent(data.club_id)}&select=id,name,slug,color,avatar_url&limit=1`);
+        club = clubRows && clubRows[0];
+      }
+    }
+
+    // OG url
+    el('og-url').setAttribute('content', location.href);
+
+    // Render
+    renderClub(club, postId, rideId);
+    renderHero(data, isPreRide);
+
+    // Altimetry — look in ride_data or directly
+    const rideData = data.ride_data || {};
+    const elevProfile = rideData.elevation_profile || data.elevation_profile;
+    if (elevProfile && elevProfile.length >= 2) renderAltimetry(elevProfile);
+
+    // Segments
+    const segments = rideData.segments || data.segments;
+    if (segments && segments.length) renderSegments(segments);
+
+    // Rider stats
+    const riderStats = rideData.rider_stats || data.rider_stats || (data.stats && data.stats.participants);
+    if (riderStats && riderStats.length) renderRiders(riderStats);
+
+    // Photos
+    const photos = data.photos || rideData.photos;
+    if (photos && photos.length) renderPhotos(photos);
+
+    showApp();
+    observeSections();
+
+  } catch (err) {
+    console.error('[ride.html]', err);
+    showError(err.message || 'Erro ao carregar dados.');
+  }
+}
+
+main();
+</script>
+</body>
+</html>

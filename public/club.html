@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0e0e0e">
+<meta property="og:title" id="og-title" content="Clube — KROMI BikeControl">
+<meta property="og:description" id="og-desc" content="Junte-se ao clube no KROMI BikeControl.">
+<meta property="og:image" id="og-image" content="https://www.kromi.online/pwa-512x512.png">
+<meta property="og:url" content="https://www.kromi.online/club.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<title id="page-title">Clube — KROMI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0e0e0e; --bg-card: #1a1919; --bg-header: #131313;
+  --text: #fff; --text-muted: #888; --border: #262626;
+  --accent: #3fff8b;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; }
+.mono { font-family: 'JetBrains Mono', monospace; }
+
+/* Spinner */
+.spinner-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; gap: 16px; }
+.spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: var(--text-muted); }
+
+/* Error */
+.error-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; gap: 12px; padding: 24px; text-align: center; }
+.error-wrap h2 { font-size: 20px; }
+.error-wrap p { color: var(--text-muted); font-size: 14px; }
+
+/* Invite Banner */
+.invite-banner { background: linear-gradient(135deg, rgba(63,255,139,0.12), rgba(63,255,139,0.04)); border: 1px solid rgba(63,255,139,0.3); border-radius: 12px; padding: 16px 20px; margin: 12px 16px 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.invite-banner .invite-icon { font-size: 24px; flex-shrink: 0; }
+.invite-banner .invite-text { flex: 1; }
+.invite-banner .invite-title { font-size: 14px; font-weight: 800; color: var(--accent); }
+.invite-banner .invite-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.invite-banner .invite-btn { background: var(--accent); color: #000; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+
+/* Hero */
+.hero { position: relative; overflow: hidden; }
+.hero-cover { width: 100%; height: 200px; object-fit: cover; background: linear-gradient(135deg, #1a1919 0%, #111 100%); display: block; }
+.hero-cover-placeholder { width: 100%; height: 200px; background: linear-gradient(135deg, #1a1919 0%, #0e0e0e 100%); }
+.hero-content { padding: 0 16px 20px; position: relative; }
+.hero-avatar-wrap { margin-top: -40px; margin-bottom: 12px; }
+.hero-avatar { width: 80px; height: 80px; border-radius: 50%; border: 3px solid var(--bg); object-fit: cover; background: var(--bg-card); display: block; }
+.hero-avatar-placeholder { width: 80px; height: 80px; border-radius: 50%; border: 3px solid var(--bg); background: var(--bg-card); display: flex; align-items: center; justify-content: center; font-size: 32px; }
+.hero-name { font-size: 26px; font-weight: 900; line-height: 1.1; }
+.hero-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.hero-meta-item { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--text-muted); }
+.hero-meta-item span { color: var(--text); font-weight: 600; }
+.hero-desc { margin-top: 12px; font-size: 14px; color: #adaaaa; line-height: 1.6; }
+.hero-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.btn-join { background: var(--accent); color: #000; border: none; border-radius: 10px; padding: 14px 28px; font-size: 15px; font-weight: 800; cursor: pointer; flex: 1; min-width: 140px; }
+.btn-request { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); border-radius: 10px; padding: 14px 28px; font-size: 15px; font-weight: 800; cursor: pointer; flex: 1; min-width: 140px; }
+.hero-social { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.social-link { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); text-decoration: none; padding: 6px 12px; border-radius: 8px; background: var(--bg-card); border: 1px solid var(--border); }
+.social-link:hover { color: var(--accent); border-color: var(--accent); }
+
+/* Section */
+.section { padding: 0 16px 24px; max-width: 900px; margin: 0 auto; }
+.section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; color: var(--accent); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+.section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* Stats Grid */
+.stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--border); border-radius: 12px; overflow: hidden; }
+@media (min-width: 480px) { .stats-grid { grid-template-columns: repeat(4, 1fr); } }
+.stat-cell { background: var(--bg-card); padding: 16px 14px; text-align: center; }
+.stat-value { font-size: 28px; font-weight: 900; font-family: 'JetBrains Mono', monospace; line-height: 1; color: var(--accent); }
+.stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-top: 4px; }
+
+/* About */
+.about-text { font-size: 14px; color: #adaaaa; line-height: 1.75; background: var(--bg-card); border-radius: 12px; padding: 18px; border: 1px solid var(--border); }
+
+/* Board */
+.board-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.board-card { background: var(--bg-card); border-radius: 12px; padding: 16px 12px; text-align: center; border: 1px solid var(--border); }
+.board-avatar { width: 56px; height: 56px; border-radius: 50%; background: var(--border); margin: 0 auto 10px; object-fit: cover; display: block; }
+.board-avatar-ph { width: 56px; height: 56px; border-radius: 50%; background: var(--border); margin: 0 auto 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.board-name { font-size: 13px; font-weight: 700; }
+.board-role { font-size: 11px; color: var(--text-muted); margin-top: 3px; text-transform: capitalize; }
+
+/* Rides */
+.rides-list { display: flex; flex-direction: column; gap: 10px; }
+.ride-card { background: var(--bg-card); border-radius: 12px; padding: 14px 16px; border: 1px solid var(--border); display: flex; align-items: center; gap: 14px; }
+.ride-date-box { text-align: center; min-width: 48px; background: var(--border); border-radius: 8px; padding: 8px 6px; }
+.ride-date-day { font-size: 22px; font-weight: 900; font-family: 'JetBrains Mono', monospace; line-height: 1; color: var(--accent); }
+.ride-date-mon { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+.ride-info { flex: 1; }
+.ride-name { font-size: 15px; font-weight: 700; }
+.ride-loc { font-size: 12px; color: var(--text-muted); margin-top: 3px; display: flex; align-items: center; gap: 4px; }
+.ride-meta { display: flex; gap: 10px; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
+.ride-meta b { color: var(--text); font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+
+/* Feed */
+.feed-list { display: flex; flex-direction: column; gap: 12px; }
+.feed-card { background: var(--bg-card); border-radius: 12px; padding: 14px 16px; border: 1px solid var(--border); }
+.feed-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.feed-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--border); object-fit: cover; flex-shrink: 0; }
+.feed-avatar-ph { width: 36px; height: 36px; border-radius: 50%; background: var(--border); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+.feed-rider { font-size: 13px; font-weight: 700; }
+.feed-time { font-size: 11px; color: var(--text-muted); }
+.feed-title { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.feed-stats { display: flex; flex-wrap: wrap; gap: 10px; }
+.feed-stat { font-size: 12px; color: var(--text-muted); }
+.feed-stat b { color: var(--text); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+.feed-photos { display: flex; gap: 8px; overflow-x: auto; margin-top: 10px; padding-bottom: 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.feed-photos::-webkit-scrollbar { display: none; }
+.feed-photo { width: 100px; height: 80px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+
+/* Leaderboard */
+.lb-table { width: 100%; border-collapse: collapse; }
+.lb-table th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+.lb-table th.num { text-align: right; }
+.lb-table td { padding: 12px 10px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+.lb-table td.num { text-align: right; font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+.lb-table tr:last-child td { border-bottom: none; }
+.lb-table tbody tr:hover td { background: rgba(255,255,255,0.03); }
+.lb-rank { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 900; font-family: 'JetBrains Mono', monospace; }
+.lb-rank.gold { background: rgba(255,215,0,0.15); color: #ffd700; }
+.lb-rank.silver { background: rgba(192,192,192,0.15); color: #c0c0c0; }
+.lb-rank.bronze { background: rgba(205,127,50,0.15); color: #cd7f32; }
+.lb-rank.other { background: var(--border); color: var(--text-muted); }
+.lb-rider { display: flex; align-items: center; gap: 8px; }
+.lb-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--border); object-fit: cover; }
+.lb-avatar-ph { width: 30px; height: 30px; border-radius: 50%; background: var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.lb-medal { font-size: 14px; }
+
+/* Members */
+.members-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.member-card { background: var(--bg-card); border-radius: 12px; padding: 14px 12px; text-align: center; border: 1px solid var(--border); }
+.member-avatar { width: 52px; height: 52px; border-radius: 50%; background: var(--border); margin: 0 auto 10px; object-fit: cover; display: block; }
+.member-avatar-ph { width: 52px; height: 52px; border-radius: 50%; background: var(--border); margin: 0 auto 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+.member-name { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-role { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.role-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 5px; }
+.role-badge.admin { background: rgba(255,113,108,0.15); color: #ff716c; }
+.role-badge.captain { background: rgba(63,255,139,0.15); color: var(--accent); }
+.role-badge.member { background: var(--border); color: var(--text-muted); }
+
+/* Footer */
+.footer { padding: 24px 16px; text-align: center; border-top: 1px solid var(--border); margin-top: 8px; }
+.footer-brand { font-size: 12px; color: var(--text-muted); }
+.footer-brand a { color: var(--accent); text-decoration: none; font-weight: 700; }
+.footer-brand a:hover { text-decoration: underline; }
+
+/* Fade-in animation */
+.fade-item { opacity: 0; transform: translateY(16px); transition: opacity 0.4s ease, transform 0.4s ease; }
+.fade-item.visible { opacity: 1; transform: none; }
+
+/* Private overlay */
+.private-notice { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; text-align: center; color: var(--text-muted); }
+.private-notice .lock { font-size: 32px; margin-bottom: 8px; }
+.private-notice p { font-size: 13px; line-height: 1.6; }
+
+/* Desktop widening */
+@media (min-width: 700px) {
+  .hero-content { max-width: 900px; margin: 0 auto; }
+  .hero-name { font-size: 32px; }
+  .board-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+  .members-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="spinner-wrap" id="loading">
+    <div class="spinner"></div>
+    <div class="spinner-label">A carregar clube...</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const SB_URL = 'https://ctsuupvmmyjlrtjnxagv.supabase.co';
+  const ANON_KEY = 'ANON_KEY_PLACEHOLDER';
+  const APP_URL = 'https://www.kromi.online';
+
+  const params = new URLSearchParams(location.search);
+  const slug = params.get('s') || params.get('slug') || '';
+  const inviteCode = params.get('invite') || '';
+
+  // ── REST helpers ──────────────────────────────────────────────────────────
+  async function sbGet(path) {
+    const r = await fetch(SB_URL + path, {
+      headers: { apikey: ANON_KEY, Authorization: 'Bearer ' + ANON_KEY }
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+
+  // ── DOM helpers ───────────────────────────────────────────────────────────
+  function el(tag, cls, html) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html !== undefined) e.innerHTML = html;
+    return e;
+  }
+  function div(cls, html) { return el('div', cls, html); }
+
+  function fmtNum(n, dec = 0) {
+    if (!n && n !== 0) return '—';
+    return Number(n).toLocaleString('pt-PT', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  }
+
+  function timeAgo(iso) {
+    if (!iso) return '';
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 60) return 'agora';
+    if (diff < 3600) return Math.floor(diff / 60) + 'min';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h';
+    if (diff < 604800) return Math.floor(diff / 86400) + 'd';
+    return new Date(iso).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
+  }
+
+  function monthDay(iso) {
+    if (!iso) return { day: '—', mon: '—' };
+    const d = new Date(iso);
+    return {
+      day: d.getDate().toString().padStart(2, '0'),
+      mon: d.toLocaleDateString('pt-PT', { month: 'short' }).toUpperCase()
+    };
+  }
+
+  function avatarImg(url, cls, fallback) {
+    if (url) {
+      const img = document.createElement('img');
+      img.src = url;
+      img.className = cls;
+      img.alt = '';
+      img.onerror = () => {
+        const ph = div(cls.replace('avatar', 'avatar-ph'), fallback || '🚴');
+        img.parentNode && img.parentNode.replaceChild(ph, img);
+      };
+      return img;
+    }
+    return div(cls.replace('avatar', 'avatar-ph'), fallback || '🚴');
+  }
+
+  // ── IntersectionObserver for fade-in ─────────────────────────────────────
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); } });
+  }, { threshold: 0.05 });
+
+  function observe(node) { node.classList.add('fade-item'); observer.observe(node); return node; }
+
+  // ── Render functions ──────────────────────────────────────────────────────
+
+  function renderInviteBanner(club) {
+    const b = div('invite-banner');
+    const icon = div('invite-icon', '🎟️');
+    const txt = div('invite-text');
+    txt.innerHTML = '<div class="invite-title">Foste convidado para ' + escHtml(club.name) + '!</div>' +
+      '<div class="invite-sub">Abre a app KROMI para aceitar o convite.</div>';
+    const btn = el('button', 'invite-btn', 'Abrir App');
+    btn.onclick = () => openApp('invite', inviteCode, club.slug);
+    b.appendChild(icon); b.appendChild(txt); b.appendChild(btn);
+    return b;
+  }
+
+  function renderHero(club, memberCount) {
+    const hero = div('hero');
+    // Cover
+    if (club.cover_url) {
+      const img = document.createElement('img');
+      img.src = club.cover_url;
+      img.className = 'hero-cover';
+      img.alt = '';
+      hero.appendChild(img);
+    } else {
+      hero.appendChild(div('hero-cover-placeholder'));
+    }
+    // Content
+    const content = div('hero-content');
+    // Avatar
+    const avatarWrap = div('hero-avatar-wrap');
+    avatarWrap.appendChild(avatarImg(club.avatar_url, 'hero-avatar', club.name ? club.name[0] : '🚴'));
+    content.appendChild(avatarWrap);
+    // Name
+    const nameEl = div('hero-name', escHtml(club.name || '—'));
+    content.appendChild(nameEl);
+    // Meta
+    const meta = div('hero-meta');
+    if (club.city || club.country) {
+      const loc = [club.city, club.country].filter(Boolean).join(', ');
+      meta.appendChild(div('hero-meta-item', '📍 <span>' + escHtml(loc) + '</span>'));
+    }
+    meta.appendChild(div('hero-meta-item', '👥 <span>' + (memberCount || 0) + '</span> membros'));
+    if (club.founded_at) {
+      const y = new Date(club.founded_at).getFullYear();
+      meta.appendChild(div('hero-meta-item', '📅 Fundado em <span>' + y + '</span>'));
+    }
+    if (club.privacy === 'private') {
+      meta.appendChild(div('hero-meta-item', '🔒 <span>Privado</span>'));
+    }
+    content.appendChild(meta);
+    // Description
+    if (club.description) {
+      content.appendChild(div('hero-desc', escHtml(club.description)));
+    }
+    // Actions
+    const actions = div('hero-actions');
+    if (club.privacy === 'public') {
+      const btn = el('button', 'btn-join', 'Entrar no Clube');
+      btn.onclick = () => openApp('join', null, club.slug);
+      actions.appendChild(btn);
+    } else {
+      const btn = el('button', 'btn-request', 'Pedir Adesao');
+      btn.onclick = () => openApp('request', inviteCode || null, club.slug);
+      actions.appendChild(btn);
+    }
+    content.appendChild(actions);
+    // Social links
+    const social = club.social_links || {};
+    const socKeys = Object.keys(social).filter(k => social[k]);
+    if (socKeys.length) {
+      const sl = div('hero-social');
+      const icons = { strava: '🟠', instagram: '📷', facebook: '🔵', website: '🌐', youtube: '▶️', twitter: '🐦' };
+      const labels = { strava: 'Strava', instagram: 'Instagram', facebook: 'Facebook', website: 'Website', youtube: 'YouTube', twitter: 'Twitter' };
+      socKeys.forEach(k => {
+        const a = document.createElement('a');
+        a.href = social[k];
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.className = 'social-link';
+        a.innerHTML = (icons[k] || '🔗') + ' ' + (labels[k] || k);
+        sl.appendChild(a);
+      });
+      content.appendChild(sl);
+    }
+    hero.appendChild(content);
+    return hero;
+  }
+
+  function renderStats(club, memberCount) {
+    const wrap = div('section');
+    const title = div('section-title', 'Estatisticas');
+    wrap.appendChild(title);
+    const grid = div('stats-grid');
+    const stats = [
+      { label: 'Pedaladas', value: fmtNum(club.stats_total_rides || 0) },
+      { label: 'Kilometros', value: fmtNum(club.stats_total_km || 0) },
+      { label: 'Elevacao', value: fmtNum(club.stats_total_elevation || 0) + 'm' },
+      { label: 'Membros', value: fmtNum(memberCount || 0) }
+    ];
+    stats.forEach(s => {
+      const cell = div('stat-cell');
+      cell.innerHTML = '<div class="stat-value mono">' + s.value + '</div><div class="stat-label">' + s.label + '</div>';
+      grid.appendChild(cell);
+    });
+    wrap.appendChild(grid);
+    return observe(wrap);
+  }
+
+  function renderAbout(club) {
+    const wrap = div('section');
+    wrap.appendChild(div('section-title', 'Sobre o Clube'));
+    wrap.appendChild(div('about-text', escHtml(club.custom_about)));
+    return observe(wrap);
+  }
+
+  function renderBoard(members) {
+    const boardMembers = members.filter(m => m.role === 'admin' || m.role === 'captain' || m.is_board);
+    if (!boardMembers.length) return null;
+    const wrap = div('section');
+    wrap.appendChild(div('section-title', 'Direcao'));
+    const grid = div('board-grid');
+    boardMembers.forEach(m => {
+      const card = div('board-card');
+      card.appendChild(avatarImg(m.avatar_url, 'board-avatar', (m.display_name || '?')[0]));
+      card.appendChild(div('board-name', escHtml(m.display_name || m.email || 'Membro')));
+      card.appendChild(div('board-role', escHtml(m.board_role || m.role || '')));
+      grid.appendChild(card);
+    });
+    wrap.appendChild(grid);
+    return observe(wrap);
+  }
+
+  function renderUpcomingRides(rides) {
+    if (!rides.length) return null;
+    const wrap = div('section');
+    wrap.appendChild(div('section-title', 'Proximas Saidas'));
+    const list = div('rides-list');
+    rides.forEach(r => {
+      const { day, mon } = monthDay(r.scheduled_at);
+      const card = div('ride-card');
+      const dateBox = div('ride-date-box');
+      dateBox.innerHTML = '<div class="ride-date-day">' + day + '</div><div class="ride-date-mon">' + mon + '</div>';
+      const info = div('ride-info');
+      info.appendChild(div('ride-name', escHtml(r.title || 'Saida')));
+      if (r.location_name) {
+        info.appendChild(div('ride-loc', '📍 ' + escHtml(r.location_name)));
+      }
+      const meta = div('ride-meta');
+      if (r.distance_km) meta.innerHTML += '<span><b>' + fmtNum(r.distance_km, 1) + '</b>km</span>';
+      if (r.elevation_m) meta.innerHTML += '<span><b>' + fmtNum(r.elevation_m) + '</b>m D+</span>';
+      if (r.pace_level) meta.innerHTML += '<span>Ritmo: <b>' + escHtml(r.pace_level) + '</b></span>';
+      info.appendChild(meta);
+      card.appendChild(dateBox);
+      card.appendChild(info);
+      list.appendChild(card);
+    });
+    wrap.appendChild(list);
+    return observe(wrap);
+  }
+
+  function renderFeed(posts) {
+    if (!posts.length) return null;
+    const wrap = div('section');
+    wrap.appendChild(div('section-title', 'Feed do Clube'));
+    const list = div('feed-list');
+    posts.forEach(p => {
+      const card = div('feed-card');
+      const header = div('feed-header');
+      header.appendChild(avatarImg(p.rider_avatar, 'feed-avatar', (p.rider_name || '?')[0]));
+      const info = div('');
+      info.appendChild(div('feed-rider', escHtml(p.rider_name || 'Ciclista')));
+      info.appendChild(div('feed-time', timeAgo(p.created_at)));
+      header.appendChild(info);
+      card.appendChild(header);
+      if (p.title) card.appendChild(div('feed-title', escHtml(p.title)));
+      const stats = div('feed-stats');
+      if (p.distance_km) stats.innerHTML += '<span class="feed-stat"><b>' + fmtNum(p.distance_km, 1) + '</b> km</span>';
+      if (p.elevation_m) stats.innerHTML += '<span class="feed-stat"><b>' + fmtNum(p.elevation_m) + '</b> m D+</span>';
+      if (p.avg_speed_kmh) stats.innerHTML += '<span class="feed-stat"><b>' + fmtNum(p.avg_speed_kmh, 1) + '</b> km/h</span>';
+      if (p.duration_s) {
+        const h = Math.floor(p.duration_s / 3600), m = Math.floor((p.duration_s % 3600) / 60);
+        stats.innerHTML += '<span class="feed-stat"><b>' + h + 'h' + String(m).padStart(2, '0') + '</b></span>';
+      }
+      card.appendChild(stats);
+      if (p.photos && p.photos.length) {
+        const photos = div('feed-photos');
+        p.photos.slice(0, 8).forEach(url => {
+          const img = document.createElement('img');
+          img.src = url;
+          img.className = 'feed-photo';
+          img.alt = '';
+          photos.appendChild(img);
+        });
+        card.appendChild(photos);
+      }
+      list.appendChild(card);
+    });
+    wrap.appendChild(list);
+    return observe(wrap);
+  }
+
+  function renderLeaderboard(members) {
+    const ranked = members
+      .filter(m => m.month_km > 0 || m.month_elevation > 0)
+      .sort((a, b) => (b.month_km || 0) - (a.month_km || 0))
+      .slice(0, 20);
+    if (!ranked.length) return null;
+    const wrap = div('section');
+    const now = new Date();
+    const monthLabel = now.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' });
+    wrap.appendChild(div('section-title', 'Leaderboard — ' + monthLabel));
+    const tableWrap = div('');
+    tableWrap.style.cssText = 'background:var(--bg-card);border-radius:12px;border:1px solid var(--border);overflow:hidden;overflow-x:auto;';
+    const table = document.createElement('table');
+    table.className = 'lb-table';
+    table.innerHTML = '<thead><tr><th>#</th><th>Ciclista</th><th class="num">km</th><th class="num">D+</th><th class="num">Pedaladas</th></tr></thead>';
+    const tbody = document.createElement('tbody');
+    ranked.forEach((m, i) => {
+      const rankClasses = ['gold', 'silver', 'bronze'];
+      const rankCls = rankClasses[i] || 'other';
+      const medals = ['🥇', '🥈', '🥉'];
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td><span class="lb-rank ' + rankCls + '">' + (i + 1) + '</span></td>' +
+        '<td><div class="lb-rider">' +
+        (m.avatar_url ? '<img src="' + escAttr(m.avatar_url) + '" class="lb-avatar" alt="">' : '<span class="lb-avatar-ph">' + (m.display_name || '?')[0] + '</span>') +
+        '<span>' + escHtml(m.display_name || 'Membro') + '</span>' +
+        (medals[i] ? ' <span class="lb-medal">' + medals[i] + '</span>' : '') +
+        '</div></td>' +
+        '<td class="num">' + fmtNum(m.month_km, 1) + '</td>' +
+        '<td class="num">' + fmtNum(m.month_elevation) + '</td>' +
+        '<td class="num">' + (m.month_rides || 0) + '</td>';
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    tableWrap.appendChild(table);
+    wrap.appendChild(tableWrap);
+    return observe(wrap);
+  }
+
+  function renderMembers(members) {
+    if (!members.length) return null;
+    const wrap = div('section');
+    wrap.appendChild(div('section-title', 'Membros (' + members.length + ')'));
+    const grid = div('members-grid');
+    members.slice(0, 48).forEach(m => {
+      const card = div('member-card');
+      const avatarEl = avatarImg(m.avatar_url, 'member-avatar', (m.display_name || '?')[0]);
+      if (avatarEl.className && !avatarEl.className.includes('ph')) {
+        avatarEl.style.cssText = 'width:52px;height:52px;border-radius:50%;background:var(--border);margin:0 auto 10px;object-fit:cover;display:block;';
+      }
+      card.appendChild(avatarEl);
+      card.appendChild(div('member-name', escHtml(m.display_name || m.email || 'Membro')));
+      if (m.role) {
+        const roleCls = m.role === 'admin' ? 'admin' : m.role === 'captain' ? 'captain' : 'member';
+        const roleLabel = m.role === 'admin' ? 'Admin' : m.role === 'captain' ? 'Capitao' : 'Membro';
+        card.appendChild(el('span', 'role-badge ' + roleCls, roleLabel));
+      }
+      grid.appendChild(card);
+    });
+    wrap.appendChild(grid);
+    return observe(wrap);
+  }
+
+  function renderFooter() {
+    const f = div('footer');
+    f.innerHTML = '<p class="footer-brand">Powered by <a href="https://www.kromi.online" target="_blank" rel="noopener">kromi.online</a></p>';
+    return f;
+  }
+
+  // ── Security helpers ──────────────────────────────────────────────────────
+  function escHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function escAttr(s) { return escHtml(s); }
+
+  // ── App deep-link ─────────────────────────────────────────────────────────
+  function openApp(action, code, clubSlug) {
+    const u = new URL(APP_URL);
+    u.searchParams.set('page', 'clubs');
+    u.searchParams.set('action', action);
+    if (clubSlug) u.searchParams.set('club', clubSlug);
+    if (code) u.searchParams.set('invite', code);
+    window.open(u.toString(), '_blank');
+  }
+
+  // ── Error screen ──────────────────────────────────────────────────────────
+  function showError(msg) {
+    document.getElementById('app').innerHTML =
+      '<div class="error-wrap"><h2>Clube nao encontrado</h2><p>' + escHtml(msg) + '</p>' +
+      '<p style="margin-top:20px;font-size:12px;color:#555;">Verifica o URL ou abre a app KROMI.</p></div>';
+  }
+
+  // ── Main ──────────────────────────────────────────────────────────────────
+  async function main() {
+    if (!slug) { showError('Parametro ?s= em falta no URL.'); return; }
+
+    try {
+      // Fetch club
+      const clubs = await sbGet('/rest/v1/clubs?slug=eq.' + encodeURIComponent(slug) + '&select=*&limit=1');
+      if (!clubs || !clubs.length) { showError('O clube "' + slug + '" nao existe.'); return; }
+      const club = clubs[0];
+      const cfg = club.landing_config || {};
+
+      // Apply accent color
+      if (club.color) {
+        document.documentElement.style.setProperty('--accent', club.color);
+      }
+
+      // OG meta
+      document.getElementById('og-title').content = club.name + ' — KROMI BikeControl';
+      document.getElementById('og-desc').content = club.description || 'Clube de ciclismo no KROMI BikeControl';
+      if (club.avatar_url) document.getElementById('og-image').content = club.avatar_url;
+      document.getElementById('page-title').textContent = club.name + ' — KROMI';
+
+      // Parallel data fetches
+      const [membersRaw, feedRaw, ridesRaw] = await Promise.allSettled([
+        sbGet('/rest/v1/club_members?club_id=eq.' + encodeURIComponent(club.id) + '&select=*&order=joined_at.asc'),
+        club.privacy === 'public'
+          ? sbGet('/rest/v1/club_ride_posts?club_id=eq.' + encodeURIComponent(club.id) + '&order=created_at.desc&limit=20')
+          : Promise.resolve([]),
+        sbGet('/rest/v1/club_rides?club_id=eq.' + encodeURIComponent(club.id) + '&status=eq.planned&order=scheduled_at.asc&limit=10')
+      ]);
+
+      const members = membersRaw.status === 'fulfilled' ? (membersRaw.value || []) : [];
+      const feed = feedRaw.status === 'fulfilled' ? (feedRaw.value || []) : [];
+      const rides = ridesRaw.status === 'fulfilled' ? (ridesRaw.value || []) : [];
+
+      // Build page
+      const app = document.getElementById('app');
+      app.innerHTML = '';
+
+      // Invite banner
+      if (inviteCode) {
+        app.appendChild(renderInviteBanner(club));
+      }
+
+      // Hero
+      app.appendChild(renderHero(club, members.length));
+
+      // Stats grid (always shown)
+      app.appendChild(renderStats(club, members.length));
+
+      // About
+      if (cfg.show_about !== false && club.custom_about) {
+        app.appendChild(renderAbout(club));
+      }
+
+      // Board
+      if (cfg.show_board !== false) {
+        const boardEl = renderBoard(members);
+        if (boardEl) app.appendChild(boardEl);
+      }
+
+      // Upcoming rides
+      if (cfg.show_upcoming_rides !== false) {
+        const ridesEl = renderUpcomingRides(rides);
+        if (ridesEl) app.appendChild(ridesEl);
+      }
+
+      // Feed
+      if (cfg.show_feed !== false && club.privacy === 'public') {
+        const feedEl = renderFeed(feed);
+        if (feedEl) app.appendChild(feedEl);
+      } else if (club.privacy === 'private' && cfg.show_feed !== false) {
+        const wrap = div('section');
+        wrap.appendChild(div('section-title', 'Feed do Clube'));
+        const notice = div('private-notice');
+        notice.innerHTML = '<div class="lock">🔒</div><p>O feed deste clube e privado.<br>Aderir ao clube para ver as pedaladas dos membros.</p>';
+        wrap.appendChild(notice);
+        app.appendChild(observe(wrap));
+      }
+
+      // Leaderboard
+      if (cfg.show_leaderboard !== false) {
+        const lbEl = renderLeaderboard(members);
+        if (lbEl) app.appendChild(lbEl);
+      }
+
+      // Members
+      if (cfg.show_members !== false) {
+        const membersEl = renderMembers(members);
+        if (membersEl) app.appendChild(membersEl);
+      }
+
+      // Footer
+      app.appendChild(renderFooter());
+
+    } catch (err) {
+      console.error(err);
+      showError('Erro ao carregar o clube. Tenta novamente mais tarde.');
+    }
+  }
+
+  main();
+})();
+</script>
+</body>
+</html>
