@@ -140,37 +140,83 @@ async function load() {
     if (!profiles.length) { showNotFound(); return; }
     const profile = profiles[0];
 
-    // 2. Fetch ride session — prefer active, then last 48h completed
+    // 2. Fetch tracking session — prefer active, then last 48h inactive
     let session = null;
     let isLive = false;
 
-    // Try active session first
-    const activeRes = await fetch(`${SB_URL}/rest/v1/ride_sessions?user_id=eq.${profile.user_id}&status=eq.active&select=id,duration_s,total_km,avg_hr,max_hr,avg_speed_kmh,max_speed_kmh,avg_power_w,max_power_w,started_at,ended_at,start_lat,start_lng,end_lat,end_lng,battery_start,battery_end&order=started_at.desc&limit=1`, { headers: sbHeaders });
+    // Try active tracking session first
+    const activeRes = await fetch(`${SB_URL}/rest/v1/tracking_sessions?user_id=eq.${profile.user_id}&is_active=eq.true&select=*&order=started_at.desc&limit=1`, { headers: sbHeaders });
     const activeSessions = await activeRes.json();
 
     if (activeSessions.length) {
       session = activeSessions[0];
       isLive = true;
     } else {
-      // Fall back to last 48h completed
+      // Fall back to last 48h ended session
       const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-      const rideRes = await fetch(`${SB_URL}/rest/v1/ride_sessions?user_id=eq.${profile.user_id}&started_at=gte.${since}&status=eq.completed&select=id,duration_s,total_km,avg_hr,max_hr,avg_speed_kmh,max_speed_kmh,avg_power_w,max_power_w,started_at,ended_at,start_lat,start_lng,end_lat,end_lng,battery_start,battery_end&order=started_at.desc&limit=1`, { headers: sbHeaders });
+      const rideRes = await fetch(`${SB_URL}/rest/v1/tracking_sessions?user_id=eq.${profile.user_id}&started_at=gte.${since}&is_active=eq.false&select=*&order=ended_at.desc&limit=1`, { headers: sbHeaders });
       const rides = await rideRes.json();
       if (rides.length) session = rides[0];
     }
 
-    // 3. Fetch snapshots for the session
+    // 3. Fetch tracking points for the session (breadcrumb trail)
     let snapshots = [];
+    const fcMax = profile.fc_max || profile.hr_max || 190;
     if (session?.id) {
-      const snapRes = await fetch(`${SB_URL}/rest/v1/ride_snapshots?session_id=eq.${session.id}&select=elapsed_s,lat,lng,altitude_m,hr_bpm,hr_zone,speed_kmh,power_watts,distance_km,gradient_pct,spo2_pct,cadence_rpm,battery_pct,assist_mode,torque_nm,created_at&order=elapsed_s.asc&limit=5000`, { headers: sbHeaders });
-      snapshots = await snapRes.json();
-      if (!Array.isArray(snapshots)) snapshots = [];
+      const snapRes = await fetch(`${SB_URL}/rest/v1/tracking_points?session_id=eq.${session.id}&select=lat,lng,altitude,speed_kmh,heart_rate,recorded_at&order=recorded_at.asc&limit=5000`, { headers: sbHeaders });
+      const rawPoints = await snapRes.json();
+      if (Array.isArray(rawPoints) && rawPoints.length) {
+        // Map tracking_points to the snapshot format used by render/charts
+        const startTime = new Date(rawPoints[0].recorded_at).getTime();
+        let cumDist = 0;
+        let prevLat = rawPoints[0].lat;
+        let prevLng = rawPoints[0].lng;
+        let prevAlt = rawPoints[0].altitude;
+        snapshots = rawPoints.map((p, i) => {
+          // Approximate distance from GPS coords
+          if (i > 0 && p.lat && p.lng) {
+            const dLat = (p.lat - prevLat) * 111320;
+            const dLng = (p.lng - prevLng) * 111320 * Math.cos(p.lat * Math.PI / 180);
+            cumDist += Math.sqrt(dLat * dLat + dLng * dLng) / 1000;
+          }
+          // Approximate gradient from altitude change
+          const altDiff = (p.altitude != null && prevAlt != null) ? p.altitude - prevAlt : 0;
+          const segDist = i > 0 ? Math.sqrt(Math.pow((p.lat - prevLat) * 111320, 2) + Math.pow((p.lng - prevLng) * 111320 * Math.cos(p.lat * Math.PI / 180), 2)) : 0;
+          const gradient = segDist > 5 ? (altDiff / segDist) * 100 : 0;
+          // Compute HR zone (0=none, 1-5) from fcMax
+          const hrPct = p.heart_rate ? p.heart_rate / fcMax : 0;
+          const hrZone = !p.heart_rate ? 0 : hrPct >= 0.9 ? 5 : hrPct >= 0.8 ? 4 : hrPct >= 0.7 ? 3 : hrPct >= 0.6 ? 2 : 1;
+
+          const snap = {
+            elapsed_s: Math.round((new Date(p.recorded_at).getTime() - startTime) / 1000),
+            lat: p.lat,
+            lng: p.lng,
+            altitude_m: p.altitude,
+            hr_bpm: p.heart_rate || 0,
+            hr_zone: hrZone,
+            speed_kmh: p.speed_kmh || 0,
+            power_watts: 0,
+            distance_km: Math.round(cumDist * 1000) / 1000,
+            gradient_pct: Math.round(gradient * 10) / 10,
+            spo2_pct: null,
+            cadence_rpm: 0,
+            battery_pct: null,
+            assist_mode: 0,
+            torque_nm: 0,
+            created_at: p.recorded_at,
+          };
+          prevLat = p.lat;
+          prevLng = p.lng;
+          if (p.altitude != null) prevAlt = p.altitude;
+          return snap;
+        });
+      }
     }
 
     // 4. Fetch nearby riders for community rescue
     let nearbyRiders = [];
-    const victimLat = session?.end_lat || session?.start_lat || profile.last_location_lat;
-    const victimLng = session?.end_lng || session?.start_lng || profile.last_location_lng;
+    const victimLat = session?.lat || profile.last_location_lat;
+    const victimLng = session?.lng || profile.last_location_lng;
     if (victimLat && victimLng) {
       try {
         const nearbyRes = await fetch(`${SB_URL}/rest/v1/rpc/nearby_riders`, {
@@ -197,7 +243,7 @@ async function load() {
     }
     if (snapshots.length > 0) {
       requestAnimationFrame(() => {
-        drawHRTimeline('hr-timeline', snapshots, session?.max_hr || 200);
+        drawHRTimeline('hr-timeline', snapshots, fcMax);
         drawHRZones('hr-zones', snapshots);
         drawElevation('elevation-chart', snapshots);
         drawPreAccident('pre-accident-hr', 'pre-accident-speed', 'pre-accident-power', snapshots);
@@ -206,7 +252,10 @@ async function load() {
 
     // 6. Live refresh if active session
     if (isLive) {
-      setInterval(() => refreshLiveData(profile.user_id, session.id), 10000);
+      const liveInterval = setInterval(async () => {
+        const still = await refreshLiveData(profile.user_id, session.id);
+        if (still === false) clearInterval(liveInterval);
+      }, 10000);
     }
 
   } catch (err) {
@@ -400,12 +449,15 @@ function render(p, session, isLive, snaps, nearbyRiders) {
     html += `</div>`;
   }
 
-  // ── RIDE SUMMARY ──
+  // ── RIDE SUMMARY (from tracking_sessions snapshot) ──
   if (session) {
     html += `<div class="card">`;
     html += `<div class="card-title" style="color:#6e9bff"><span class="icon">&#128690;</span> Resumo da Actividade</div>`;
 
-    const dur = session.duration_s || 0;
+    // Duration from started_at to ended_at (or now if live)
+    const startMs = new Date(session.started_at).getTime();
+    const endMs = session.ended_at ? new Date(session.ended_at).getTime() : Date.now();
+    const dur = Math.round((endMs - startMs) / 1000);
     const h = Math.floor(dur / 3600);
     const m = Math.floor((dur % 3600) / 60);
     const timeStr = h > 0 ? `${h}h ${m}min` : `${m}min`;
@@ -416,29 +468,34 @@ function render(p, session, isLive, snaps, nearbyRiders) {
     html += `<div style="text-align:center;font-size:11px;color:#888;margin-bottom:12px">${timeLabel} — ${when.toLocaleString('pt-PT', {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</div>`;
 
     html += `<div class="stats-grid">`;
-    html += `<div class="stat"><div class="val" style="color:#fff;font-size:22px">${(session.total_km || 0).toFixed(1)}</div><div class="lbl">km</div></div>`;
-    html += `<div class="stat"><div class="val" style="color:#fff;font-size:22px">${session.avg_speed_kmh || '—'}</div><div class="lbl">km/h med</div></div>`;
+    html += `<div class="stat"><div class="val" style="color:#fff;font-size:22px">${(session.distance_km || 0).toFixed(1)}</div><div class="lbl">km</div></div>`;
+    html += `<div class="stat"><div class="val" style="color:#fff;font-size:22px">${session.avg_speed_kmh ? session.avg_speed_kmh.toFixed(1) : '—'}</div><div class="lbl">km/h med</div></div>`;
     html += `<div class="stat"><div class="val" style="color:#fff;font-size:22px">${timeStr}</div><div class="lbl">Duracao</div></div>`;
     html += `</div>`;
 
     html += `<div class="stats-grid" style="margin-top:8px">`;
-    html += `<div class="stat"><div class="val" style="color:#6e9bff;font-size:22px">${session.avg_power_w || '—'}</div><div class="lbl">Watts med</div></div>`;
-    html += `<div class="stat"><div class="val" style="color:#6e9bff;font-size:22px">${session.max_power_w || '—'}</div><div class="lbl">Watts max</div></div>`;
-    html += `<div class="stat"><div class="val" style="color:#fbbf24;font-size:22px">${session.max_speed_kmh || '—'}</div><div class="lbl">km/h max</div></div>`;
+    html += `<div class="stat"><div class="val" style="color:#6e9bff;font-size:22px">${session.power_watts || '—'}</div><div class="lbl">Watts</div></div>`;
+    html += `<div class="stat"><div class="val" style="color:#ef4444;font-size:22px">${session.heart_rate || '—'}</div><div class="lbl">FC</div></div>`;
+    html += `<div class="stat"><div class="val" style="color:#fbbf24;font-size:22px">${session.speed_kmh ? session.speed_kmh.toFixed(0) : '—'}</div><div class="lbl">km/h</div></div>`;
     html += `</div>`;
 
-    if (session.battery_start != null) {
+    if (session.battery_pct != null) {
       html += `<div style="margin-top:12px;display:flex;justify-content:center;gap:16px;font-size:12px">`;
-      html += `<span style="color:#888">Bateria: <span style="color:#3fff8b;font-weight:700">${session.battery_start}%</span> → <span style="color:${(session.battery_end || 0) < 20 ? '#ef4444' : '#fbbf24'};font-weight:700">${session.battery_end ?? '?'}%</span></span>`;
+      html += `<span style="color:#888">Bateria: <span style="color:${session.battery_pct < 20 ? '#ef4444' : '#3fff8b'};font-weight:700">${session.battery_pct}%</span></span>`;
+      if (session.range_km) html += `<span style="color:#888">Autonomia: <span style="color:#fbbf24;font-weight:700">${session.range_km.toFixed(0)} km</span></span>`;
       html += `</div>`;
+    }
+
+    if (session.elevation_gain_m) {
+      html += `<div style="margin-top:6px;text-align:center;font-size:12px;color:#888">Desnivel: <span style="color:#22c55e;font-weight:700">+${Math.round(session.elevation_gain_m)}m</span></div>`;
     }
 
     html += `</div>`;
   }
 
   // ── RESCUE NETWORK ──
-  const victimLat = session?.end_lat || session?.start_lat || p.last_location_lat;
-  const victimLng = session?.end_lng || session?.start_lng || p.last_location_lng;
+  const victimLat = session?.lat || p.last_location_lat;
+  const victimLng = session?.lng || p.last_location_lng;
 
   html += `<div class="card" id="rescue-section">`;
   html += `<div class="card-title" style="color:#3fff8b"><span class="icon">&#128161;</span> Rede de Ajuda KROMI</div>`;
@@ -492,12 +549,14 @@ function initMap(snapshots, session, isLive) {
   });
   map.fitBounds(bounds, 30);
 
-  // Color-coded polyline segments by HR zone
+  // Color-coded polyline segments by HR zone (zone 0 = no HR data → neutral grey)
+  const NEUTRAL_COLOR = '#555555';
   for (let i = 0; i < pts.length - 1; i++) {
-    const zone = Math.max(0, Math.min(4, (pts[i].hr_zone || 1) - 1));
+    const z = pts[i].hr_zone || 0;
+    const color = z > 0 ? ZONE_COLORS[Math.min(4, z - 1)] : NEUTRAL_COLOR;
     new google.maps.Polyline({
       path: [{ lat: pts[i].lat, lng: pts[i].lng }, { lat: pts[i+1].lat, lng: pts[i+1].lng }],
-      strokeColor: ZONE_COLORS[zone],
+      strokeColor: color,
       strokeOpacity: 0.95,
       strokeWeight: 4,
       map,
@@ -534,7 +593,7 @@ function initMap(snapshots, session, isLive) {
   // Accuracy / uncertainty circle around last position
   new google.maps.Circle({
     center: { lat: last.lat, lng: last.lng },
-    radius: last.gps_accuracy || 30,
+    radius: 30, // estimated GPS uncertainty
     map,
     fillColor: '#ff3333',
     fillOpacity: 0.12,
@@ -834,6 +893,7 @@ function drawPreAccident(hrId, speedId, powerId, snapshots) {
 }
 
 function drawMiniLine(id, values, color) {
+  if (values.length < 2) return;
   const c = setupCanvas(id);
   if (!c) return;
   const { ctx, w, h } = c;
@@ -876,17 +936,19 @@ function drawMiniLine(id, values, color) {
 // ═══════════════════════════════════════════════════════════
 async function refreshLiveData(userId, sessionId) {
   try {
-    const res = await fetch(`${SB_URL}/rest/v1/ride_snapshots?session_id=eq.${sessionId}&select=lat,lng,hr_bpm,speed_kmh,altitude_m,elapsed_s&order=elapsed_s.desc&limit=1`, { headers: sbHeaders });
-    const snaps = await res.json();
-    if (snaps.length && window._emergencyMap && window._lastMarker) {
-      const s = snaps[0];
-      if (s.lat && s.lng) {
-        const pos = { lat: s.lat, lng: s.lng };
-        window._lastMarker.setPosition(pos);
-        window._emergencyMap.panTo(pos);
-      }
+    // Read latest snapshot directly from tracking_sessions (PATCHed every 15s by the PWA)
+    const res = await fetch(`${SB_URL}/rest/v1/tracking_sessions?id=eq.${sessionId}&select=lat,lng,speed_kmh,heart_rate,altitude,is_active&limit=1`, { headers: sbHeaders });
+    const rows = await res.json();
+    if (!rows.length) return false;
+    const s = rows[0];
+    if (!s.is_active) return false; // Session ended — stop polling
+    if (s.lat && s.lng && window._emergencyMap && window._lastMarker) {
+      const pos = { lat: s.lat, lng: s.lng };
+      window._lastMarker.setPosition(pos);
+      window._emergencyMap.panTo(pos);
     }
-  } catch {}
+    return true;
+  } catch { return true; } // Keep polling on network errors
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -963,7 +1025,7 @@ function esc(str) {
   if (!str) return '';
   const div = document.createElement('div');
   div.textContent = String(str);
-  return div.innerHTML;
+  return div.innerHTML.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 }
 
 function calcElevGain(snapshots) {

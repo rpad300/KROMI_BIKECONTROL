@@ -6,36 +6,58 @@ import { supaGet } from '../../lib/supaFetch';
 const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 const POLL_INTERVAL = 5000;
 
-interface ActiveSession {
+/** tracking_sessions row — latest snapshot fields */
+interface TrackingSession {
   id: string;
+  is_active: boolean;
   started_at: string;
-  battery_start: number;
-}
-
-interface Snapshot {
-  elapsed_s: number;
-  lat: number;
-  lng: number;
+  ended_at: string | null;
+  lat: number | null;
+  lng: number | null;
+  altitude: number | null;
+  heading: number | null;
   speed_kmh: number;
+  avg_speed_kmh: number;
+  distance_km: number;
+  elevation_gain_m: number;
+  battery_pct: number;
+  heart_rate: number;
   power_watts: number;
   cadence_rpm: number;
-  battery_pct: number;
   assist_mode: number;
-  hr_bpm: number;
-  altitude_m: number | null;
-  gradient_pct: number;
-  distance_km: number;
+  gear: number;
+  total_gears: number;
+  range_km: number;
+  route_name: string | null;
+  route_total_km: number | null;
+  route_done_km: number | null;
+  route_remaining_km: number | null;
+  route_eta_min: number | null;
+  route_progress_pct: number | null;
+  route_elevation_profile: { d: number; e: number }[] | null;
+  updated_at: string;
+  rider_name: string | null;
+  bike_name: string | null;
+}
+
+/** tracking_points row — breadcrumb trail */
+interface TrackingPoint {
+  lat: number;
+  lng: number;
+  altitude: number | null;
+  speed_kmh: number | null;
+  heart_rate: number | null;
+  recorded_at: string;
 }
 
 const MODE_NAMES: Record<number, string> = {
-  0: 'MAN', 1: 'ECO', 2: 'TOUR', 3: 'ACTIVE', 4: 'SPORT', 5: 'PWR', 6: 'SMART',
+  0: 'MAN', 1: 'ECO', 2: 'TOUR', 3: 'ACTIVE', 4: 'SPORT', 5: 'KROMI', 6: 'SMART',
 };
 
 export function LiveRideView() {
   const userId = useAuthStore((s) => s.user?.id);
-  const [session, setSession] = useState<ActiveSession | null>(null);
-  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [latest, setLatest] = useState<Snapshot | null>(null);
+  const [session, setSession] = useState<TrackingSession | null>(null);
+  const [points, setPoints] = useState<TrackingPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
@@ -46,21 +68,22 @@ export function LiveRideView() {
   const poll = useCallback(async () => {
     if (!userId) { setLoading(false); return; }
     try {
-      const sessions = await supaGet<ActiveSession[]>(
-        `/rest/v1/ride_sessions?user_id=eq.${userId}&status=eq.active&select=id,started_at,battery_start&limit=1&order=started_at.desc`,
+      // Fetch active tracking session for this user
+      const sessions = await supaGet<TrackingSession[]>(
+        `/rest/v1/tracking_sessions?user_id=eq.${userId}&is_active=eq.true&select=*&limit=1&order=started_at.desc`,
       );
       if (!Array.isArray(sessions) || sessions.length === 0) {
-        setSession(null); setSnapshots([]); setLatest(null); setLoading(false);
+        setSession(null); setPoints([]); setLoading(false);
         return;
       }
       const active = sessions[0]!;
       setSession(active);
 
-      const snaps = await supaGet<Snapshot[]>(
-        `/rest/v1/ride_snapshots?session_id=eq.${active.id}&select=elapsed_s,lat,lng,speed_kmh,power_watts,cadence_rpm,battery_pct,assist_mode,hr_bpm,altitude_m,gradient_pct,distance_km&order=elapsed_s.asc&limit=2000`,
+      // Fetch breadcrumb trail
+      const trail = await supaGet<TrackingPoint[]>(
+        `/rest/v1/tracking_points?session_id=eq.${active.id}&select=lat,lng,altitude,speed_kmh,heart_rate,recorded_at&order=recorded_at.asc&limit=2000`,
       );
-      setSnapshots(snaps);
-      if (snaps.length > 0) setLatest(snaps[snaps.length - 1]!);
+      setPoints(trail);
     } catch { /* silent */ }
     setLoading(false);
   }, [userId]);
@@ -74,10 +97,9 @@ export function LiveRideView() {
   // === Google Map — init + update path ===
   useEffect(() => {
     if (!mapRef.current || !MAPS_KEY || googleMapRef.current) return;
-    const gpsPoints = snapshots.filter((s) => s.lat !== 0 && s.lng !== 0);
+    const gpsPoints = points.filter((p) => p.lat !== 0 && p.lng !== 0);
     if (gpsPoints.length === 0) return;
 
-    // Load Google Maps script if not loaded
     if (!window.google?.maps) {
       const script = document.createElement('script');
       script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}`;
@@ -87,11 +109,11 @@ export function LiveRideView() {
       initMap(gpsPoints);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshots.length > 0 && !googleMapRef.current]);
+  }, [points.length > 0 && !googleMapRef.current]);
 
-  function initMap(points: Snapshot[]) {
+  function initMap(pts: TrackingPoint[]) {
     if (!mapRef.current || googleMapRef.current) return;
-    const last = points[points.length - 1]!;
+    const last = pts[pts.length - 1]!;
     const map = new google.maps.Map(mapRef.current, {
       center: { lat: last.lat, lng: last.lng },
       zoom: 14,
@@ -107,16 +129,14 @@ export function LiveRideView() {
     });
     googleMapRef.current = map;
 
-    // Polyline (ride path)
     polylineRef.current = new google.maps.Polyline({
-      path: points.map((p) => ({ lat: p.lat, lng: p.lng })),
+      path: pts.map((p) => ({ lat: p.lat, lng: p.lng })),
       geodesic: true,
       strokeColor: '#10b981',
       strokeWeight: 3,
       map,
     });
 
-    // Current position marker
     markerRef.current = new google.maps.Marker({
       position: { lat: last.lat, lng: last.lng },
       map,
@@ -131,10 +151,10 @@ export function LiveRideView() {
     });
   }
 
-  // Update polyline + marker when new snapshots arrive
+  // Update polyline + marker when new points arrive
   useEffect(() => {
     if (!googleMapRef.current || !polylineRef.current || !markerRef.current) return;
-    const gpsPoints = snapshots.filter((s) => s.lat !== 0 && s.lng !== 0);
+    const gpsPoints = points.filter((p) => p.lat !== 0 && p.lng !== 0);
     if (gpsPoints.length === 0) return;
 
     const path = gpsPoints.map((p) => ({ lat: p.lat, lng: p.lng }));
@@ -143,7 +163,7 @@ export function LiveRideView() {
     const last = gpsPoints[gpsPoints.length - 1]!;
     markerRef.current.setPosition({ lat: last.lat, lng: last.lng });
     googleMapRef.current.panTo({ lat: last.lat, lng: last.lng });
-  }, [snapshots]);
+  }, [points]);
 
   if (loading) {
     return (
@@ -165,24 +185,24 @@ export function LiveRideView() {
     );
   }
 
-  const elapsed = latest ? latest.elapsed_s : 0;
-  const hours = Math.floor(elapsed / 3600);
-  const mins = Math.floor((elapsed % 3600) / 60);
-  const secs = elapsed % 60;
+  // Elapsed time from started_at
+  const elapsedS = Math.round((Date.now() - new Date(session.started_at).getTime()) / 1000);
+  const hours = Math.floor(elapsedS / 3600);
+  const mins = Math.floor((elapsedS % 3600) / 60);
+  const secs = elapsedS % 60;
   const timeStr = hours > 0
     ? `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
     : `${mins}:${secs.toString().padStart(2, '0')}`;
 
-  // Altitude data for chart
-  const altData = snapshots
-    .filter((s) => s.altitude_m !== null)
-    .map((s) => ({
-      dist: Math.round(s.distance_km * 100) / 100,
-      alt: Math.round(s.altitude_m!),
-      gradient: s.gradient_pct,
-    }));
+  // Elevation profile — prefer route profile, fallback to trail altitude
+  const elevProfile = session.route_elevation_profile;
+  const altData = elevProfile
+    ? elevProfile.map((p) => ({ dist: Math.round((p.d / 1000) * 100) / 100, alt: Math.round(p.e) }))
+    : points
+        .filter((p) => p.altitude !== null)
+        .map((p, i) => ({ dist: Math.round((i * 0.015) * 100) / 100, alt: Math.round(p.altitude!) }));
 
-  const hasGPS = snapshots.some((s) => s.lat !== 0);
+  const hasGPS = points.some((p) => p.lat !== 0) || (session.lat != null && session.lat !== 0);
 
   return (
     <div className="space-y-4">
@@ -193,31 +213,59 @@ export function LiveRideView() {
           <h2 className="text-lg font-bold text-white">Volta em curso</h2>
           <span className="text-xs text-gray-600">{timeStr}</span>
         </div>
-        <span className="text-xs text-gray-600">{snapshots.length} pts · 5s refresh</span>
+        <div className="flex items-center gap-2">
+          {session.rider_name && <span className="text-xs text-gray-500">{session.rider_name}</span>}
+          {session.bike_name && <span className="text-xs text-gray-600">· {session.bike_name}</span>}
+          <span className="text-xs text-gray-600">{points.length} pts · 5s refresh</span>
+        </div>
       </div>
 
-      {/* Live metrics */}
-      {latest && (
-        <div className="grid grid-cols-5 gap-2">
-          <Metric label="Velocidade" value={latest.speed_kmh.toFixed(1)} unit="km/h" />
-          <Metric label="Potência" value={`${latest.power_watts}`} unit="W" color="text-yellow-400" />
-          <Metric label="Cadência" value={`${latest.cadence_rpm}`} unit="rpm" color="text-blue-400" />
-          <Metric label="Bateria" value={`${latest.battery_pct}`} unit="%"
-            color={latest.battery_pct > 30 ? 'text-emerald-400' : 'text-red-400'} />
-          <Metric label="Distância" value={latest.distance_km.toFixed(1)} unit="km" />
+      {/* Route navigation bar (when GPX active) */}
+      {session.route_name && (
+        <div className="bg-gray-800 rounded-lg p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-emerald-400 text-base">route</span>
+            <span className="text-sm font-bold text-white">{session.route_name}</span>
+          </div>
+          <div className="flex items-center gap-4 text-xs">
+            {session.route_done_km != null && (
+              <span className="text-gray-400">{session.route_done_km.toFixed(1)} / {session.route_total_km?.toFixed(1) ?? '?'} km</span>
+            )}
+            {session.route_progress_pct != null && (
+              <span className="text-emerald-400 font-bold">{session.route_progress_pct.toFixed(0)}%</span>
+            )}
+            {session.route_eta_min != null && (
+              <span className="text-gray-500">ETA {session.route_eta_min} min</span>
+            )}
+          </div>
         </div>
       )}
-      {latest && (
-        <div className="grid grid-cols-5 gap-2">
-          <Metric label="Gradiente" value={`${latest.gradient_pct > 0 ? '+' : ''}${latest.gradient_pct.toFixed(1)}`} unit="%"
-            color={latest.gradient_pct > 5 ? 'text-red-400' : latest.gradient_pct > 0 ? 'text-orange-400' : 'text-green-400'} />
-          <Metric label="Modo" value={MODE_NAMES[latest.assist_mode] ?? '?'} unit=""
-            color={latest.assist_mode === 5 ? 'text-red-400' : 'text-gray-300'} />
-          {latest.hr_bpm > 0 && <Metric label="FC" value={`${latest.hr_bpm}`} unit="bpm" color="text-red-400" />}
-          {latest.altitude_m !== null && <Metric label="Altitude" value={`${Math.round(latest.altitude_m)}`} unit="m" color="text-cyan-400" />}
-          <Metric label="Bat. início" value={`${session.battery_start}`} unit="%" color="text-gray-500" />
-        </div>
-      )}
+
+      {/* Live metrics — row 1 */}
+      <div className="grid grid-cols-5 gap-2">
+        <Metric label="Velocidade" value={session.speed_kmh.toFixed(1)} unit="km/h" />
+        <Metric label="Potência" value={`${session.power_watts}`} unit="W" color="text-yellow-400" />
+        <Metric label="Cadência" value={`${session.cadence_rpm}`} unit="rpm" color="text-blue-400" />
+        <Metric label="Bateria" value={`${session.battery_pct}`} unit="%"
+          color={session.battery_pct > 30 ? 'text-emerald-400' : 'text-red-400'} />
+        <Metric label="Distância" value={session.distance_km.toFixed(1)} unit="km" />
+      </div>
+
+      {/* Live metrics — row 2 */}
+      <div className="grid grid-cols-5 gap-2">
+        <Metric label="Vel. Média" value={session.avg_speed_kmh.toFixed(1)} unit="km/h" color="text-gray-300" />
+        <Metric label="Modo" value={MODE_NAMES[session.assist_mode] ?? '?'} unit=""
+          color={session.assist_mode === 5 ? 'text-red-400' : 'text-gray-300'} />
+        <Metric label="Gear" value={`${session.gear}/${session.total_gears}`} unit="" color="text-gray-300" />
+        {session.heart_rate > 0 && <Metric label="FC" value={`${session.heart_rate}`} unit="bpm" color="text-red-400" />}
+        <Metric label="Desnível" value={`${Math.round(session.elevation_gain_m)}`} unit="m" color="text-cyan-400" />
+      </div>
+
+      {/* Range + altitude row */}
+      <div className="grid grid-cols-5 gap-2">
+        {session.range_km > 0 && <Metric label="Autonomia" value={session.range_km.toFixed(0)} unit="km" color="text-emerald-400" />}
+        {session.altitude != null && <Metric label="Altitude" value={`${Math.round(session.altitude)}`} unit="m" color="text-cyan-400" />}
+      </div>
 
       {/* Map */}
       {hasGPS && (
@@ -230,7 +278,9 @@ export function LiveRideView() {
       {altData.length > 5 && (
         <div className="bg-gray-800 rounded-xl p-3">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-bold text-gray-400">Altimetria</span>
+            <span className="text-xs font-bold text-gray-400">
+              {elevProfile ? 'Perfil da Rota' : 'Altimetria'}
+            </span>
             {altData.length > 0 && (
               <span className="text-[10px] text-gray-600">
                 {altData[0]!.alt}m → {altData[altData.length - 1]!.alt}m
@@ -253,10 +303,7 @@ export function LiveRideView() {
                 <Tooltip
                   contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: 8, fontSize: 11 }}
                   labelFormatter={(v) => `${v} km`}
-                  formatter={(value: number, name: string) => [
-                    name === 'alt' ? `${value}m` : `${value}%`,
-                    name === 'alt' ? 'Altitude' : 'Gradiente'
-                  ]}
+                  formatter={(value: number) => [`${value}m`, 'Altitude']}
                 />
                 <Area type="monotone" dataKey="alt" stroke="#10b981" fill="url(#altGrad)" strokeWidth={2} />
               </AreaChart>

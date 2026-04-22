@@ -369,24 +369,25 @@ function renderPage(session, points) {
   const bikeName = session.bike_name || '';
   const lastPoint = points.length ? points[points.length - 1] : null;
 
-  // Extract KPIs from session or last point
-  const speed = lastPoint?.speed_kmh ?? session.current_speed_kmh ?? null;
+  // Extract KPIs — tracking_points has: lat, lng, altitude, speed_kmh, heart_rate, recorded_at
+  // Everything else comes from tracking_sessions (PATCHed every 15s with full snapshot)
+  const speed = lastPoint?.speed_kmh ?? session.speed_kmh ?? null;
   const avgSpeed = session.avg_speed_kmh ?? null;
-  const distance = session.distance_km ?? lastPoint?.distance_km ?? null;
-  const battery = lastPoint?.battery_pct ?? session.battery_pct ?? null;
+  const distance = session.distance_km ?? null;
+  const battery = session.battery_pct ?? null;
   const range = session.range_km ?? null;
-  const hr = lastPoint?.hr_bpm ?? session.hr_bpm ?? null;
-  const power = lastPoint?.power_w ?? session.power_w ?? null;
-  const cadence = lastPoint?.cadence_rpm ?? session.cadence_rpm ?? null;
-  const gear = session.gear_display ?? (lastPoint?.gear ? lastPoint.gear : null);
-  const elevation = lastPoint?.altitude_m ?? session.altitude_m ?? null;
+  const hr = lastPoint?.heart_rate ?? session.heart_rate ?? null;
+  const power = session.power_watts ?? null;
+  const cadence = session.cadence_rpm ?? null;
+  const gear = session.gear != null ? `${session.gear}/${session.total_gears || 12}` : null;
+  const elevation = lastPoint?.altitude ?? session.altitude ?? null;
   const eleGain = session.elevation_gain_m ?? null;
-  const mode = lastPoint?.assist_mode ?? session.assist_mode ?? null;
+  const mode = session.assist_mode ?? null;
 
   // Route progress
   const routeName = session.route_name ?? null;
   const routeTotalKm = session.route_total_km ?? null;
-  const routeProgressPct = (routeTotalKm && distance) ? Math.min(100, (distance / routeTotalKm) * 100) : null;
+  const routeProgressPct = session.route_progress_pct ?? ((routeTotalKm && session.route_done_km != null) ? Math.min(100, (session.route_done_km / routeTotalKm) * 100) : null);
   const routeEta = session.route_eta_min ?? null;
 
   let html = '';
@@ -509,7 +510,7 @@ function renderPage(session, points) {
   // Route progress (only if route data exists)
   if (routeName || routeTotalKm) {
     const pct = routeProgressPct ?? 0;
-    const done = distance ?? 0;
+    const done = session.route_done_km ?? distance ?? 0;
     const total = routeTotalKm ?? 0;
     const remaining = Math.max(0, total - done);
     const etaStr = routeEta != null ? formatEta(routeEta) : '--';
@@ -969,6 +970,7 @@ async function pollUpdates(session) {
     // Check if session ended
     if (!updatedSession.is_active) {
       clearInterval(pollInterval);
+      if (window._pulseInterval) { clearInterval(window._pulseInterval); window._pulseInterval = null; }
     }
 
     // Fetch new tracking points
@@ -1025,7 +1027,7 @@ async function pollUpdates(session) {
     updateKPIs(updatedSession, pts.length ? pts[pts.length - 1] : null);
 
     // Inactivity alert
-    const speed = updatedSession.speed_kmh || updatedSession.current_speed_kmh || 0;
+    const speed = updatedSession.speed_kmh || 0;
     if (speed > 1) lastMovingTs = Date.now();
     const stoppedMin = Math.round((Date.now() - lastMovingTs) / 60000);
 
@@ -1117,18 +1119,18 @@ function updateKPIs(session, lastPoint) {
   const grid = document.getElementById('kpi-grid');
   if (!grid) return;
 
-  const speed = lastPoint?.speed_kmh ?? session.current_speed_kmh ?? null;
+  const speed = lastPoint?.speed_kmh ?? session.speed_kmh ?? null;
   const avgSpeed = session.avg_speed_kmh ?? null;
-  const distance = session.distance_km ?? lastPoint?.distance_km ?? null;
-  const battery = lastPoint?.battery_pct ?? session.battery_pct ?? null;
+  const distance = session.distance_km ?? null;
+  const battery = session.battery_pct ?? null;
   const range = session.range_km ?? null;
-  const hr = lastPoint?.hr_bpm ?? session.hr_bpm ?? null;
-  const power = lastPoint?.power_w ?? session.power_w ?? null;
-  const cadence = lastPoint?.cadence_rpm ?? session.cadence_rpm ?? null;
-  const gear = session.gear_display ?? (lastPoint?.gear ? lastPoint.gear : null);
-  const elevation = lastPoint?.altitude_m ?? session.altitude_m ?? null;
+  const hr = lastPoint?.heart_rate ?? session.heart_rate ?? null;
+  const power = session.power_watts ?? null;
+  const cadence = session.cadence_rpm ?? null;
+  const gear = session.gear != null ? `${session.gear}/${session.total_gears || 12}` : null;
+  const elevation = lastPoint?.altitude ?? session.altitude ?? null;
   const eleGain = session.elevation_gain_m ?? null;
-  const mode = lastPoint?.assist_mode ?? session.assist_mode ?? null;
+  const mode = session.assist_mode ?? null;
 
   let html = '';
   html += kpiCell('Velocidade', formatNum(speed, 1), 'km/h', 'green');
@@ -1147,14 +1149,15 @@ function updateKPIs(session, lastPoint) {
 
   // Update route progress if present
   const routeSection = document.getElementById('route-section');
-  if (routeSection && session.route_total_km && distance != null) {
-    const pct = Math.min(100, (distance / session.route_total_km) * 100);
+  if (routeSection && session.route_total_km) {
+    const pct = session.route_progress_pct ?? (session.route_done_km != null ? Math.min(100, (session.route_done_km / session.route_total_km) * 100) : 0);
+    const done = session.route_done_km ?? distance ?? 0;
     const fill = routeSection.querySelector('.progress-fill');
     if (fill) fill.style.width = pct.toFixed(1) + '%';
     const stats = routeSection.querySelector('.route-stats');
     if (stats) {
       const etaStr = session.route_eta_min != null ? formatEta(session.route_eta_min) : '--';
-      stats.innerHTML = `<span>${distance.toFixed(1)}/${session.route_total_km.toFixed(1)} km</span><span style="font-weight:700;color:#3fff8b">${Math.round(pct)}%</span><span>ETA ${etaStr}</span>`;
+      stats.innerHTML = `<span>${done.toFixed(1)}/${session.route_total_km.toFixed(1)} km</span><span style="font-weight:700;color:#3fff8b">${Math.round(pct)}%</span><span>ETA ${etaStr}</span>`;
     }
   }
 }
@@ -1540,7 +1543,7 @@ function esc(str) {
   if (!str) return '';
   const div = document.createElement('div');
   div.textContent = String(str);
-  return div.innerHTML;
+  return div.innerHTML.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 }
 
 function showError(title, msg) {
