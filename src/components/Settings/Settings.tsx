@@ -502,13 +502,13 @@ function ClubPage() {
     } catch {}
   };
 
-  const joinClub = async (club: { id: string; name: string }) => {
+  const joinClub = async (club: { id: string; name: string }, asOwner = false) => {
     updateProfile({ club_id: club.id, club_name: club.name });
     if (userId) {
       supaFetch('/rest/v1/club_members', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' },
-        body: JSON.stringify({ club_id: club.id, user_id: userId, display_name: profile.name ?? 'Rider' }),
+        body: JSON.stringify({ club_id: club.id, user_id: userId, display_name: profile.name ?? 'Rider', ...(asOwner ? { role: 'owner' } : {}) }),
       }).catch(() => {});
     }
     setClubSearch(''); setClubs([]);
@@ -523,7 +523,7 @@ function ClubPage() {
         body: JSON.stringify({ name: newName.trim(), location: newLocation, color: newColor, website: newWebsite, description: newDescription, created_by: userId }),
       });
       const [c] = await r.json();
-      await joinClub(c);
+      await joinClub(c, true);
       setCreating(false);
       setNewName('');
     } catch {}
