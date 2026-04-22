@@ -12,9 +12,19 @@ import { WHEEL_CIRCUMFERENCE_M } from '../../types/bike.types';
  *   Bytes 9-10: last crank event time (uint16 LE, 1/1024 s)
  */
 export function parseCSC(data: DataView, prevState: CSCState): CSCResult {
+  if (data.byteLength < 1) {
+    return { speed_kmh: 0, cadence_rpm: 0, distance_km: prevState.distance_km };
+  }
+
   const flags = data.getUint8(0);
   const hasWheel = (flags & 0x01) !== 0;
   const hasCrank = (flags & 0x02) !== 0;
+
+  const expectedLen = 1 + (hasWheel ? 6 : 0) + (hasCrank ? 4 : 0);
+  if (data.byteLength < expectedLen) {
+    console.warn('[CSC] Short packet:', data.byteLength, 'expected', expectedLen);
+    return { speed_kmh: 0, cadence_rpm: 0, distance_km: prevState.distance_km };
+  }
 
   let offset = 1;
   let speed_kmh = 0;

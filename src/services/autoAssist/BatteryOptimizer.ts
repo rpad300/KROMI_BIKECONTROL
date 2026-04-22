@@ -105,8 +105,8 @@ export function computeBatteryBudget(
     ? effective_wh / consumption_wh_km
     : 999;
 
-  // Emergency check
-  const is_emergency = estimated_range_km < 5;
+  // Emergency check (range-based — may be upgraded by SOC floor below)
+  let is_emergency = estimated_range_km < 5;
 
   // Budget ratio
   let budget_ratio = Infinity;
@@ -127,6 +127,16 @@ export function computeBatteryBudget(
     constraint_factor = 0.85;
   }
   // budget_ratio >= 1.0 or no route → 1.0
+
+  // SOC-based emergency floor — mandatory per CLAUDE.md
+  // Overrides range-based estimate: range can be inaccurate when
+  // consumption data is sparse, but SOC is always reliable.
+  if (batterySoc < 15) {
+    constraint_factor = Math.min(constraint_factor, 0.20);
+    is_emergency = true;
+  } else if (batterySoc < 30) {
+    constraint_factor = Math.min(constraint_factor, 0.65);
+  }
 
   return {
     remaining_wh: effective_wh,

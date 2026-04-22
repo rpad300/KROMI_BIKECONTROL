@@ -41,6 +41,21 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // Rate limit — 10 calls per 60s per IP
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    const { data: allowed } = await supabase.rpc("check_rate_limit", {
+      p_function: "login-by-device",
+      p_ip: ip,
+      p_max_calls: 10,
+      p_window_seconds: 60,
+    });
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: "rate_limited" }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Look up the device registration
     const { data: dev } = await supabase
       .from("device_tokens")

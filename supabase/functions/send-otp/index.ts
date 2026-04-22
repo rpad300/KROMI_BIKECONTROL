@@ -65,7 +65,9 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const arr = new Uint32Array(1);
+    crypto.getRandomValues(arr);
+    const code = String(100000 + (arr[0]! % 900000));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
     await supabase.from("otp_codes").insert({

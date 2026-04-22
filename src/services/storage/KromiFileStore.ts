@@ -44,6 +44,7 @@ export type FileCategory =
   | 'shop_photo'
   | 'profile'
   | 'receipt'
+  | 'ride_photo'
   | 'other';
 
 export type FileEntityType =
@@ -134,6 +135,7 @@ const PERSONAL_CATEGORIES = new Set<FileCategory>([
   'service_photo',
   'bikefit_photo',
   'ride_export',
+  'ride_photo',
   'route',
   'profile',
   'receipt',
@@ -177,6 +179,9 @@ export function resolveFolderPath(opts: FolderResolveOptions): string[] {
 
     case 'ride_export':
       return [...userPrefix, 'activities', `${yyyy}-${mm}`, opts.entityId ?? 'unknown'];
+
+    case 'ride_photo':
+      return [...userPrefix, 'activities', `${yyyy}-${mm}`, opts.entityId ?? 'photos'];
 
     case 'route':
       return [...userPrefix, 'routes'];

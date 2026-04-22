@@ -646,7 +646,10 @@ class LocalRideStore {
           try {
             await supaFetchWithTimeout('/rest/v1/ride_snapshots', {
               method: 'POST',
-              headers: supaPostHeaders(),
+              // ignore-duplicates makes the POST idempotent: if a retry
+              // re-sends rows that already landed (partial success), the
+              // duplicates are silently skipped rather than causing a 409.
+              headers: supaPostHeaders({ 'Prefer': 'return=minimal,resolution=ignore-duplicates' }),
               body: JSON.stringify(supaRows),
             });
             await this.markSnapshotsSynced(unsynced.map(s => s.auto_id!));

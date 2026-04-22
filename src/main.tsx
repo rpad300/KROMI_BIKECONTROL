@@ -119,13 +119,11 @@ async function requestWakeLock(): Promise<void> {
   }
 }
 
-// Only init WakeLock on mobile (not desktop)
+// Request Wake Lock on all platforms — the function already guards with
+// `if (!('wakeLock' in navigator)) return` for unsupported browsers.
 // NOTE: initBLE() moved to App.tsx MainApp — runs AFTER startSettingsSync()
 // so autoConnectSensors() reads the user's actual bike config, not defaults.
-const isMobile = /android|iphone|ipad|mobile/i.test(navigator.userAgent) || window.innerWidth < 768;
-if (isMobile) {
-  requestWakeLock();
-}
+requestWakeLock();
 
 // Start adaptive brightness — auto-adjusts theme based on ambient light from BLE bridge
 import('./services/sensors/AdaptiveBrightnessService').then(({ adaptiveBrightnessService }) => {

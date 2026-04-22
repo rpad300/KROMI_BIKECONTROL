@@ -52,6 +52,8 @@ export default defineConfig({
         clientsClaim: true,
         // Clean old precache on update
         cleanupOutdatedCaches: true,
+        // SPA fallback — serve index.html for all navigation requests
+        navigateFallback: '/index.html',
         // Don't intercept standalone HTML pages (served as static files, not SPA)
         navigateFallbackDenylist: [/^\/live\.html/, /^\/emergency\.html/],
         runtimeCaching: [
@@ -61,6 +63,15 @@ export default defineConfig({
             options: {
               cacheName: 'google-maps-cache',
               expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'google-fonts-cache',
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
             },
           },
         ],

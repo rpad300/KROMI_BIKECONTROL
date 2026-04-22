@@ -97,7 +97,7 @@ export function PersistentBar() {
       {/* HR */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
         <span ref={hrIconRef} className="material-symbols-outlined" style={{ fontSize: '12px', color: 'var(--ev-outline-variant)', fontVariationSettings: "'FILL' 1" }}>favorite</span>
-        <span ref={hrRef} className="font-mono font-bold tabular-nums" style={{ fontSize: '13px', color: 'var(--ev-on-surface-muted)' }}>--</span>
+        <span ref={hrRef} className="font-mono font-bold tabular-nums" style={{ fontSize: '16px', color: 'var(--ev-on-surface-muted)' }}>--</span>
         <span ref={zoneRef} className="font-headline font-bold" style={{ fontSize: '9px', color: 'black', padding: '0 3px', borderRadius: '2px' }} />
       </div>
 
@@ -130,7 +130,7 @@ export function PersistentBar() {
       {shareUrl && (
         <button
           onClick={handleShareLive}
-          style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+          style={{ background: 'none', border: 'none', padding: '0', minWidth: '44px', minHeight: '44px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           title="Partilhar live tracking"
         >
           <span className="material-symbols-outlined" style={{ fontSize: '14px', color: '#555' }}>share</span>

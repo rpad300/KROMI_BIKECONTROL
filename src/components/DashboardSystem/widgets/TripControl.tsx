@@ -58,8 +58,8 @@ export function TripControl() {
         <button
           onClick={startTrip}
           style={{
-            padding: '8px 24px', backgroundColor: '#3fff8b', color: 'black', border: 'none',
-            fontFamily: "'Space Grotesk'", fontWeight: 900, fontSize: '13px', textTransform: 'uppercase',
+            padding: '0 24px', minHeight: '64px', backgroundColor: '#3fff8b', color: 'black', border: 'none',
+            fontFamily: "'Space Grotesk'", fontWeight: 900, fontSize: '16px', textTransform: 'uppercase',
             letterSpacing: '0.05em', cursor: 'pointer',
           }}
         >
@@ -76,10 +76,10 @@ export function TripControl() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <span className="material-symbols-outlined" style={{ fontSize: '14px', color: '#3fff8b' }}>timer</span>
-          <span ref={timeRef} className="font-headline font-bold tabular-nums" style={{ fontSize: '16px', color: '#3fff8b' }}>0:00</span>
+          <span ref={timeRef} className="font-headline font-bold tabular-nums" style={{ fontSize: '24px', color: '#3fff8b' }}>0:00</span>
         </div>
-        <span ref={distRef} className="font-headline tabular-nums" style={{ fontSize: '13px', color: '#adaaaa' }}>0.0 km</span>
-        <span ref={avgRef} className="font-headline tabular-nums" style={{ fontSize: '11px', color: '#777575' }} />
+        <span ref={distRef} className="font-headline tabular-nums" style={{ fontSize: '24px', color: '#adaaaa' }}>0.0 km</span>
+        <span ref={avgRef} className="font-headline tabular-nums" style={{ fontSize: '13px', color: '#777575' }} />
       </div>
 
       {/* Pause indicator */}
@@ -89,8 +89,8 @@ export function TripControl() {
       <button
         onClick={stopTrip}
         style={{
-          padding: '6px 16px', backgroundColor: '#ff716c', color: 'black', border: 'none',
-          fontFamily: "'Space Grotesk'", fontWeight: 900, fontSize: '11px', textTransform: 'uppercase',
+          padding: '0 16px', minHeight: '44px', backgroundColor: '#ff716c', color: 'black', border: 'none',
+          fontFamily: "'Space Grotesk'", fontWeight: 900, fontSize: '13px', textTransform: 'uppercase',
           cursor: 'pointer',
         }}
       >

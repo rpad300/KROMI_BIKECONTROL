@@ -61,6 +61,7 @@ interface BikeState {
   ride_time_s: number;
   power_avg: number;
   power_max: number;
+  power_sample_count: number;
   speed_max: number;
 
   // Heart rate (Phase 3)
@@ -175,7 +176,7 @@ interface BikeState {
     | 'battery_voltage' | 'torque_nm' | 'assist_current_a' | 'calories'
     | 'elevation_gain_m' | 'front_gear' | 'rear_gear' | 'trip_distance_km'
     | 'trip_time_s' | 'motor_odo_km' | 'motor_total_hours' | 'error_code'
-    | 'ride_time_s' | 'power_avg' | 'power_max' | 'speed_max'
+    | 'ride_time_s' | 'power_avg' | 'power_max' | 'power_sample_count' | 'speed_max'
     | 'hr_bpm' | 'hr_zone' | 'spo2_pct' | 'gear' | 'is_shifting'
     | 'di2_battery' | 'shift_count' | 'total_gears' | 'tpms_front_psi' | 'tpms_rear_psi'
     | 'radar_threat_level' | 'radar_distance_m' | 'radar_speed_kmh' | 'last_update_ms'
@@ -229,6 +230,7 @@ export const useBikeStore = create<BikeState>((set, get) => ({
   ride_time_s: 0,
   power_avg: 0,
   power_max: 0,
+  power_sample_count: 0,
   speed_max: 0,
   hr_bpm: 0,
   hr_zone: 0,
@@ -290,14 +292,15 @@ export const useBikeStore = create<BikeState>((set, get) => ({
   setCadence: (v) => set({ cadence_rpm: v }),
 
   setPower: (v) =>
-    set((state) => ({
-      power_watts: v,
-      power_max: Math.max(state.power_max, v),
-      power_avg:
-        state.ride_time_s > 0
-          ? (state.power_avg * state.ride_time_s + v) / (state.ride_time_s + 1)
-          : v,
-    })),
+    set((state) => {
+      const count = state.power_sample_count;
+      return {
+        power_watts: v,
+        power_max: Math.max(state.power_max, v),
+        power_avg: count > 0 ? (state.power_avg * count + v) / (count + 1) : v,
+        power_sample_count: count + 1,
+      };
+    }),
 
   setAssistMode: (v) => set({ assist_mode: v as AssistMode }),
 
@@ -419,6 +422,7 @@ export const useBikeStore = create<BikeState>((set, get) => ({
       ride_time_s: 0,
       power_avg: 0,
       power_max: 0,
+      power_sample_count: 0,
       speed_max: 0,
       elevation_gain_m: 0,
     }),

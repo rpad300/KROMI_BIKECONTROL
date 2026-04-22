@@ -323,13 +323,15 @@ class GiantBLEService {
         // power_max / power_avg tracking is inlined here (mirrors setPower logic).
         batteryEstimationService.addSample(store.speed_kmh, result.power_watts, store.battery_percent);
         const range = batteryEstimationService.getEstimatedRange(store.battery_percent);
+        const count = store.power_sample_count;
+        const newAvg = count > 0
+          ? (store.power_avg * count + result.power_watts) / (count + 1)
+          : result.power_watts;
         store.batchUpdate({
           power_watts: result.power_watts,
           power_max: Math.max(store.power_max, result.power_watts),
-          power_avg:
-            store.ride_time_s > 0
-              ? (store.power_avg * store.ride_time_s + result.power_watts) / (store.ride_time_s + 1)
-              : result.power_watts,
+          power_avg: newAvg,
+          power_sample_count: count + 1,
           range_km: Math.round(range * 10) / 10,
         });
       });
@@ -449,22 +451,40 @@ class GiantBLEService {
       await new Promise(r => setTimeout(r, delay));
       this.reconnectAttempt++;
 
+      // Step 1: attempt GATT connect — failure stays in the reconnect loop
       try {
         if (this.device?.gatt) {
           this.server = await this.device.gatt.connect();
-          this.reconnectAttempt = 0;
-          useBikeStore.getState().setBLEStatus('connected');
-          await this.subscribeGatewayServices();
-          console.log('[BLE] Reconnected successfully');
-          return;
+        } else {
+          continue;
         }
       } catch (err) {
-        console.warn(`[BLE] Reconnect attempt ${this.reconnectAttempt} failed:`, err);
+        console.warn(`[BLE] Reconnect attempt ${this.reconnectAttempt} GATT failed:`, err);
+        continue;
       }
+
+      // Step 2: GATT is connected — exit reconnect loop regardless of service errors
+      this.reconnectAttempt = 0;
+      console.log('[BLE] Reconnected successfully');
+      break;
     }
 
-    console.error('[BLE] Max reconnect attempts reached');
-    useBikeStore.getState().setBLEStatus('disconnected');
+    // If we exited the loop without a server, we exhausted reconnect attempts
+    if (!this.server?.connected) {
+      console.error('[BLE] Max reconnect attempts reached');
+      useBikeStore.getState().setBLEStatus('disconnected');
+      return;
+    }
+
+    // Subscribe to services separately — failure here doesn't break GATT connection
+    try {
+      await this.subscribeGatewayServices();
+      useBikeStore.getState().setBLEStatus('connected');
+    } catch (err) {
+      console.warn('[BLE] Connected but service subscription failed:', err);
+      // Still mark as connected at GATT level so user can see partial data
+      useBikeStore.getState().setBLEStatus('connected');
+    }
   }
 
   isConnected(): boolean {

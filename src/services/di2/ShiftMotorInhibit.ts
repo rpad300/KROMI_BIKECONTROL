@@ -29,15 +29,26 @@ class ShiftMotorInhibit {
     this.initialized = true;
 
     di2Service.onShiftStart(async (event) => {
+      // Guard: if a shift inhibit is already active, don't overwrite savedMode.
+      // A rapid double-shift would otherwise capture ECO (the inhibited mode)
+      // as savedMode, then restore ECO instead of the original mode.
+      if (this.savedMode !== null) {
+        // Extend the safety timer so the resume doesn't fire mid-shift
+        if (this.timer) clearTimeout(this.timer);
+        this.timer = setTimeout(() => this.resume(), 400);
+        return;
+      }
+
       const currentMode = useBikeStore.getState().assist_mode;
+      // Nothing to inhibit if already in ECO or OFF
+      if (currentMode === AssistMode.ECO || currentMode === AssistMode.OFF) return;
+
       this.savedMode = currentMode;
       const dlog = (window as unknown as Record<string, (m: string) => void>).__dlog;
       dlog?.(`[ShiftInhibit] ${event.direction}: mode ${currentMode} → ECO`);
 
       // Reduce to ECO during shift (not OFF — would cause jerk)
-      if (currentMode !== AssistMode.ECO && currentMode !== AssistMode.OFF) {
-        await sendAssistMode(AssistMode.ECO);
-      }
+      await sendAssistMode(AssistMode.ECO);
 
       // Safety: always resume after 400ms even without Di2 confirmation
       if (this.timer) clearTimeout(this.timer);

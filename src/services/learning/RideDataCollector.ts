@@ -52,6 +52,8 @@ export interface RideSummary {
 const DB_NAME = 'bikecontrol';
 const DB_VERSION = 1;
 const STORE_RIDES = 'rides';
+const BACKUP_KEY = 'kromi_ride_collector_backup';
+
 class RideDataCollector {
   private static instance: RideDataCollector;
   private snapshots: RideSnapshot[] = [];
@@ -59,6 +61,7 @@ class RideDataCollector {
   private batteryStart = 0;
   private recording = false;
   private intervalId: ReturnType<typeof setInterval> | null = null;
+  private flushInterval: ReturnType<typeof setInterval> | null = null;
   private db: IDBDatabase | null = null;
 
   static getInstance(): RideDataCollector {
@@ -70,6 +73,27 @@ class RideDataCollector {
 
   async initialize(): Promise<void> {
     this.db = await this.openDB();
+
+    // Restore in-progress snapshots from emergency backup (tab-kill recovery)
+    try {
+      const raw = localStorage.getItem(BACKUP_KEY);
+      if (raw) {
+        const backup = JSON.parse(raw) as { snapshots: RideSnapshot[]; startedAt: number };
+        if (Array.isArray(backup.snapshots) && backup.snapshots.length > 0 && !this.recording) {
+          this.snapshots = backup.snapshots;
+          this.rideStartTime = backup.startedAt ?? Date.now();
+          console.log(`[RideDataCollector] Restored ${this.snapshots.length} snapshots from emergency backup`);
+        }
+      }
+    } catch { /* corrupt backup — ignore */ }
+
+    // Flush to localStorage every 60s as a safety net
+    this.flushInterval = setInterval(() => this.emergencyFlush(), 60_000);
+
+    // Flush immediately on page hide (tab close, background, navigation away)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') this.emergencyFlush();
+    });
   }
 
   startRecording(batteryPct: number): void {
@@ -86,6 +110,21 @@ class RideDataCollector {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
+    if (this.flushInterval) {
+      clearInterval(this.flushInterval);
+      this.flushInterval = null;
+    }
+  }
+
+  /** Persist in-progress snapshots to localStorage so a tab kill doesn't lose them. */
+  private emergencyFlush(): void {
+    if (this.snapshots.length === 0) return;
+    try {
+      localStorage.setItem(BACKUP_KEY, JSON.stringify({
+        snapshots: this.snapshots,
+        startedAt: this.rideStartTime,
+      }));
+    } catch { /* localStorage may be full — silently ignore */ }
   }
 
   isRecording(): boolean {
@@ -104,11 +143,17 @@ class RideDataCollector {
   /** Finalize ride: build summary, store in IndexedDB */
   async finalizeRide(batteryEnd: number): Promise<RideSummary | null> {
     this.stopRecording();
-    if (this.snapshots.length < 5) return null; // Too short
+    if (this.snapshots.length < 5) {
+      // Clear emergency backup even for too-short rides
+      try { localStorage.removeItem(BACKUP_KEY); } catch { /* ignore */ }
+      return null;
+    }
 
     const summary = this.buildSummary(batteryEnd);
     await this.saveToDB(summary);
     this.snapshots = [];
+    // Clear the emergency backup now that data is safely in IndexedDB
+    try { localStorage.removeItem(BACKUP_KEY); } catch { /* ignore */ }
     return summary;
   }
 

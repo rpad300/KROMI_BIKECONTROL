@@ -312,7 +312,7 @@ export const useAuthStore = create<AuthState>()(
         if (logId) params.set('log', logId);
         if (reason) params.set('reason', reason);
         const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
-        window.open(url, '_blank', 'noopener=no,noreferrer=no');
+        window.open(url, '_blank', 'noopener,noreferrer');
       },
 
       applyImpersonationFromUrl: async () => {

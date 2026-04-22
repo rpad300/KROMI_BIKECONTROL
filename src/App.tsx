@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { subscribeRideTick } from './services/RideTickService';
 import { DashboardController } from './components/DashboardSystem/DashboardController';
 import { MapView } from './components/Map/MapView';
 import { ClimbApproach } from './components/Climb/ClimbApproach';
@@ -34,6 +35,7 @@ import { AmbientGlance } from './components/DashboardSystem/AmbientGlance';
 import { RescueAlert } from './components/shared/RescueAlert';
 import { CrashAlertOverlay } from './components/shared/CrashAlertOverlay';
 import { DiagBadge } from './components/shared/DiagBadge';
+import { RideCameraButton } from './components/shared/RideCameraButton';
 import { startCrashMonitoring, stopCrashMonitoring } from './services/emergency/CrashDetectionService';
 import { initAutoTracking, cleanupAutoTracking } from './services/tracking/LiveTrackingService';
 import { useBikeStore } from './store/bikeStore';
@@ -161,10 +163,9 @@ function MobileApp() {
     return () => cleanupAutoTracking();
   }, []);
 
-  // Glance mode — tick idle counter every 1s
+  // Glance mode — tick idle counter every 1s (via master RideTickService)
   useEffect(() => {
-    const id = setInterval(() => useGlanceStore.getState().tick(), 1000);
-    return () => clearInterval(id);
+    return subscribeRideTick(() => useGlanceStore.getState().tick());
   }, []);
 
   // Reset glance idle on any touch
@@ -197,6 +198,7 @@ function MobileApp() {
         <NavButton label="Setup" icon="settings" active={screen === 'settings'} onClick={() => setScreen('settings')} />
       </nav>
 
+      {screen === 'dashboard' && <RideCameraButton />}
       <ConnectionStatus />
       <BridgeSetup />
       <AmbientGlance />
