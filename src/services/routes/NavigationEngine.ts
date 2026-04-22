@@ -11,16 +11,7 @@ import { useMapStore } from '../../store/mapStore';
 import { useRouteStore } from '../../store/routeStore';
 import { useBikeStore } from '../../store/bikeStore';
 import type { RoutePoint } from './GPXParser';
-
-// ── Haversine ────────────────────────────────────────────────
-function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
+import { haversineM } from '../gps/DouglasPeucker';
 
 function bearingDeg(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const dLng = (lng2 - lng1) * Math.PI / 180;
@@ -74,7 +65,7 @@ function findNearest(points: RoutePoint[], lat: number, lng: number, hint: numbe
   let bestDist = Infinity;
 
   for (let i = start; i <= end; i++) {
-    const d = haversineM(lat, lng, points[i]!.lat, points[i]!.lng);
+    const d = haversineM({ lat, lng }, { lat: points[i]!.lat, lng: points[i]!.lng });
     if (d < bestDist) {
       bestDist = d;
       bestIdx = i;
@@ -84,7 +75,7 @@ function findNearest(points: RoutePoint[], lat: number, lng: number, hint: numbe
   // If hint was way off (e.g. after re-route), full scan
   if (bestDist > 200) {
     for (let i = 0; i < points.length; i++) {
-      const d = haversineM(lat, lng, points[i]!.lat, points[i]!.lng);
+      const d = haversineM({ lat, lng }, { lat: points[i]!.lat, lng: points[i]!.lng });
       if (d < bestDist) {
         bestDist = d;
         bestIdx = i;
@@ -108,7 +99,7 @@ function processGpsUpdate() {
   lastProcessedIdx = idx;
 
   const nearest = points[idx]!;
-  const deviationM = haversineM(lat, lng, nearest.lat, nearest.lng);
+  const deviationM = haversineM({ lat, lng }, { lat: nearest.lat, lng: nearest.lng });
   const totalDist = points[points.length - 1]!.distance_from_start_m;
   const distFromStart = nearest.distance_from_start_m;
   const distRemaining = totalDist - distFromStart;

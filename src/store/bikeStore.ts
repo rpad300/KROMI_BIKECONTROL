@@ -167,6 +167,19 @@ interface BikeState {
   setBLEStatus: (status: BLEConnectionStatus) => void;
   setServiceConnected: (service: keyof BLEServiceStatus, connected: boolean) => void;
   resetSession: () => void;
+  /** Batch multiple state updates into a single Zustand notify cycle (one re-render). */
+  batchUpdate: (updates: Partial<Pick<BikeState,
+    | 'battery_percent' | 'speed_kmh' | 'cadence_rpm' | 'power_watts' | 'assist_mode'
+    | 'distance_km' | 'range_km' | 'range_per_mode' | 'range_estimated_modes'
+    | 'odo_km' | 'service_interval_km' | 'battery_main_pct' | 'battery_sub_pct'
+    | 'battery_voltage' | 'torque_nm' | 'assist_current_a' | 'calories'
+    | 'elevation_gain_m' | 'front_gear' | 'rear_gear' | 'trip_distance_km'
+    | 'trip_time_s' | 'motor_odo_km' | 'motor_total_hours' | 'error_code'
+    | 'ride_time_s' | 'power_avg' | 'power_max' | 'speed_max'
+    | 'hr_bpm' | 'hr_zone' | 'spo2_pct' | 'gear' | 'is_shifting'
+    | 'di2_battery' | 'shift_count' | 'total_gears' | 'tpms_front_psi' | 'tpms_rear_psi'
+    | 'radar_threat_level' | 'radar_distance_m' | 'radar_speed_kmh' | 'last_update_ms'
+  >>) => void;
 }
 
 export const useBikeStore = create<BikeState>((set, get) => ({
@@ -397,6 +410,8 @@ export const useBikeStore = create<BikeState>((set, get) => ({
     set((state) => ({
       ble_services: { ...state.ble_services, [service]: connected },
     })),
+
+  batchUpdate: (updates) => set(updates),
 
   resetSession: () =>
     set({

@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
+import { subscribeRideTick } from '../services/RideTickService';
 import { useBikeStore } from '../store/bikeStore';
 import { useMapStore } from '../store/mapStore';
 import { useAutoAssistStore } from '../store/autoAssistStore';
@@ -11,7 +12,7 @@ import { kromiEngine } from '../services/intelligence/KromiEngine';
 import { useNutritionStore } from '../store/nutritionStore';
 import { AssistMode } from '../types/bike.types';
 
-const TICK_INTERVAL_MS = 1000;
+// useMotorControl runs on the 1-second master RideTickService tick
 
 // Map a real value to wire 0-15
 function toWire(value: number, min: number, max: number): number {
@@ -102,8 +103,6 @@ function getGpsGradient(altitude: number | null, speedKmh: number, distanceKm: n
  * 4. Send SET_TUNING if wire values changed
  */
 export function useMotorControl() {
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => {
     // Sync auto-assist config with 500m lookahead for v2
     const unsub = useSettingsStore.subscribe((state) => {
@@ -113,7 +112,7 @@ export function useMotorControl() {
     const settings = useSettingsStore.getState();
     autoAssistEngine.updateConfig({ ...settings.autoAssist, lookahead_m: 500 });
 
-    intervalRef.current = setInterval(async () => {
+    const tickFn = async () => {
       const bike = useBikeStore.getState();
       const intelligence = useIntelligenceStore.getState();
 
@@ -287,10 +286,12 @@ export function useMotorControl() {
           lastAdvancedTuning = { support, torque, launch };
         }
       }
-    }, TICK_INTERVAL_MS);
+    };
+
+    const unsubTick = subscribeRideTick(tickFn);
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      unsubTick();
       kromiEngine.reset();
       unsub();
     };

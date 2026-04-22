@@ -11,18 +11,16 @@
  * Also feeds route data into KromiEngine's LookaheadController.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
+import { subscribeRideTick2s } from '../services/RideTickService';
 import { useMapStore } from '../store/mapStore';
 import { useRouteStore } from '../store/routeStore';
 import type { RoutePoint } from '../services/routes/GPXParser';
-
-const NAV_INTERVAL_MS = 2000;
+import { haversineM } from '../services/gps/DouglasPeucker';
 
 export function useRouteNavigation() {
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => {
-    intervalRef.current = setInterval(() => {
+    const tickFn = () => {
       const { navigation, activeRoutePoints, updateNavigation } = useRouteStore.getState();
       if (!navigation.active || activeRoutePoints.length < 2) return;
 
@@ -89,10 +87,12 @@ export function useRouteNavigation() {
           bridge?.setGradient?.(routeGradient);
         }
       }
-    }, NAV_INTERVAL_MS);
+    };
+
+    const unsubTick = subscribeRideTick2s(tickFn);
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      unsubTick();
     };
   }, []);
 }
@@ -109,22 +109,13 @@ function findNearest(
 
   for (let i = start; i < end; i++) {
     const p = points[i]!;
-    const d = haversineM(lat, lng, p.lat, p.lng);
+    const d = haversineM({ lat, lng }, { lat: p.lat, lng: p.lng });
     if (d < bestDist) {
       bestDist = d;
       bestIdx = i;
     }
   }
   return { idx: bestIdx, dist: bestDist };
-}
-
-function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function calculateBearing(lat1: number, lon1: number, lat2: number, lon2: number): number {

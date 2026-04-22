@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
+import { subscribeRideTick2s } from '../services/RideTickService';
 import { useBikeStore } from '../store/bikeStore';
 import { useMapStore } from '../store/mapStore';
 import { useAutoAssistStore } from '../store/autoAssistStore';
@@ -9,15 +10,11 @@ import { sendAssistMode, isBikeConnected } from '../services/bluetooth/BLEBridge
 import { torqueEngine } from '../services/torque/TorqueEngine';
 import { AssistMode } from '../types/bike.types';
 
-const TICK_INTERVAL_MS = 2000; // Run every 2 seconds
-
 /**
  * Main auto-assist loop. Connects GPS + elevation + engine + BLE.
- * Runs every 2s when auto-assist is enabled and GPS is active.
+ * Runs every 2s (via master RideTickService 2s cadence) when auto-assist is enabled and GPS is active.
  */
 export function useAutoAssist() {
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => {
     // Sync config from settings store to engine
     const unsub = useSettingsStore.subscribe((state) => {
@@ -28,8 +25,8 @@ export function useAutoAssist() {
     // Initial sync
     autoAssistEngine.updateConfig(useSettingsStore.getState().autoAssist);
 
-    // Start tick loop
-    intervalRef.current = setInterval(async () => {
+    // Start tick loop (2s cadence via master RideTickService)
+    const tickFn = async () => {
       const settings = useSettingsStore.getState();
       if (!settings.autoAssist.enabled) return;
 
@@ -117,10 +114,12 @@ export function useAutoAssist() {
       } catch (err) {
         console.warn('[AutoAssist] BiometricAssist error:', err);
       }
-    }, TICK_INTERVAL_MS);
+    };
+
+    const unsubTick = subscribeRideTick2s(tickFn);
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      unsubTick();
       unsub();
     };
   }, []);

@@ -29,6 +29,7 @@ import {
   type ExplorationRoute,
   type DifficultyLevel,
 } from '../../services/routes/ExplorationService';
+import { haversineM } from '../../services/gps/DouglasPeucker';
 
 // ── Gradient color for route segments ────────────────────────
 function gradientColor(gradient: number): string {
@@ -515,20 +516,6 @@ const DIFFICULTY_LEGEND: { level: DifficultyLevel; color: string }[] = [
   { level: 'extreme', color: '#a855f7' },
 ];
 
-// ── Haversine for cumulative distance ────────────────────────
-function haversineDist(
-  lat1: number, lng1: number,
-  lat2: number, lng2: number,
-): number {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 6_371_000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
 // ── ExplorationView ──────────────────────────────────────────
 function ExplorationView() {
   const [routes, setRoutes] = useState<ExplorationRoute[]>([]);
@@ -682,7 +669,7 @@ function ExplorationView() {
       const pt = route.points[i]!;
       if (i > 0) {
         const prev = route.points[i - 1]!;
-        cumulDist += haversineDist(prev.lat, prev.lng, pt.lat, pt.lng);
+        cumulDist += haversineM({ lat: prev.lat, lng: prev.lng }, { lat: pt.lat, lng: pt.lng });
       }
       routePointsList.push({
         lat: pt.lat,

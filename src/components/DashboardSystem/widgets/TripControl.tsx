@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTripStore } from '../../../store/tripStore';
 import { TripSummaryModal } from './TripSummaryModal';
+import { subscribeRideTick } from '../../../services/RideTickService';
 
 /** Trip control bar — start/stop + live stats (DOM refs for zero flicker) */
 export function TripControl() {
@@ -14,10 +15,9 @@ export function TripControl() {
   const pauseRef = useRef<HTMLSpanElement>(null);
   const avgRef = useRef<HTMLSpanElement>(null);
 
-  // Tick every second
+  // Tick every second (via master RideTickService)
   useEffect(() => {
-    const interval = setInterval(() => useTripStore.getState().tick(), 1000);
-    return () => clearInterval(interval);
+    return subscribeRideTick(() => useTripStore.getState().tick());
   }, []);
 
   // Show summary modal when trip finishes

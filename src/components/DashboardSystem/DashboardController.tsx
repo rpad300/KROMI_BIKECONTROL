@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { subscribeRideTick } from '../../services/RideTickService';
 import { useDashboardStore } from '../../store/dashboardStore';
 import { useAutoAssistStore } from '../../store/autoAssistStore';
 import { useLayoutStore } from '../../store/layoutStore';
@@ -35,12 +36,9 @@ export function DashboardController() {
     return unsub;
   }, []);
 
-  // Manual override timeout tick (1s interval)
+  // Manual override timeout tick (via master RideTickService)
   useEffect(() => {
-    const interval = setInterval(() => {
-      useDashboardStore.getState().tick();
-    }, 1000);
-    return () => clearInterval(interval);
+    return subscribeRideTick(() => useDashboardStore.getState().tick());
   }, []);
 
   // Start/stop NavigationEngine + RoutePacingService when route navigation changes

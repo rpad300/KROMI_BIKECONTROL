@@ -287,14 +287,19 @@ class GiantBLEService {
         const value = (e.target as BluetoothRemoteGATTCharacteristic).value!;
         const result = parseCSC(value, this.cscState);
         const store = useBikeStore.getState();
-        store.setSpeed(result.speed_kmh);
-        store.setCadence(result.cadence_rpm);
-        store.setDistance(result.distance_km);
 
-        // Update range estimation
+        // Batch speed + cadence + distance into one Zustand notify cycle.
+        // speed_max tracking is inlined here (mirrors setSpeed logic).
         batteryEstimationService.addSample(result.speed_kmh, store.power_watts, store.battery_percent);
         const range = batteryEstimationService.getEstimatedRange(store.battery_percent);
-        store.setRange(range);
+        store.batchUpdate({
+          speed_kmh: Math.round(result.speed_kmh * 10) / 10,
+          speed_max: Math.max(store.speed_max, result.speed_kmh),
+          cadence_rpm: result.cadence_rpm,
+          distance_km: Math.round(result.distance_km * 100) / 100,
+          range_km: Math.round(range * 10) / 10,
+          last_update_ms: Date.now(),
+        });
       });
       useBikeStore.getState().setServiceConnected('csc', true);
     } catch (err) {
@@ -313,12 +318,20 @@ class GiantBLEService {
         const value = (e.target as BluetoothRemoteGATTCharacteristic).value!;
         const result = parsePower(value);
         const store = useBikeStore.getState();
-        store.setPower(result.power_watts);
 
-        // Update range estimation
+        // Batch power + derived stats + range into one Zustand notify cycle.
+        // power_max / power_avg tracking is inlined here (mirrors setPower logic).
         batteryEstimationService.addSample(store.speed_kmh, result.power_watts, store.battery_percent);
         const range = batteryEstimationService.getEstimatedRange(store.battery_percent);
-        store.setRange(range);
+        store.batchUpdate({
+          power_watts: result.power_watts,
+          power_max: Math.max(store.power_max, result.power_watts),
+          power_avg:
+            store.ride_time_s > 0
+              ? (store.power_avg * store.ride_time_s + result.power_watts) / (store.ride_time_s + 1)
+              : result.power_watts,
+          range_km: Math.round(range * 10) / 10,
+        });
       });
       useBikeStore.getState().setServiceConnected('power', true);
     } catch (err) {

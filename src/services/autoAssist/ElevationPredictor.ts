@@ -16,6 +16,7 @@
 
 import type { ElevationPoint } from '../../types/elevation.types';
 import { computeForces, type PhysicsInput } from '../intelligence/PhysicsEngine';
+import { haversineM } from '../gps/DouglasPeucker';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -576,7 +577,7 @@ export class LookaheadController {
 
     for (let i = start; i < end; i++) {
       const p = this.gpxRoute[i]!;
-      const d = haversineM(lat, lng, p.lat, p.lng);
+      const d = haversineM({ lat, lng }, { lat: p.lat, lng: p.lng });
       if (d < bestDist) {
         bestDist = d;
         bestIdx = i;
@@ -814,12 +815,3 @@ function emptyResult(): Omit<LookaheadResult, 'mode' | 'route_remaining_km'> {
   };
 }
 
-/** Haversine distance in meters */
-function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
