@@ -21,7 +21,7 @@ import {
 
 interface UserRow { created_at: string; email?: string }
 interface FileRow { created_at: string; size_bytes: number | null; file_name?: string }
-interface ImpRow { started_at: string; admin_email?: string; target_email?: string }
+interface ImpRow { started_at: string; admin_user_id?: string; impersonated_user_id?: string }
 interface RideRow { started_at: string; user_id: string }
 
 type FeedItem =
@@ -52,7 +52,7 @@ export function AdminDashboardPage() {
       const [users, files, imps, rides] = await Promise.all([
         supaGet<UserRow[]>('/rest/v1/app_users?select=created_at,email&order=created_at.asc&limit=5000'),
         supaGet<FileRow[]>('/rest/v1/kromi_files?select=created_at,size_bytes,file_name&order=created_at.asc&limit=10000'),
-        supaGet<ImpRow[]>('/rest/v1/impersonation_log?select=started_at,admin_email,target_email&order=started_at.asc&limit=2000'),
+        supaGet<ImpRow[]>('/rest/v1/impersonation_log?select=started_at,admin_user_id,impersonated_user_id&order=started_at.asc&limit=2000'),
         supaGet<RideRow[]>('/rest/v1/ride_sessions?select=started_at,user_id&order=started_at.desc&limit=200'),
       ]);
       const safeUsers = Array.isArray(users) ? users : [];
@@ -111,7 +111,7 @@ export function AdminDashboardPage() {
       })),
       ...stats.imps.map<FeedItem>((i) => ({
         kind: 'imp', at: i.started_at,
-        label: `${i.admin_email ?? '?'} → ${i.target_email ?? '?'}`,
+        label: `${(i.admin_user_id ?? '?').slice(0, 8)} → ${(i.impersonated_user_id ?? '?').slice(0, 8)}`,
       })),
       ...stats.rides.map<FeedItem>((r) => ({
         kind: 'ride', at: r.started_at, label: r.user_id.slice(0, 8),
