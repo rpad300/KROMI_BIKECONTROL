@@ -92,11 +92,17 @@ export function AdminUserDetail({ userId, onBack }: { userId: string; onBack: ()
 
   const toggleRole = async (roleId: string) => {
     if (!adminId) return;
+    const prev = new Set(userRoleIds);
     const next = new Set(userRoleIds);
     if (next.has(roleId)) next.delete(roleId);
     else next.add(roleId);
-    setUserRoleIds(next);
-    await setUserRoles(userId, Array.from(next), adminId);
+    setUserRoleIds(next); // optimistic
+    try {
+      await setUserRoles(userId, Array.from(next), adminId);
+    } catch (err) {
+      setUserRoleIds(prev); // revert on failure
+      alert(`Erro ao atribuir role: ${(err as Error).message}`);
+    }
   };
 
   const flagFor = (key: string): FeatureFlagMode | null => {
@@ -106,12 +112,16 @@ export function AdminUserDetail({ userId, onBack }: { userId: string; onBack: ()
 
   const setFlag = async (key: string, mode: FeatureFlagMode | null) => {
     if (!adminId) return;
-    if (mode === null) {
-      await clearUserFeatureFlag(userId, key);
-    } else {
-      await setUserFeatureFlag(userId, key, mode, adminId);
+    try {
+      if (mode === null) {
+        await clearUserFeatureFlag(userId, key);
+      } else {
+        await setUserFeatureFlag(userId, key, mode, adminId);
+      }
+      setFlags(await getUserFeatureFlags(userId));
+    } catch (err) {
+      alert(`Erro ao definir flag: ${(err as Error).message}`);
     }
-    setFlags(await getUserFeatureFlags(userId));
   };
 
   const handleSuspend = async () => {
@@ -119,14 +129,22 @@ export function AdminUserDetail({ userId, onBack }: { userId: string; onBack: ()
       alert('Indica uma razão.');
       return;
     }
-    await suspendUser(userId, suspendReason, adminId ?? null);
-    setSuspendReason('');
-    await load();
+    try {
+      await suspendUser(userId, suspendReason, adminId ?? null);
+      setSuspendReason('');
+      await load();
+    } catch (err) {
+      alert(`Erro ao suspender: ${(err as Error).message}`);
+    }
   };
 
   const handleUnsuspend = async () => {
-    await unsuspendUser(userId, adminId ?? null);
-    await load();
+    try {
+      await unsuspendUser(userId, adminId ?? null);
+      await load();
+    } catch (err) {
+      alert(`Erro ao reactivar: ${(err as Error).message}`);
+    }
   };
 
   const handleSuperAdmin = async () => {
