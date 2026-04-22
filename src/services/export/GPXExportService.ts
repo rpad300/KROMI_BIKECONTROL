@@ -56,6 +56,25 @@ function buildTrackPoint(pt: TrackPoint): string {
   return lines.join('\n');
 }
 
+/**
+ * Build GPX from a simplified trail (post-processed).
+ * Falls back to raw snapshots if no simplified trail available.
+ */
+export function buildGPXFromSimplified(
+  rideName: string,
+  simplifiedTrail: { lat: number; lng: number; alt: number; elapsed_s: number; speed: number }[],
+  startedAt: number,
+): string {
+  const points: TrackPoint[] = simplifiedTrail.map((p) => ({
+    lat: p.lat,
+    lng: p.lng,
+    elevation: p.alt,
+    timestamp: startedAt + p.elapsed_s * 1000,
+    speed: p.speed,
+  }));
+  return buildGPXString(rideName, points);
+}
+
 export function buildGPXString(rideName: string, points: TrackPoint[]): string {
   const escapedName = escapeXml(rideName);
   const trackPoints = points.map(buildTrackPoint).join('\n');

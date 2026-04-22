@@ -50,6 +50,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   batteryStart: 0,
 
   startTrip: () => {
+    // Reset GPS engine for fresh session (Kalman state, elevation gain, etc.)
+    import('../services/gps/GPSFilterEngine').then(({ resetEngine }) => resetEngine());
     const bike = useBikeStore.getState();
     const startKm = bike.trip_distance_km ?? 0;
     set({
@@ -84,6 +86,13 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     }
     // Set finished AFTER flush so summary modal can read snapshots
     set({ state: 'finished' });
+
+    // Fire-and-forget post-ride processing (trail simplification + elevation correction)
+    if (sessionId) {
+      import('../services/gps/PostRideProcessor').then(({ processRide }) =>
+        processRide(sessionId).catch(console.error),
+      );
+    }
   },
 
   tick: () => {

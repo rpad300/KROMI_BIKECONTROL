@@ -26,7 +26,7 @@ import { useTripStore } from '../../store/tripStore';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const BROADCAST_INTERVAL_MS = 15_000;
+const BROADCAST_INTERVAL_MS = 10_000;
 const SESSIONS_PATH = '/rest/v1/tracking_sessions';
 const POINTS_PATH = '/rest/v1/tracking_points';
 
@@ -38,6 +38,8 @@ let _intervalHandle: ReturnType<typeof setInterval> | null = null;
 let _tripUnsub: (() => void) | null = null;
 let _broadcasting = false;
 let _activeGroupRideId: string | null = null;
+let _lastBroadcastHeading: number | null = null;
+const HEADING_BOOST_DEG = 20;
 
 // ─── Group ride integration ───────────────────────────────────────────────────
 
@@ -241,8 +243,9 @@ async function startBroadcasting(): Promise<void> {
     }
 
     _broadcasting = true;
+    _lastBroadcastHeading = null;
 
-    // Broadcast immediately, then every 15s
+    // Broadcast immediately, then every 10s
     await broadcastUpdate();
     _intervalHandle = setInterval(() => {
       broadcastUpdate().catch((err) =>
@@ -403,9 +406,14 @@ async function broadcastUpdate(): Promise<void> {
     bike_name: bikeName,
   };
 
-  // ── INSERT tracking_points (only when moving — avoids GPS noise) ──
+  // ── Heading change boost — insert extra point on significant turns ──
+  const headingChanged = _lastBroadcastHeading !== null && heading != null
+    && Math.abs(((heading - _lastBroadcastHeading + 540) % 360) - 180) > HEADING_BOOST_DEG;
+  _lastBroadcastHeading = heading;
+
+  // ── INSERT tracking_points (when moving or turning — avoids GPS noise) ──
   const isMoving = speedKmh > 1.5 || (map.speed != null && map.speed > 0.5);
-  const point = isMoving ? {
+  const point = (isMoving || headingChanged) ? {
     session_id: _sessionId,
     lat,
     lng,

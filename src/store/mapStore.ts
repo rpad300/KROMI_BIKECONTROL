@@ -12,6 +12,7 @@ interface MapState {
   // GPS status
   gpsActive: boolean;
   gpsError: string | null;
+  gpsQuality: 'good' | 'degraded' | 'poor';
 
   // Accuracy stats (accumulated during session)
   accuracySum: number;
@@ -25,6 +26,7 @@ interface MapState {
   setGpsSpeed: (speed: number | null) => void;
   setGpsActive: (active: boolean) => void;
   setGpsError: (error: string | null) => void;
+  setGpsQuality: (quality: 'good' | 'degraded' | 'poor') => void;
   resetAccuracyStats: () => void;
 }
 
@@ -37,6 +39,7 @@ export const useMapStore = create<MapState>((set) => ({
   speed: null,
   gpsActive: false,
   gpsError: null,
+  gpsQuality: 'good' as const,
   accuracySum: 0,
   accuracySamples: 0,
   accuracyMin: 999,
@@ -58,6 +61,8 @@ export const useMapStore = create<MapState>((set) => ({
   setGpsActive: (active) => set({ gpsActive: active }),
 
   setGpsError: (error) => set({ gpsError: error }),
+
+  setGpsQuality: (quality) => set({ gpsQuality: quality }),
 
   resetAccuracyStats: () => set({ accuracySum: 0, accuracySamples: 0, accuracyMin: 999, accuracyMax: 0 }),
 }));

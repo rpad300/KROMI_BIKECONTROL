@@ -78,7 +78,6 @@ export interface RideSessionState {
 }
 
 const FLUSH_INTERVAL = 10_000; // 10s — flush buffer to IndexedDB
-const CAPTURE_INTERVAL = 2_000; // 2s — fast capture for accurate ride data
 const METRICS_PERSIST_EVERY = 6; // persist metrics every 6 snapshots (30s)
 
 class RideSessionManager {
@@ -92,6 +91,7 @@ class RideSessionManager {
   private snapshotCount = 0;
   private overrideCount = 0;
   private metrics: PersistedMetrics = this.emptyMetrics();
+  private _gpsUnsub: (() => void) | null = null;
 
   /** Get current session ID (for reading snapshots after stop) */
   getSessionId(): string | null { return this.sessionId; }
@@ -204,8 +204,10 @@ class RideSessionManager {
       const existingSnaps = await localRideStore.getSessionSnapshots(activeSession.id);
       this.snapshotCount = existingSnaps.length;
 
-      // Restart capture intervals
-      this.intervalId = setInterval(() => this.captureSnapshot(), CAPTURE_INTERVAL);
+      // Restart GPS-engine-driven recording + flush interval
+      import('../../hooks/useGeolocation').then(({ onShouldRecord }) => {
+        this._gpsUnsub = onShouldRecord(() => this.captureSnapshot());
+      });
       this.flushIntervalId = setInterval(() => this.flushSnapshots(), FLUSH_INTERVAL);
 
       useAthleteStore.getState().setRideActive(true);
@@ -292,7 +294,11 @@ class RideSessionManager {
       // Continue anyway — we'll still collect data in memory buffer
     }
 
-    this.intervalId = setInterval(() => this.captureSnapshot(), CAPTURE_INTERVAL);
+    // GPS-engine-driven recording (replaces fixed 2s timer)
+    // GPSFilterEngine decides WHEN to record based on speed, heading, distance
+    import('../../hooks/useGeolocation').then(({ onShouldRecord }) => {
+      this._gpsUnsub = onShouldRecord(() => this.captureSnapshot());
+    });
     this.flushIntervalId = setInterval(() => this.flushSnapshots(), FLUSH_INTERVAL);
 
     // Start community rescue presence sync (every 60s)
@@ -306,6 +312,7 @@ class RideSessionManager {
   async stopSession(): Promise<void> {
     if (!this.sessionId) return;
 
+    if (this._gpsUnsub) { this._gpsUnsub(); this._gpsUnsub = null; }
     if (this.intervalId) { clearInterval(this.intervalId); this.intervalId = null; }
     if (this.flushIntervalId) { clearInterval(this.flushIntervalId); this.flushIntervalId = null; }
     this.stopPresenceSync();
