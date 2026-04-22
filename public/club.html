@@ -18,158 +18,449 @@
   --bg: #0e0e0e; --bg-card: #1a1919; --bg-header: #131313;
   --text: #fff; --text-muted: #888; --border: #262626;
   --accent: #3fff8b;
+  --glass-bg: rgba(26,25,25,0.8);
+  --glass-border: rgba(255,255,255,0.06);
+  --glass-blur: blur(12px);
 }
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; }
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; overflow-x: hidden; }
 .mono { font-family: 'JetBrains Mono', monospace; }
 
-/* Spinner */
+/* ── Animated mesh background ─────────────────────────────── */
+.mesh-bg {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+}
+.mesh-blob {
+  position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.07;
+  animation: blobFloat 20s ease-in-out infinite alternate;
+}
+.mesh-blob:nth-child(1) { width: 600px; height: 600px; background: var(--accent); top: -10%; left: -10%; animation-duration: 22s; }
+.mesh-blob:nth-child(2) { width: 500px; height: 500px; background: #6366f1; bottom: 10%; right: -8%; animation-duration: 18s; animation-delay: -5s; }
+.mesh-blob:nth-child(3) { width: 400px; height: 400px; background: var(--accent); top: 50%; left: 40%; animation-duration: 25s; animation-delay: -10s; }
+@keyframes blobFloat {
+  0% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -40px) scale(1.1); }
+  66% { transform: translate(-20px, 30px) scale(0.95); }
+  100% { transform: translate(10px, -20px) scale(1.05); }
+}
+
+/* ── Brand bar ────────────────────────────────────────────── */
+.brand-bar {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(14,14,14,0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--glass-border);
+  padding: 0 20px; height: 52px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.brand-logo { font-size: 15px; font-weight: 900; letter-spacing: -0.5px; color: var(--text); text-decoration: none; }
+.brand-logo .k-accent { color: var(--accent); }
+.brand-club-name { font-size: 12px; color: var(--text-muted); font-weight: 600; margin-left: 12px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand-bar-right { display: flex; align-items: center; gap: 10px; }
+.brand-btn {
+  background: var(--accent); color: #000; border: none; border-radius: 8px;
+  padding: 8px 16px; font-size: 12px; font-weight: 800; cursor: pointer;
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+.brand-btn:hover { box-shadow: 0 0 20px rgba(63,255,139,0.3); transform: translateY(-1px); }
+
+/* ── Content wrapper ──────────────────────────────────────── */
+.page-content { position: relative; z-index: 1; }
+
+/* ── Spinner ──────────────────────────────────────────────── */
 .spinner-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; gap: 16px; }
 .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: var(--text-muted); }
 
-/* Error */
+/* ── Error ────────────────────────────────────────────────── */
 .error-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; gap: 12px; padding: 24px; text-align: center; }
 .error-wrap h2 { font-size: 20px; }
 .error-wrap p { color: var(--text-muted); font-size: 14px; }
 
-/* Invite Banner */
-.invite-banner { background: linear-gradient(135deg, rgba(63,255,139,0.12), rgba(63,255,139,0.04)); border: 1px solid rgba(63,255,139,0.3); border-radius: 12px; padding: 16px 20px; margin: 12px 16px 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* ── Invite Banner ────────────────────────────────────────── */
+.invite-banner {
+  background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(63,255,139,0.2); border-radius: 14px;
+  padding: 16px 20px; margin: 12px 16px 0; max-width: 900px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  box-shadow: 0 0 30px rgba(63,255,139,0.06);
+}
 .invite-banner .invite-icon { font-size: 24px; flex-shrink: 0; }
 .invite-banner .invite-text { flex: 1; }
 .invite-banner .invite-title { font-size: 14px; font-weight: 800; color: var(--accent); }
 .invite-banner .invite-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.invite-banner .invite-btn { background: var(--accent); color: #000; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+.invite-banner .invite-btn {
+  background: var(--accent); color: #000; border: none; border-radius: 10px;
+  padding: 10px 20px; font-size: 13px; font-weight: 800; cursor: pointer;
+  transition: box-shadow 0.3s ease;
+}
+.invite-banner .invite-btn:hover { box-shadow: 0 0 20px rgba(63,255,139,0.35); }
 
-/* Hero */
-.hero { position: relative; overflow: hidden; }
-.hero-cover { width: 100%; height: 200px; object-fit: cover; background: linear-gradient(135deg, #1a1919 0%, #111 100%); display: block; }
-.hero-cover-placeholder { width: 100%; height: 200px; background: linear-gradient(135deg, #1a1919 0%, #0e0e0e 100%); }
-.hero-content { padding: 0 16px 20px; position: relative; }
-.hero-avatar-wrap { margin-top: -40px; margin-bottom: 12px; }
-.hero-avatar { width: 80px; height: 80px; border-radius: 50%; border: 3px solid var(--bg); object-fit: cover; background: var(--bg-card); display: block; }
-.hero-avatar-placeholder { width: 80px; height: 80px; border-radius: 50%; border: 3px solid var(--bg); background: var(--bg-card); display: flex; align-items: center; justify-content: center; font-size: 32px; }
-.hero-name { font-size: 26px; font-weight: 900; line-height: 1.1; }
-.hero-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
-.hero-meta-item { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--text-muted); }
-.hero-meta-item span { color: var(--text); font-weight: 600; }
-.hero-desc { margin-top: 12px; font-size: 14px; color: #adaaaa; line-height: 1.6; }
-.hero-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
-.btn-join { background: var(--accent); color: #000; border: none; border-radius: 10px; padding: 14px 28px; font-size: 15px; font-weight: 800; cursor: pointer; flex: 1; min-width: 140px; }
-.btn-request { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); border-radius: 10px; padding: 14px 28px; font-size: 15px; font-weight: 800; cursor: pointer; flex: 1; min-width: 140px; }
-.hero-social { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-.social-link { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); text-decoration: none; padding: 6px 12px; border-radius: 8px; background: var(--bg-card); border: 1px solid var(--border); }
-.social-link:hover { color: var(--accent); border-color: var(--accent); }
+/* ── Hero ─────────────────────────────────────────────────── */
+.hero { position: relative; overflow: hidden; min-height: 420px; }
+.hero-cover-wrap {
+  position: absolute; inset: 0; z-index: 0;
+}
+.hero-cover {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.hero-cover-placeholder {
+  width: 100%; height: 100%;
+  background: linear-gradient(135deg, #1a1919 0%, #111 50%, #0e0e0e 100%);
+}
+.hero-gradient {
+  position: absolute; inset: 0; z-index: 1;
+  background: linear-gradient(180deg, rgba(14,14,14,0.3) 0%, rgba(14,14,14,0.6) 50%, var(--bg) 100%);
+}
+.hero-content {
+  position: relative; z-index: 2;
+  padding: 100px 20px 40px; max-width: 900px; margin: 0 auto;
+}
+.hero-avatar-wrap { margin-bottom: 20px; }
+.hero-avatar {
+  width: 96px; height: 96px; border-radius: 50%; object-fit: cover; display: block;
+  border: 3px solid rgba(255,255,255,0.1);
+  box-shadow: 0 0 30px rgba(63,255,139,0.2), 0 0 60px rgba(63,255,139,0.08);
+  transition: box-shadow 0.4s ease;
+}
+.hero-avatar:hover { box-shadow: 0 0 40px rgba(63,255,139,0.35), 0 0 80px rgba(63,255,139,0.12); }
+.hero-avatar-placeholder {
+  width: 96px; height: 96px; border-radius: 50%;
+  background: var(--bg-card); display: flex; align-items: center; justify-content: center;
+  font-size: 36px; border: 3px solid rgba(255,255,255,0.1);
+  box-shadow: 0 0 30px rgba(63,255,139,0.2);
+}
+.hero-name {
+  font-size: 36px; font-weight: 900; line-height: 1.05; letter-spacing: -0.5px;
+  animation: heroFadeUp 0.8s ease-out both;
+}
+@keyframes heroFadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
 
-/* Section */
-.section { padding: 0 16px 24px; max-width: 900px; margin: 0 auto; }
-.section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; color: var(--accent); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
-.section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.hero-pills {
+  display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px;
+  animation: heroFadeUp 0.8s ease-out 0.15s both;
+}
+.hero-pill {
+  background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border); border-radius: 100px;
+  padding: 8px 16px; font-size: 13px; color: var(--text-muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.hero-pill span { color: var(--text); font-weight: 700; }
+.hero-pill .pill-icon { font-size: 14px; }
 
-/* Stats Grid */
-.stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--border); border-radius: 12px; overflow: hidden; }
+.hero-desc {
+  margin-top: 16px; font-size: 15px; color: #bbb; line-height: 1.7; max-width: 600px;
+  animation: heroFadeUp 0.8s ease-out 0.25s both;
+}
+.hero-actions {
+  display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap;
+  animation: heroFadeUp 0.8s ease-out 0.35s both;
+}
+.btn-primary {
+  background: var(--accent); color: #000; border: none; border-radius: 12px;
+  padding: 16px 32px; font-size: 15px; font-weight: 800; cursor: pointer;
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
+  min-width: 160px; text-align: center;
+}
+.btn-primary:hover { box-shadow: 0 0 30px rgba(63,255,139,0.35); transform: translateY(-2px); }
+.btn-secondary {
+  background: transparent; color: var(--accent); border: 1.5px solid var(--accent);
+  border-radius: 12px; padding: 16px 32px; font-size: 15px; font-weight: 800;
+  cursor: pointer; transition: all 0.3s ease; min-width: 160px; text-align: center;
+}
+.btn-secondary:hover { background: rgba(63,255,139,0.08); box-shadow: 0 0 20px rgba(63,255,139,0.15); }
+
+.hero-social {
+  display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap;
+  animation: heroFadeUp 0.8s ease-out 0.45s both;
+}
+.social-link {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+  color: var(--text-muted); text-decoration: none; padding: 8px 14px; border-radius: 10px;
+  background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  transition: all 0.3s ease;
+}
+.social-link:hover { color: var(--accent); border-color: rgba(63,255,139,0.3); transform: translateY(-1px); }
+
+/* ── Section divider ──────────────────────────────────────── */
+.section-divider {
+  height: 1px; max-width: 900px; margin: 8px auto;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+}
+
+/* ── Section ──────────────────────────────────────────────── */
+.section { padding: 0 20px 32px; max-width: 900px; margin: 0 auto; }
+.section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.section-title {
+  font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 2.5px;
+  color: var(--accent); white-space: nowrap;
+}
+.section-line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--border), transparent); }
+
+/* ── Stats Grid ───────────────────────────────────────────── */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
+}
 @media (min-width: 480px) { .stats-grid { grid-template-columns: repeat(4, 1fr); } }
-.stat-cell { background: var(--bg-card); padding: 16px 14px; text-align: center; }
-.stat-value { font-size: 28px; font-weight: 900; font-family: 'JetBrains Mono', monospace; line-height: 1; color: var(--accent); }
-.stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-top: 4px; }
+.stat-cell {
+  background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border); border-radius: 16px;
+  padding: 20px 16px; text-align: center;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.stat-cell:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
+.stat-icon { font-size: 20px; margin-bottom: 8px; }
+.stat-value {
+  font-size: 32px; font-weight: 900; font-family: 'JetBrains Mono', monospace;
+  line-height: 1; color: var(--accent);
+}
+.stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-top: 6px; }
 
-/* About */
-.about-text { font-size: 14px; color: #adaaaa; line-height: 1.75; background: var(--bg-card); border-radius: 12px; padding: 18px; border: 1px solid var(--border); }
+/* ── About ────────────────────────────────────────────────── */
+.about-text {
+  font-size: 15px; color: #bbb; line-height: 1.8;
+  background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: 16px; padding: 24px; border: 1px solid var(--glass-border);
+}
 
-/* Board */
-.board-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-.board-card { background: var(--bg-card); border-radius: 12px; padding: 16px 12px; text-align: center; border: 1px solid var(--border); }
-.board-avatar { width: 56px; height: 56px; border-radius: 50%; background: var(--border); margin: 0 auto 10px; object-fit: cover; display: block; }
-.board-avatar-ph { width: 56px; height: 56px; border-radius: 50%; background: var(--border); margin: 0 auto 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
-.board-name { font-size: 13px; font-weight: 700; }
-.board-role { font-size: 11px; color: var(--text-muted); margin-top: 3px; text-transform: capitalize; }
+/* ── Board ────────────────────────────────────────────────── */
+.board-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
+.board-card {
+  background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: 16px; padding: 24px 16px; text-align: center;
+  border: 1px solid var(--glass-border);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.board-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
+.board-avatar {
+  width: 64px; height: 64px; border-radius: 50%; background: var(--border);
+  margin: 0 auto 12px; object-fit: cover; display: block;
+  border: 2px solid rgba(255,215,0,0.3);
+}
+.board-avatar-ph {
+  width: 64px; height: 64px; border-radius: 50%; background: var(--border);
+  margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; font-size: 22px;
+  border: 2px solid rgba(255,215,0,0.3);
+}
+.board-name { font-size: 14px; font-weight: 700; }
+.board-role {
+  font-size: 11px; color: var(--accent); margin-top: 4px; text-transform: capitalize;
+  font-weight: 600;
+}
 
-/* Rides */
-.rides-list { display: flex; flex-direction: column; gap: 10px; }
-.ride-card { background: var(--bg-card); border-radius: 12px; padding: 14px 16px; border: 1px solid var(--border); display: flex; align-items: center; gap: 14px; }
-.ride-date-box { text-align: center; min-width: 48px; background: var(--border); border-radius: 8px; padding: 8px 6px; }
-.ride-date-day { font-size: 22px; font-weight: 900; font-family: 'JetBrains Mono', monospace; line-height: 1; color: var(--accent); }
-.ride-date-mon { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+/* ── Rides ────────────────────────────────────────────────── */
+.rides-list { display: flex; flex-direction: column; gap: 12px; }
+.ride-card {
+  background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: 16px; padding: 18px 20px; border: 1px solid var(--glass-border);
+  display: flex; align-items: center; gap: 16px;
+  border-left: 3px solid var(--accent);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.ride-card:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.25); }
+.ride-date-box {
+  text-align: center; min-width: 56px;
+  background: linear-gradient(135deg, rgba(63,255,139,0.12), rgba(63,255,139,0.04));
+  border-radius: 12px; padding: 10px 8px;
+}
+.ride-date-day { font-size: 24px; font-weight: 900; font-family: 'JetBrains Mono', monospace; line-height: 1; color: var(--accent); }
+.ride-date-mon { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-top: 2px; }
 .ride-info { flex: 1; }
-.ride-name { font-size: 15px; font-weight: 700; }
-.ride-loc { font-size: 12px; color: var(--text-muted); margin-top: 3px; display: flex; align-items: center; gap: 4px; }
-.ride-meta { display: flex; gap: 10px; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
+.ride-name { font-size: 16px; font-weight: 700; }
+.ride-loc { font-size: 12px; color: var(--text-muted); margin-top: 4px; display: flex; align-items: center; gap: 4px; }
+.ride-meta { display: flex; gap: 12px; margin-top: 8px; font-size: 12px; color: var(--text-muted); }
 .ride-meta b { color: var(--text); font-weight: 700; font-family: 'JetBrains Mono', monospace; }
 
-/* Feed */
-.feed-list { display: flex; flex-direction: column; gap: 12px; }
-.feed-card { background: var(--bg-card); border-radius: 12px; padding: 14px 16px; border: 1px solid var(--border); }
-.feed-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.feed-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--border); object-fit: cover; flex-shrink: 0; }
-.feed-avatar-ph { width: 36px; height: 36px; border-radius: 50%; background: var(--border); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
-.feed-rider { font-size: 13px; font-weight: 700; }
+/* ── Feed ─────────────────────────────────────────────────── */
+.feed-list { display: flex; flex-direction: column; gap: 14px; }
+.feed-card {
+  background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: 16px; padding: 20px; border: 1px solid var(--glass-border);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.feed-card:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.25); }
+.feed-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.feed-avatar {
+  width: 40px; height: 40px; border-radius: 50%; background: var(--border);
+  object-fit: cover; flex-shrink: 0;
+}
+.feed-avatar-ph {
+  width: 40px; height: 40px; border-radius: 50%; background: var(--border);
+  display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0;
+}
+.feed-rider { font-size: 14px; font-weight: 700; }
 .feed-time { font-size: 11px; color: var(--text-muted); }
-.feed-title { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
-.feed-stats { display: flex; flex-wrap: wrap; gap: 10px; }
-.feed-stat { font-size: 12px; color: var(--text-muted); }
+.feed-content { font-size: 14px; color: #bbb; line-height: 1.6; margin-bottom: 10px; }
+.feed-stats { display: flex; flex-wrap: wrap; gap: 14px; }
+.feed-stat {
+  font-size: 12px; color: var(--text-muted);
+  background: rgba(255,255,255,0.03); padding: 6px 12px; border-radius: 8px;
+}
 .feed-stat b { color: var(--text); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
-.feed-photos { display: flex; gap: 8px; overflow-x: auto; margin-top: 10px; padding-bottom: 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.feed-photos { display: flex; gap: 10px; overflow-x: auto; margin-top: 12px; padding-bottom: 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .feed-photos::-webkit-scrollbar { display: none; }
-.feed-photo { width: 100px; height: 80px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+.feed-photo {
+  width: 120px; height: 90px; border-radius: 12px; object-fit: cover; flex-shrink: 0;
+  border: 1px solid var(--glass-border);
+  transition: transform 0.3s ease;
+}
+.feed-photo:hover { transform: scale(1.05); }
 
-/* Leaderboard */
+/* ── Leaderboard ──────────────────────────────────────────── */
+.lb-wrap {
+  background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: 16px; border: 1px solid var(--glass-border); overflow: hidden;
+}
+.lb-podium { display: flex; justify-content: center; gap: 12px; padding: 24px 16px 16px; }
+.lb-podium-item { text-align: center; flex: 1; max-width: 120px; }
+.lb-podium-avatar {
+  width: 52px; height: 52px; border-radius: 50%; background: var(--border);
+  margin: 0 auto 8px; object-fit: cover; display: block;
+}
+.lb-podium-avatar-ph {
+  width: 52px; height: 52px; border-radius: 50%; background: var(--border);
+  margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-size: 18px;
+}
+.lb-podium-item.gold .lb-podium-avatar, .lb-podium-item.gold .lb-podium-avatar-ph { border: 2px solid #ffd700; box-shadow: 0 0 16px rgba(255,215,0,0.25); }
+.lb-podium-item.silver .lb-podium-avatar, .lb-podium-item.silver .lb-podium-avatar-ph { border: 2px solid #c0c0c0; box-shadow: 0 0 12px rgba(192,192,192,0.2); }
+.lb-podium-item.bronze .lb-podium-avatar, .lb-podium-item.bronze .lb-podium-avatar-ph { border: 2px solid #cd7f32; box-shadow: 0 0 12px rgba(205,127,50,0.2); }
+.lb-podium-medal { font-size: 22px; margin-bottom: 4px; }
+.lb-podium-name { font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-podium-km { font-size: 14px; font-weight: 900; font-family: 'JetBrains Mono', monospace; color: var(--accent); }
+
 .lb-table { width: 100%; border-collapse: collapse; }
-.lb-table th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+.lb-table th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
 .lb-table th.num { text-align: right; }
-.lb-table td { padding: 12px 10px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+.lb-table td { padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 13px; vertical-align: middle; }
 .lb-table td.num { text-align: right; font-family: 'JetBrains Mono', monospace; font-weight: 700; }
 .lb-table tr:last-child td { border-bottom: none; }
+.lb-table tbody tr { transition: background 0.2s ease; }
 .lb-table tbody tr:hover td { background: rgba(255,255,255,0.03); }
-.lb-rank { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 900; font-family: 'JetBrains Mono', monospace; }
+.lb-rank {
+  width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 900; font-family: 'JetBrains Mono', monospace;
+}
 .lb-rank.gold { background: rgba(255,215,0,0.15); color: #ffd700; }
 .lb-rank.silver { background: rgba(192,192,192,0.15); color: #c0c0c0; }
 .lb-rank.bronze { background: rgba(205,127,50,0.15); color: #cd7f32; }
 .lb-rank.other { background: var(--border); color: var(--text-muted); }
-.lb-rider { display: flex; align-items: center; gap: 8px; }
-.lb-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--border); object-fit: cover; }
-.lb-avatar-ph { width: 30px; height: 30px; border-radius: 50%; background: var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
-.lb-medal { font-size: 14px; }
+.lb-rider { display: flex; align-items: center; gap: 10px; }
+.lb-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--border); object-fit: cover; }
+.lb-avatar-ph { width: 32px; height: 32px; border-radius: 50%; background: var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
 
-/* Members */
-.members-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
-.member-card { background: var(--bg-card); border-radius: 12px; padding: 14px 12px; text-align: center; border: 1px solid var(--border); }
-.member-avatar { width: 52px; height: 52px; border-radius: 50%; background: var(--border); margin: 0 auto 10px; object-fit: cover; display: block; }
-.member-avatar-ph { width: 52px; height: 52px; border-radius: 50%; background: var(--border); margin: 0 auto 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
-.member-name { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.member-role { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
-.role-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 5px; }
-.role-badge.admin { background: rgba(255,113,108,0.15); color: #ff716c; }
-.role-badge.captain { background: rgba(63,255,139,0.15); color: var(--accent); }
+/* ── Members ──────────────────────────────────────────────── */
+.members-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 12px; }
+@media (min-width: 600px) { .members-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); } }
+.member-card {
+  background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: 14px; padding: 18px 12px; text-align: center;
+  border: 1px solid var(--glass-border);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.member-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
+.member-avatar {
+  width: 56px; height: 56px; border-radius: 50%; background: var(--border);
+  margin: 0 auto 10px; object-fit: cover; display: block;
+  transition: box-shadow 0.3s ease;
+}
+.member-avatar-ph {
+  width: 56px; height: 56px; border-radius: 50%; background: var(--border);
+  margin: 0 auto 10px; display: flex; align-items: center; justify-content: center; font-size: 18px;
+}
+.member-card.role-owner .member-avatar, .member-card.role-owner .member-avatar-ph { border: 2px solid #ffd700; box-shadow: 0 0 12px rgba(255,215,0,0.2); }
+.member-card.role-admin .member-avatar, .member-card.role-admin .member-avatar-ph { border: 2px solid #6ea8fe; box-shadow: 0 0 10px rgba(110,168,254,0.15); }
+.member-card.role-captain .member-avatar, .member-card.role-captain .member-avatar-ph { border: 2px solid var(--accent); box-shadow: 0 0 10px rgba(63,255,139,0.15); }
+.member-name { font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-badge {
+  display: inline-block; padding: 3px 10px; border-radius: 100px;
+  font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 6px;
+}
+.role-badge.owner { background: rgba(255,215,0,0.12); color: #ffd700; }
+.role-badge.admin { background: rgba(110,168,254,0.12); color: #6ea8fe; }
+.role-badge.captain { background: rgba(63,255,139,0.12); color: var(--accent); }
 .role-badge.member { background: var(--border); color: var(--text-muted); }
 
-/* Footer */
-.footer { padding: 24px 16px; text-align: center; border-top: 1px solid var(--border); margin-top: 8px; }
-.footer-brand { font-size: 12px; color: var(--text-muted); }
-.footer-brand a { color: var(--accent); text-decoration: none; font-weight: 700; }
-.footer-brand a:hover { text-decoration: underline; }
+/* ── CTA Section ──────────────────────────────────────────── */
+.cta-section {
+  position: relative; overflow: hidden;
+  padding: 48px 20px; margin: 16px 0 0; text-align: center;
+  background: linear-gradient(135deg, rgba(63,255,139,0.06), rgba(99,102,241,0.04));
+  border-top: 1px solid var(--glass-border);
+}
+.cta-section::before {
+  content: ''; position: absolute; top: -50%; left: -20%; width: 60%; height: 200%;
+  background: radial-gradient(ellipse, rgba(63,255,139,0.05), transparent 60%);
+  pointer-events: none;
+}
+.cta-title { font-size: 28px; font-weight: 900; margin-bottom: 12px; position: relative; }
+.cta-sub { font-size: 15px; color: var(--text-muted); margin-bottom: 24px; max-width: 480px; margin-left: auto; margin-right: auto; line-height: 1.6; position: relative; }
+.cta-btn {
+  background: var(--accent); color: #000; border: none; border-radius: 14px;
+  padding: 18px 40px; font-size: 16px; font-weight: 800; cursor: pointer;
+  transition: box-shadow 0.3s ease, transform 0.2s ease; position: relative;
+}
+.cta-btn:hover { box-shadow: 0 0 40px rgba(63,255,139,0.35); transform: translateY(-2px); }
 
-/* Fade-in animation */
-.fade-item { opacity: 0; transform: translateY(16px); transition: opacity 0.4s ease, transform 0.4s ease; }
+/* ── Footer ───────────────────────────────────────────────── */
+.footer {
+  padding: 32px 20px; text-align: center;
+  border-top: 1px solid var(--border);
+}
+.footer-logo { font-size: 14px; font-weight: 900; margin-bottom: 8px; }
+.footer-logo .k-accent { color: var(--accent); }
+.footer-links { display: flex; justify-content: center; gap: 20px; margin-bottom: 12px; flex-wrap: wrap; }
+.footer-links a { font-size: 12px; color: var(--text-muted); text-decoration: none; transition: color 0.3s; }
+.footer-links a:hover { color: var(--accent); }
+.footer-copy { font-size: 11px; color: #555; }
+
+/* ── Private overlay ──────────────────────────────────────── */
+.private-notice {
+  background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border); border-radius: 16px;
+  padding: 32px; text-align: center; color: var(--text-muted);
+}
+.private-notice .lock { font-size: 36px; margin-bottom: 12px; }
+.private-notice p { font-size: 14px; line-height: 1.7; }
+
+/* ── Fade-in animation ────────────────────────────────────── */
+.fade-item { opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease, transform 0.6s ease; }
 .fade-item.visible { opacity: 1; transform: none; }
 
-/* Private overlay */
-.private-notice { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; text-align: center; color: var(--text-muted); }
-.private-notice .lock { font-size: 32px; margin-bottom: 8px; }
-.private-notice p { font-size: 13px; line-height: 1.6; }
-
-/* Desktop widening */
+/* ── Desktop ──────────────────────────────────────────────── */
 @media (min-width: 700px) {
-  .hero-content { max-width: 900px; margin: 0 auto; }
-  .hero-name { font-size: 32px; }
+  .hero-content { padding: 140px 24px 48px; }
+  .hero-name { font-size: 44px; }
+  .hero { min-height: 480px; }
   .board-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
-  .members-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .members-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .brand-club-name { max-width: 300px; }
+}
+@media (min-width: 1024px) {
+  .hero-name { font-size: 52px; }
+  .hero { min-height: 520px; }
+}
+
+/* ── Reduced motion ───────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .mesh-blob { animation: none; }
+  .fade-item { transition: none; opacity: 1; transform: none; }
+  .hero-name, .hero-pills, .hero-desc, .hero-actions, .hero-social { animation: none; }
+  .stat-cell, .board-card, .ride-card, .feed-card, .member-card { transition: none; }
 }
 </style>
 </head>
 <body>
 
-<div id="app">
+<div class="mesh-bg">
+  <div class="mesh-blob"></div>
+  <div class="mesh-blob"></div>
+  <div class="mesh-blob"></div>
+</div>
+
+<div class="page-content" id="app">
   <div class="spinner-wrap" id="loading">
     <div class="spinner"></div>
     <div class="spinner-label">A carregar clube...</div>
@@ -199,21 +490,22 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 
   // ── DOM helpers ───────────────────────────────────────────────────────────
   function el(tag, cls, html) {
-    const e = document.createElement(tag);
+    var e = document.createElement(tag);
     if (cls) e.className = cls;
     if (html !== undefined) e.innerHTML = html;
     return e;
   }
   function div(cls, html) { return el('div', cls, html); }
 
-  function fmtNum(n, dec = 0) {
+  function fmtNum(n, dec) {
+    if (dec === undefined) dec = 0;
     if (!n && n !== 0) return '—';
     return Number(n).toLocaleString('pt-PT', { minimumFractionDigits: dec, maximumFractionDigits: dec });
   }
 
   function timeAgo(iso) {
     if (!iso) return '';
-    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    var diff = (Date.now() - new Date(iso).getTime()) / 1000;
     if (diff < 60) return 'agora';
     if (diff < 3600) return Math.floor(diff / 60) + 'min';
     if (diff < 86400) return Math.floor(diff / 3600) + 'h';
@@ -223,7 +515,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 
   function monthDay(iso) {
     if (!iso) return { day: '—', mon: '—' };
-    const d = new Date(iso);
+    var d = new Date(iso);
     return {
       day: d.getDate().toString().padStart(2, '0'),
       mon: d.toLocaleDateString('pt-PT', { month: 'short' }).toUpperCase()
@@ -232,293 +524,17 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 
   function avatarImg(url, cls, fallback) {
     if (url) {
-      const img = document.createElement('img');
+      var img = document.createElement('img');
       img.src = url;
       img.className = cls;
       img.alt = '';
-      img.onerror = () => {
-        const ph = div(cls.replace('avatar', 'avatar-ph'), fallback || '🚴');
+      img.onerror = function() {
+        var ph = div(cls.replace('avatar', 'avatar-ph'), fallback || '🚴');
         img.parentNode && img.parentNode.replaceChild(ph, img);
       };
       return img;
     }
     return div(cls.replace('avatar', 'avatar-ph'), fallback || '🚴');
-  }
-
-  // ── IntersectionObserver for fade-in ─────────────────────────────────────
-  const observer = new IntersectionObserver(entries => {
-    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); } });
-  }, { threshold: 0.05 });
-
-  function observe(node) { node.classList.add('fade-item'); observer.observe(node); return node; }
-
-  // ── Render functions ──────────────────────────────────────────────────────
-
-  function renderInviteBanner(club) {
-    const b = div('invite-banner');
-    const icon = div('invite-icon', '🎟️');
-    const txt = div('invite-text');
-    txt.innerHTML = '<div class="invite-title">Foste convidado para ' + escHtml(club.name) + '!</div>' +
-      '<div class="invite-sub">Abre a app KROMI para aceitar o convite.</div>';
-    const btn = el('button', 'invite-btn', 'Abrir App');
-    btn.onclick = () => openApp('invite', inviteCode, club.slug);
-    b.appendChild(icon); b.appendChild(txt); b.appendChild(btn);
-    return b;
-  }
-
-  function renderHero(club, memberCount) {
-    const hero = div('hero');
-    // Cover
-    if (club.cover_url) {
-      const img = document.createElement('img');
-      img.src = club.cover_url;
-      img.className = 'hero-cover';
-      img.alt = '';
-      hero.appendChild(img);
-    } else {
-      hero.appendChild(div('hero-cover-placeholder'));
-    }
-    // Content
-    const content = div('hero-content');
-    // Avatar
-    const avatarWrap = div('hero-avatar-wrap');
-    avatarWrap.appendChild(avatarImg(club.avatar_url, 'hero-avatar', club.name ? club.name[0] : '🚴'));
-    content.appendChild(avatarWrap);
-    // Name
-    const nameEl = div('hero-name', escHtml(club.name || '—'));
-    content.appendChild(nameEl);
-    // Meta
-    const meta = div('hero-meta');
-    if (club.city || club.country) {
-      const loc = [club.city, club.country].filter(Boolean).join(', ');
-      meta.appendChild(div('hero-meta-item', '📍 <span>' + escHtml(loc) + '</span>'));
-    }
-    meta.appendChild(div('hero-meta-item', '👥 <span>' + (memberCount || 0) + '</span> membros'));
-    if (club.founded_at) {
-      const y = new Date(club.founded_at).getFullYear();
-      meta.appendChild(div('hero-meta-item', '📅 Fundado em <span>' + y + '</span>'));
-    }
-    if (club.privacy === 'private') {
-      meta.appendChild(div('hero-meta-item', '🔒 <span>Privado</span>'));
-    }
-    content.appendChild(meta);
-    // Description
-    if (club.description) {
-      content.appendChild(div('hero-desc', escHtml(club.description)));
-    }
-    // Actions
-    const actions = div('hero-actions');
-    if (club.privacy === 'public') {
-      const btn = el('button', 'btn-join', 'Entrar no Clube');
-      btn.onclick = () => openApp('join', null, club.slug);
-      actions.appendChild(btn);
-    } else {
-      const btn = el('button', 'btn-request', 'Pedir Adesao');
-      btn.onclick = () => openApp('request', inviteCode || null, club.slug);
-      actions.appendChild(btn);
-    }
-    content.appendChild(actions);
-    // Social links
-    const social = club.social_links || {};
-    const socKeys = Object.keys(social).filter(k => social[k]);
-    if (socKeys.length) {
-      const sl = div('hero-social');
-      const icons = { strava: '🟠', instagram: '📷', facebook: '🔵', website: '🌐', youtube: '▶️', twitter: '🐦' };
-      const labels = { strava: 'Strava', instagram: 'Instagram', facebook: 'Facebook', website: 'Website', youtube: 'YouTube', twitter: 'Twitter' };
-      socKeys.forEach(k => {
-        const a = document.createElement('a');
-        a.href = social[k];
-        a.target = '_blank';
-        a.rel = 'noopener';
-        a.className = 'social-link';
-        a.innerHTML = (icons[k] || '🔗') + ' ' + (labels[k] || k);
-        sl.appendChild(a);
-      });
-      content.appendChild(sl);
-    }
-    hero.appendChild(content);
-    return hero;
-  }
-
-  function renderStats(club, memberCount) {
-    const wrap = div('section');
-    const title = div('section-title', 'Estatisticas');
-    wrap.appendChild(title);
-    const grid = div('stats-grid');
-    const stats = [
-      { label: 'Pedaladas', value: fmtNum(club.stats_total_rides || 0) },
-      { label: 'Kilometros', value: fmtNum(club.stats_total_km || 0) },
-      { label: 'Elevacao', value: fmtNum(club.stats_total_elevation || 0) + 'm' },
-      { label: 'Membros', value: fmtNum(memberCount || 0) }
-    ];
-    stats.forEach(s => {
-      const cell = div('stat-cell');
-      cell.innerHTML = '<div class="stat-value mono">' + s.value + '</div><div class="stat-label">' + s.label + '</div>';
-      grid.appendChild(cell);
-    });
-    wrap.appendChild(grid);
-    return observe(wrap);
-  }
-
-  function renderAbout(club) {
-    const wrap = div('section');
-    wrap.appendChild(div('section-title', 'Sobre o Clube'));
-    wrap.appendChild(div('about-text', escHtml(club.custom_about)));
-    return observe(wrap);
-  }
-
-  function renderBoard(members) {
-    const boardMembers = members.filter(m => m.role === 'admin' || m.role === 'captain' || m.is_board);
-    if (!boardMembers.length) return null;
-    const wrap = div('section');
-    wrap.appendChild(div('section-title', 'Direcao'));
-    const grid = div('board-grid');
-    boardMembers.forEach(m => {
-      const card = div('board-card');
-      card.appendChild(avatarImg(m.avatar_url, 'board-avatar', (m.display_name || '?')[0]));
-      card.appendChild(div('board-name', escHtml(m.display_name || m.email || 'Membro')));
-      card.appendChild(div('board-role', escHtml(m.board_role || m.role || '')));
-      grid.appendChild(card);
-    });
-    wrap.appendChild(grid);
-    return observe(wrap);
-  }
-
-  function renderUpcomingRides(rides) {
-    if (!rides.length) return null;
-    const wrap = div('section');
-    wrap.appendChild(div('section-title', 'Proximas Saidas'));
-    const list = div('rides-list');
-    rides.forEach(r => {
-      const { day, mon } = monthDay(r.scheduled_at);
-      const card = div('ride-card');
-      const dateBox = div('ride-date-box');
-      dateBox.innerHTML = '<div class="ride-date-day">' + day + '</div><div class="ride-date-mon">' + mon + '</div>';
-      const info = div('ride-info');
-      info.appendChild(div('ride-name', escHtml(r.title || 'Saida')));
-      if (r.location_name) {
-        info.appendChild(div('ride-loc', '📍 ' + escHtml(r.location_name)));
-      }
-      const meta = div('ride-meta');
-      if (r.distance_km) meta.innerHTML += '<span><b>' + fmtNum(r.distance_km, 1) + '</b>km</span>';
-      if (r.elevation_m) meta.innerHTML += '<span><b>' + fmtNum(r.elevation_m) + '</b>m D+</span>';
-      if (r.pace_level) meta.innerHTML += '<span>Ritmo: <b>' + escHtml(r.pace_level) + '</b></span>';
-      info.appendChild(meta);
-      card.appendChild(dateBox);
-      card.appendChild(info);
-      list.appendChild(card);
-    });
-    wrap.appendChild(list);
-    return observe(wrap);
-  }
-
-  function renderFeed(posts) {
-    if (!posts.length) return null;
-    const wrap = div('section');
-    wrap.appendChild(div('section-title', 'Feed do Clube'));
-    const list = div('feed-list');
-    posts.forEach(p => {
-      const card = div('feed-card');
-      const header = div('feed-header');
-      header.appendChild(avatarImg(p.rider_avatar, 'feed-avatar', (p.rider_name || '?')[0]));
-      const info = div('');
-      info.appendChild(div('feed-rider', escHtml(p.rider_name || 'Ciclista')));
-      info.appendChild(div('feed-time', timeAgo(p.created_at)));
-      header.appendChild(info);
-      card.appendChild(header);
-      if (p.title) card.appendChild(div('feed-title', escHtml(p.title)));
-      const stats = div('feed-stats');
-      if (p.distance_km) stats.innerHTML += '<span class="feed-stat"><b>' + fmtNum(p.distance_km, 1) + '</b> km</span>';
-      if (p.elevation_m) stats.innerHTML += '<span class="feed-stat"><b>' + fmtNum(p.elevation_m) + '</b> m D+</span>';
-      if (p.avg_speed_kmh) stats.innerHTML += '<span class="feed-stat"><b>' + fmtNum(p.avg_speed_kmh, 1) + '</b> km/h</span>';
-      if (p.duration_s) {
-        const h = Math.floor(p.duration_s / 3600), m = Math.floor((p.duration_s % 3600) / 60);
-        stats.innerHTML += '<span class="feed-stat"><b>' + h + 'h' + String(m).padStart(2, '0') + '</b></span>';
-      }
-      card.appendChild(stats);
-      if (p.photos && p.photos.length) {
-        const photos = div('feed-photos');
-        p.photos.slice(0, 8).forEach(url => {
-          const img = document.createElement('img');
-          img.src = url;
-          img.className = 'feed-photo';
-          img.alt = '';
-          photos.appendChild(img);
-        });
-        card.appendChild(photos);
-      }
-      list.appendChild(card);
-    });
-    wrap.appendChild(list);
-    return observe(wrap);
-  }
-
-  function renderLeaderboard(members) {
-    const ranked = members
-      .filter(m => m.month_km > 0 || m.month_elevation > 0)
-      .sort((a, b) => (b.month_km || 0) - (a.month_km || 0))
-      .slice(0, 20);
-    if (!ranked.length) return null;
-    const wrap = div('section');
-    const now = new Date();
-    const monthLabel = now.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' });
-    wrap.appendChild(div('section-title', 'Leaderboard — ' + monthLabel));
-    const tableWrap = div('');
-    tableWrap.style.cssText = 'background:var(--bg-card);border-radius:12px;border:1px solid var(--border);overflow:hidden;overflow-x:auto;';
-    const table = document.createElement('table');
-    table.className = 'lb-table';
-    table.innerHTML = '<thead><tr><th>#</th><th>Ciclista</th><th class="num">km</th><th class="num">D+</th><th class="num">Pedaladas</th></tr></thead>';
-    const tbody = document.createElement('tbody');
-    ranked.forEach((m, i) => {
-      const rankClasses = ['gold', 'silver', 'bronze'];
-      const rankCls = rankClasses[i] || 'other';
-      const medals = ['🥇', '🥈', '🥉'];
-      const tr = document.createElement('tr');
-      tr.innerHTML = '<td><span class="lb-rank ' + rankCls + '">' + (i + 1) + '</span></td>' +
-        '<td><div class="lb-rider">' +
-        (m.avatar_url ? '<img src="' + escAttr(m.avatar_url) + '" class="lb-avatar" alt="">' : '<span class="lb-avatar-ph">' + (m.display_name || '?')[0] + '</span>') +
-        '<span>' + escHtml(m.display_name || 'Membro') + '</span>' +
-        (medals[i] ? ' <span class="lb-medal">' + medals[i] + '</span>' : '') +
-        '</div></td>' +
-        '<td class="num">' + fmtNum(m.month_km, 1) + '</td>' +
-        '<td class="num">' + fmtNum(m.month_elevation) + '</td>' +
-        '<td class="num">' + (m.month_rides || 0) + '</td>';
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-    tableWrap.appendChild(table);
-    wrap.appendChild(tableWrap);
-    return observe(wrap);
-  }
-
-  function renderMembers(members) {
-    if (!members.length) return null;
-    const wrap = div('section');
-    wrap.appendChild(div('section-title', 'Membros (' + members.length + ')'));
-    const grid = div('members-grid');
-    members.slice(0, 48).forEach(m => {
-      const card = div('member-card');
-      const avatarEl = avatarImg(m.avatar_url, 'member-avatar', (m.display_name || '?')[0]);
-      if (avatarEl.className && !avatarEl.className.includes('ph')) {
-        avatarEl.style.cssText = 'width:52px;height:52px;border-radius:50%;background:var(--border);margin:0 auto 10px;object-fit:cover;display:block;';
-      }
-      card.appendChild(avatarEl);
-      card.appendChild(div('member-name', escHtml(m.display_name || m.email || 'Membro')));
-      if (m.role) {
-        const roleCls = m.role === 'admin' ? 'admin' : m.role === 'captain' ? 'captain' : 'member';
-        const roleLabel = m.role === 'admin' ? 'Admin' : m.role === 'captain' ? 'Capitao' : 'Membro';
-        card.appendChild(el('span', 'role-badge ' + roleCls, roleLabel));
-      }
-      grid.appendChild(card);
-    });
-    wrap.appendChild(grid);
-    return observe(wrap);
-  }
-
-  function renderFooter() {
-    const f = div('footer');
-    f.innerHTML = '<p class="footer-brand">Powered by <a href="https://www.kromi.online" target="_blank" rel="noopener">kromi.online</a></p>';
-    return f;
   }
 
   // ── Security helpers ──────────────────────────────────────────────────────
@@ -530,12 +546,461 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 
   // ── App deep-link ─────────────────────────────────────────────────────────
   function openApp(action, code, clubSlug) {
-    const u = new URL(APP_URL);
+    var u = new URL(APP_URL);
     u.searchParams.set('page', 'clubs');
     u.searchParams.set('action', action);
     if (clubSlug) u.searchParams.set('club', clubSlug);
     if (code) u.searchParams.set('invite', code);
     window.open(u.toString(), '_blank');
+  }
+
+  // ── IntersectionObserver for fade-in ─────────────────────────────────────
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(e) {
+      if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); }
+    });
+  }, { threshold: 0.05 });
+
+  function observe(node) { node.classList.add('fade-item'); observer.observe(node); return node; }
+
+  // ── Count-up animation ───────────────────────────────────────────────────
+  function animateCountUp(element, target, suffix, duration) {
+    if (!suffix) suffix = '';
+    if (!duration) duration = 1800;
+    var start = 0;
+    var startTime = null;
+    var isDecimal = String(target).indexOf('.') !== -1;
+    function step(ts) {
+      if (!startTime) startTime = ts;
+      var progress = Math.min((ts - startTime) / duration, 1);
+      var eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+      var current = Math.round(eased * target);
+      if (isDecimal) current = (eased * target).toFixed(1);
+      element.textContent = Number(current).toLocaleString('pt-PT') + suffix;
+      if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  // ── Render: Brand Bar ────────────────────────────────────────────────────
+  function renderBrandBar(clubName, clubSlug) {
+    var bar = div('brand-bar');
+    var left = div('', '');
+    left.style.cssText = 'display:flex;align-items:center;';
+    left.innerHTML = '<a class="brand-logo" href="' + APP_URL + '" target="_blank" rel="noopener">K<span class="k-accent">ROMI</span></a>';
+    if (clubName) {
+      var cn = el('span', 'brand-club-name', escHtml(clubName));
+      left.appendChild(cn);
+    }
+    var right = div('brand-bar-right');
+    var btn = el('button', 'brand-btn', 'Abrir App');
+    btn.onclick = function() { openApp('view', null, clubSlug); };
+    right.appendChild(btn);
+    bar.appendChild(left);
+    bar.appendChild(right);
+    return bar;
+  }
+
+  // ── Render: Invite Banner ────────────────────────────────────────────────
+  function renderInviteBanner(club) {
+    var b = div('invite-banner');
+    b.style.cssText = 'margin:12px auto 0;max-width:900px;';
+    var icon = div('invite-icon', '🎟️');
+    var txt = div('invite-text');
+    txt.innerHTML = '<div class="invite-title">Foste convidado para ' + escHtml(club.name) + '!</div>' +
+      '<div class="invite-sub">Abre a app KROMI para aceitar o convite.</div>';
+    var btn = el('button', 'invite-btn', 'Abrir App');
+    btn.onclick = function() { openApp('invite', inviteCode, club.slug); };
+    b.appendChild(icon); b.appendChild(txt); b.appendChild(btn);
+    return b;
+  }
+
+  // ── Render: Hero ─────────────────────────────────────────────────────────
+  function renderHero(club, memberCount) {
+    var hero = div('hero');
+
+    // Cover
+    var coverWrap = div('hero-cover-wrap');
+    if (club.banner_url) {
+      var img = document.createElement('img');
+      img.src = club.banner_url;
+      img.className = 'hero-cover';
+      img.alt = '';
+      coverWrap.appendChild(img);
+    } else {
+      coverWrap.appendChild(div('hero-cover-placeholder'));
+    }
+    coverWrap.appendChild(div('hero-gradient'));
+    hero.appendChild(coverWrap);
+
+    // Content
+    var content = div('hero-content');
+
+    // Avatar
+    var avatarWrap = div('hero-avatar-wrap');
+    avatarWrap.appendChild(avatarImg(club.avatar_url, 'hero-avatar', club.name ? club.name[0] : '🚴'));
+    content.appendChild(avatarWrap);
+
+    // Name
+    content.appendChild(div('hero-name', escHtml(club.name || '—')));
+
+    // Glass pills
+    var pills = div('hero-pills');
+    if (club.location) {
+      pills.appendChild(div('hero-pill', '<span class="pill-icon">📍</span> <span>' + escHtml(club.location) + '</span>'));
+    }
+    pills.appendChild(div('hero-pill', '<span class="pill-icon">👥</span> <span>' + (memberCount || 0) + '</span> membros'));
+    if (club.founded_at) {
+      var y = new Date(club.founded_at).getFullYear();
+      pills.appendChild(div('hero-pill', '<span class="pill-icon">📅</span> Desde <span>' + y + '</span>'));
+    }
+    if (club.visibility === 'private') {
+      pills.appendChild(div('hero-pill', '<span class="pill-icon">🔒</span> <span>Privado</span>'));
+    }
+    content.appendChild(pills);
+
+    // Description
+    if (club.description) {
+      content.appendChild(div('hero-desc', escHtml(club.description)));
+    }
+
+    // Actions
+    var actions = div('hero-actions');
+    if (club.visibility !== 'private') {
+      var btnJoin = el('button', 'btn-primary', 'Entrar no Clube');
+      btnJoin.onclick = function() { openApp('join', null, club.slug); };
+      actions.appendChild(btnJoin);
+    } else {
+      var btnReq = el('button', 'btn-secondary', 'Pedir Adesao');
+      btnReq.onclick = function() { openApp('request', inviteCode || null, club.slug); };
+      actions.appendChild(btnReq);
+    }
+    content.appendChild(actions);
+
+    // Social links
+    var social = club.social_links || {};
+    var socKeys = Object.keys(social).filter(function(k) { return social[k]; });
+    if (socKeys.length) {
+      var sl = div('hero-social');
+      var icons = { strava: '🟠', instagram: '📷', facebook: '🔵', website: '🌐', youtube: '▶️', twitter: '🐦' };
+      var labels = { strava: 'Strava', instagram: 'Instagram', facebook: 'Facebook', website: 'Website', youtube: 'YouTube', twitter: 'Twitter' };
+      socKeys.forEach(function(k) {
+        var a = document.createElement('a');
+        a.href = social[k]; a.target = '_blank'; a.rel = 'noopener';
+        a.className = 'social-link';
+        a.innerHTML = (icons[k] || '🔗') + ' ' + (labels[k] || k);
+        sl.appendChild(a);
+      });
+      content.appendChild(sl);
+    }
+
+    hero.appendChild(content);
+    return hero;
+  }
+
+  // ── Render: Stats ────────────────────────────────────────────────────────
+  function renderStats(club, memberCount) {
+    var wrap = div('section');
+    var header = div('section-header');
+    header.appendChild(div('section-title', 'Estatisticas'));
+    header.appendChild(div('section-line'));
+    wrap.appendChild(header);
+
+    var grid = div('stats-grid');
+    var statsData = [
+      { icon: '🚴', label: 'Pedaladas', value: club.stats_total_rides || 0, suffix: '' },
+      { icon: '📏', label: 'Kilometros', value: club.stats_total_km || 0, suffix: '' },
+      { icon: '⛰️', label: 'Elevacao', value: club.stats_total_elevation || 0, suffix: 'm' },
+      { icon: '👥', label: 'Membros', value: memberCount || 0, suffix: '' }
+    ];
+    statsData.forEach(function(s) {
+      var cell = div('stat-cell');
+      cell.innerHTML = '<div class="stat-icon">' + s.icon + '</div>' +
+        '<div class="stat-value mono" data-target="' + s.value + '" data-suffix="' + s.suffix + '">0</div>' +
+        '<div class="stat-label">' + s.label + '</div>';
+      grid.appendChild(cell);
+    });
+    wrap.appendChild(grid);
+
+    // Count-up observer
+    var countObserver = new IntersectionObserver(function(entries) {
+      entries.forEach(function(e) {
+        if (e.isIntersecting) {
+          var els = e.target.querySelectorAll('.stat-value[data-target]');
+          els.forEach(function(el) {
+            var target = parseFloat(el.getAttribute('data-target'));
+            var suffix = el.getAttribute('data-suffix') || '';
+            animateCountUp(el, target, suffix);
+          });
+          countObserver.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.2 });
+    countObserver.observe(grid);
+
+    return observe(wrap);
+  }
+
+  // ── Render: About ────────────────────────────────────────────────────────
+  function renderAbout(customAbout) {
+    var wrap = div('section');
+    var header = div('section-header');
+    header.appendChild(div('section-title', 'Sobre o Clube'));
+    header.appendChild(div('section-line'));
+    wrap.appendChild(header);
+    wrap.appendChild(div('about-text', escHtml(customAbout)));
+    return observe(wrap);
+  }
+
+  // ── Render: Board ────────────────────────────────────────────────────────
+  function renderBoard(boardMembers) {
+    if (!boardMembers.length) return null;
+    var wrap = div('section');
+    var header = div('section-header');
+    header.appendChild(div('section-title', 'Direcao'));
+    header.appendChild(div('section-line'));
+    wrap.appendChild(header);
+
+    var grid = div('board-grid');
+    boardMembers.forEach(function(m) {
+      var card = div('board-card');
+      card.appendChild(avatarImg(m.avatar_url, 'board-avatar', (m.display_name || '?')[0]));
+      card.appendChild(div('board-name', escHtml(m.display_name || 'Membro')));
+      card.appendChild(div('board-role', escHtml(m.board_role || m.role || '')));
+      grid.appendChild(card);
+    });
+    wrap.appendChild(grid);
+    return observe(wrap);
+  }
+
+  // ── Render: Upcoming Rides ───────────────────────────────────────────────
+  function renderUpcomingRides(rides) {
+    if (!rides.length) return null;
+    var wrap = div('section');
+    var header = div('section-header');
+    header.appendChild(div('section-title', 'Proximas Saidas'));
+    header.appendChild(div('section-line'));
+    wrap.appendChild(header);
+
+    var list = div('rides-list');
+    rides.forEach(function(r) {
+      var md = monthDay(r.scheduled_at);
+      var card = div('ride-card');
+      var dateBox = div('ride-date-box');
+      dateBox.innerHTML = '<div class="ride-date-day">' + md.day + '</div><div class="ride-date-mon">' + md.mon + '</div>';
+      var info = div('ride-info');
+      info.appendChild(div('ride-name', escHtml(r.name || r.title || 'Saida')));
+      if (r.meeting_address) {
+        info.appendChild(div('ride-loc', '📍 ' + escHtml(r.meeting_address)));
+      }
+      var meta = div('ride-meta');
+      if (r.distance_km) meta.innerHTML += '<span><b>' + fmtNum(r.distance_km, 1) + '</b>km</span>';
+      if (r.elevation_m) meta.innerHTML += '<span><b>' + fmtNum(r.elevation_m) + '</b>m D+</span>';
+      info.appendChild(meta);
+      card.appendChild(dateBox);
+      card.appendChild(info);
+      list.appendChild(card);
+    });
+    wrap.appendChild(list);
+    return observe(wrap);
+  }
+
+  // ── Render: Feed ─────────────────────────────────────────────────────────
+  function renderFeed(posts, members) {
+    if (!posts.length) return null;
+    var wrap = div('section');
+    var header = div('section-header');
+    header.appendChild(div('section-title', 'Feed do Clube'));
+    header.appendChild(div('section-line'));
+    wrap.appendChild(header);
+
+    // Build member lookup
+    var memberMap = {};
+    members.forEach(function(m) { memberMap[m.user_id] = m; });
+
+    var list = div('feed-list');
+    posts.forEach(function(p) {
+      var card = div('feed-card');
+      var headerEl = div('feed-header');
+      var author = memberMap[p.author_id] || {};
+      headerEl.appendChild(avatarImg(author.avatar_url, 'feed-avatar', (author.display_name || '?')[0]));
+      var info = div('');
+      info.appendChild(div('feed-rider', escHtml(author.display_name || 'Ciclista')));
+      info.appendChild(div('feed-time', timeAgo(p.created_at)));
+      headerEl.appendChild(info);
+      card.appendChild(headerEl);
+
+      if (p.content) card.appendChild(div('feed-content', escHtml(p.content)));
+
+      var stats = p.stats || {};
+      var statsEl = div('feed-stats');
+      if (stats.distance_km) statsEl.innerHTML += '<span class="feed-stat"><b>' + fmtNum(stats.distance_km, 1) + '</b> km</span>';
+      if (stats.elevation_gain_m) statsEl.innerHTML += '<span class="feed-stat"><b>' + fmtNum(stats.elevation_gain_m) + '</b> m D+</span>';
+      if (stats.duration_s) {
+        var h = Math.floor(stats.duration_s / 3600), m = Math.floor((stats.duration_s % 3600) / 60);
+        statsEl.innerHTML += '<span class="feed-stat"><b>' + h + 'h' + String(m).padStart(2, '0') + '</b></span>';
+      }
+      if (stats.participants && stats.participants.length) {
+        statsEl.innerHTML += '<span class="feed-stat"><b>' + stats.participants.length + '</b> participantes</span>';
+      }
+      card.appendChild(statsEl);
+
+      if (p.photos && p.photos.length) {
+        var photos = div('feed-photos');
+        p.photos.slice(0, 8).forEach(function(url) {
+          var img = document.createElement('img');
+          img.src = url; img.className = 'feed-photo'; img.alt = '';
+          photos.appendChild(img);
+        });
+        card.appendChild(photos);
+      }
+      list.appendChild(card);
+    });
+    wrap.appendChild(list);
+    return observe(wrap);
+  }
+
+  // ── Render: Leaderboard ──────────────────────────────────────────────────
+  function renderLeaderboard(posts, members) {
+    // Compute leaderboard from club_ride_posts stats for current month
+    var now = new Date();
+    var monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    var riderTotals = {};
+    var memberMap = {};
+    members.forEach(function(m) { memberMap[m.user_id] = m; });
+
+    posts.forEach(function(p) {
+      if (!p.stats || !p.stats.participants) return;
+      var postDate = new Date(p.created_at);
+      if (postDate < monthStart) return;
+      p.stats.participants.forEach(function(pt) {
+        if (!pt.user_id) return;
+        if (!riderTotals[pt.user_id]) riderTotals[pt.user_id] = { km: 0, elev: 0, rides: 0 };
+        riderTotals[pt.user_id].km += (pt.distance_km || 0);
+        riderTotals[pt.user_id].elev += (pt.elevation_gain_m || 0);
+        riderTotals[pt.user_id].rides += 1;
+      });
+    });
+
+    var ranked = Object.keys(riderTotals)
+      .map(function(uid) {
+        var m = memberMap[uid] || {};
+        return {
+          user_id: uid,
+          display_name: m.display_name || 'Membro',
+          avatar_url: m.avatar_url || null,
+          km: riderTotals[uid].km,
+          elev: riderTotals[uid].elev,
+          rides: riderTotals[uid].rides
+        };
+      })
+      .filter(function(r) { return r.km > 0 || r.elev > 0; })
+      .sort(function(a, b) { return b.km - a.km; })
+      .slice(0, 20);
+
+    if (!ranked.length) return null;
+
+    var wrap = div('section');
+    var header = div('section-header');
+    var monthLabel = now.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' });
+    header.appendChild(div('section-title', 'Leaderboard — ' + monthLabel));
+    header.appendChild(div('section-line'));
+    wrap.appendChild(header);
+
+    var lbWrap = div('lb-wrap');
+
+    // Podium (top 3)
+    if (ranked.length >= 2) {
+      var podium = div('lb-podium');
+      var podiumOrder = ranked.length >= 3 ? [1, 0, 2] : [1, 0]; // silver, gold, bronze
+      var podiumClasses = ['gold', 'silver', 'bronze'];
+      var medals = ['🥇', '🥈', '🥉'];
+      podiumOrder.forEach(function(idx) {
+        if (idx >= ranked.length) return;
+        var r = ranked[idx];
+        var item = div('lb-podium-item ' + podiumClasses[idx]);
+        item.appendChild(div('lb-podium-medal', medals[idx]));
+        item.appendChild(avatarImg(r.avatar_url, 'lb-podium-avatar', (r.display_name || '?')[0]));
+        item.appendChild(div('lb-podium-name', escHtml(r.display_name)));
+        item.appendChild(div('lb-podium-km', fmtNum(r.km, 1) + ' km'));
+        podium.appendChild(item);
+      });
+      lbWrap.appendChild(podium);
+    }
+
+    // Table (rest)
+    if (ranked.length > 3) {
+      var table = document.createElement('table');
+      table.className = 'lb-table';
+      table.innerHTML = '<thead><tr><th>#</th><th>Ciclista</th><th class="num">km</th><th class="num">D+</th><th class="num">Saidas</th></tr></thead>';
+      var tbody = document.createElement('tbody');
+      ranked.slice(3).forEach(function(r, i) {
+        var pos = i + 4;
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td><span class="lb-rank other">' + pos + '</span></td>' +
+          '<td><div class="lb-rider">' +
+          (r.avatar_url ? '<img src="' + escAttr(r.avatar_url) + '" class="lb-avatar" alt="">' : '<span class="lb-avatar-ph">' + (r.display_name || '?')[0] + '</span>') +
+          '<span>' + escHtml(r.display_name) + '</span></div></td>' +
+          '<td class="num">' + fmtNum(r.km, 1) + '</td>' +
+          '<td class="num">' + fmtNum(r.elev) + '</td>' +
+          '<td class="num">' + r.rides + '</td>';
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      lbWrap.appendChild(table);
+    }
+
+    wrap.appendChild(lbWrap);
+    return observe(wrap);
+  }
+
+  // ── Render: Members ──────────────────────────────────────────────────────
+  function renderMembers(members) {
+    if (!members.length) return null;
+    var wrap = div('section');
+    var header = div('section-header');
+    header.appendChild(div('section-title', 'Membros (' + members.length + ')'));
+    header.appendChild(div('section-line'));
+    wrap.appendChild(header);
+
+    var grid = div('members-grid');
+    members.slice(0, 48).forEach(function(m) {
+      var roleCls = m.role === 'owner' ? 'role-owner' : m.role === 'admin' ? 'role-admin' : m.role === 'captain' ? 'role-captain' : '';
+      var card = div('member-card ' + roleCls);
+      card.appendChild(avatarImg(m.avatar_url, 'member-avatar', (m.display_name || '?')[0]));
+      card.appendChild(div('member-name', escHtml(m.display_name || 'Membro')));
+      if (m.role && m.role !== 'member') {
+        var badgeCls = m.role === 'owner' ? 'owner' : m.role === 'admin' ? 'admin' : m.role === 'captain' ? 'captain' : 'member';
+        var badgeLabel = m.role === 'owner' ? 'Fundador' : m.role === 'admin' ? 'Admin' : m.role === 'captain' ? 'Capitao' : 'Membro';
+        card.appendChild(el('span', 'role-badge ' + badgeCls, badgeLabel));
+      }
+      grid.appendChild(card);
+    });
+    wrap.appendChild(grid);
+    return observe(wrap);
+  }
+
+  // ── Render: CTA ──────────────────────────────────────────────────────────
+  function renderCTA(club) {
+    var section = div('cta-section');
+    section.innerHTML = '<div class="cta-title">Junta-te a ' + escHtml(club.name) + '</div>' +
+      '<div class="cta-sub">Descarrega a app KROMI BikeControl e faz parte da comunidade. Pedaladas em grupo, leaderboards, e muito mais.</div>';
+    var btn = el('button', 'cta-btn', 'Abrir KROMI BikeControl');
+    btn.onclick = function() { openApp('join', null, club.slug); };
+    section.appendChild(btn);
+    return observe(section);
+  }
+
+  // ── Render: Footer ───────────────────────────────────────────────────────
+  function renderFooter() {
+    var f = div('footer');
+    f.innerHTML = '<div class="footer-logo">K<span class="k-accent">ROMI</span> BikeControl</div>' +
+      '<div class="footer-links">' +
+      '<a href="' + APP_URL + '" target="_blank" rel="noopener">App</a>' +
+      '<a href="' + APP_URL + '/privacy" target="_blank" rel="noopener">Privacidade</a>' +
+      '</div>' +
+      '<div class="footer-copy">&copy; ' + new Date().getFullYear() + ' KROMI. Todos os direitos reservados.</div>';
+    return f;
   }
 
   // ── Error screen ──────────────────────────────────────────────────────────
@@ -551,10 +1016,10 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 
     try {
       // Fetch club
-      const clubs = await sbGet('/rest/v1/clubs?slug=eq.' + encodeURIComponent(slug) + '&select=*&limit=1');
+      var clubs = await sbGet('/rest/v1/clubs?slug=eq.' + encodeURIComponent(slug) + '&select=*&limit=1');
       if (!clubs || !clubs.length) { showError('O clube "' + slug + '" nao existe.'); return; }
-      const club = clubs[0];
-      const cfg = club.landing_config || {};
+      var club = clubs[0];
+      var cfg = club.landing_config || {};
 
       // Apply accent color
       if (club.color) {
@@ -568,21 +1033,24 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
       document.getElementById('page-title').textContent = club.name + ' — KROMI';
 
       // Parallel data fetches
-      const [membersRaw, feedRaw, ridesRaw] = await Promise.allSettled([
+      var results = await Promise.allSettled([
         sbGet('/rest/v1/club_members?club_id=eq.' + encodeURIComponent(club.id) + '&select=*&order=joined_at.asc'),
-        club.privacy === 'public'
+        club.visibility !== 'private'
           ? sbGet('/rest/v1/club_ride_posts?club_id=eq.' + encodeURIComponent(club.id) + '&order=created_at.desc&limit=20')
           : Promise.resolve([]),
         sbGet('/rest/v1/club_rides?club_id=eq.' + encodeURIComponent(club.id) + '&status=eq.planned&order=scheduled_at.asc&limit=10')
       ]);
 
-      const members = membersRaw.status === 'fulfilled' ? (membersRaw.value || []) : [];
-      const feed = feedRaw.status === 'fulfilled' ? (feedRaw.value || []) : [];
-      const rides = ridesRaw.status === 'fulfilled' ? (ridesRaw.value || []) : [];
+      var members = results[0].status === 'fulfilled' ? (results[0].value || []) : [];
+      var feed = results[1].status === 'fulfilled' ? (results[1].value || []) : [];
+      var rides = results[2].status === 'fulfilled' ? (results[2].value || []) : [];
 
       // Build page
-      const app = document.getElementById('app');
+      var app = document.getElementById('app');
       app.innerHTML = '';
+
+      // Brand bar
+      app.appendChild(renderBrandBar(club.name, club.slug));
 
       // Invite banner
       if (inviteCode) {
@@ -592,50 +1060,63 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
       // Hero
       app.appendChild(renderHero(club, members.length));
 
-      // Stats grid (always shown)
+      // Stats
       app.appendChild(renderStats(club, members.length));
 
+      // Divider
+      app.appendChild(div('section-divider'));
+
       // About
-      if (cfg.show_about !== false && club.custom_about) {
-        app.appendChild(renderAbout(club));
+      var customAbout = cfg.custom_about || club.description;
+      if (cfg.show_about !== false && customAbout) {
+        app.appendChild(renderAbout(customAbout));
       }
 
       // Board
       if (cfg.show_board !== false) {
-        const boardEl = renderBoard(members);
+        var boardList = cfg.board_members && cfg.board_members.length
+          ? members.filter(function(m) { return cfg.board_members.indexOf(m.user_id) !== -1 || m.role === 'admin' || m.role === 'owner'; })
+          : members.filter(function(m) { return m.role === 'admin' || m.role === 'captain' || m.role === 'owner'; });
+        var boardEl = renderBoard(boardList);
         if (boardEl) app.appendChild(boardEl);
       }
 
       // Upcoming rides
       if (cfg.show_upcoming_rides !== false) {
-        const ridesEl = renderUpcomingRides(rides);
+        var ridesEl = renderUpcomingRides(rides);
         if (ridesEl) app.appendChild(ridesEl);
       }
 
       // Feed
-      if (cfg.show_feed !== false && club.privacy === 'public') {
-        const feedEl = renderFeed(feed);
+      if (cfg.show_feed !== false && club.visibility !== 'private') {
+        var feedEl = renderFeed(feed, members);
         if (feedEl) app.appendChild(feedEl);
-      } else if (club.privacy === 'private' && cfg.show_feed !== false) {
-        const wrap = div('section');
-        wrap.appendChild(div('section-title', 'Feed do Clube'));
-        const notice = div('private-notice');
+      } else if (club.visibility === 'private' && cfg.show_feed !== false) {
+        var privWrap = div('section');
+        var privHeader = div('section-header');
+        privHeader.appendChild(div('section-title', 'Feed do Clube'));
+        privHeader.appendChild(div('section-line'));
+        privWrap.appendChild(privHeader);
+        var notice = div('private-notice');
         notice.innerHTML = '<div class="lock">🔒</div><p>O feed deste clube e privado.<br>Aderir ao clube para ver as pedaladas dos membros.</p>';
-        wrap.appendChild(notice);
-        app.appendChild(observe(wrap));
+        privWrap.appendChild(notice);
+        app.appendChild(observe(privWrap));
       }
 
       // Leaderboard
       if (cfg.show_leaderboard !== false) {
-        const lbEl = renderLeaderboard(members);
+        var lbEl = renderLeaderboard(feed, members);
         if (lbEl) app.appendChild(lbEl);
       }
 
       // Members
       if (cfg.show_members !== false) {
-        const membersEl = renderMembers(members);
+        var membersEl = renderMembers(members);
         if (membersEl) app.appendChild(membersEl);
       }
+
+      // CTA
+      app.appendChild(renderCTA(club));
 
       // Footer
       app.appendChild(renderFooter());
