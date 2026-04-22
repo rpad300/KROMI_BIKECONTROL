@@ -42,12 +42,60 @@ const SB_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 async function resolveBearerToken(): Promise<string> {
   try {
     const mod = await import('../store/authStore');
-    const jwt = mod.useAuthStore.getState().jwt;
-    if (jwt) return jwt;
+    const state = mod.useAuthStore.getState();
+
+    // Check if JWT is about to expire (within 2 minutes) — proactive refresh
+    if (state.jwt && state.jwtExpiresAt) {
+      const expiresAt = new Date(state.jwtExpiresAt).getTime();
+      const twoMinFromNow = Date.now() + 2 * 60 * 1000;
+      if (expiresAt < twoMinFromNow && state.sessionToken) {
+        // JWT expired or about to — try to refresh in background
+        refreshJwtIfNeeded(state.sessionToken).catch(() => {});
+      }
+    }
+
+    if (state.jwt) return state.jwt;
   } catch {
     // authStore unavailable during very early bootstrap — fall through
   }
   return SB_ANON_KEY ?? '';
+}
+
+/** Mutex to prevent multiple simultaneous refresh attempts */
+let _refreshing: Promise<string | null> | null = null;
+
+/**
+ * Refresh the JWT by calling verifySession. Returns the new JWT or null.
+ * Uses a mutex so concurrent callers share the same refresh request.
+ */
+async function refreshJwtIfNeeded(sessionToken: string): Promise<string | null> {
+  if (_refreshing) return _refreshing;
+
+  _refreshing = (async () => {
+    try {
+      const { verifySession } = await import('../services/auth/AuthService');
+      const result = await verifySession(sessionToken);
+      if (result?.jwt) {
+        const { useAuthStore } = await import('../store/authStore');
+        // Update both the store and the global JWT reference
+        useAuthStore.setState({
+          jwt: result.jwt,
+          jwtExpiresAt: result.jwt_expires_at,
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).__KROMI_AUTH_JWT__ = result.jwt;
+        console.info('[supaFetch] JWT refreshed');
+        return result.jwt;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      _refreshing = null;
+    }
+  })();
+
+  return _refreshing;
 }
 
 /**
@@ -149,7 +197,34 @@ export async function supaFetch(
     ...(init.headers ?? {}),
   };
 
-  const res = await fetch(url, { ...init, headers });
+  let res = await fetch(url, { ...init, headers });
+
+  // Auto-refresh on JWT expired — retry once with fresh token
+  if (res.status === 401 && !init.anonOnly) {
+    const body401 = await res.text().catch(() => '');
+    if (body401.includes('JWT expired') || body401.includes('PGRST303')) {
+      try {
+        const mod = await import('../store/authStore');
+        const token = mod.useAuthStore.getState().sessionToken;
+        if (token) {
+          const newJwt = await refreshJwtIfNeeded(token);
+          if (newJwt) {
+            // Retry with fresh JWT
+            headers.Authorization = `Bearer ${newJwt}`;
+            res = await fetch(url, { ...init, headers });
+          }
+        }
+      } catch {
+        // Refresh failed — throw original 401
+      }
+    }
+    if (!res.ok) {
+      const body = res.status === 401 ? body401 : await res.text().catch(() => '');
+      throw new SupaFetchError(res.status, body, url);
+    }
+    return res;
+  }
+
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new SupaFetchError(res.status, body, url);
