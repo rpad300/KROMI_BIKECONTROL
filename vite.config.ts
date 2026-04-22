@@ -55,7 +55,7 @@ export default defineConfig({
         // SPA fallback — serve index.html for all navigation requests
         navigateFallback: '/index.html',
         // Don't intercept standalone HTML pages (served as static files, not SPA)
-        navigateFallbackDenylist: [/^\/live\.html/, /^\/emergency\.html/],
+        navigateFallbackDenylist: [/^\/live\.html/, /^\/emergency\.html/, /^\/club\.html/, /^\/ride\.html/],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/maps\.googleapis\.com\/.*/i,
