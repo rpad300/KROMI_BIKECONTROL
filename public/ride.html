@@ -272,11 +272,14 @@ function loadGoogleMaps() {
     </div>
   </footer>
 
-  <!-- Live Tracking Bar (hidden by default) -->
+  <!-- Live Tracking Bar (floating card, hidden by default) -->
   <div class="live-bar" id="live-bar" style="display:none" role="banner" aria-label="Live tracking">
     <div class="live-bar-inner">
-      <span class="live-dot"></span>
-      <span class="live-bar-text">Acompanhar em tempo real</span>
+      <span class="live-dot" id="live-bar-dot"></span>
+      <div>
+        <span class="live-bar-text" id="live-bar-text">Acompanhar em tempo real</span>
+        <span class="live-bar-sub" id="live-bar-sub"></span>
+      </div>
       <a class="live-bar-btn" id="live-bar-link" href="#" target="_blank" rel="noopener">Ver Live Tracking</a>
     </div>
   </div>

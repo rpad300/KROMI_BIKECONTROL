@@ -121,17 +121,18 @@ body {
 .live-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 20px;
-  background: rgba(239,68,68,0.12);
-  border: 1px solid rgba(239,68,68,0.3);
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 100px;
+  background: rgba(239,68,68,0.15);
+  border: 1px solid rgba(239,68,68,0.4);
   font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 800;
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: #ef4444;
+  margin-bottom: 12px;
 }
 .live-badge::before {
   content: "";
@@ -156,9 +157,14 @@ body {
   background: #fbbf24;
   animation: live-pulse 2s ease-in-out infinite;
 }
+.live-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #ef4444; display: inline-block; flex-shrink: 0;
+  animation: live-pulse 1.4s ease-in-out infinite;
+}
 .soon-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: #fbbf24; display: inline-block;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #fbbf24; display: inline-block; flex-shrink: 0;
   animation: live-pulse 2s ease-in-out infinite;
 }
 
@@ -226,24 +232,40 @@ body {
 }
 .equip-list li strong { color: var(--text); font-weight: 600; }
 
-/* ── Live Bar (mobile sticky bottom) ───────────────────────────────────── */
+/* ── Live Bar (floating card) ──────────────────────────────────────────── */
 .live-bar {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 200;
-  background: rgba(10,10,10,0.96);
-  border-top: 1px solid rgba(239,68,68,0.4);
-  padding: 10px 20px;
+  max-width: 480px;
+  width: calc(100% - 32px);
+  background: rgba(10,10,10,0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: 16px;
+  padding: 14px 20px;
   display: none;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
 }
 .live-bar.visible { display: flex; }
+.live-bar.soon { border-color: rgba(251,191,36,0.3); }
+.live-bar-inner { display: flex; align-items: center; gap: 12px; width: 100%; }
+.live-bar-text { flex: 1; font-size: 13px; color: var(--text); font-weight: 600; }
+.live-bar-sub { font-size: 11px; color: var(--text-muted); display: block; margin-top: 2px; }
+.live-bar-btn {
+  background: #ef4444; color: white; border: none; border-radius: 10px;
+  padding: 10px 20px; font-size: 12px; font-weight: 800; cursor: pointer;
+  text-decoration: none; white-space: nowrap;
+  transition: box-shadow 0.3s, transform 0.2s;
+}
+.live-bar-btn:hover { box-shadow: 0 0 20px rgba(239,68,68,0.4); transform: translateY(-1px); }
+.live-bar.soon .live-bar-btn { background: #fbbf24; color: #000; }
+.live-bar.soon .live-bar-btn:hover { box-shadow: 0 0 20px rgba(251,191,36,0.4); }
 .live-bar-stats {
   display: flex;
   gap: 20px;

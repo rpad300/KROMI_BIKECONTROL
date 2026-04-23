@@ -1040,65 +1040,16 @@ function generatePOIs(gpxPoints, gpxProfile, data) {
   return pois;
 }
 
-// ── Enrich POIs with Google Places ───────────────────────────────────────────
-function enrichPOIsWithPlaces(pois) {
-  loadGoogleMaps().then(function () {
-    var attrDiv = document.createElement('div');
-    attrDiv.style.display = 'none';
-    document.body.appendChild(attrDiv);
-    var service = new google.maps.places.PlacesService(attrDiv);
-
-    pois.forEach(function (poi) {
-      if (!poi.lat || !poi.lon) return;
-      var geocoder = new google.maps.Geocoder();
-      geocoder.geocode({ location: { lat: poi.lat, lng: poi.lon } }, function (results, status) {
-        if (status === 'OK' && results && results[0]) {
-          var r = results[0];
-          var locality = '';
-          var subloc = '';
-          r.address_components.forEach(function (c) {
-            if (c.types.indexOf('locality') !== -1) locality = c.long_name;
-            if (c.types.indexOf('sublocality') !== -1 || c.types.indexOf('neighborhood') !== -1) subloc = c.long_name;
-          });
-          if (poi.type !== 'waypoint') {
-            var placeName = subloc || locality;
-            if (placeName && poi.name.indexOf(placeName) === -1) {
-              poi.locationName = placeName;
-              var el = document.getElementById('poi-location-' + poi._idx);
-              if (el) el.textContent = placeName;
-            }
-          }
-        }
-      });
-
-      var searchType = 'point_of_interest';
-      if (poi.type === 'midpoint' || poi.type === 'valley') searchType = 'restaurant';
-      else if (poi.type === 'summit') searchType = 'tourist_attraction';
-
-      service.nearbySearch({
-        location: { lat: poi.lat, lng: poi.lon },
-        radius: 2000,
-        type: searchType
-      }, function (results, status) {
-        if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
-          var best = results[0];
-          poi.placeName = best.name;
-          poi.placeRating = best.rating;
-          poi.placeTypes = best.types;
-          if (best.photos && best.photos.length > 0) {
-            poi.placePhoto = best.photos[0].getUrl({ maxWidth: 400 });
-          }
-          var nameEl = document.getElementById('poi-place-' + poi._idx);
-          if (nameEl) nameEl.innerHTML = '<strong>' + escHtml(best.name) + '</strong>' +
-            (best.rating ? ' <span style="color:var(--accent);font-size:11px">\u2605 ' + best.rating + '</span>' : '');
-          var imgEl = document.getElementById('poi-img-' + poi._idx);
-          if (imgEl && poi.placePhoto) {
-            imgEl.src = poi.placePhoto;
-            imgEl.style.display = 'block';
-          }
-        }
-      });
-    });
+// ── Enrich POIs with Street View images ─────────────────────────────────────
+function enrichPOIsWithImages(pois) {
+  pois.forEach(function (poi) {
+    if (!poi.lat || !poi.lon) return;
+    var imgEl = document.getElementById('poi-img-' + poi._idx);
+    if (imgEl) {
+      imgEl.src = 'https://maps.googleapis.com/maps/api/streetview?size=400x200&location=' + poi.lat + ',' + poi.lon + '&fov=90&heading=0&pitch=10&key=' + MAPS_KEY;
+      imgEl.style.display = 'block';
+      imgEl.onerror = function () { this.style.display = 'none'; };
+    }
   });
 }
 
@@ -1141,7 +1092,7 @@ function renderPOIs(gpxPoints, gpxProfile, data) {
     grid.appendChild(card);
   });
 
-  enrichPOIsWithPlaces(pois);
+  enrichPOIsWithImages(pois);
   initRevealForElement($('section-pois'));
 }
 
@@ -1852,23 +1803,30 @@ function showLiveBadge(data, mode) {
     var rideId = data.ride_id || data.id;
     var liveUrl = 'https://www.kromi.online/live.html?ride=' + rideId;
     bar.style.display = 'flex';
+    if (mode === 'soon') {
+      bar.classList.add('soon');
+    } else {
+      bar.classList.remove('soon');
+    }
     var link = $('live-bar-link');
     if (link) link.href = liveUrl;
-    var text = bar.querySelector('.live-bar-text');
-    if (text) {
-      if (mode === 'soon') {
-        var d = new Date(data.scheduled_at || data.departure_at);
-        var dayStr = d.toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' });
-        var timeStr = d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
-        text.textContent = 'Arranca ' + dayStr + ' as ' + timeStr;
-      } else {
-        text.textContent = 'Acompanhar em tempo real';
-      }
-    }
+    var textEl = $('live-bar-text');
+    var subEl = $('live-bar-sub');
+    var dotEl = $('live-bar-dot');
     if (mode === 'soon') {
-      var btn = $('live-bar-link');
-      if (btn) btn.textContent = 'Ver Live Tracking';
+      var d = new Date(data.scheduled_at || data.departure_at);
+      var dayStr = d.toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' });
+      var timeStr = d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+      if (textEl) textEl.textContent = 'Arranca ' + dayStr + ' as ' + timeStr;
+      if (subEl) subEl.textContent = 'Live tracking disponivel no dia da pedalada';
+      if (dotEl) { dotEl.className = 'soon-dot'; }
+    } else {
+      if (textEl) textEl.textContent = 'Acompanhar em tempo real';
+      if (subEl) subEl.textContent = 'Pedalada a decorrer agora';
+      if (dotEl) { dotEl.className = 'live-dot'; }
     }
+    var btn = $('live-bar-link');
+    if (btn) btn.textContent = 'Ver Live Tracking';
   }
 }
 
@@ -1987,6 +1945,18 @@ async function main() {
       window._allTrackPoints = gpxPoints;
       if (gpxPoints.length >= 2) gpxProfile = buildProfile(gpxPoints);
       $('btn-gpx').style.display = '';
+    }
+
+    // Street View hero background (when no club banner)
+    if (gpxPoints && gpxPoints.length > 0 && !(club && club.banner_url)) {
+      var startPt = gpxPoints[0];
+      var heroImg = 'https://maps.googleapis.com/maps/api/streetview?size=1200x600&location=' + startPt.lat + ',' + startPt.lon + '&fov=100&heading=0&pitch=5&key=' + MAPS_KEY;
+      var heroSection = $('hero-section');
+      if (heroSection) {
+        heroSection.style.backgroundImage = 'linear-gradient(180deg, rgba(14,14,14,0.3) 0%, rgba(14,14,14,0.7) 50%, var(--bg) 100%), url(' + heroImg + ')';
+        heroSection.style.backgroundSize = 'cover';
+        heroSection.style.backgroundPosition = 'center';
+      }
     }
 
     // Stats
