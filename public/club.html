@@ -11,6 +11,8 @@
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <title id="page-title">Clube — KROMI</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
@@ -515,6 +517,10 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .modal-photos img { width: 100px; height: 75px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
 .modal-desc { font-size: 13px; color: #bbb; line-height: 1.6; margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 10px; }
 .clickable { cursor: pointer; }
+.modal-map { width: 100%; height: 260px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+.modal-section-label { font-size: 10px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 1.5px; margin: 16px 0 8px; font-family: 'JetBrains Mono', monospace; }
+.modal-elev-wrap { background: #111; border: 1px solid var(--border); border-radius: 12px; padding: 12px 8px 4px; position: relative; overflow: hidden; }
+.modal-elev-wrap::before { content: ''; position: absolute; inset: 0; background-image: linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px); background-size: 20px 20px; pointer-events: none; }
 
 /* ── Reduced motion ───────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -1212,6 +1218,38 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
+  // Leaflet map instance for modal — destroyed on close
+  var _modalMap = null;
+  function renderLeafletMap(containerId, points) {
+    if (_modalMap) { _modalMap.remove(); _modalMap = null; }
+    setTimeout(function() {
+      var container = document.getElementById(containerId);
+      if (!container || !points.length) return;
+      _modalMap = L.map(container, { zoomControl: true, scrollWheelZoom: false, attributionControl: false });
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        subdomains: 'abcd', maxZoom: 18
+      }).addTo(_modalMap);
+      var latlngs = points.map(function(p) { return [p.lat, p.lon]; });
+      // White outline + accent track
+      L.polyline(latlngs, { color: '#ffffff', weight: 5, opacity: 0.15, lineJoin: 'round' }).addTo(_modalMap);
+      L.polyline(latlngs, { color: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#3fff8b', weight: 3, opacity: 0.9, lineJoin: 'round', lineCap: 'round' }).addTo(_modalMap);
+      // Start marker
+      var startIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;border-radius:50%;background:#3fff8b;border:2px solid #000;box-shadow:0 0 8px rgba(63,255,139,0.5)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
+      L.marker(latlngs[0], { icon: startIcon }).addTo(_modalMap).bindPopup('<b>START</b>');
+      // End marker
+      var endIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;border-radius:50%;background:#ff716c;border:2px solid #000;box-shadow:0 0 8px rgba(255,113,108,0.5)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
+      L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).addTo(_modalMap).bindPopup('<b>FIM</b>');
+      _modalMap.fitBounds(L.latLngBounds(latlngs), { padding: [30, 30] });
+    }, 50); // slight delay to ensure container is in DOM
+  }
+
+  // Override closeModal to clean up map
+  var _origCloseModal = window.closeModal;
+  window.closeModal = function() {
+    if (_modalMap) { _modalMap.remove(); _modalMap = null; }
+    document.getElementById('modal').classList.remove('open');
+  };
+
   function renderGpxMapSvg(points) {
     if (points.length < 2) return '';
     var W = 500, H = 300, PAD = 20;
@@ -1329,16 +1367,12 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
         html += '<div class="modal-stat"><div class="modal-stat-value">' + fmtNum(kpis.elevation_loss) + '</div><div class="modal-stat-label">D-</div></div>';
         html += '<div class="modal-stat"><div class="modal-stat-value">' + Math.round(kpis.max_ele) + '</div><div class="modal-stat-label">Alt. Max</div></div>';
         html += '</div>';
-        // Route map SVG
-        html += '<div style="margin-top:12px">';
-        html += '<div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Rota</div>';
-        html += renderGpxMapSvg(pts);
-        html += '</div>';
+        // Route map (Leaflet)
+        html += '<div class="modal-section-label">Rota</div>';
+        html += '<div id="modal-ride-map" class="modal-map"></div>';
         // Elevation profile SVG
-        html += '<div style="margin-top:8px">';
-        html += '<div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Altimetria</div>';
-        html += renderGpxElevationSvg(pts, kpis);
-        html += '</div>';
+        html += '<div class="modal-section-label">Altimetria</div>';
+        html += '<div class="modal-elev-wrap">' + renderGpxElevationSvg(pts, kpis) + '</div>';
         // Extra KPIs row
         html += '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">';
         html += '<div style="flex:1;min-width:70px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px;text-align:center;border:1px solid var(--border)">';
@@ -1374,6 +1408,11 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
     html += '</div>';
     document.getElementById('modal-body').innerHTML = html;
     document.getElementById('modal').classList.add('open');
+    // Render Leaflet map after DOM update
+    if (ride.route_gpx && typeof renderLeafletMap === 'function') {
+      var mapPts = parseGpx(ride.route_gpx);
+      if (mapPts.length >= 2) renderLeafletMap('modal-ride-map', mapPts);
+    }
   };
 
   window.openFeedModal = function(post, author) {
