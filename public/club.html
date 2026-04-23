@@ -1152,6 +1152,125 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
     document.getElementById('modal').classList.add('open');
   };
 
+  // ── GPX parser ─────────────────────────────────────────────────────────────
+  function parseGpx(gpxText) {
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(gpxText, 'application/xml');
+    var trkpts = doc.querySelectorAll('trkpt');
+    if (!trkpts.length) trkpts = doc.querySelectorAll('rtept');
+    var points = [];
+    trkpts.forEach(function(pt) {
+      var lat = parseFloat(pt.getAttribute('lat'));
+      var lon = parseFloat(pt.getAttribute('lon'));
+      var eleEl = pt.querySelector('ele');
+      var ele = eleEl ? parseFloat(eleEl.textContent) : 0;
+      if (!isNaN(lat) && !isNaN(lon)) points.push({ lat: lat, lon: lon, ele: ele });
+    });
+    return points;
+  }
+
+  function gpxKpis(points) {
+    var totalDist = 0, gain = 0, loss = 0, minEle = Infinity, maxEle = -Infinity;
+    var distances = [0]; // cumulative distance in km
+    for (var i = 0; i < points.length; i++) {
+      var p = points[i];
+      if (p.ele < minEle) minEle = p.ele;
+      if (p.ele > maxEle) maxEle = p.ele;
+      if (i > 0) {
+        var prev = points[i - 1];
+        var d = haversine(prev.lat, prev.lon, p.lat, p.lon);
+        totalDist += d;
+        var dEle = p.ele - prev.ele;
+        if (dEle > 0) gain += dEle; else loss -= dEle;
+      }
+      distances.push(totalDist);
+    }
+    return { distance_km: totalDist, elevation_gain: gain, elevation_loss: loss, min_ele: minEle === Infinity ? 0 : minEle, max_ele: maxEle === -Infinity ? 0 : maxEle, distances: distances };
+  }
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    var R = 6371; // km
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  function renderGpxMapSvg(points) {
+    if (points.length < 2) return '';
+    var W = 360, H = 200, PAD = 12;
+    var lats = points.map(function(p) { return p.lat; });
+    var lons = points.map(function(p) { return p.lon; });
+    var minLat = Math.min.apply(null, lats), maxLat = Math.max.apply(null, lats);
+    var minLon = Math.min.apply(null, lons), maxLon = Math.max.apply(null, lons);
+    var rangeLat = maxLat - minLat || 0.001;
+    var rangeLon = maxLon - minLon || 0.001;
+    // Adjust aspect ratio
+    var midLat = (minLat + maxLat) / 2;
+    var cosLat = Math.cos(midLat * Math.PI / 180);
+    var scaleX = function(lon) { return PAD + ((lon - minLon) / rangeLon) * (W - 2 * PAD) * cosLat / Math.max(cosLat, rangeLat / rangeLon); };
+    var scaleY = function(lat) { return H - PAD - ((lat - minLat) / rangeLat) * (H - 2 * PAD); };
+    // Normalize to fit
+    var xs = points.map(function(p) { return (p.lon - minLon) / rangeLon; });
+    var ys = points.map(function(p) { return (p.lat - minLat) / rangeLat; });
+    var aspW = rangeLon * cosLat, aspH = rangeLat;
+    var fitW = W - 2 * PAD, fitH = H - 2 * PAD;
+    var scale = Math.min(fitW / aspW, fitH / aspH);
+    var offX = PAD + (fitW - aspW * scale) / 2;
+    var offY = PAD + (fitH - aspH * scale) / 2;
+    var polyPoints = points.map(function(p) {
+      var x = offX + ((p.lon - minLon) / rangeLon) * aspW * scale;
+      var y = H - offY - ((p.lat - minLat) / rangeLat) * aspH * scale;
+      return x + ',' + y;
+    }).join(' ');
+    // Start/end markers
+    var startX = offX + ((points[0].lon - minLon) / rangeLon) * aspW * scale;
+    var startY = H - offY - ((points[0].lat - minLat) / rangeLat) * aspH * scale;
+    var endP = points[points.length - 1];
+    var endX = offX + ((endP.lon - minLon) / rangeLon) * aspW * scale;
+    var endY = H - offY - ((endP.lat - minLat) / rangeLat) * aspH * scale;
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;border-radius:12px;background:#111;border:1px solid var(--border)">' +
+      '<polyline points="' + polyPoints + '" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>' +
+      '<circle cx="' + startX + '" cy="' + startY + '" r="5" fill="#3fff8b" stroke="#000" stroke-width="1.5"/>' +
+      '<text x="' + (startX + 8) + '" y="' + (startY + 4) + '" fill="#3fff8b" font-size="9" font-weight="700">START</text>' +
+      '<circle cx="' + endX + '" cy="' + endY + '" r="5" fill="#ff716c" stroke="#000" stroke-width="1.5"/>' +
+      '<text x="' + (endX + 8) + '" y="' + (endY + 4) + '" fill="#ff716c" font-size="9" font-weight="700">FIM</text>' +
+      '</svg>';
+  }
+
+  function renderGpxElevationSvg(points, kpis) {
+    if (points.length < 2) return '';
+    var W = 360, H = 120, PAD = 6, PADL = 32;
+    var dists = kpis.distances;
+    var maxD = kpis.distance_km || 1;
+    var minE = kpis.min_ele, maxE = kpis.max_ele;
+    var rangeE = maxE - minE || 1;
+    var sx = function(d) { return PADL + (d / maxD) * (W - PADL - PAD); };
+    var sy = function(e) { return H - PAD - ((e - minE) / rangeE) * (H - 2 * PAD); };
+    var polyPts = points.map(function(p, i) { return sx(dists[i + 1] || dists[i]) + ',' + sy(p.ele); }).join(' ');
+    var areaPts = sx(0) + ',' + (H - PAD) + ' ' + polyPts + ' ' + sx(maxD) + ',' + (H - PAD);
+    // Gradient stops based on slope
+    var stops = '';
+    for (var i = 1; i < points.length; i++) {
+      var segDist = dists[i + 1] - dists[i];
+      var slope = segDist > 0.001 ? Math.abs((points[i].ele - points[i-1].ele) / (segDist * 1000)) * 100 : 0;
+      var color = slope > 12 ? '#e966ff' : slope > 8 ? '#ff716c' : slope > 4 ? '#fbbf24' : '#3fff8b';
+      var pct = ((dists[i + 1] || dists[i]) / maxD) * 100;
+      stops += '<stop offset="' + pct + '%" stop-color="' + color + '" stop-opacity="0.5"/>';
+    }
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;border-radius:10px;background:#111;border:1px solid var(--border);margin-top:8px">' +
+      '<defs><linearGradient id="eg" x1="0" y1="0" x2="1" y2="0">' + stops + '</linearGradient></defs>' +
+      '<polygon points="' + areaPts + '" fill="url(#eg)" opacity="0.3"/>' +
+      '<polyline points="' + polyPts + '" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity="0.9"/>' +
+      '<text x="' + PADL + '" y="' + (sy(maxE) - 2) + '" fill="var(--text-muted)" font-size="8">' + Math.round(maxE) + 'm</text>' +
+      '<text x="' + PADL + '" y="' + (sy(minE) + 10) + '" fill="var(--text-muted)" font-size="8">' + Math.round(minE) + 'm</text>' +
+      '<text x="' + sx(0) + '" y="' + (H - 1) + '" fill="var(--text-muted)" font-size="7">0km</text>' +
+      '<text x="' + (sx(maxD) - 20) + '" y="' + (H - 1) + '" fill="var(--text-muted)" font-size="7">' + maxD.toFixed(1) + 'km</text>' +
+      '</svg>';
+  }
+
   window.openRideModal = function(ride) {
     var d = ride.scheduled_at ? new Date(ride.scheduled_at) : null;
     var dateStr = d ? d.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '—';
@@ -1162,20 +1281,60 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
     html += '<div style="font-size:13px;color:var(--text-muted);margin-top:6px">' + dateStr + (timeStr ? ' · ' + timeStr : '') + '</div>';
     html += '</div>';
     html += '<div class="modal-body">';
-    if (ride.meeting_address) html += '<div class="modal-info"><div class="modal-info-row"><span class="modal-info-label">Local de encontro</span><span class="modal-info-value">📍 ' + escHtml(ride.meeting_address) + '</span></div></div>';
-    var stats = [];
-    if (ride.distance_km) stats.push({ v: fmtNum(ride.distance_km, 1), l: 'Distancia (km)' });
-    if (ride.elevation_m) stats.push({ v: fmtNum(ride.elevation_m), l: 'Elevacao (D+)' });
-    if (stats.length) {
-      html += '<div class="modal-stat-grid" style="margin-top:12px">';
-      stats.forEach(function(s) { html += '<div class="modal-stat"><div class="modal-stat-value">' + s.v + '</div><div class="modal-stat-label">' + s.l + '</div></div>'; });
-      html += '</div>';
+
+    // Parse GPX if available
+    if (ride.route_gpx) {
+      var pts = parseGpx(ride.route_gpx);
+      if (pts.length >= 2) {
+        var kpis = gpxKpis(pts);
+        // KPI grid
+        html += '<div class="modal-stat-grid">';
+        html += '<div class="modal-stat"><div class="modal-stat-value">' + fmtNum(kpis.distance_km, 1) + '</div><div class="modal-stat-label">km</div></div>';
+        html += '<div class="modal-stat"><div class="modal-stat-value">' + fmtNum(kpis.elevation_gain) + '</div><div class="modal-stat-label">D+</div></div>';
+        html += '<div class="modal-stat"><div class="modal-stat-value">' + fmtNum(kpis.elevation_loss) + '</div><div class="modal-stat-label">D-</div></div>';
+        html += '<div class="modal-stat"><div class="modal-stat-value">' + Math.round(kpis.max_ele) + '</div><div class="modal-stat-label">Alt. Max</div></div>';
+        html += '</div>';
+        // Route map SVG
+        html += '<div style="margin-top:12px">';
+        html += '<div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Rota</div>';
+        html += renderGpxMapSvg(pts);
+        html += '</div>';
+        // Elevation profile SVG
+        html += '<div style="margin-top:8px">';
+        html += '<div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Altimetria</div>';
+        html += renderGpxElevationSvg(pts, kpis);
+        html += '</div>';
+        // Extra KPIs row
+        html += '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">';
+        html += '<div style="flex:1;min-width:70px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px;text-align:center;border:1px solid var(--border)">';
+        html += '<div style="font-size:16px;font-weight:800;font-family:JetBrains Mono,monospace;color:var(--text)">' + Math.round(kpis.min_ele) + 'm</div>';
+        html += '<div style="font-size:9px;color:var(--text-muted)">Alt. Min</div></div>';
+        html += '<div style="flex:1;min-width:70px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px;text-align:center;border:1px solid var(--border)">';
+        var avgGrad = kpis.distance_km > 0 ? (kpis.elevation_gain / (kpis.distance_km * 1000)) * 100 : 0;
+        html += '<div style="font-size:16px;font-weight:800;font-family:JetBrains Mono,monospace;color:var(--text)">' + avgGrad.toFixed(1) + '%</div>';
+        html += '<div style="font-size:9px;color:var(--text-muted)">Grad. Med</div></div>';
+        html += '<div style="flex:1;min-width:70px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px;text-align:center;border:1px solid var(--border)">';
+        html += '<div style="font-size:16px;font-weight:800;font-family:JetBrains Mono,monospace;color:var(--text)">' + pts.length + '</div>';
+        html += '<div style="font-size:9px;color:var(--text-muted)">Track pts</div></div>';
+        html += '</div>';
+      }
+    } else {
+      // No GPX — show basic stats
+      var stats = [];
+      if (ride.distance_km) stats.push({ v: fmtNum(ride.distance_km, 1), l: 'km' });
+      if (ride.elevation_m) stats.push({ v: fmtNum(ride.elevation_m), l: 'D+' });
+      if (stats.length) {
+        html += '<div class="modal-stat-grid">';
+        stats.forEach(function(s) { html += '<div class="modal-stat"><div class="modal-stat-value">' + s.v + '</div><div class="modal-stat-label">' + s.l + '</div></div>'; });
+        html += '</div>';
+      }
     }
+
+    if (ride.meeting_address) html += '<div class="modal-info" style="margin-top:12px"><div class="modal-info-row"><span class="modal-info-label">Local de encontro</span><span class="modal-info-value">📍 ' + escHtml(ride.meeting_address) + '</span></div></div>';
     if (ride.description) html += '<div class="modal-desc">' + escHtml(ride.description) + '</div>';
-    if (ride.route_gpx) html += '<div style="margin-top:12px;text-align:center;font-size:12px;color:var(--accent)">🗺️ Rota GPX disponivel</div>';
     // Link to ride.html editorial page
     html += '<div style="margin-top:20px;text-align:center">';
-    html += '<a href="/ride.html?ride=' + escAttr(ride.id) + '" style="display:inline-block;background:var(--accent);color:#000;padding:12px 28px;border-radius:10px;font-size:14px;font-weight:800;text-decoration:none;transition:box-shadow 0.3s">Ver Pagina da Ride</a>';
+    html += '<a href="/ride.html?ride=' + escAttr(ride.id) + '" style="display:inline-block;background:var(--accent);color:#000;padding:12px 28px;border-radius:10px;font-size:14px;font-weight:800;text-decoration:none;transition:box-shadow 0.3s">Ver Pagina Completa</a>';
     html += '</div>';
     html += '</div>';
     document.getElementById('modal-body').innerHTML = html;
