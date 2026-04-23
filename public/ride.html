@@ -1965,16 +1965,18 @@ function renderPOIs(gpxPoints, gpxProfile, data) {
 // Sources: singletracks.com, mtbr.com, theclimbingcyclist.com, pedalchile.com
 // Three profiles: group average, fastest rider, slowest rider
 var SPEED_MODEL = {
+  // Calibrated from real FIT data (5 rides, 362 km total)
+  // Values: median speed (avg), p90 (fast rider), p10 (slow rider)
   // [gradient_min, gradient_max, avg_kmh, fast_kmh, slow_kmh]
   bands: [
-    [ 12, 99,   6,  8,  4],   // extreme climb >12%
-    [  8, 12,   8, 11,  5],   // steep climb 8-12%
-    [  5,  8,  12, 15,  8],   // moderate climb 5-8%
-    [  2,  5,  16, 19, 12],   // gentle climb 2-5%
-    [ -2,  2,  20, 25, 15],   // flat ±2%
-    [ -5, -2,  28, 35, 20],   // gentle descent
-    [-10, -5,  35, 45, 22],   // moderate descent
-    [-99,-10,  28, 42, 15]    // steep/technical descent (slower than moderate due to terrain)
+    [ 12, 99,   8, 11,  4],   // extreme climb >12% — real: median=8, p90=11, p10=3
+    [  8, 12,  10, 14,  7],   // steep climb 8-12% — real: median=10, p90=14, p10=7
+    [  5,  8,  13, 20,  8],   // moderate climb 5-8% — real: median=13, p90=21, p10=8
+    [  2,  5,  16, 23,  9],   // gentle climb 2-5% — real: median=15, p90=23, p10=9
+    [ -2,  2,  18, 26, 10],   // flat ±2% — real: median=18, p90=26, p10=10
+    [ -5, -2,  22, 34, 12],   // gentle descent — real: median=22, p90=34, p10=12
+    [-10, -5,  28, 42, 14],   // moderate descent — real: median=28, p90=42, p10=14
+    [-99,-10,  28, 45, 10]    // steep/technical — real: median=28, p90=47, p10=7
   ]
 };
 
