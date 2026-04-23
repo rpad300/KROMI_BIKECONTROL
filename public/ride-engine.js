@@ -1046,7 +1046,7 @@ function enrichPOIsWithImages(pois) {
     if (!poi.lat || !poi.lon) return;
     var imgEl = document.getElementById('poi-img-' + poi._idx);
     if (imgEl) {
-      imgEl.src = 'https://maps.googleapis.com/maps/api/streetview?size=400x200&location=' + poi.lat + ',' + poi.lon + '&fov=90&heading=0&pitch=10&key=' + MAPS_KEY;
+      imgEl.src = 'https://maps.googleapis.com/maps/api/staticmap?center=' + poi.lat + ',' + poi.lon + '&zoom=14&size=400x200&maptype=hybrid&markers=color:green%7C' + poi.lat + ',' + poi.lon + '&key=' + MAPS_KEY;
       imgEl.style.display = 'block';
       imgEl.onerror = function () { this.style.display = 'none'; };
     }
@@ -2013,7 +2013,7 @@ async function main() {
     // Street View hero background (when no club banner)
     if (gpxPoints && gpxPoints.length > 0 && !(club && club.banner_url)) {
       var startPt = gpxPoints[0];
-      var heroImg = 'https://maps.googleapis.com/maps/api/streetview?size=1200x600&location=' + startPt.lat + ',' + startPt.lon + '&fov=100&heading=0&pitch=5&key=' + MAPS_KEY;
+      var heroImg = 'https://maps.googleapis.com/maps/api/staticmap?center=' + startPt.lat + ',' + startPt.lon + '&zoom=12&size=1200x600&maptype=hybrid&key=' + MAPS_KEY;
       var heroSection = $('hero-section');
       if (heroSection) {
         heroSection.style.backgroundImage = 'linear-gradient(180deg, rgba(14,14,14,0.3) 0%, rgba(14,14,14,0.7) 50%, var(--bg) 100%), url(' + heroImg + ')';
@@ -2089,9 +2089,11 @@ async function main() {
       fetchAndRenderWeather(gpxPoints, gpxProfile, rideStartAt);
     }
 
-    // AI Enrichment (async — renders when ready, doesn't block page)
-    if (data.id || data.ride_id) {
-      fetchAIEnrichment(data, gpxProfile);
+    // AI Enrichment — only render if already cached in ride_data
+    // Generation is done by the ride creator via the app, NOT on public page load
+    var cachedAI = (data.ride_data && data.ride_data.ai_enrichment) || (rideData && rideData.ai_enrichment);
+    if (cachedAI) {
+      renderAIContent(cachedAI);
     }
 
     // Rider stats
