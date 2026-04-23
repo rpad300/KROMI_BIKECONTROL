@@ -1992,7 +1992,11 @@ function estimateStops(entries, totalDist) {
         lastStopKm = e.km;
       }
     } else if (e.type === 'climb' || e.type === 'descent') {
-      // Segments don't get stops (they're riding sections)
+      // Segments are riding — never assign stops
+    } else if (e.type === 'waypoint') {
+      // Explicit waypoints from GPX get a short stop
+      e.stop_min = 5; e.stop_reason = 'Referencia de navegacao'; e.stop_type = 'regroup';
+      lastStopKm = e.km;
     } else if (e.km - lastStopKm > 20) {
       // Auto regroup every ~20km if no stop assigned
       e.stop_min = 10; e.stop_reason = 'Reagrupamento'; e.stop_type = 'regroup';
@@ -2063,19 +2067,45 @@ function renderTimeline(gpxPoints, gpxProfile, segments, data) {
   // Estimate stops (briefing, regroup, lunch, etc.)
   filtered = estimateStops(filtered, totalDist);
 
-  // Guarantee lunch for long rides (>50km) — if no entry has lunch, assign it
+  // Stops can't be on segments (climb/descent) — move to end of segment
+  // Also guarantee lunch for long rides
+  // First: remove any stops accidentally assigned to segments
+  filtered.forEach(function(e) {
+    if ((e.type === 'climb' || e.type === 'descent') && e.stop_min > 0) {
+      e.stop_min = 0; e.stop_reason = null; e.stop_type = null;
+    }
+  });
+
+  // Guarantee lunch for long rides (>50km)
   if (totalDist > 50) {
     var hasLunch = filtered.some(function(e) { return e.stop_type === 'lunch'; });
     if (!hasLunch) {
-      // Find the entry closest to 40-50% distance that isn't start/end
+      // Find the non-segment entry closest to 45% distance
       var lunchTarget = totalDist * 0.45;
       var bestIdx = -1, bestDiff = Infinity;
       filtered.forEach(function(e, i) {
-        if (e.type === 'start' || e.type === 'end') return;
+        if (e.type === 'start' || e.type === 'end' || e.type === 'climb' || e.type === 'descent') return;
         var diff = Math.abs(e.km - lunchTarget);
         if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
       });
-      if (bestIdx >= 0) {
+      // If no non-segment entry found, insert one after the segment closest to 45%
+      if (bestIdx < 0) {
+        var insertAfterIdx = -1;
+        filtered.forEach(function(e, i) {
+          if (e.type === 'start' || e.type === 'end') return;
+          if (e.km <= lunchTarget) insertAfterIdx = i;
+        });
+        if (insertAfterIdx >= 0) {
+          var ref = filtered[insertAfterIdx];
+          var lunchEntry = {
+            km: ref.km + 0.1, ele: ref.ele, name: 'Paragem para almoco',
+            desc: 'Ponto de paragem estimado para almoco', type: 'midpoint',
+            color: '#fbbf24', code: '\uD83C\uDF7D\uFE0F',
+            stop_min: 60, stop_reason: 'Almoco (grupo)', stop_type: 'lunch'
+          };
+          filtered.splice(insertAfterIdx + 1, 0, lunchEntry);
+        }
+      } else {
         filtered[bestIdx].stop_min = 60;
         filtered[bestIdx].stop_reason = 'Almoco (grupo)';
         filtered[bestIdx].stop_type = 'lunch';
