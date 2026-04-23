@@ -444,6 +444,7 @@ function ClubPage() {
   const [rideDesc, setRideDesc] = useState('');
   const [rideDate, setRideDate] = useState('');
   const [rideTime, setRideTime] = useState('');
+  const [rideDepartureTime, setRideDepartureTime] = useState('');
   const [rideMeetingAddress, setRideMeetingAddress] = useState('');
   const [loadingRides, setLoadingRides] = useState(false);
   const [rideGpxFile, setRideGpxFile] = useState<File | null>(null);
@@ -543,6 +544,7 @@ function ClubPage() {
     if (!rideName.trim() || !rideDate || !rideTime || !profile.club_id) return;
     try {
       const scheduled = new Date(`${rideDate}T${rideTime}`).toISOString();
+      const departure = rideDepartureTime ? new Date(`${rideDate}T${rideDepartureTime}`).toISOString() : null;
       let gpxContent: string | null = null;
       if (rideGpxFile) {
         gpxContent = await rideGpxFile.text();
@@ -556,6 +558,7 @@ function ClubPage() {
           name: rideName.trim(),
           description: rideDesc.trim() || null,
           scheduled_at: scheduled,
+          departure_at: departure,
           meeting_address: rideMeetingAddress.trim() || null,
           route_gpx: gpxContent,
           status: 'planned',
@@ -567,7 +570,7 @@ function ClubPage() {
         await joinRide(newRide.id);
       }
       setCreatingRide(false);
-      setRideName(''); setRideDesc(''); setRideDate(''); setRideTime(''); setRideMeetingAddress('');
+      setRideName(''); setRideDesc(''); setRideDate(''); setRideTime(''); setRideDepartureTime(''); setRideMeetingAddress('');
       setRideGpxFile(null); setRideGpxName('');
     } catch {}
   };
@@ -802,8 +805,13 @@ function ClubPage() {
                   style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: '1px solid #333', fontSize: '12px', borderRadius: '4px' }} />
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>Hora</div>
+                <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>Hora encontro</div>
                 <input type="time" value={rideTime} onChange={(e) => setRideTime(e.target.value)}
+                  style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: '1px solid #333', fontSize: '12px', borderRadius: '4px' }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>Hora arranque</div>
+                <input type="time" value={rideDepartureTime} onChange={(e) => setRideDepartureTime(e.target.value)}
                   style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: '1px solid #333', fontSize: '12px', borderRadius: '4px' }} />
               </div>
             </div>

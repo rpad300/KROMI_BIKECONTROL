@@ -1162,8 +1162,9 @@ function renderHero(data, isPreRide) {
   var metaEl = $('hero-meta');
   var metas = [];
   if (dateStr) metas.push({ icon: svgCalendar(), text: fmtDate(dateStr) });
-  var timeStr = data.scheduled_at || data.ride_date;
-  if (timeStr) { var t = fmtTime(timeStr); if (t) metas.push({ icon: svgClock(), text: t }); }
+  var meetTime = data.scheduled_at || data.ride_date;
+  if (meetTime) { var t = fmtTime(meetTime); if (t) metas.push({ icon: svgClock(), text: 'Encontro ' + t }); }
+  if (data.departure_at) { var dt = fmtTime(data.departure_at); if (dt) metas.push({ icon: svgClock(), text: 'Arranque ' + dt }); }
   var mp = data.meeting_point || data.meeting_address || (data.route_data && data.route_data.start_name);
   if (mp) metas.push({ icon: svgPin(), text: escHtml(mp) });
 
@@ -1844,14 +1845,14 @@ function renderPOIs(gpxPoints, gpxProfile, data) {
   $('section-pois').style.display = '';
 
   var grid = $('poi-grid');
-  var scheduledAt = data.scheduled_at ? new Date(data.scheduled_at) : null;
+  var rideStart = data.departure_at ? new Date(data.departure_at) : (data.scheduled_at ? new Date(data.scheduled_at) : null);
   var avgSpeed = 15;
 
   pois.forEach(function(poi, idx) {
     var code = idx < 10 ? '0' + idx : '' + idx;
     var arrivalStr = '';
-    if (scheduledAt) {
-      var arrival = new Date(scheduledAt.getTime() + (poi.km / avgSpeed) * 3600 * 1000);
+    if (rideStart) {
+      var arrival = new Date(rideStart.getTime() + (poi.km / avgSpeed) * 3600 * 1000);
       arrivalStr = arrival.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
     }
 
@@ -1877,8 +1878,8 @@ function renderPOIs(gpxPoints, gpxProfile, data) {
 // ── Timeline / Chronogram ───────────────────────────────────────────────────
 function renderTimeline(gpxPoints, gpxProfile, segments, data) {
   if (!gpxProfile || gpxProfile.length < 2) return;
-  var scheduledAt = data.scheduled_at ? new Date(data.scheduled_at) : null;
-  if (!scheduledAt) return;
+  var rideStart = data.departure_at ? new Date(data.departure_at) : (data.scheduled_at ? new Date(data.scheduled_at) : null);
+  if (!rideStart) return;
 
   var totalDist = gpxProfile[gpxProfile.length - 1].d;
   var avgSpeed = 15;
@@ -1888,7 +1889,7 @@ function renderTimeline(gpxPoints, gpxProfile, segments, data) {
   // Build timeline entries from POIs
   var entries = [];
   pois.forEach(function(poi, idx) {
-    var arrivalMs = scheduledAt.getTime() + (poi.km / avgSpeed) * 3600 * 1000;
+    var arrivalMs = rideStart.getTime() + (poi.km / avgSpeed) * 3600 * 1000;
     var color = '#fbbf24'; // default POI
     if (poi.type === 'start') color = '#22c55e';
     else if (poi.type === 'end') color = '#ef4444';
@@ -2102,11 +2103,13 @@ async function main() {
     }
 
     // Weather, POIs, Timeline
-    if (gpxPoints && gpxPoints.length >= 2 && data.scheduled_at) {
+    // Use departure_at (ride start) for chronogram/weather; fall back to scheduled_at (meeting time)
+    var rideStartAt = data.departure_at || data.scheduled_at;
+    if (gpxPoints && gpxPoints.length >= 2 && rideStartAt) {
       renderPOIs(gpxPoints, gpxProfile, data);
       var autoSegsForTimeline = (segments && segments.length) ? segments : (gpxProfile && gpxProfile.length >= 10 ? autoDetectSegments(gpxProfile) : []);
       renderTimeline(gpxPoints, gpxProfile, autoSegsForTimeline, data);
-      fetchAndRenderWeather(gpxPoints, gpxProfile, data.scheduled_at);
+      fetchAndRenderWeather(gpxPoints, gpxProfile, rideStartAt);
     }
 
     // Rider stats
