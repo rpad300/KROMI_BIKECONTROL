@@ -147,6 +147,85 @@ body {
   50% { opacity: 0.4; transform: scale(0.75); }
 }
 
+.live-badge-soon {
+  background: rgba(251,191,36,0.12);
+  border: 1px solid rgba(251,191,36,0.3);
+  color: #fbbf24;
+}
+.live-badge-soon::before {
+  background: #fbbf24;
+  animation: live-pulse 2s ease-in-out infinite;
+}
+.soon-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #fbbf24; display: inline-block;
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+/* ── Summary Section ──────────────────────────────────────────────────── */
+.summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px; }
+@media (max-width: 640px) { .summary-grid { grid-template-columns: 1fr; } }
+.summary-card {
+  background: var(--bg-card); border: 1px solid var(--border); padding: 24px;
+  position: relative; overflow: hidden;
+}
+.summary-card::before {
+  content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 3px;
+}
+.summary-card.diff-card::before { background: var(--accent); }
+.summary-card.terrain-card::before { background: #60a5fa; }
+.summary-card.effort-card::before { background: #fbbf24; }
+.summary-card.time-card::before { background: #a78bfa; }
+.summary-label {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em;
+  text-transform: uppercase; margin-bottom: 10px; font-weight: 700;
+}
+.summary-value {
+  font-family: var(--serif); font-size: 28px; font-weight: 400;
+  line-height: 1; letter-spacing: -0.02em; margin-bottom: 8px;
+}
+.summary-sub {
+  font-family: var(--serif); font-style: italic; font-size: 14px;
+  color: var(--text-muted); line-height: 1.5;
+}
+.summary-prose {
+  background: var(--bg-card); border: 1px solid var(--border);
+  padding: 24px; font-size: 15px; color: var(--text-soft);
+  line-height: 1.8; border-left: 3px solid var(--accent);
+}
+.summary-prose strong { color: var(--text); font-weight: 600; }
+
+/* ── Equipment Section ────────────────────────────────────────────────── */
+.equip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.equip-card {
+  background: var(--bg-card); border: 1px solid var(--border); padding: 24px;
+  position: relative; transition: transform 0.3s, box-shadow 0.3s;
+}
+.equip-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.equip-card::before {
+  content: attr(data-num); position: absolute; top: 16px; right: 16px;
+  font-family: var(--mono); font-size: 36px; font-weight: 900;
+  color: var(--border); line-height: 1;
+}
+.equip-card .equip-category {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em;
+  text-transform: uppercase; color: var(--accent); font-weight: 700;
+  margin-bottom: 8px;
+}
+.equip-card h4 {
+  font-family: var(--serif); font-size: 18px; font-weight: 500;
+  color: var(--text); margin-bottom: 12px;
+}
+.equip-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.equip-list li {
+  font-size: 13px; color: var(--text-soft); line-height: 1.5;
+  padding-left: 16px; position: relative;
+}
+.equip-list li::before {
+  content: '\25C6'; position: absolute; left: 0; color: var(--accent); font-size: 8px; top: 4px;
+}
+.equip-list li strong { color: var(--text); font-weight: 600; }
+
 /* ── Live Bar (mobile sticky bottom) ───────────────────────────────────── */
 .live-bar {
   position: fixed;

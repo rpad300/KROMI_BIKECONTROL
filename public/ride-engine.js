@@ -1542,27 +1542,211 @@ function buildMetaDescription(data) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// AUTO-GENERATED CONTENT: Summary + Equipment
+// ═════════════════════════════════════════════════════════════════════════════
+
+function renderSummary(gpxProfile, kpis, segments) {
+  if (!gpxProfile || gpxProfile.length < 10) return;
+  $('section-summary').style.display = '';
+  var container = $('summary-content');
+
+  var dist = kpis.distance_km || 0;
+  var gain = kpis.elevation_gain || 0;
+  var loss = kpis.elevation_loss || 0;
+  var maxEle = kpis.max_ele || 0;
+  var minEle = kpis.min_ele || 0;
+
+  // Difficulty rating
+  var diffScore = 0;
+  diffScore += dist > 80 ? 3 : dist > 50 ? 2 : dist > 30 ? 1 : 0;
+  diffScore += gain > 2000 ? 3 : gain > 1200 ? 2 : gain > 600 ? 1 : 0;
+  var maxGradient = 0;
+  if (segments) segments.forEach(function(s) { var g = Math.abs(s.avg_gradient_pct || s.avg_gradient || 0); if (g > maxGradient) maxGradient = g; });
+  diffScore += maxGradient > 12 ? 2 : maxGradient > 8 ? 1 : 0;
+  var diffLabel, diffColor;
+  if (diffScore >= 6) { diffLabel = 'Extremo'; diffColor = '#a78bfa'; }
+  else if (diffScore >= 4) { diffLabel = 'Dificil'; diffColor = '#ef4444'; }
+  else if (diffScore >= 2) { diffLabel = 'Moderado'; diffColor = '#fbbf24'; }
+  else { diffLabel = 'Facil'; diffColor = '#22c55e'; }
+
+  // Terrain type
+  var climbDist = 0, descentDist = 0, flatDist = 0;
+  if (segments) segments.forEach(function(s) {
+    if (s.direction > 0) climbDist += (s.distance_km || 0);
+    else descentDist += (s.distance_km || 0);
+  });
+  flatDist = Math.max(0, dist - climbDist - descentDist);
+  var climbPct = dist > 0 ? Math.round((climbDist / dist) * 100) : 0;
+  var descentPct = dist > 0 ? Math.round((descentDist / dist) * 100) : 0;
+  var flatPct = 100 - climbPct - descentPct;
+
+  // Time estimates
+  var timeAvg = estimateRidingTimeToKm(gpxProfile, dist, 'avg') / 1000;
+  var timeFast = estimateRidingTimeToKm(gpxProfile, dist, 'fast') / 1000;
+  var timeSlow = estimateRidingTimeToKm(gpxProfile, dist, 'slow') / 1000;
+
+  // Cards
+  var html = '<div class="summary-grid">';
+  html += '<div class="summary-card diff-card"><div class="summary-label" style="color:' + diffColor + '">Dificuldade</div>';
+  html += '<div class="summary-value" style="color:' + diffColor + '">' + diffLabel + '</div>';
+  html += '<div class="summary-sub">' + fmtInt(dist) + ' km com ' + fmtInt(gain) + 'm D+ e gradiente max de ' + fmt(maxGradient, 1) + '%</div></div>';
+
+  html += '<div class="summary-card terrain-card"><div class="summary-label" style="color:#60a5fa">Terreno</div>';
+  html += '<div class="summary-value" style="color:#60a5fa">' + fmtInt(maxEle) + '<span style="font-size:16px;margin-left:4px">m max</span></div>';
+  html += '<div class="summary-sub">' + climbPct + '% subida, ' + descentPct + '% descida, ' + flatPct + '% plano. Amplitude: ' + fmtInt(maxEle - minEle) + 'm</div></div>';
+
+  html += '<div class="summary-card effort-card"><div class="summary-label" style="color:#fbbf24">Esforco Estimado</div>';
+  html += '<div class="summary-value" style="color:#fbbf24">' + fmtDuration(timeAvg) + '</div>';
+  html += '<div class="summary-sub">Rapido: ' + fmtDuration(timeFast) + ' \u00B7 Lento: ' + fmtDuration(timeSlow) + ' (so pedalada, sem paragens)</div></div>';
+
+  var climbCount = 0, descentCount = 0;
+  if (segments) segments.forEach(function(s) { if (s.direction > 0) climbCount++; else descentCount++; });
+  html += '<div class="summary-card time-card"><div class="summary-label" style="color:#a78bfa">Perfil</div>';
+  html += '<div class="summary-value" style="color:#a78bfa">' + (climbCount + descentCount) + '<span style="font-size:16px;margin-left:4px">segmentos</span></div>';
+  html += '<div class="summary-sub">' + climbCount + ' subida' + (climbCount !== 1 ? 's' : '') + ' e ' + descentCount + ' descida' + (descentCount !== 1 ? 's' : '') + ' detetados</div></div>';
+  html += '</div>';
+
+  // Prose summary
+  var prose = 'Percurso de <strong>' + fmt(dist, 1) + ' km</strong> com <strong>' + fmtInt(gain) + 'm de desnivel positivo</strong>';
+  prose += ' e <strong>' + fmtInt(loss) + 'm de desnivel negativo</strong>.';
+  prose += ' A altitude varia entre <strong>' + fmtInt(minEle) + 'm</strong> e <strong>' + fmtInt(maxEle) + 'm</strong>';
+  prose += ' (amplitude de ' + fmtInt(maxEle - minEle) + 'm).';
+  if (maxGradient > 10) prose += ' Contem seccoes com gradiente superior a <strong>' + fmt(maxGradient, 0) + '%</strong> que exigem boa condicao fisica e tecnica.';
+  if (dist > 60) prose += ' A distancia superior a 60 km requer boa gestao de energia e hidratacao ao longo do percurso.';
+  if (gain > 1500) prose += ' O desnivel acumulado e significativo — recomenda-se experiencia em subidas prolongadas.';
+  html += '<div class="summary-prose">' + prose + '</div>';
+
+  container.innerHTML = html;
+  initRevealForElement($('section-summary'));
+}
+
+function renderEquipment(gpxProfile, kpis, weatherData) {
+  if (!kpis) return;
+  $('section-equipment').style.display = '';
+  var grid = $('equip-grid');
+  var dist = kpis.distance_km || 0;
+  var gain = kpis.elevation_gain || 0;
+  var maxEle = kpis.max_ele || 0;
+  var minEle = kpis.min_ele || 0;
+  var hasHighAlt = maxEle > 800;
+  var isLong = dist > 50;
+  var hasBigDescent = (kpis.elevation_loss || 0) > 800;
+
+  var cards = [];
+
+  // Card 1: Vestuario
+  var vestItems = [];
+  if (hasHighAlt) vestItems.push('<strong>Corta-vento impermeavel</strong> leve para altitude');
+  if (hasHighAlt) vestItems.push('Luvas longas ou manguitos removiveis');
+  vestItems.push('Base-layer tecnica de manga comprida');
+  if (maxEle - minEle > 500) vestItems.push('Sistema de camadas (variacao termica de ~' + Math.round((maxEle - minEle) * 0.0065) + '\u00B0C)');
+  vestItems.push('Buff ou tubular para o pescoco');
+  cards.push({ cat: 'Vestuario', title: 'Camadas e protecao', items: vestItems, num: '01' });
+
+  // Card 2: Mecanica
+  var mecItems = [];
+  if (hasBigDescent) mecItems.push('<strong>Pastilhas de travao verificadas</strong> (descida de ' + fmtInt(kpis.elevation_loss) + 'm)');
+  mecItems.push('Camara de ar reserva + kit de remendo');
+  mecItems.push('Multiferramenta com corrente');
+  mecItems.push('Bomba ou CO2 (minimo 2 cartuchos)');
+  mecItems.push('<strong>eMTB</strong>: bateria a 100%');
+  cards.push({ cat: 'Mecanica', title: 'Bicicleta e reserva', items: mecItems, num: '02' });
+
+  // Card 3: Hidratacao
+  var hidItems = [];
+  var waterLitres = Math.max(1.5, Math.ceil(dist / 25) * 0.75);
+  hidItems.push('<strong>' + waterLitres.toFixed(1) + ' L de agua</strong> minimo');
+  var bars = Math.max(2, Math.ceil(dist / 20));
+  hidItems.push(bars + ' barras energeticas');
+  if (dist > 40) hidItems.push('1 a 2 geis para as subidas');
+  hidItems.push('Frutos secos ou bananas');
+  hidItems.push('Eletrolitos ou sais minerais');
+  cards.push({ cat: 'Hidratacao', title: 'Autonomia de ' + fmtInt(dist) + ' km', items: hidItems, num: '03' });
+
+  // Card 4: Seguranca
+  var segItems = [];
+  segItems.push('<strong>GPS</strong> ou telemovel com GPX carregado');
+  segItems.push('Powerbank para telemovel');
+  if (isLong || hasHighAlt) segItems.push('Apito de emergencia');
+  if (hasHighAlt) segItems.push('Manta termica (100g)');
+  segItems.push('Cartao de cidadao + seguro');
+  segItems.push('Dinheiro em numerario');
+  cards.push({ cat: 'Seguranca', title: 'Navegacao e emergencia', items: segItems, num: '04' });
+
+  // Card 5: Optica
+  var optItems = [];
+  optItems.push('<strong>Oculos fotocromaticos</strong> ou lente clara');
+  optItems.push('Capacete ventilado');
+  optItems.push('Protetor solar fator 30+');
+  optItems.push('Balsamo labial');
+  cards.push({ cat: 'Optica', title: 'Protecao visual', items: optItems, num: '05' });
+
+  cards.forEach(function(c) {
+    var card = document.createElement('div');
+    card.className = 'equip-card';
+    card.setAttribute('data-num', c.num);
+    card.setAttribute('data-reveal', '');
+    card.innerHTML = '<div class="equip-category">' + escHtml(c.cat) + '</div>' +
+      '<h4>' + escHtml(c.title) + '</h4>' +
+      '<ul class="equip-list">' + c.items.map(function(item) { return '<li>' + item + '</li>'; }).join('') + '</ul>';
+    grid.appendChild(card);
+  });
+  initRevealForElement($('section-equipment'));
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // NEW FEATURE: Live Tracking Badge
 // ═════════════════════════════════════════════════════════════════════════════
 function checkLiveStatus(data) {
   var isActive = data.status === 'active';
-  var isNearSchedule = false;
-  if (data.scheduled_at) {
-    var diff = new Date(data.scheduled_at).getTime() - Date.now();
-    isNearSchedule = diff > -7200000 && diff < 7200000; // within 2 hours
+  var schedMs = data.scheduled_at ? new Date(data.scheduled_at).getTime() : 0;
+  var now = Date.now();
+  var diffMs = schedMs - now;
+  var diffH = diffMs / 3600000;
+
+  if (isActive) {
+    // Ride is LIVE right now
+    showLiveBadge(data, 'live');
+  } else if (diffH > -2 && diffH < 2) {
+    // Within 2h of scheduled time — about to start or just started
+    showLiveBadge(data, 'live');
+  } else if (diffH >= 2 && diffH < 48) {
+    // Within 48h — show "EM BREVE" badge
+    showLiveBadge(data, 'soon');
   }
-  if (isActive || isNearSchedule) {
-    showLiveBadge(data);
-  }
+  // > 48h or past — no badge
 }
-function showLiveBadge(data) {
+function showLiveBadge(data, mode) {
   var badge = $('live-badge');
-  if (badge) badge.style.display = 'inline-flex';
+  if (badge) {
+    badge.style.display = 'inline-flex';
+    if (mode === 'soon') {
+      badge.innerHTML = '<span class="soon-dot"></span> EM BREVE';
+      badge.classList.add('live-badge-soon');
+    }
+  }
   var bar = $('live-bar');
   if (bar) {
+    var rideId = data.ride_id || data.id;
+    var liveUrl = 'https://www.kromi.online/live.html?ride=' + rideId;
     bar.style.display = 'flex';
-    var link = bar.querySelector('a');
-    if (link) link.href = 'https://www.kromi.online/live.html?ride=' + (data.ride_id || data.id);
+    var link = $('live-bar-link');
+    if (link) link.href = liveUrl;
+    var text = bar.querySelector('.live-bar-text');
+    if (text) {
+      if (mode === 'soon') {
+        var d = new Date(data.scheduled_at || data.departure_at);
+        var dayStr = d.toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' });
+        var timeStr = d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+        text.textContent = 'Arranca ' + dayStr + ' as ' + timeStr;
+      } else {
+        text.textContent = 'Acompanhar em tempo real';
+      }
+    }
+    if (mode === 'soon') {
+      var btn = $('live-bar-link');
+      if (btn) btn.textContent = 'Ver Live Tracking';
+    }
   }
 }
 
@@ -1728,11 +1912,24 @@ async function main() {
       if (autoSegs.length) renderSegments(autoSegs, gpxProfile);
     }
 
+    // Summary + Equipment (auto-generated from GPX)
+    var allSegs = (segments && segments.length) ? segments : autoSegs;
+    if (gpxProfile && gpxProfile.length >= 10) {
+      var summaryKpis = computeGainLoss(gpxProfile);
+      summaryKpis.distance_km = gpxProfile[gpxProfile.length - 1].d;
+      summaryKpis.max_ele = Math.max.apply(null, gpxProfile.map(function(p) { return p.e; }));
+      summaryKpis.min_ele = Math.min.apply(null, gpxProfile.map(function(p) { return p.e; }));
+      summaryKpis.elevation_gain = summaryKpis.gain;
+      summaryKpis.elevation_loss = summaryKpis.loss;
+      renderSummary(gpxProfile, summaryKpis, allSegs);
+      renderEquipment(gpxProfile, summaryKpis);
+    }
+
     // Weather, POIs, Timeline
     var rideStartAt = data.departure_at || data.scheduled_at;
     if (gpxPoints && gpxPoints.length >= 2 && rideStartAt) {
       renderPOIs(gpxPoints, gpxProfile, data);
-      var autoSegsForTimeline = (segments && segments.length) ? segments : (gpxProfile && gpxProfile.length >= 10 ? autoDetectSegments(gpxProfile) : []);
+      var autoSegsForTimeline = allSegs || [];
       renderTimeline(gpxPoints, gpxProfile, autoSegsForTimeline, data);
       fetchAndRenderWeather(gpxPoints, gpxProfile, rideStartAt);
     }

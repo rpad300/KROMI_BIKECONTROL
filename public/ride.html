@@ -151,11 +151,35 @@ function loadGoogleMaps() {
     <div class="seg-list" id="seg-list"></div>
   </section>
 
+  <!-- Ride Summary (auto-generated from GPX data) -->
+  <section class="section" id="section-summary" style="display:none" data-reveal aria-label="Resumo da pedalada">
+    <div class="section-header">
+      <div>
+        <div class="section-num">04 &middot; Resumo</div>
+        <h2 class="section-title">Analise <span class="italic">geral</span></h2>
+      </div>
+      <div class="section-desc">Gerado automaticamente a partir do perfil GPX</div>
+    </div>
+    <div id="summary-content"></div>
+  </section>
+
+  <!-- Equipment (auto-suggested) -->
+  <section class="section" id="section-equipment" style="display:none" data-reveal aria-label="Equipamento sugerido">
+    <div class="section-header">
+      <div>
+        <div class="section-num">05 &middot; Equipamento</div>
+        <h2 class="section-title">Checklist <span class="italic">sugerido</span></h2>
+      </div>
+      <div class="section-desc">Baseado na distancia, elevacao e condicoes previstas</div>
+    </div>
+    <div class="equip-grid" id="equip-grid"></div>
+  </section>
+
   <!-- Chronogram -->
   <section class="section" id="section-timeline" style="display:none" data-reveal aria-label="Cronograma">
     <div class="section-header">
       <div>
-        <div class="section-num">04 &middot; Cronograma</div>
+        <div class="section-num">06 &middot; Cronograma</div>
         <h2 class="section-title">O <span class="italic">dia</span></h2>
       </div>
       <div class="section-desc" id="timeline-desc"></div>
@@ -167,7 +191,7 @@ function loadGoogleMaps() {
   <section class="section" id="section-weather" style="display:none" data-reveal aria-label="Meteorologia">
     <div class="section-header">
       <div>
-        <div class="section-num">05 &middot; Meteorologia</div>
+        <div class="section-num">07 &middot; Meteorologia</div>
         <h2 class="section-title">Previsao <span class="italic">por zona</span></h2>
       </div>
       <div class="section-desc" id="weather-desc">Dados Open-Meteo para o dia da pedalada</div>
@@ -180,7 +204,7 @@ function loadGoogleMaps() {
   <section class="section" id="section-pois" style="display:none" data-reveal aria-label="Pontos de interesse">
     <div class="section-header">
       <div>
-        <div class="section-num">06 &middot; Pontos</div>
+        <div class="section-num">08 &middot; Pontos</div>
         <h2 class="section-title">Pontos <span class="italic">de interesse</span></h2>
       </div>
       <div class="section-desc">Waypoints, paragens e referencias ao longo do percurso</div>
@@ -192,7 +216,7 @@ function loadGoogleMaps() {
   <section class="section" id="section-riders" style="display:none" data-reveal aria-label="Estatisticas dos participantes">
     <div class="section-header">
       <div>
-        <div class="section-num">07 &middot; Participantes</div>
+        <div class="section-num">09 &middot; Participantes</div>
         <h2 class="section-title">Estatisticas dos <span class="italic">ciclistas</span></h2>
       </div>
     </div>
@@ -208,7 +232,7 @@ function loadGoogleMaps() {
   <section class="section" id="section-photos" style="display:none" data-reveal aria-label="Galeria de fotos">
     <div class="section-header">
       <div>
-        <div class="section-num">08 &middot; Galeria</div>
+        <div class="section-num">10 &middot; Galeria</div>
         <h2 class="section-title">Momentos da <span class="italic">pedalada</span></h2>
       </div>
     </div>
