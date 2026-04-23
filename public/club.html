@@ -13,14 +13,18 @@
 <title id="page-title">Clube — KROMI</title>
 <script>
 var MAPS_KEY = 'AIzaSyAeeHw69Wzy3OQuN6SbAhXjlhSxBlJPfa0';
+var _mapsPromise = null;
 function loadGoogleMaps() {
-  return new Promise(function(resolve) {
-    if (window.google && window.google.maps) { resolve(); return; }
+  if (_mapsPromise) return _mapsPromise;
+  _mapsPromise = new Promise(function(resolve) {
+    if (window.google && window.google.maps && window.google.maps.Map) { resolve(); return; }
+    window._gmCallback = function() { resolve(); };
     var script = document.createElement('script');
-    script.src = 'https://maps.googleapis.com/maps/api/js?key=' + MAPS_KEY + '&libraries=geometry';
-    script.onload = resolve;
+    script.async = true;
+    script.src = 'https://maps.googleapis.com/maps/api/js?key=' + MAPS_KEY + '&libraries=geometry&callback=_gmCallback';
     document.head.appendChild(script);
   });
+  return _mapsPromise;
 }
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
