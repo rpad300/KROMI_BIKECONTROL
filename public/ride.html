@@ -15,8 +15,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+var MAPS_KEY = 'AIzaSyAeeHw69Wzy3OQuN6SbAhXjlhSxBlJPfa0';
+function loadGoogleMaps() {
+  return new Promise(function(resolve) {
+    if (window.google && window.google.maps) { resolve(); return; }
+    var script = document.createElement('script');
+    script.src = 'https://maps.googleapis.com/maps/api/js?key=' + MAPS_KEY + '&libraries=geometry';
+    script.onload = resolve;
+    document.head.appendChild(script);
+  });
+}
+</script>
 
 <style>
 :root {
@@ -381,7 +391,7 @@ body {
 .seg-card.seg-down { border-left: 4px solid #60a5fa; }
 .seg-card:hover { border-left-width: 6px; }
 .seg-map-col { position: relative; min-height: 200px; background: #111; }
-.seg-map-col .seg-mini-leaflet { width: 100%; height: 100%; }
+.seg-map-col .seg-mini-map { width: 100%; height: 100%; }
 .seg-details-col { padding: 22px 24px; }
 
 .seg-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -656,13 +666,10 @@ tbody tr:hover { background: rgba(255,255,255,0.02); }
 .tl-stat-value { font-family: var(--serif); font-size: 16px; color: #fff; font-weight: 500; }
 .tl-description { color: var(--text-soft); font-size: 13px; line-height: 1.6; margin-top: 8px; }
 
-/* Leaflet overrides */
-.leaflet-popup-content-wrapper {
-  border-radius: 4px; background: var(--bg-card);
-  font-family: var(--sans); box-shadow: var(--shadow-lg);
-  border: 1px solid var(--border); color: var(--text);
-}
-.leaflet-popup-tip { background: var(--bg-card); }
+/* Google Maps overrides */
+.gm-style .gm-style-iw { background: var(--bg-card) !important; color: var(--text) !important; border: 1px solid var(--border) !important; box-shadow: var(--shadow-lg) !important; }
+.gm-style .gm-style-iw-d { color: var(--text) !important; }
+.gm-style .gm-style-iw-tc::after { background: var(--bg-card) !important; }
 </style>
 </head>
 <body>
@@ -1206,37 +1213,48 @@ function renderMap(gpxPoints) {
   if (!gpxPoints || gpxPoints.length < 2) return;
   $('section-map').style.display = '';
 
-  var map = L.map('ride-map', { zoomControl: true, scrollWheelZoom: true });
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    attribution: 'Esri Satellite',
-    maxZoom: 19
-  }).addTo(map);
+  loadGoogleMaps().then(function() {
+    var container = document.getElementById('ride-map');
+    if (!container) return;
 
-  var latlngs = gpxPoints.map(function(p) { return [p.lat, p.lon]; });
-  var accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    var map = new google.maps.Map(container, {
+      mapTypeId: 'hybrid',
+      zoomControl: true,
+      scrollwheel: false,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false
+    });
 
-  // White outline
-  L.polyline(latlngs, { color: '#fff', weight: 6, opacity: 0.4, lineCap: 'round', lineJoin: 'round' }).addTo(map);
-  // Accent line
-  L.polyline(latlngs, { color: accent, weight: 3, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+    // Enable scroll zoom after first click
+    google.maps.event.addListenerOnce(map, 'click', function() {
+      map.setOptions({ scrollwheel: true });
+    });
 
-  // Start marker (green glow)
-  var startIcon = L.divIcon({
-    className: '',
-    html: '<div style="width:16px;height:16px;background:#22c55e;border-radius:50%;border:3px solid #fff;box-shadow:0 0 12px rgba(34,197,94,0.6)"></div>',
-    iconSize: [16, 16], iconAnchor: [8, 8]
+    var path = gpxPoints.map(function(p) { return { lat: p.lat, lng: p.lon }; });
+    var accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#3fff8b';
+
+    // White outline
+    new google.maps.Polyline({ path: path, strokeColor: '#ffffff', strokeWeight: 6, strokeOpacity: 0.2, map: map });
+    // Accent line
+    new google.maps.Polyline({ path: path, strokeColor: accent, strokeWeight: 3, strokeOpacity: 0.9, map: map });
+
+    // Start marker (green)
+    new google.maps.Marker({ position: path[0], map: map, icon: {
+      path: google.maps.SymbolPath.CIRCLE, scale: 8,
+      fillColor: '#22c55e', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 3
+    }, title: 'Partida' });
+
+    // End marker (red)
+    new google.maps.Marker({ position: path[path.length - 1], map: map, icon: {
+      path: google.maps.SymbolPath.CIRCLE, scale: 8,
+      fillColor: '#ef4444', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 3
+    }, title: 'Chegada' });
+
+    var bounds = new google.maps.LatLngBounds();
+    path.forEach(function(p) { bounds.extend(p); });
+    map.fitBounds(bounds, 40);
   });
-  L.marker(latlngs[0], { icon: startIcon }).addTo(map).bindPopup('<b>Partida</b>');
-
-  // End marker (red glow)
-  var endIcon = L.divIcon({
-    className: '',
-    html: '<div style="width:16px;height:16px;background:#ef4444;border-radius:50%;border:3px solid #fff;box-shadow:0 0 12px rgba(239,68,68,0.6)"></div>',
-    iconSize: [16, 16], iconAnchor: [8, 8]
-  });
-  L.marker(latlngs[latlngs.length-1], { icon: endIcon }).addTo(map).bindPopup('<b>Chegada</b>');
-
-  map.fitBounds(L.latLngBounds(latlngs), { padding: [40, 40] });
 }
 
 // ── Render Altimetry SVG ─────────────────────────────────────────────────────────
@@ -1453,7 +1471,7 @@ function renderSegments(segments, profile) {
     card.className = 'seg-card ' + (isUp ? 'seg-up' : 'seg-down');
     card.setAttribute('data-reveal', '');
     card.innerHTML =
-      '<div class="seg-map-col"><div id="' + mapId + '" class="seg-mini-leaflet"></div></div>' +
+      '<div class="seg-map-col"><div id="' + mapId + '" class="seg-mini-map"></div></div>' +
       '<div class="seg-details-col">' +
       '<div class="seg-top">' +
         '<div class="seg-ident">' +
@@ -1485,31 +1503,43 @@ function renderSegments(segments, profile) {
     segMapIds.push({ id: mapId, seg: seg, diff: diff });
   });
 
-  // Render mini Leaflet maps for each segment after DOM insertion
-  setTimeout(function() {
-    segMapIds.forEach(function(item) {
-      var seg = item.seg;
-      if (!seg.trackPoints || seg.trackPoints.length < 2) return;
-      var container = document.getElementById(item.id);
-      if (!container) return;
-      try {
-        var miniMap = L.map(container, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, attributionControl: false });
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 }).addTo(miniMap);
-        var segLatLngs = seg.trackPoints.map(function(p) { return [p.lat, p.lon]; });
-        // Draw full track faded
-        if (window._allTrackPoints) {
-          var fullLatLngs = window._allTrackPoints.map(function(p) { return [p.lat, p.lon]; });
-          L.polyline(fullLatLngs, { color: '#fff', weight: 1.5, opacity: 0.15 }).addTo(miniMap);
-        }
-        // Draw segment highlighted
-        L.polyline(segLatLngs, { color: item.diff.color, weight: 3.5, opacity: 0.9, lineJoin: 'round' }).addTo(miniMap);
-        // Start/end dots
-        L.circleMarker(segLatLngs[0], { radius: 4, color: '#000', fillColor: '#22c55e', fillOpacity: 1, weight: 1.5 }).addTo(miniMap);
-        L.circleMarker(segLatLngs[segLatLngs.length-1], { radius: 4, color: '#000', fillColor: '#ef4444', fillOpacity: 1, weight: 1.5 }).addTo(miniMap);
-        miniMap.fitBounds(L.latLngBounds(segLatLngs), { padding: [15, 15] });
-      } catch(e) { console.warn('Mini-map error for segment', item.id, e); }
-    });
-  }, 100);
+  // Render mini Google Maps for each segment after DOM insertion
+  loadGoogleMaps().then(function() {
+    setTimeout(function() {
+      segMapIds.forEach(function(item) {
+        var seg = item.seg;
+        if (!seg.trackPoints || seg.trackPoints.length < 2) return;
+        var container = document.getElementById(item.id);
+        if (!container) return;
+        try {
+          var miniMap = new google.maps.Map(container, {
+            mapTypeId: 'hybrid', disableDefaultUI: true,
+            gestureHandling: 'none', keyboardShortcuts: false
+          });
+          var segPath = seg.trackPoints.map(function(p) { return { lat: p.lat, lng: p.lon }; });
+          // Draw full track faded
+          if (window._allTrackPoints) {
+            var fullPath = window._allTrackPoints.map(function(p) { return { lat: p.lat, lng: p.lon }; });
+            new google.maps.Polyline({ path: fullPath, strokeColor: '#ffffff', strokeWeight: 1.5, strokeOpacity: 0.15, map: miniMap });
+          }
+          // Draw segment highlighted
+          new google.maps.Polyline({ path: segPath, strokeColor: item.diff.color, strokeWeight: 3.5, strokeOpacity: 0.9, map: miniMap });
+          // Start/end dots
+          new google.maps.Marker({ position: segPath[0], map: miniMap, icon: {
+            path: google.maps.SymbolPath.CIRCLE, scale: 4,
+            fillColor: '#22c55e', fillOpacity: 1, strokeColor: '#000', strokeWeight: 1.5
+          }});
+          new google.maps.Marker({ position: segPath[segPath.length - 1], map: miniMap, icon: {
+            path: google.maps.SymbolPath.CIRCLE, scale: 4,
+            fillColor: '#ef4444', fillOpacity: 1, strokeColor: '#000', strokeWeight: 1.5
+          }});
+          var bounds = new google.maps.LatLngBounds();
+          segPath.forEach(function(p) { bounds.extend(p); });
+          miniMap.fitBounds(bounds, 15);
+        } catch(e) { console.warn('Mini-map error for segment', item.id, e); }
+      });
+    }, 100);
+  });
 }
 
 // ── Render Rider Stats ───────────────────────────────────────────────────────────

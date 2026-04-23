@@ -11,8 +11,18 @@
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <title id="page-title">Clube — KROMI</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+var MAPS_KEY = 'AIzaSyAeeHw69Wzy3OQuN6SbAhXjlhSxBlJPfa0';
+function loadGoogleMaps() {
+  return new Promise(function(resolve) {
+    if (window.google && window.google.maps) { resolve(); return; }
+    var script = document.createElement('script');
+    script.src = 'https://maps.googleapis.com/maps/api/js?key=' + MAPS_KEY + '&libraries=geometry';
+    script.onload = resolve;
+    document.head.appendChild(script);
+  });
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
@@ -1221,35 +1231,46 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
-  // Leaflet map instance for modal — destroyed on close
+  // Google Maps instance for modal — discarded on close
   var _modalMap = null;
   function renderLeafletMap(containerId, points) {
-    if (_modalMap) { _modalMap.remove(); _modalMap = null; }
-    setTimeout(function() {
-      var container = document.getElementById(containerId);
-      if (!container || !points.length) return;
-      _modalMap = L.map(container, { zoomControl: true, scrollWheelZoom: false, attributionControl: false });
-      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 18
-      }).addTo(_modalMap);
-      var latlngs = points.map(function(p) { return [p.lat, p.lon]; });
-      // White outline + accent track
-      L.polyline(latlngs, { color: '#ffffff', weight: 5, opacity: 0.15, lineJoin: 'round' }).addTo(_modalMap);
-      L.polyline(latlngs, { color: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#3fff8b', weight: 3, opacity: 0.9, lineJoin: 'round', lineCap: 'round' }).addTo(_modalMap);
-      // Start marker
-      var startIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;border-radius:50%;background:#3fff8b;border:2px solid #000;box-shadow:0 0 8px rgba(63,255,139,0.5)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
-      L.marker(latlngs[0], { icon: startIcon }).addTo(_modalMap).bindPopup('<b>START</b>');
-      // End marker
-      var endIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;border-radius:50%;background:#ff716c;border:2px solid #000;box-shadow:0 0 8px rgba(255,113,108,0.5)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
-      L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).addTo(_modalMap).bindPopup('<b>FIM</b>');
-      _modalMap.fitBounds(L.latLngBounds(latlngs), { padding: [30, 30] });
-    }, 50); // slight delay to ensure container is in DOM
+    _modalMap = null;
+    loadGoogleMaps().then(function() {
+      setTimeout(function() {
+        var container = document.getElementById(containerId);
+        if (!container || !points.length) return;
+        var map = new google.maps.Map(container, {
+          mapTypeId: 'hybrid', zoomControl: true,
+          scrollwheel: false, mapTypeControl: false,
+          streetViewControl: false, fullscreenControl: false
+        });
+        _modalMap = map;
+        var path = points.map(function(p) { return { lat: p.lat, lng: p.lon }; });
+        var accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#3fff8b';
+        // White outline + accent track
+        new google.maps.Polyline({ path: path, strokeColor: '#ffffff', strokeWeight: 5, strokeOpacity: 0.15, map: map });
+        new google.maps.Polyline({ path: path, strokeColor: accent, strokeWeight: 3, strokeOpacity: 0.9, map: map });
+        // Start marker
+        new google.maps.Marker({ position: path[0], map: map, icon: {
+          path: google.maps.SymbolPath.CIRCLE, scale: 7,
+          fillColor: '#3fff8b', fillOpacity: 1, strokeColor: '#000', strokeWeight: 2
+        }, title: 'START' });
+        // End marker
+        new google.maps.Marker({ position: path[path.length - 1], map: map, icon: {
+          path: google.maps.SymbolPath.CIRCLE, scale: 7,
+          fillColor: '#ff716c', fillOpacity: 1, strokeColor: '#000', strokeWeight: 2
+        }, title: 'FIM' });
+        var bounds = new google.maps.LatLngBounds();
+        path.forEach(function(p) { bounds.extend(p); });
+        map.fitBounds(bounds, 30);
+      }, 50);
+    });
   }
 
   // Override closeModal to clean up map
   var _origCloseModal = window.closeModal;
   window.closeModal = function() {
-    if (_modalMap) { _modalMap.remove(); _modalMap = null; }
+    _modalMap = null;
     document.getElementById('modal').classList.remove('open');
   };
 
