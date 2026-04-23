@@ -1229,8 +1229,8 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
       var container = document.getElementById(containerId);
       if (!container || !points.length) return;
       _modalMap = L.map(container, { zoomControl: true, scrollWheelZoom: false, attributionControl: false });
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        subdomains: 'abcd', maxZoom: 18
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 18
       }).addTo(_modalMap);
       var latlngs = points.map(function(p) { return [p.lat, p.lon]; });
       // White outline + accent track
