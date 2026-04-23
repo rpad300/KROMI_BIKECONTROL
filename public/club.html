@@ -1160,10 +1160,13 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 
   // ── GPX parser ─────────────────────────────────────────────────────────────
   function parseGpx(gpxText) {
+    // Strip XML namespace to make querySelector work reliably
+    var cleaned = gpxText.replace(/xmlns\s*=\s*["'][^"']*["']/gi, '');
     var parser = new DOMParser();
-    var doc = parser.parseFromString(gpxText, 'application/xml');
+    var doc = parser.parseFromString(cleaned, 'application/xml');
     var trkpts = doc.querySelectorAll('trkpt');
     if (!trkpts.length) trkpts = doc.querySelectorAll('rtept');
+    if (!trkpts.length) trkpts = doc.querySelectorAll('wpt');
     var points = [];
     trkpts.forEach(function(pt) {
       var lat = parseFloat(pt.getAttribute('lat'));
@@ -1409,9 +1412,12 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
     document.getElementById('modal-body').innerHTML = html;
     document.getElementById('modal').classList.add('open');
     // Render Leaflet map after DOM update
-    if (ride.route_gpx && typeof renderLeafletMap === 'function') {
+    if (ride.route_gpx) {
       var mapPts = parseGpx(ride.route_gpx);
+      console.log('[club.html] GPX parsed:', mapPts.length, 'points');
       if (mapPts.length >= 2) renderLeafletMap('modal-ride-map', mapPts);
+    } else {
+      console.log('[club.html] No route_gpx on ride:', ride.id, Object.keys(ride));
     }
   };
 
