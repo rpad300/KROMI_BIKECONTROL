@@ -454,7 +454,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .modal-overlay.open { opacity: 1; pointer-events: auto; }
 .modal-content {
   background: #1a1919; border: 1px solid var(--glass-border); border-radius: 20px;
-  width: 100%; max-width: 400px; max-height: 85vh; overflow-y: auto;
+  width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto;
   padding: 0; position: relative;
   transform: translateY(20px) scale(0.97); transition: transform 0.3s ease;
   box-shadow: 0 24px 80px rgba(0,0,0,0.6);
@@ -1172,20 +1172,34 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   function gpxKpis(points) {
     var totalDist = 0, gain = 0, loss = 0, minEle = Infinity, maxEle = -Infinity;
     var distances = [0]; // cumulative distance in km
+    // Smooth elevation with a moving window of 5 to reduce GPS noise
+    var smoothed = points.map(function(p, i) {
+      var window = 5, sum = 0, count = 0;
+      for (var j = Math.max(0, i - Math.floor(window / 2)); j <= Math.min(points.length - 1, i + Math.floor(window / 2)); j++) {
+        sum += points[j].ele; count++;
+      }
+      return count > 0 ? sum / count : p.ele;
+    });
+    // Threshold: ignore elevation changes < 3m (GPS noise filter)
+    var THRESHOLD = 3;
+    var lastSignificantEle = smoothed[0];
     for (var i = 0; i < points.length; i++) {
-      var p = points[i];
-      if (p.ele < minEle) minEle = p.ele;
-      if (p.ele > maxEle) maxEle = p.ele;
+      var ele = smoothed[i];
+      if (ele < minEle) minEle = ele;
+      if (ele > maxEle) maxEle = ele;
       if (i > 0) {
         var prev = points[i - 1];
-        var d = haversine(prev.lat, prev.lon, p.lat, p.lon);
+        var d = haversine(prev.lat, prev.lon, points[i].lat, points[i].lon);
         totalDist += d;
-        var dEle = p.ele - prev.ele;
-        if (dEle > 0) gain += dEle; else loss -= dEle;
+        var dEle = ele - lastSignificantEle;
+        if (Math.abs(dEle) >= THRESHOLD) {
+          if (dEle > 0) gain += dEle; else loss -= dEle;
+          lastSignificantEle = ele;
+        }
       }
       distances.push(totalDist);
     }
-    return { distance_km: totalDist, elevation_gain: gain, elevation_loss: loss, min_ele: minEle === Infinity ? 0 : minEle, max_ele: maxEle === -Infinity ? 0 : maxEle, distances: distances };
+    return { distance_km: totalDist, elevation_gain: Math.round(gain), elevation_loss: Math.round(loss), min_ele: minEle === Infinity ? 0 : minEle, max_ele: maxEle === -Infinity ? 0 : maxEle, distances: distances, smoothedEle: smoothed };
   }
 
   function haversine(lat1, lon1, lat2, lon2) {
@@ -1200,74 +1214,95 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 
   function renderGpxMapSvg(points) {
     if (points.length < 2) return '';
-    var W = 360, H = 200, PAD = 12;
-    var lats = points.map(function(p) { return p.lat; });
-    var lons = points.map(function(p) { return p.lon; });
-    var minLat = Math.min.apply(null, lats), maxLat = Math.max.apply(null, lats);
-    var minLon = Math.min.apply(null, lons), maxLon = Math.max.apply(null, lons);
-    var rangeLat = maxLat - minLat || 0.001;
-    var rangeLon = maxLon - minLon || 0.001;
-    // Adjust aspect ratio
+    var W = 500, H = 300, PAD = 20;
+    var minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+    for (var i = 0; i < points.length; i++) {
+      if (points[i].lat < minLat) minLat = points[i].lat;
+      if (points[i].lat > maxLat) maxLat = points[i].lat;
+      if (points[i].lon < minLon) minLon = points[i].lon;
+      if (points[i].lon > maxLon) maxLon = points[i].lon;
+    }
+    var rangeLat = maxLat - minLat || 0.0001;
+    var rangeLon = maxLon - minLon || 0.0001;
+    // Mercator-ish: correct longitude by cos(lat)
     var midLat = (minLat + maxLat) / 2;
     var cosLat = Math.cos(midLat * Math.PI / 180);
-    var scaleX = function(lon) { return PAD + ((lon - minLon) / rangeLon) * (W - 2 * PAD) * cosLat / Math.max(cosLat, rangeLat / rangeLon); };
-    var scaleY = function(lat) { return H - PAD - ((lat - minLat) / rangeLat) * (H - 2 * PAD); };
-    // Normalize to fit
-    var xs = points.map(function(p) { return (p.lon - minLon) / rangeLon; });
-    var ys = points.map(function(p) { return (p.lat - minLat) / rangeLat; });
-    var aspW = rangeLon * cosLat, aspH = rangeLat;
-    var fitW = W - 2 * PAD, fitH = H - 2 * PAD;
-    var scale = Math.min(fitW / aspW, fitH / aspH);
-    var offX = PAD + (fitW - aspW * scale) / 2;
-    var offY = PAD + (fitH - aspH * scale) / 2;
-    var polyPoints = points.map(function(p) {
-      var x = offX + ((p.lon - minLon) / rangeLon) * aspW * scale;
-      var y = H - offY - ((p.lat - minLat) / rangeLat) * aspH * scale;
-      return x + ',' + y;
-    }).join(' ');
-    // Start/end markers
-    var startX = offX + ((points[0].lon - minLon) / rangeLon) * aspW * scale;
-    var startY = H - offY - ((points[0].lat - minLat) / rangeLat) * aspH * scale;
-    var endP = points[points.length - 1];
-    var endX = offX + ((endP.lon - minLon) / rangeLon) * aspW * scale;
-    var endY = H - offY - ((endP.lat - minLat) / rangeLat) * aspH * scale;
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;border-radius:12px;background:#111;border:1px solid var(--border)">' +
-      '<polyline points="' + polyPoints + '" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>' +
-      '<circle cx="' + startX + '" cy="' + startY + '" r="5" fill="#3fff8b" stroke="#000" stroke-width="1.5"/>' +
-      '<text x="' + (startX + 8) + '" y="' + (startY + 4) + '" fill="#3fff8b" font-size="9" font-weight="700">START</text>' +
-      '<circle cx="' + endX + '" cy="' + endY + '" r="5" fill="#ff716c" stroke="#000" stroke-width="1.5"/>' +
-      '<text x="' + (endX + 8) + '" y="' + (endY + 4) + '" fill="#ff716c" font-size="9" font-weight="700">FIM</text>' +
+    // Map to pixel coords maintaining aspect ratio
+    var geoW = rangeLon * cosLat;
+    var geoH = rangeLat;
+    var drawW = W - 2 * PAD;
+    var drawH = H - 2 * PAD;
+    var sc = Math.min(drawW / geoW, drawH / geoH);
+    var cx = PAD + (drawW - geoW * sc) / 2;
+    var cy = PAD + (drawH - geoH * sc) / 2;
+    function px(p) {
+      return {
+        x: cx + (p.lon - minLon) * cosLat * sc,
+        y: cy + (maxLat - p.lat) * sc
+      };
+    }
+    var polyStr = '';
+    for (var i = 0; i < points.length; i++) {
+      var pt = px(points[i]);
+      polyStr += pt.x.toFixed(1) + ',' + pt.y.toFixed(1);
+      if (i < points.length - 1) polyStr += ' ';
+    }
+    var s = px(points[0]);
+    var e = px(points[points.length - 1]);
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block;border-radius:12px;background:#111;border:1px solid var(--border)">' +
+      '<polyline points="' + polyStr + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>' +
+      '<circle cx="' + s.x.toFixed(1) + '" cy="' + s.y.toFixed(1) + '" r="6" fill="#3fff8b" stroke="#000" stroke-width="2"/>' +
+      '<text x="' + (s.x + 10).toFixed(1) + '" y="' + (s.y + 4).toFixed(1) + '" fill="#3fff8b" font-size="10" font-weight="800">START</text>' +
+      '<circle cx="' + e.x.toFixed(1) + '" cy="' + e.y.toFixed(1) + '" r="6" fill="#ff716c" stroke="#000" stroke-width="2"/>' +
+      '<text x="' + (e.x + 10).toFixed(1) + '" y="' + (e.y + 4).toFixed(1) + '" fill="#ff716c" font-size="10" font-weight="800">FIM</text>' +
       '</svg>';
   }
 
   function renderGpxElevationSvg(points, kpis) {
     if (points.length < 2) return '';
-    var W = 360, H = 120, PAD = 6, PADL = 32;
+    var W = 500, H = 160, PAD = 8, PADL = 36, PADB = 18;
     var dists = kpis.distances;
+    var smoothed = kpis.smoothedEle || points.map(function(p) { return p.ele; });
     var maxD = kpis.distance_km || 1;
     var minE = kpis.min_ele, maxE = kpis.max_ele;
     var rangeE = maxE - minE || 1;
+    var drawH = H - PAD - PADB;
     var sx = function(d) { return PADL + (d / maxD) * (W - PADL - PAD); };
-    var sy = function(e) { return H - PAD - ((e - minE) / rangeE) * (H - 2 * PAD); };
-    var polyPts = points.map(function(p, i) { return sx(dists[i + 1] || dists[i]) + ',' + sy(p.ele); }).join(' ');
-    var areaPts = sx(0) + ',' + (H - PAD) + ' ' + polyPts + ' ' + sx(maxD) + ',' + (H - PAD);
-    // Gradient stops based on slope
-    var stops = '';
-    for (var i = 1; i < points.length; i++) {
-      var segDist = dists[i + 1] - dists[i];
-      var slope = segDist > 0.001 ? Math.abs((points[i].ele - points[i-1].ele) / (segDist * 1000)) * 100 : 0;
+    var sy = function(e) { return PAD + drawH - ((e - minE) / rangeE) * drawH; };
+    // Build polyline from smoothed elevation
+    var polyPts = '';
+    for (var i = 0; i < points.length; i++) {
+      var d = dists[i + 1] !== undefined ? dists[i + 1] : dists[i];
+      polyPts += sx(d).toFixed(1) + ',' + sy(smoothed[i]).toFixed(1);
+      if (i < points.length - 1) polyPts += ' ';
+    }
+    var areaPts = sx(0).toFixed(1) + ',' + (H - PADB) + ' ' + polyPts + ' ' + sx(maxD).toFixed(1) + ',' + (H - PADB);
+    // Gradient stops based on slope (sample every 10 points for performance)
+    var stops = '<stop offset="0%" stop-color="#3fff8b" stop-opacity="0.5"/>';
+    var step = Math.max(1, Math.floor(points.length / 40));
+    for (var i = step; i < points.length; i += step) {
+      var segDist = (dists[i + 1] || dists[i]) - (dists[i - step + 1] || dists[i - step]);
+      var slope = segDist > 0.01 ? Math.abs((smoothed[i] - smoothed[i - step]) / (segDist * 1000)) * 100 : 0;
       var color = slope > 12 ? '#e966ff' : slope > 8 ? '#ff716c' : slope > 4 ? '#fbbf24' : '#3fff8b';
       var pct = ((dists[i + 1] || dists[i]) / maxD) * 100;
-      stops += '<stop offset="' + pct + '%" stop-color="' + color + '" stop-opacity="0.5"/>';
+      stops += '<stop offset="' + pct.toFixed(1) + '%" stop-color="' + color + '" stop-opacity="0.5"/>';
     }
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;border-radius:10px;background:#111;border:1px solid var(--border);margin-top:8px">' +
+    // Y-axis grid lines
+    var gridLines = '';
+    var nGrid = 3;
+    for (var g = 0; g <= nGrid; g++) {
+      var e = minE + (rangeE * g / nGrid);
+      var yy = sy(e);
+      gridLines += '<line x1="' + PADL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - PAD) + '" y2="' + yy.toFixed(1) + '" stroke="var(--border)" stroke-width="0.5"/>';
+      gridLines += '<text x="' + (PADL - 4) + '" y="' + (yy + 3).toFixed(1) + '" fill="var(--text-muted)" font-size="8" text-anchor="end" font-family="JetBrains Mono,monospace">' + Math.round(e) + '</text>';
+    }
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block;border-radius:12px;background:#111;border:1px solid var(--border);margin-top:8px">' +
       '<defs><linearGradient id="eg" x1="0" y1="0" x2="1" y2="0">' + stops + '</linearGradient></defs>' +
-      '<polygon points="' + areaPts + '" fill="url(#eg)" opacity="0.3"/>' +
-      '<polyline points="' + polyPts + '" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity="0.9"/>' +
-      '<text x="' + PADL + '" y="' + (sy(maxE) - 2) + '" fill="var(--text-muted)" font-size="8">' + Math.round(maxE) + 'm</text>' +
-      '<text x="' + PADL + '" y="' + (sy(minE) + 10) + '" fill="var(--text-muted)" font-size="8">' + Math.round(minE) + 'm</text>' +
-      '<text x="' + sx(0) + '" y="' + (H - 1) + '" fill="var(--text-muted)" font-size="7">0km</text>' +
-      '<text x="' + (sx(maxD) - 20) + '" y="' + (H - 1) + '" fill="var(--text-muted)" font-size="7">' + maxD.toFixed(1) + 'km</text>' +
+      gridLines +
+      '<polygon points="' + areaPts + '" fill="url(#eg)" opacity="0.25"/>' +
+      '<polyline points="' + polyPts + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>' +
+      '<text x="' + sx(0).toFixed(1) + '" y="' + (H - 3) + '" fill="var(--text-muted)" font-size="8" font-family="JetBrains Mono,monospace">0</text>' +
+      '<text x="' + sx(maxD).toFixed(1) + '" y="' + (H - 3) + '" fill="var(--text-muted)" font-size="8" text-anchor="end" font-family="JetBrains Mono,monospace">' + maxD.toFixed(1) + 'km</text>' +
       '</svg>';
   }
 
