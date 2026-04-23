@@ -1684,11 +1684,19 @@ function fetchAIEnrichment(data, gpxProfile) {
     };
   }
 
+  // Build segments for prompt
+  var segs = [];
+  if (window._allSegments) {
+    segs = window._allSegments.map(function(s) {
+      return { name: s.name, direction: s.direction, distance_km: s.distance_km, elevation_gain_m: s.elevation_gain_m, elevation_loss_m: s.elevation_loss_m, avg_gradient_pct: s.avg_gradient_pct, start_ele: s.start_ele, end_ele: s.end_ele };
+    });
+  }
+
   // Call edge function (async, non-blocking)
   fetch(SB_URL + '/functions/v1/ride-enrich', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: ANON_KEY },
-    body: JSON.stringify({ ride_id: rideId, pois: pois, ride_data: kpis })
+    body: JSON.stringify({ ride_id: rideId, pois: pois, ride_data: kpis, segments: segs })
   })
   .then(function(r) { return r.json(); })
   .then(function(result) {
@@ -1767,6 +1775,61 @@ function renderAIContent(enrichment) {
         '<h4>Especifico para este percurso</h4>' +
         '<ul class="equip-list">' + enrichment.gear_tips.map(function(tip) { return '<li>' + escHtml(tip) + '</li>'; }).join('') + '</ul>';
       equipGrid.appendChild(aiCard);
+    }
+  }
+
+  // 6. Enrich segment cards with AI descriptions
+  if (enrichment.segments && enrichment.segments.length) {
+    var segCards = document.querySelectorAll('.seg-card');
+    enrichment.segments.forEach(function(aiSeg) {
+      var idx = aiSeg.index;
+      if (idx >= segCards.length) return;
+      var card = segCards[idx];
+      var detailsCol = card.querySelector('.seg-details-col') || card;
+      // Find or create AI content area after seg-stats
+      var segStats = detailsCol.querySelector('.seg-stats');
+      if (!segStats) return;
+      var aiDiv = document.createElement('div');
+      aiDiv.style.cssText = 'padding-top:12px;margin-top:12px;border-top:1px dashed rgba(255,255,255,0.08)';
+      var html = '';
+      if (aiSeg.description) html += '<div style="font-size:13px;color:var(--text-soft);line-height:1.6">' + escHtml(aiSeg.description) + '</div>';
+      if (aiSeg.surface) html += '<div style="font-size:11px;color:#60a5fa;margin-top:6px">\uD83D\uDEB4 Piso: <strong>' + escHtml(aiSeg.surface) + '</strong></div>';
+      if (aiSeg.tip) html += '<div style="font-size:11px;color:var(--accent);margin-top:4px;font-style:italic">\uD83D\uDCA1 ' + escHtml(aiSeg.tip) + '</div>';
+      if (aiSeg.curiosity) html += '<div style="font-size:11px;color:#fbbf24;margin-top:4px">\u2728 ' + escHtml(aiSeg.curiosity) + '</div>';
+      aiDiv.innerHTML = html;
+      segStats.parentNode.insertBefore(aiDiv, segStats.nextSibling);
+    });
+  }
+
+  // 7. Render terrain analysis section
+  if (enrichment.terrain_analysis) {
+    var ta = enrichment.terrain_analysis;
+    var summaryContent = $('summary-content');
+    if (summaryContent) {
+      var terrainHtml = '<div style="margin-top:24px">';
+      terrainHtml += '<div style="font-family:var(--mono);font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:#60a5fa;font-weight:700;margin-bottom:12px">\uD83D\uDEB4 Analise de Piso</div>';
+      if (ta.summary) terrainHtml += '<div style="font-size:14px;color:var(--text-soft);line-height:1.7;margin-bottom:16px">' + escHtml(ta.summary) + '</div>';
+      if (ta.surfaces && ta.surfaces.length) {
+        terrainHtml += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:16px">';
+        ta.surfaces.forEach(function(s) {
+          var pct = s.percentage || 0;
+          terrainHtml += '<div style="background:var(--bg-card);border:1px solid var(--border);padding:14px;border-left:3px solid #60a5fa">';
+          terrainHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+          terrainHtml += '<span style="font-size:13px;font-weight:700;color:var(--text)">' + escHtml(s.type) + '</span>';
+          terrainHtml += '<span style="font-family:var(--mono);font-size:12px;color:#60a5fa;font-weight:700">' + pct + '%</span>';
+          terrainHtml += '</div>';
+          terrainHtml += '<div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:8px"><div style="height:100%;width:' + pct + '%;background:#60a5fa;border-radius:2px"></div></div>';
+          if (s.km_range) terrainHtml += '<div style="font-size:10px;color:var(--text-muted)">' + escHtml(s.km_range) + '</div>';
+          if (s.description) terrainHtml += '<div style="font-size:11px;color:var(--text-soft);margin-top:4px;line-height:1.5">' + escHtml(s.description) + '</div>';
+          if (s.tire_recommendation) terrainHtml += '<div style="font-size:10px;color:var(--accent);margin-top:4px">\uD83D\uDD27 ' + escHtml(s.tire_recommendation) + '</div>';
+          terrainHtml += '</div>';
+        });
+        terrainHtml += '</div>';
+      }
+      if (ta.tire_recommendation) terrainHtml += '<div style="background:rgba(96,165,250,0.06);border:1px solid rgba(96,165,250,0.2);border-left:3px solid #60a5fa;padding:14px;font-size:13px;color:var(--text-soft)"><strong style="color:var(--text)">\uD83D\uDD27 Pneu recomendado:</strong> ' + escHtml(ta.tire_recommendation) + '</div>';
+      if (ta.pressure_tip) terrainHtml += '<div style="font-size:12px;color:var(--text-muted);margin-top:8px;font-style:italic">' + escHtml(ta.pressure_tip) + '</div>';
+      terrainHtml += '</div>';
+      summaryContent.insertAdjacentHTML('beforeend', terrainHtml);
     }
   }
 }
@@ -2001,7 +2064,7 @@ async function main() {
           seg.trackPoints = gpxPoints.slice(seg.start_idx, seg.end_idx + 1);
         });
       }
-      if (autoSegs.length) renderSegments(autoSegs, gpxProfile);
+      if (autoSegs.length) { window._allSegments = autoSegs; renderSegments(autoSegs, gpxProfile); }
     }
 
     // Summary + Equipment (auto-generated from GPX)

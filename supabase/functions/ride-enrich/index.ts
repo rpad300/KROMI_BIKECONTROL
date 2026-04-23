@@ -41,7 +41,7 @@ async function callGemini(prompt: string): Promise<string> {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.7,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 8192,
         responseMimeType: 'application/json',
       },
     }),
@@ -59,7 +59,7 @@ async function callGemini(prompt: string): Promise<string> {
 }
 
 // ── Build prompt from ride data ─────────────────────────────────────────
-function buildPrompt(ride: Record<string, unknown>, pois: Array<Record<string, unknown>>): string {
+function buildPrompt(ride: Record<string, unknown>, pois: Array<Record<string, unknown>>, segments?: Array<Record<string, unknown>>): string {
   const name = ride.name || 'Ride';
   const desc = ride.description || '';
   const dist = ride.distance_km || 0;
@@ -70,6 +70,10 @@ function buildPrompt(ride: Record<string, unknown>, pois: Array<Record<string, u
 
   const poisText = pois.map((p, i) =>
     `POI ${i}: "${p.name}" at km ${p.km}, altitude ${p.ele}m, lat=${p.lat}, lon=${p.lon}, type=${p.type}`
+  ).join('\n');
+
+  const segsText = (segments || []).map((s, i) =>
+    `SEG ${i}: "${s.name}" ${s.direction > 0 ? 'subida' : 'descida'}, ${s.distance_km}km, ${s.elevation_gain_m || 0}m D+, ${s.elevation_loss_m || 0}m D-, gradiente medio ${s.avg_gradient_pct || 0}%, de ${s.start_ele || 0}m a ${s.end_ele || 0}m`
   ).join('\n');
 
   return `Tu es um escritor editorial especializado em ciclismo de montanha em Portugal.
@@ -87,6 +91,9 @@ DADOS DA RIDE:
 PONTOS DE INTERESSE:
 ${poisText}
 
+SEGMENTOS DETECTADOS:
+${segsText || 'Nenhum segmento detectado'}
+
 GERA O SEGUINTE JSON (sem markdown, apenas JSON puro):
 {
   "narrative": "Texto editorial de 3-4 paragrafos descrevendo a travessia de forma evocativa — paisagem, terreno, desafios, recompensas. Menciona as zonas geograficas reais. Estilo revista de outdoor.",
@@ -94,22 +101,47 @@ GERA O SEGUINTE JSON (sem markdown, apenas JSON puro):
   "pois": [
     {
       "index": 0,
-      "description": "Descricao rica de 2-3 frases com contexto historico, geografico ou cultural do local. Menciona nomes reais de aldeias, serras, rios, monumentos se relevante.",
-      "curiosity": "Uma curiosidade interessante sobre o local (geologia, historia, fauna, flora, gastronomia local).",
-      "food_tip": "Sugestao de restaurante ou cafe proximo se for zona com servicos (null se zona remota)."
+      "description": "Descricao rica de 2-3 frases com contexto historico, geografico ou cultural do local.",
+      "curiosity": "Uma curiosidade interessante sobre o local.",
+      "food_tip": "Sugestao de restaurante ou cafe proximo (null se zona remota)."
     }
   ],
+
+  "segments": [
+    {
+      "index": 0,
+      "description": "Descricao do segmento — que tipo de terreno esperar, paisagem, desafio tecnico ou fisico. 2-3 frases.",
+      "tip": "Recomendacao pratica e engracada para este segmento (ex: 'Guarda as pernas para a rampa final' ou 'Se vires uma cabra no trilho, ela tem prioridade').",
+      "surface": "Tipo de piso neste segmento: asfalto, terra batida, trilho single-track, estradao, gravilha, xisto, etc.",
+      "curiosity": "Curiosidade sobre a zona que este segmento atravessa."
+    }
+  ],
+
+  "terrain_analysis": {
+    "summary": "Resumo geral dos tipos de piso encontrados ao longo de todo o percurso. 2-3 frases.",
+    "surfaces": [
+      {
+        "type": "Nome do tipo de piso (ex: Estradao de terra, Trilho single-track, Asfalto, Xisto solto)",
+        "percentage": 30,
+        "km_range": "km X a km Y aproximadamente",
+        "description": "Descricao deste tipo de superficie e como afecta a pedalada.",
+        "tire_recommendation": "Recomendacao de pneu para este tipo de piso."
+      }
+    ],
+    "tire_recommendation": "Recomendacao geral de pneu para este percurso completo (modelo/tipo ideal).",
+    "pressure_tip": "Sugestao de pressao de pneus para este percurso."
+  },
 
   "safety_notes": [
     {
       "zone": "Nome da zona",
       "km_range": "km X a km Y",
-      "warning": "Aviso de seguranca especifico para este trecho (terreno, transito, exposicao, etc.)",
-      "tip": "Conselho pratico para passar em seguranca"
+      "warning": "Aviso de seguranca especifico para este trecho.",
+      "tip": "Conselho pratico para passar em seguranca."
     }
   ],
 
-  "difficulty_text": "Avaliacao editorial da dificuldade em 2-3 frases — para quem e adequada, que experiencia requer, o que a torna especial.",
+  "difficulty_text": "Avaliacao editorial da dificuldade em 2-3 frases.",
 
   "gear_tips": [
     "Dica especifica de equipamento baseada neste percurso em particular"
@@ -119,8 +151,9 @@ GERA O SEGUINTE JSON (sem markdown, apenas JSON puro):
 IMPORTANTE:
 - Usa conhecimento real de geografia portuguesa
 - Menciona nomes reais de localidades, serras, rios
-- Cada POI description deve ser unica e relevante para a localizacao exacta
-- safety_notes devem ser praticas e especificas ao terreno
+- Os tips dos segmentos devem ser engracados mas uteis (estilo conversa entre amigos ciclistas)
+- A analise de terreno deve ser baseada na altitude e localizacao (serra = xisto/trilho, vale = estradao/asfalto)
+- Recomendacoes de pneus devem ser praticas (ex: "Maxxis Minion DHF 2.5 frente / Dissector 2.4 tras")
 - Nao inventes factos — se nao souberes algo sobre um local, descreve o terreno/paisagem
 - Responde APENAS com JSON valido, sem marcadores markdown`;
 }
@@ -133,7 +166,7 @@ Deno.serve(async (req) => {
     if (!GEMINI_KEY) return json({ error: 'GEMINI_API_KEY not configured' }, 500);
     if (!SUPABASE_URL || !SERVICE_ROLE) return json({ error: 'Missing Supabase config' }, 500);
 
-    const { ride_id, pois, ride_data } = await req.json();
+    const { ride_id, pois, ride_data, segments } = await req.json();
     if (!ride_id) return json({ error: 'ride_id required' }, 400);
 
     const sb = createClient(SUPABASE_URL, SERVICE_ROLE);
@@ -150,7 +183,7 @@ Deno.serve(async (req) => {
     }
 
     // Build prompt and call Gemini
-    const prompt = buildPrompt(ride_data || {}, pois || []);
+    const prompt = buildPrompt(ride_data || {}, pois || [], segments || []);
     const rawResponse = await callGemini(prompt);
 
     // Parse response
