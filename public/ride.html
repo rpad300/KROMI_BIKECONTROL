@@ -25,7 +25,7 @@ function loadGoogleMaps() {
     window._gmCallback = function() { resolve(); };
     var script = document.createElement('script');
     script.async = true;
-    script.src = 'https://maps.googleapis.com/maps/api/js?key=' + MAPS_KEY + '&libraries=geometry&callback=_gmCallback';
+    script.src = 'https://maps.googleapis.com/maps/api/js?key=' + MAPS_KEY + '&libraries=geometry,places&callback=_gmCallback';
     document.head.appendChild(script);
   });
   return _mapsPromise;
@@ -646,6 +646,9 @@ tbody tr:hover { background: rgba(255,255,255,0.02); }
 .poi-subtitle { font-family: var(--serif); font-style: italic; font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
 .poi-meta { display: flex; gap: 14px; font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-top: 10px; }
 .poi-meta span { display: flex; align-items: center; gap: 4px; }
+.poi-img { width: 100%; height: 140px; object-fit: cover; border-radius: 6px; margin-bottom: 10px; display: none; border: 1px solid var(--border); }
+.poi-location { font-family: var(--mono); font-size: 10px; color: var(--accent); margin-bottom: 4px; letter-spacing: 0.1em; }
+.poi-place-info { font-size: 12px; color: var(--text-soft); margin-top: 6px; }
 
 /* ── Timeline ───────────────────────────────────── */
 .timeline { position: relative; padding-left: 0; }
@@ -1839,6 +1842,74 @@ function generatePOIs(gpxPoints, gpxProfile, data) {
   return pois;
 }
 
+// ── Enrich POIs with Google Places ──────────────────────────────────────────
+function enrichPOIsWithPlaces(pois) {
+  loadGoogleMaps().then(function() {
+    // Create a hidden div for PlacesService
+    var attrDiv = document.createElement('div');
+    attrDiv.style.display = 'none';
+    document.body.appendChild(attrDiv);
+    var service = new google.maps.places.PlacesService(attrDiv);
+
+    pois.forEach(function(poi) {
+      if (!poi.lat || !poi.lon) return;
+      // Reverse geocode to get place name
+      var geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ location: { lat: poi.lat, lng: poi.lon } }, function(results, status) {
+        if (status === 'OK' && results && results[0]) {
+          var r = results[0];
+          // Use the most specific component for the name
+          var locality = '';
+          var subloc = '';
+          r.address_components.forEach(function(c) {
+            if (c.types.indexOf('locality') !== -1) locality = c.long_name;
+            if (c.types.indexOf('sublocality') !== -1 || c.types.indexOf('neighborhood') !== -1) subloc = c.long_name;
+          });
+          if (poi.type !== 'waypoint') {
+            // Add location name to existing POI name
+            var placeName = subloc || locality;
+            if (placeName && poi.name.indexOf(placeName) === -1) {
+              poi.locationName = placeName;
+              var el = document.getElementById('poi-location-' + poi._idx);
+              if (el) el.textContent = placeName;
+            }
+          }
+        }
+      });
+
+      // Search for nearby places (restaurants for midpoint, viewpoints for summits)
+      var searchType = 'point_of_interest';
+      if (poi.type === 'midpoint' || poi.type === 'valley') searchType = 'restaurant';
+      else if (poi.type === 'summit') searchType = 'tourist_attraction';
+
+      service.nearbySearch({
+        location: { lat: poi.lat, lng: poi.lon },
+        radius: 2000,
+        type: searchType
+      }, function(results, status) {
+        if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
+          var best = results[0];
+          poi.placeName = best.name;
+          poi.placeRating = best.rating;
+          poi.placeTypes = best.types;
+          if (best.photos && best.photos.length > 0) {
+            poi.placePhoto = best.photos[0].getUrl({ maxWidth: 400 });
+          }
+          // Update DOM
+          var nameEl = document.getElementById('poi-place-' + poi._idx);
+          if (nameEl) nameEl.innerHTML = '<strong>' + escHtml(best.name) + '</strong>' +
+            (best.rating ? ' <span style="color:var(--accent);font-size:11px">\u2605 ' + best.rating + '</span>' : '');
+          var imgEl = document.getElementById('poi-img-' + poi._idx);
+          if (imgEl && poi.placePhoto) {
+            imgEl.src = poi.placePhoto;
+            imgEl.style.display = 'block';
+          }
+        }
+      });
+    });
+  });
+}
+
 function renderPOIs(gpxPoints, gpxProfile, data) {
   var pois = generatePOIs(gpxPoints, gpxProfile, data);
   if (!pois || pois.length === 0) return;
@@ -1856,22 +1927,30 @@ function renderPOIs(gpxPoints, gpxProfile, data) {
       arrivalStr = arrival.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
     }
 
+    poi._idx = idx; // for DOM updates from Places API
     var card = document.createElement('div');
     card.className = 'poi-card';
     card.setAttribute('data-reveal', '');
+    var typeIcons = { start: '\uD83D\uDEB4', end: '\uD83C\uDFC1', summit: '\u26F0\uFE0F', valley: '\uD83C\uDF0A', midpoint: '\uD83C\uDF7D\uFE0F', waypoint: '\uD83D\uDCCD' };
     card.innerHTML =
+      '<img id="poi-img-' + idx + '" class="poi-img" src="" alt="">' +
       '<div class="poi-header">' +
-        '<span class="poi-code">POI ' + code + '</span>' +
+        '<span class="poi-code">' + (typeIcons[poi.type] || '\uD83D\uDCCD') + ' ' + code + '</span>' +
         '<span class="poi-km">Km ' + fmt(poi.km, 1) + '</span>' +
       '</div>' +
+      '<div id="poi-location-' + idx + '" class="poi-location"></div>' +
       '<div class="poi-name">' + escHtml(poi.name) + '</div>' +
       (poi.desc ? '<div class="poi-subtitle">' + escHtml(poi.desc) + '</div>' : '') +
+      '<div id="poi-place-' + idx + '" class="poi-place-info"></div>' +
       '<div class="poi-meta">' +
-        '<span>\u2B06 ' + Math.round(poi.ele) + 'm</span>' +
+        '<span>\u25C6 ' + Math.round(poi.ele) + ' m</span>' +
         (arrivalStr ? '<span>\uD83D\uDD52 ' + arrivalStr + '</span>' : '') +
       '</div>';
     grid.appendChild(card);
   });
+
+  // Enrich with Google Places data (async, updates DOM when ready)
+  enrichPOIsWithPlaces(pois);
   initRevealForElement($('section-pois'));
 }
 
@@ -1965,12 +2044,17 @@ function renderTimeline(gpxPoints, gpxProfile, segments, data) {
     });
   }
 
-  // Sort by km, deduplicate close entries
-  entries.sort(function(a, b) { return a.km - b.km; });
+  // Sort by km, deduplicate close entries — POIs take priority over segments
+  var poiTypes = { start: 1, end: 1, summit: 1, valley: 1, midpoint: 1, waypoint: 1 };
+  entries.sort(function(a, b) { return a.km - b.km || ((poiTypes[b.type]||0) - (poiTypes[a.type]||0)); });
   var filtered = [entries[0]];
   for (var i = 1; i < entries.length; i++) {
-    if (Math.abs(entries[i].km - filtered[filtered.length - 1].km) > 0.3) {
+    var prev = filtered[filtered.length - 1];
+    if (Math.abs(entries[i].km - prev.km) > 0.5) {
       filtered.push(entries[i]);
+    } else if (poiTypes[entries[i].type] && !poiTypes[prev.type]) {
+      // Replace segment with POI (POI has stops, segment doesn't)
+      filtered[filtered.length - 1] = entries[i];
     }
   }
 
