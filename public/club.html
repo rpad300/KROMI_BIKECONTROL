@@ -443,6 +443,79 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   .hero { min-height: 520px; }
 }
 
+/* ── Modal ────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px; opacity: 0; pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.modal-overlay.open { opacity: 1; pointer-events: auto; }
+.modal-content {
+  background: #1a1919; border: 1px solid var(--glass-border); border-radius: 20px;
+  width: 100%; max-width: 400px; max-height: 85vh; overflow-y: auto;
+  padding: 0; position: relative;
+  transform: translateY(20px) scale(0.97); transition: transform 0.3s ease;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+}
+.modal-overlay.open .modal-content { transform: none; }
+.modal-close {
+  position: absolute; top: 12px; right: 12px; z-index: 5;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: rgba(255,255,255,0.08); border: none; color: var(--text-muted);
+  font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s;
+}
+.modal-close:hover { background: rgba(255,255,255,0.15); color: var(--text); }
+.modal-hero {
+  padding: 32px 24px 20px; text-align: center;
+  background: linear-gradient(180deg, rgba(63,255,139,0.06) 0%, transparent 100%);
+  border-bottom: 1px solid var(--border);
+}
+.modal-avatar {
+  width: 80px; height: 80px; border-radius: 50%; object-fit: cover;
+  margin: 0 auto 12px; display: block;
+  border: 3px solid var(--accent);
+  box-shadow: 0 0 24px rgba(63,255,139,0.2);
+}
+.modal-avatar-ph {
+  width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 12px;
+  background: var(--border); display: flex; align-items: center; justify-content: center;
+  font-size: 28px; border: 3px solid var(--accent);
+}
+.modal-name { font-size: 20px; font-weight: 800; }
+.modal-role-badge {
+  display: inline-block; padding: 4px 14px; border-radius: 100px;
+  font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;
+  margin-top: 8px;
+}
+.modal-body { padding: 20px 24px 24px; }
+.modal-stat-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px;
+}
+.modal-stat {
+  background: rgba(255,255,255,0.03); border-radius: 12px; padding: 14px 12px; text-align: center;
+  border: 1px solid var(--border);
+}
+.modal-stat-value {
+  font-size: 22px; font-weight: 900; font-family: 'JetBrains Mono', monospace;
+  color: var(--accent);
+}
+.modal-stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-top: 4px; }
+.modal-info { display: flex; flex-direction: column; gap: 8px; }
+.modal-info-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.modal-info-row:last-child { border-bottom: none; }
+.modal-info-label { color: var(--text-muted); }
+.modal-info-value { font-weight: 700; }
+.modal-photos { display: flex; gap: 8px; overflow-x: auto; margin-top: 12px; padding-bottom: 4px; }
+.modal-photos img { width: 100px; height: 75px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
+.modal-desc { font-size: 13px; color: #bbb; line-height: 1.6; margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 10px; }
+.clickable { cursor: pointer; }
+
 /* ── Reduced motion ───────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .mesh-blob { animation: none; }
@@ -458,6 +531,14 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   <div class="mesh-blob"></div>
   <div class="mesh-blob"></div>
   <div class="mesh-blob"></div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-content" id="modal-inner">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <div id="modal-body"></div>
+  </div>
 </div>
 
 <div class="page-content" id="app">
@@ -767,6 +848,8 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
       card.appendChild(avatarImg(m.avatar_url, 'board-avatar', (m.display_name || '?')[0]));
       card.appendChild(div('board-name', escHtml(m.display_name || 'Membro')));
       card.appendChild(div('board-role', escHtml(m.board_role || m.role || '')));
+      card.classList.add('clickable');
+      (function(member) { card.onclick = function() { openMemberModal(member); }; })(m);
       grid.appendChild(card);
     });
     wrap.appendChild(grid);
@@ -799,6 +882,8 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
       info.appendChild(meta);
       card.appendChild(dateBox);
       card.appendChild(info);
+      card.classList.add('clickable');
+      (function(ride) { card.onclick = function() { openRideModal(ride); }; })(r);
       list.appendChild(card);
     });
     wrap.appendChild(list);
@@ -854,6 +939,8 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
         });
         card.appendChild(photos);
       }
+      card.classList.add('clickable');
+      (function(post, auth) { card.onclick = function() { openFeedModal(post, auth); }; })(p, author);
       list.appendChild(card);
     });
     wrap.appendChild(list);
@@ -899,6 +986,8 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
       .slice(0, 20);
 
     if (!ranked.length) return null;
+    // Store stats for member modals
+    ranked.forEach(function(r) { _riderStats[r.user_id] = { km: r.km, elev: r.elev, rides: r.rides }; });
 
     var wrap = div('section');
     var header = div('section-header');
@@ -923,6 +1012,14 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
         item.appendChild(avatarImg(r.avatar_url, 'lb-podium-avatar', (r.display_name || '?')[0]));
         item.appendChild(div('lb-podium-name', escHtml(r.display_name)));
         item.appendChild(div('lb-podium-km', fmtNum(r.km, 1) + ' km'));
+        item.classList.add('clickable');
+        (function(rider) {
+          item.onclick = function() {
+            var m = memberMap[rider.user_id] || { display_name: rider.display_name, avatar_url: rider.avatar_url, user_id: rider.user_id, role: 'member' };
+            m._stats = { km: rider.km, elev: rider.elev, rides: rider.rides };
+            openMemberModal(m);
+          };
+        })(r);
         podium.appendChild(item);
       });
       lbWrap.appendChild(podium);
@@ -944,6 +1041,14 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
           '<td class="num">' + fmtNum(r.km, 1) + '</td>' +
           '<td class="num">' + fmtNum(r.elev) + '</td>' +
           '<td class="num">' + r.rides + '</td>';
+        tr.classList.add('clickable');
+        (function(rider) {
+          tr.onclick = function() {
+            var m = memberMap[rider.user_id] || { display_name: rider.display_name, avatar_url: rider.avatar_url, user_id: rider.user_id, role: 'member' };
+            m._stats = { km: rider.km, elev: rider.elev, rides: rider.rides };
+            openMemberModal(m);
+          };
+        })(r);
         tbody.appendChild(tr);
       });
       table.appendChild(tbody);
@@ -966,7 +1071,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
     var grid = div('members-grid');
     members.slice(0, 48).forEach(function(m) {
       var roleCls = m.role === 'owner' ? 'role-owner' : m.role === 'admin' ? 'role-admin' : m.role === 'captain' ? 'role-captain' : '';
-      var card = div('member-card ' + roleCls);
+      var card = div('member-card clickable ' + roleCls);
       card.appendChild(avatarImg(m.avatar_url, 'member-avatar', (m.display_name || '?')[0]));
       card.appendChild(div('member-name', escHtml(m.display_name || 'Membro')));
       if (m.role && m.role !== 'member') {
@@ -974,6 +1079,12 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
         var badgeLabel = m.role === 'owner' ? 'Fundador' : m.role === 'admin' ? 'Admin' : m.role === 'captain' ? 'Capitao' : 'Membro';
         card.appendChild(el('span', 'role-badge ' + badgeCls, badgeLabel));
       }
+      (function(member) {
+        card.onclick = function() {
+          member._stats = _riderStats[member.user_id] || null;
+          openMemberModal(member);
+        };
+      })(m);
       grid.appendChild(card);
     });
     wrap.appendChild(grid);
@@ -1002,6 +1113,124 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
       '<div class="footer-copy">&copy; ' + new Date().getFullYear() + ' KROMI. Todos os direitos reservados.</div>';
     return f;
   }
+
+  // ── Modal system ─────────────────────────────────────────────────────────
+  // Expose globally so onclick handlers in HTML work
+  window.closeModal = function() {
+    document.getElementById('modal').classList.remove('open');
+  };
+  window.openMemberModal = function(member) {
+    var roleColors = { owner: '#ffd700', admin: '#6ea8fe', moderator: '#e966ff', captain: '#3fff8b', member: '#888' };
+    var roleLabels = { owner: 'Fundador', admin: 'Admin', moderator: 'Moderador', captain: 'Capitao', member: 'Membro' };
+    var joinDate = member.joined_at ? new Date(member.joined_at).toLocaleDateString('pt-PT', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+    var color = roleColors[member.role] || '#888';
+    var html = '<div class="modal-hero">';
+    if (member.avatar_url) {
+      html += '<img class="modal-avatar" src="' + escAttr(member.avatar_url) + '" alt="" onerror="this.outerHTML=\'<div class=modal-avatar-ph>' + escHtml((member.display_name||'?')[0]) + '</div>\'">';
+    } else {
+      html += '<div class="modal-avatar-ph">' + escHtml((member.display_name || '?')[0]) + '</div>';
+    }
+    html += '<div class="modal-name">' + escHtml(member.display_name || 'Membro') + '</div>';
+    html += '<span class="modal-role-badge" style="background:' + color + '22;color:' + color + '">' + (roleLabels[member.role] || member.role) + '</span>';
+    html += '</div>';
+    html += '<div class="modal-body">';
+    html += '<div class="modal-info">';
+    html += '<div class="modal-info-row"><span class="modal-info-label">Membro desde</span><span class="modal-info-value">' + joinDate + '</span></div>';
+    if (member.role) html += '<div class="modal-info-row"><span class="modal-info-label">Funcao</span><span class="modal-info-value" style="color:' + color + '">' + (roleLabels[member.role] || member.role) + '</span></div>';
+    html += '</div>';
+    // Stats if available (from leaderboard data)
+    if (member._stats) {
+      var s = member._stats;
+      html += '<div class="modal-stat-grid" style="margin-top:16px">';
+      if (s.km !== undefined) html += '<div class="modal-stat"><div class="modal-stat-value">' + fmtNum(s.km, 1) + '</div><div class="modal-stat-label">km este mes</div></div>';
+      if (s.elev !== undefined) html += '<div class="modal-stat"><div class="modal-stat-value">' + fmtNum(s.elev) + '</div><div class="modal-stat-label">D+ este mes</div></div>';
+      if (s.rides !== undefined) html += '<div class="modal-stat"><div class="modal-stat-value">' + s.rides + '</div><div class="modal-stat-label">Saidas</div></div>';
+      html += '</div>';
+    }
+    html += '</div>';
+    document.getElementById('modal-body').innerHTML = html;
+    document.getElementById('modal').classList.add('open');
+  };
+
+  window.openRideModal = function(ride) {
+    var d = ride.scheduled_at ? new Date(ride.scheduled_at) : null;
+    var dateStr = d ? d.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+    var timeStr = d ? d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }) : '';
+    var html = '<div class="modal-hero">';
+    html += '<div style="font-size:36px;margin-bottom:12px">🚴</div>';
+    html += '<div class="modal-name">' + escHtml(ride.name || ride.title || 'Saida') + '</div>';
+    html += '<div style="font-size:13px;color:var(--text-muted);margin-top:6px">' + dateStr + (timeStr ? ' · ' + timeStr : '') + '</div>';
+    html += '</div>';
+    html += '<div class="modal-body">';
+    if (ride.meeting_address) html += '<div class="modal-info"><div class="modal-info-row"><span class="modal-info-label">Local de encontro</span><span class="modal-info-value">📍 ' + escHtml(ride.meeting_address) + '</span></div></div>';
+    var stats = [];
+    if (ride.distance_km) stats.push({ v: fmtNum(ride.distance_km, 1), l: 'Distancia (km)' });
+    if (ride.elevation_m) stats.push({ v: fmtNum(ride.elevation_m), l: 'Elevacao (D+)' });
+    if (stats.length) {
+      html += '<div class="modal-stat-grid" style="margin-top:12px">';
+      stats.forEach(function(s) { html += '<div class="modal-stat"><div class="modal-stat-value">' + s.v + '</div><div class="modal-stat-label">' + s.l + '</div></div>'; });
+      html += '</div>';
+    }
+    if (ride.description) html += '<div class="modal-desc">' + escHtml(ride.description) + '</div>';
+    if (ride.route_gpx) html += '<div style="margin-top:12px;text-align:center;font-size:12px;color:var(--accent)">🗺️ Rota GPX disponivel na app</div>';
+    html += '</div>';
+    document.getElementById('modal-body').innerHTML = html;
+    document.getElementById('modal').classList.add('open');
+  };
+
+  window.openFeedModal = function(post, author) {
+    var d = post.created_at ? new Date(post.created_at) : null;
+    var dateStr = d ? d.toLocaleDateString('pt-PT', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+    var stats = post.stats || {};
+    var html = '<div class="modal-hero">';
+    if (author && author.avatar_url) {
+      html += '<img class="modal-avatar" src="' + escAttr(author.avatar_url) + '" alt="" onerror="this.style.display=\'none\'">';
+    }
+    html += '<div class="modal-name">' + escHtml(author ? author.display_name : 'Ciclista') + '</div>';
+    html += '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">' + dateStr + '</div>';
+    html += '</div>';
+    html += '<div class="modal-body">';
+    if (post.content) html += '<div class="modal-desc">' + escHtml(post.content) + '</div>';
+    var statItems = [];
+    if (stats.distance_km) statItems.push({ v: fmtNum(stats.distance_km, 1), l: 'km' });
+    if (stats.elevation_gain_m) statItems.push({ v: fmtNum(stats.elevation_gain_m), l: 'D+' });
+    if (stats.duration_s) { var h = Math.floor(stats.duration_s / 3600), m = Math.floor((stats.duration_s % 3600) / 60); statItems.push({ v: h + 'h' + String(m).padStart(2, '0'), l: 'Duracao' }); }
+    if (stats.avg_speed_kmh) statItems.push({ v: fmtNum(stats.avg_speed_kmh, 1), l: 'km/h avg' });
+    if (statItems.length) {
+      html += '<div class="modal-stat-grid" style="margin-top:12px">';
+      statItems.forEach(function(s) { html += '<div class="modal-stat"><div class="modal-stat-value">' + s.v + '</div><div class="modal-stat-label">' + s.l + '</div></div>'; });
+      html += '</div>';
+    }
+    // Participants
+    if (stats.participants && stats.participants.length) {
+      html += '<div style="margin-top:16px"><div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Participantes (' + stats.participants.length + ')</div>';
+      html += '<div class="modal-info">';
+      stats.participants.forEach(function(pt) {
+        html += '<div class="modal-info-row"><span class="modal-info-label">' + escHtml(pt.name || pt.display_name || 'Rider') + '</span>';
+        html += '<span class="modal-info-value mono" style="font-size:12px">' + (pt.distance_km ? fmtNum(pt.distance_km, 1) + 'km' : '') + (pt.elevation_gain_m ? ' · ' + fmtNum(pt.elevation_gain_m) + 'D+' : '') + '</span></div>';
+      });
+      html += '</div></div>';
+    }
+    // Photos
+    if (post.photos && post.photos.length) {
+      html += '<div class="modal-photos" style="margin-top:12px">';
+      post.photos.forEach(function(p) {
+        var url = typeof p === 'string' ? p : (p.drive_thumbnail_url || p.drive_view_url);
+        if (url) html += '<img src="' + escAttr(url) + '" alt="">';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    document.getElementById('modal-body').innerHTML = html;
+    document.getElementById('modal').classList.add('open');
+  };
+
+  // Close on Escape
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
+
+  // Store for cross-referencing in modals
+  var _allMembers = [];
+  var _riderStats = {};
 
   // ── Error screen ──────────────────────────────────────────────────────────
   function showError(msg) {
@@ -1044,6 +1273,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
       var members = results[0].status === 'fulfilled' ? (results[0].value || []) : [];
       var feed = results[1].status === 'fulfilled' ? (results[1].value || []) : [];
       var rides = results[2].status === 'fulfilled' ? (results[2].value || []) : [];
+      _allMembers = members;
 
       // Build page
       var app = document.getElementById('app');
