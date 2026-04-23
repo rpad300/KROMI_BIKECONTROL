@@ -1105,6 +1105,7 @@ function enrichPOIsWithPlaces(pois) {
 function renderPOIs(gpxPoints, gpxProfile, data) {
   var pois = generatePOIs(gpxPoints, gpxProfile, data);
   if (!pois || pois.length === 0) return;
+  window._allPOIs = pois; // Store for AI enrichment
   $('section-pois').style.display = '';
 
   var grid = $('poi-grid');
@@ -1695,8 +1696,129 @@ function renderEquipment(gpxProfile, kpis, weatherData) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// NEW FEATURE: Live Tracking Badge
+// AI ENRICHMENT via Gemini (ride-enrich edge function)
 // ═════════════════════════════════════════════════════════════════════════════
+
+function fetchAIEnrichment(data, gpxProfile) {
+  var rideId = data.ride_id || data.id;
+  if (!rideId) return;
+
+  // Check if already in ride_data
+  var existing = data.ride_data && data.ride_data.ai_enrichment;
+  if (existing) {
+    renderAIContent(existing);
+    return;
+  }
+
+  // Build POIs for the prompt
+  var pois = [];
+  if (window._allPOIs) {
+    pois = window._allPOIs.map(function(p) {
+      return { name: p.name, km: p.km, ele: p.ele, lat: p.lat, lon: p.lon, type: p.type };
+    });
+  }
+
+  // Build ride data summary
+  var kpis = {};
+  if (gpxProfile && gpxProfile.length >= 2) {
+    var gl = computeGainLoss(gpxProfile);
+    kpis = {
+      name: data.name || 'Ride',
+      description: data.description || '',
+      distance_km: gpxProfile[gpxProfile.length - 1].d,
+      elevation_gain: gl.gain,
+      elevation_loss: gl.loss,
+      max_ele: Math.max.apply(null, gpxProfile.map(function(p) { return p.e; })),
+      min_ele: Math.min.apply(null, gpxProfile.map(function(p) { return p.e; }))
+    };
+  }
+
+  // Call edge function (async, non-blocking)
+  fetch(SB_URL + '/functions/v1/ride-enrich', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: ANON_KEY },
+    body: JSON.stringify({ ride_id: rideId, pois: pois, ride_data: kpis })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(result) {
+    if (result.enrichment) {
+      renderAIContent(result.enrichment);
+    }
+  })
+  .catch(function(err) {
+    console.warn('[ride-engine] AI enrichment failed:', err);
+  });
+}
+
+function renderAIContent(enrichment) {
+  if (!enrichment) return;
+
+  // 1. Replace summary prose with AI narrative
+  var summaryProse = document.querySelector('.summary-prose');
+  if (summaryProse && enrichment.narrative) {
+    summaryProse.innerHTML = enrichment.narrative.replace(/\n\n/g, '</p><p>').replace(/^/, '<p>').replace(/$/, '</p>');
+    summaryProse.style.borderLeftColor = 'var(--accent)';
+  }
+
+  // 2. Replace difficulty text
+  if (enrichment.difficulty_text) {
+    var diffSub = document.querySelector('.summary-card.diff-card .summary-sub');
+    if (diffSub) diffSub.textContent = enrichment.difficulty_text;
+  }
+
+  // 3. Enrich POI cards with AI descriptions
+  if (enrichment.pois && enrichment.pois.length) {
+    enrichment.pois.forEach(function(aiPoi) {
+      var idx = aiPoi.index;
+      var descEl = document.getElementById('poi-place-' + idx);
+      var subtitleEl = document.querySelector('#poi-grid .poi-card:nth-child(' + (idx + 1) + ') .poi-subtitle');
+
+      if (descEl && aiPoi.description) {
+        var html = '<div style="font-size:13px;color:var(--text-soft);line-height:1.6;margin-top:6px">' + escHtml(aiPoi.description) + '</div>';
+        if (aiPoi.curiosity) {
+          html += '<div style="font-size:11px;color:var(--accent);margin-top:6px;font-style:italic">\uD83D\uDCA1 ' + escHtml(aiPoi.curiosity) + '</div>';
+        }
+        if (aiPoi.food_tip && aiPoi.food_tip !== 'null') {
+          html += '<div style="font-size:11px;color:#fbbf24;margin-top:4px">\uD83C\uDF7D\uFE0F ' + escHtml(aiPoi.food_tip) + '</div>';
+        }
+        descEl.innerHTML = html;
+      }
+    });
+  }
+
+  // 4. Add safety notes to summary section
+  if (enrichment.safety_notes && enrichment.safety_notes.length) {
+    var summaryContent = $('summary-content');
+    if (summaryContent) {
+      var safetyHtml = '<div style="margin-top:20px">';
+      safetyHtml += '<div style="font-family:var(--mono);font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:#ef4444;font-weight:700;margin-bottom:12px">\u26A0\uFE0F Notas de Seguranca</div>';
+      enrichment.safety_notes.forEach(function(note) {
+        safetyHtml += '<div style="background:var(--bg-card);border:1px solid var(--border);border-left:3px solid #ef4444;padding:14px 16px;margin-bottom:8px">';
+        safetyHtml += '<div style="font-size:13px;font-weight:700;color:var(--text)">' + escHtml(note.zone) + ' <span style="font-size:11px;color:var(--text-muted);font-weight:400">(' + escHtml(note.km_range) + ')</span></div>';
+        safetyHtml += '<div style="font-size:12px;color:var(--text-soft);margin-top:4px">' + escHtml(note.warning) + '</div>';
+        safetyHtml += '<div style="font-size:11px;color:var(--accent);margin-top:4px;font-style:italic">\uD83D\uDCA1 ' + escHtml(note.tip) + '</div>';
+        safetyHtml += '</div>';
+      });
+      safetyHtml += '</div>';
+      summaryContent.insertAdjacentHTML('beforeend', safetyHtml);
+    }
+  }
+
+  // 5. Add AI gear tips to equipment section
+  if (enrichment.gear_tips && enrichment.gear_tips.length) {
+    var equipGrid = $('equip-grid');
+    if (equipGrid) {
+      var aiCard = document.createElement('div');
+      aiCard.className = 'equip-card';
+      aiCard.setAttribute('data-num', 'AI');
+      aiCard.setAttribute('data-reveal', '');
+      aiCard.innerHTML = '<div class="equip-category">\u2728 Recomendacoes AI</div>' +
+        '<h4>Especifico para este percurso</h4>' +
+        '<ul class="equip-list">' + enrichment.gear_tips.map(function(tip) { return '<li>' + escHtml(tip) + '</li>'; }).join('') + '</ul>';
+      equipGrid.appendChild(aiCard);
+    }
+  }
+}
 function checkLiveStatus(data) {
   var isActive = data.status === 'active';
   var schedMs = data.scheduled_at ? new Date(data.scheduled_at).getTime() : 0;
@@ -1932,6 +2054,11 @@ async function main() {
       var autoSegsForTimeline = allSegs || [];
       renderTimeline(gpxPoints, gpxProfile, autoSegsForTimeline, data);
       fetchAndRenderWeather(gpxPoints, gpxProfile, rideStartAt);
+    }
+
+    // AI Enrichment (async — renders when ready, doesn't block page)
+    if (data.id || data.ride_id) {
+      fetchAIEnrichment(data, gpxProfile);
     }
 
     // Rider stats
