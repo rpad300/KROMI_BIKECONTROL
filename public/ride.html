@@ -594,6 +594,9 @@ tbody tr:hover { background: rgba(255,255,255,0.02); }
 }
 
 /* ── Responsive ──────────────────────────────────── */
+@media (max-width: 800px) {
+  .tl-kpi-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
 @media (max-width: 640px) {
   .hero-content { padding: 48px 20px 60px; }
   .hero-top { padding: 14px 20px; }
@@ -2240,13 +2243,71 @@ function renderTimeline(gpxPoints, gpxProfile, segments, data) {
     cumulativeStopMs += (e.stop_min || 0) * 60 * 1000;
   });
 
-  // Update timeline description with total time
+  // Compute ride time KPIs
   var lastEntry = filtered[filtered.length - 1];
   var totalTimeMs = lastEntry.arrivalMs - rideStart.getTime();
+
+  // Categorize stops: "moving" (briefing, regroup, nav) vs "stopped" (lunch, coffee, water, rest)
+  var movingStopTypes = { briefing: 1, regroup: 1 };
+  var totalStopMs = 0, longStopMs = 0, shortStopMs = 0;
+  filtered.forEach(function(e) {
+    var ms = (e.stop_min || 0) * 60 * 1000;
+    totalStopMs += ms;
+    if (movingStopTypes[e.stop_type]) shortStopMs += ms; // regroup = still "moving time"
+    else longStopMs += ms; // lunch, coffee, water, rest = "stopped"
+  });
+
+  var ridingTimeMs = estimateRidingTimeToKm(gpxProfile, totalDist);
+  var movingTimeMs = ridingTimeMs + shortStopMs; // riding + short regroups
+  var stoppedTimeMs = longStopMs; // long stops only
+
   var totalH = Math.floor(totalTimeMs / 3600000);
   var totalM = Math.floor((totalTimeMs % 3600000) / 60000);
-  var effectiveSpeed = totalTimeMs > 0 ? (totalDist / (totalTimeMs / 3600000)).toFixed(1) : '—';
-  $('timeline-desc').textContent = totalH + 'h' + String(totalM).padStart(2, '0') + ' total \u00B7 ~' + effectiveSpeed + ' km/h medio efetivo \u00B7 paragens incluidas';
+  var movingH = Math.floor(movingTimeMs / 3600000);
+  var movingM = Math.floor((movingTimeMs % 3600000) / 60000);
+  var stoppedH = Math.floor(stoppedTimeMs / 3600000);
+  var stoppedM = Math.floor((stoppedTimeMs % 3600000) / 60000);
+  var speedWithStops = totalTimeMs > 0 ? (totalDist / (totalTimeMs / 3600000)) : 0;
+  var speedMoving = movingTimeMs > 0 ? (totalDist / (movingTimeMs / 3600000)) : 0;
+
+  // Render KPI cards above timeline
+  var arrivalStr = lastEntry.time.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+  var departStr = rideStart.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+
+  $('timeline-desc').innerHTML = '';
+  var kpiHtml = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:32px">';
+  kpiHtml += '<div style="background:var(--bg-card);border:1px solid var(--border);padding:20px 16px;text-align:center">' +
+    '<div style="font-family:var(--mono);font-size:9px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin-bottom:8px">Tempo Total</div>' +
+    '<div style="font-family:var(--serif);font-size:32px;font-weight:400;color:#fff;line-height:1">' + totalH + 'h' + String(totalM).padStart(2,'0') + '</div>' +
+    '<div style="font-family:var(--mono);font-size:10px;color:var(--text-muted);margin-top:6px">' + departStr + ' \u2192 ' + arrivalStr + '</div>' +
+    '<div style="font-family:var(--mono);font-size:11px;color:var(--text-muted);margin-top:4px">~' + speedWithStops.toFixed(1) + ' km/h efetivo</div>' +
+    '</div>';
+  kpiHtml += '<div style="background:var(--bg-card);border:1px solid var(--border);padding:20px 16px;text-align:center">' +
+    '<div style="font-family:var(--mono);font-size:9px;letter-spacing:0.15em;text-transform:uppercase;color:#22c55e;margin-bottom:8px">Em Andamento</div>' +
+    '<div style="font-family:var(--serif);font-size:32px;font-weight:400;color:#fff;line-height:1">' + movingH + 'h' + String(movingM).padStart(2,'0') + '</div>' +
+    '<div style="font-family:var(--mono);font-size:10px;color:var(--text-muted);margin-top:6px">Pedalar + reagrupar</div>' +
+    '<div style="font-family:var(--mono);font-size:11px;color:#22c55e;margin-top:4px">~' + speedMoving.toFixed(1) + ' km/h medio</div>' +
+    '</div>';
+  kpiHtml += '<div style="background:var(--bg-card);border:1px solid var(--border);padding:20px 16px;text-align:center">' +
+    '<div style="font-family:var(--mono);font-size:9px;letter-spacing:0.15em;text-transform:uppercase;color:#fbbf24;margin-bottom:8px">Parado</div>' +
+    '<div style="font-family:var(--serif);font-size:32px;font-weight:400;color:#fff;line-height:1">' + stoppedH + 'h' + String(stoppedM).padStart(2,'0') + '</div>' +
+    '<div style="font-family:var(--mono);font-size:10px;color:var(--text-muted);margin-top:6px">Almoco, cafe, agua</div>' +
+    '<div style="font-family:var(--mono);font-size:11px;color:#fbbf24;margin-top:4px">' + Math.round(stoppedTimeMs/60000) + ' min total</div>' +
+    '</div>';
+  kpiHtml += '<div style="background:var(--bg-card);border:1px solid var(--border);padding:20px 16px;text-align:center">' +
+    '<div style="font-family:var(--mono);font-size:9px;letter-spacing:0.15em;text-transform:uppercase;color:#60a5fa;margin-bottom:8px">Distancia</div>' +
+    '<div style="font-family:var(--serif);font-size:32px;font-weight:400;color:#fff;line-height:1">' + fmt(totalDist,1) + '</div>' +
+    '<div style="font-family:var(--mono);font-size:10px;color:var(--text-muted);margin-top:6px">km</div>' +
+    '<div style="font-family:var(--mono);font-size:11px;color:#60a5fa;margin-top:4px">' + filtered.length + ' pontos</div>' +
+    '</div>';
+  kpiHtml += '</div>';
+
+  // Insert before timeline container
+  var kpiDiv = document.createElement('div');
+  kpiDiv.innerHTML = kpiHtml;
+  kpiDiv.setAttribute('data-reveal', '');
+  var timelineContainer = $('timeline');
+  timelineContainer.parentNode.insertBefore(kpiDiv, timelineContainer);
 
   if (filtered.length < 2) return;
   $('section-timeline').style.display = '';
