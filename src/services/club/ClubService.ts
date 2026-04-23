@@ -32,6 +32,13 @@ export interface BoardMember {
   avatar_url?: string;
 }
 
+export interface ClubTheme {
+  color_primary?: string;
+  color_secondary?: string;
+  font_heading?: string;
+  font_body?: string;
+}
+
 export interface Club {
   id: string;
   name: string;
@@ -46,6 +53,7 @@ export interface Club {
   founded_at?: string;
   social_links: Record<string, string>;
   landing_config: LandingConfig;
+  theme?: ClubTheme;
   member_count: number;
   created_by: string;
 }

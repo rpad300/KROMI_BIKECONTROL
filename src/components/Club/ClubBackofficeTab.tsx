@@ -6,8 +6,10 @@ import { useEffect, useState } from 'react';
 import {
   getClub,
   getMembers,
+  updateClub,
   updateLandingConfig,
   Club,
+  ClubTheme,
   LandingConfig,
   BoardMember,
   ClubMember,
@@ -243,6 +245,14 @@ export default function ClubBackofficeTab({ clubId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  // Theme state
+  const [theme, setTheme] = useState<ClubTheme>({
+    color_primary: '#3fff8b',
+    color_secondary: '#6366f1',
+    font_heading: 'Fraunces',
+    font_body: 'System',
+  });
+
   // Add-board-member form state
   const [addUserId, setAddUserId] = useState('');
   const [addTitle, setAddTitle] = useState('');
@@ -259,6 +269,11 @@ export default function ClubBackofficeTab({ clubId }: Props) {
         if (fetchedClub) {
           setClub(fetchedClub);
           setConfig({ ...DEFAULT_CONFIG, ...fetchedClub.landing_config });
+          setTheme(prev => ({
+            ...prev,
+            color_primary: fetchedClub.color ?? prev.color_primary,
+            ...fetchedClub.theme,
+          }));
         }
         setMembers(fetchedMembers);
       })
@@ -318,7 +333,10 @@ export default function ClubBackofficeTab({ clubId }: Props) {
     setError(null);
     setSuccess(false);
     try {
-      await updateLandingConfig(clubId, config);
+      await Promise.all([
+        updateLandingConfig(clubId, config),
+        updateClub(clubId, { theme }),
+      ]);
       setSuccess(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Erro ao guardar configuracao');
@@ -390,7 +408,95 @@ export default function ClubBackofficeTab({ clubId }: Props) {
         />
       </div>
 
-      {/* ── 3. Board members (only if show_board) ──────────── */}
+      {/* ── 3. Theme ───────────────────────────────────────── */}
+      <div style={s.card}>
+        <div style={s.sectionHeader}>Tema</div>
+
+        {/* Cor Primaria */}
+        <div style={s.row}>
+          <span style={s.label}>Cor Primaria</span>
+          <input
+            type="color"
+            value={theme.color_primary ?? '#3fff8b'}
+            onChange={e => {
+              setTheme(prev => ({ ...prev, color_primary: e.target.value }));
+              setSuccess(false);
+            }}
+            style={{
+              width: '40px',
+              height: '32px',
+              border: '1px solid #333',
+              borderRadius: '6px',
+              background: '#262626',
+              cursor: 'pointer',
+              padding: '2px',
+            }}
+            aria-label="Cor primaria"
+          />
+        </div>
+
+        {/* Cor Secundaria */}
+        <div style={s.row}>
+          <span style={s.label}>Cor Secundaria</span>
+          <input
+            type="color"
+            value={theme.color_secondary ?? '#6366f1'}
+            onChange={e => {
+              setTheme(prev => ({ ...prev, color_secondary: e.target.value }));
+              setSuccess(false);
+            }}
+            style={{
+              width: '40px',
+              height: '32px',
+              border: '1px solid #333',
+              borderRadius: '6px',
+              background: '#262626',
+              cursor: 'pointer',
+              padding: '2px',
+            }}
+            aria-label="Cor secundaria"
+          />
+        </div>
+
+        {/* Font Titulos */}
+        <div style={s.row}>
+          <span style={s.label}>Font Titulos</span>
+          <select
+            style={{ ...s.select, flex: 'none', width: '180px' }}
+            value={theme.font_heading ?? 'Fraunces'}
+            onChange={e => {
+              setTheme(prev => ({ ...prev, font_heading: e.target.value }));
+              setSuccess(false);
+            }}
+            aria-label="Font para titulos"
+          >
+            <option value="Fraunces">Fraunces</option>
+            <option value="Playfair Display">Playfair Display</option>
+            <option value="Libre Baskerville">Libre Baskerville</option>
+            <option value="System">System</option>
+          </select>
+        </div>
+
+        {/* Font Corpo */}
+        <div style={s.rowLast}>
+          <span style={s.label}>Font Corpo</span>
+          <select
+            style={{ ...s.select, flex: 'none', width: '180px' }}
+            value={theme.font_body ?? 'System'}
+            onChange={e => {
+              setTheme(prev => ({ ...prev, font_body: e.target.value }));
+              setSuccess(false);
+            }}
+            aria-label="Font para corpo de texto"
+          >
+            <option value="System">System</option>
+            <option value="Geist">Geist</option>
+            <option value="Inter">Inter</option>
+          </select>
+        </div>
+      </div>
+
+      {/* ── 4. Board members (only if show_board) ──────────── */}
       {config.show_board && (
         <div style={s.card}>
           <div style={s.sectionHeader}>Direccao</div>
