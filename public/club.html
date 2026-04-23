@@ -1263,22 +1263,14 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 
       // Parallel data fetches
       var results = await Promise.allSettled([
-        sbGet('/rest/v1/club_members?club_id=eq.' + encodeURIComponent(club.id) + '&select=*,app_users(avatar_url,name)&order=joined_at.asc'),
+        sbGet('/rest/v1/club_members?club_id=eq.' + encodeURIComponent(club.id) + '&select=*&order=joined_at.asc'),
         club.visibility !== 'private'
           ? sbGet('/rest/v1/club_ride_posts?club_id=eq.' + encodeURIComponent(club.id) + '&order=created_at.desc&limit=20')
           : Promise.resolve([]),
         sbGet('/rest/v1/club_rides?club_id=eq.' + encodeURIComponent(club.id) + '&status=eq.planned&order=scheduled_at.asc&limit=10')
       ]);
 
-      var membersRaw = results[0].status === 'fulfilled' ? (results[0].value || []) : [];
-      // Normalize: merge app_users avatar as fallback
-      var members = membersRaw.map(function(m) {
-        var user = m.app_users || {};
-        return Object.assign({}, m, {
-          avatar_url: m.avatar_url || user.avatar_url || null,
-          display_name: m.display_name || user.name || 'Membro',
-        });
-      });
+      var members = results[0].status === 'fulfilled' ? (results[0].value || []) : [];
       var feed = results[1].status === 'fulfilled' ? (results[1].value || []) : [];
       var rides = results[2].status === 'fulfilled' ? (results[2].value || []) : [];
       _allMembers = members;
