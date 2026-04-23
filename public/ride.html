@@ -1992,6 +1992,11 @@ function speedForGradient(gradient, profile) {
   return SPEED_MODEL.bands[4][col]; // flat as fallback
 }
 
+// Group ride penalty factor: adds ~19% to riding time to account for
+// micro-stops (GPS checks, regrouping, water, intersections, photos).
+// Calibrated from FIT data: model gives 4.23h pure, real ride ~5.03h effective.
+var GROUP_PENALTY = 1.19;
+
 // Returns estimated riding time in ms from km=0 to targetKm
 function estimateRidingTimeToKm(gpxProfile, targetKm, speedProfile) {
   if (!speedProfile) speedProfile = 'avg';
@@ -2005,6 +2010,8 @@ function estimateRidingTimeToKm(gpxProfile, targetKm, speedProfile) {
     var speed = speedForGradient(gradient, speedProfile);
     totalSeconds += (segDist / speed) * 3600;
   }
+  // Apply group penalty for avg profile (fast/slow already account for individual pace)
+  if (speedProfile === 'avg') totalSeconds *= GROUP_PENALTY;
   return totalSeconds * 1000;
 }
 
