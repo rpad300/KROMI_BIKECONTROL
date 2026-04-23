@@ -1680,7 +1680,6 @@ function fetchAndRenderWeather(gpxPoints, gpxProfile, scheduledAt) {
   if (diffDays < -1 || diffDays > 16) return; // past or too far
 
   var totalDist = gpxProfile[gpxProfile.length - 1].d;
-  var avgSpeed = 15; // km/h
   var startTime = rideDate.getTime();
   var dateStr = rideDate.toISOString().split('T')[0];
 
@@ -1707,7 +1706,7 @@ function fetchAndRenderWeather(gpxPoints, gpxProfile, scheduledAt) {
     z.lon = pt.lon;
     z.km = pt.d;
     z.ele = pt.e;
-    z.arrivalMs = startTime + (pt.d / avgSpeed) * 3600 * 1000;
+    z.arrivalMs = startTime + estimateRidingTimeToKm(gpxProfile, pt.d);
     z.arrivalDate = new Date(z.arrivalMs);
     z.arrivalHour = z.arrivalDate.getHours();
   });
@@ -1917,13 +1916,13 @@ function renderPOIs(gpxPoints, gpxProfile, data) {
 
   var grid = $('poi-grid');
   var rideStart = data.departure_at ? new Date(data.departure_at) : (data.scheduled_at ? new Date(data.scheduled_at) : null);
-  var avgSpeed = 15;
-
   pois.forEach(function(poi, idx) {
+    poi._idx = idx;
     var code = idx < 10 ? '0' + idx : '' + idx;
     var arrivalStr = '';
-    if (rideStart) {
-      var arrival = new Date(rideStart.getTime() + (poi.km / avgSpeed) * 3600 * 1000);
+    if (rideStart && gpxProfile) {
+      var ridingMs = estimateRidingTimeToKm(gpxProfile, poi.km);
+      var arrival = new Date(rideStart.getTime() + ridingMs);
       arrivalStr = arrival.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
     }
 
@@ -1952,6 +1951,34 @@ function renderPOIs(gpxPoints, gpxProfile, data) {
   // Enrich with Google Places data (async, updates DOM when ready)
   enrichPOIsWithPlaces(pois);
   initRevealForElement($('section-pois'));
+}
+
+// ── Gradient-based speed model ──────────────────────────────────────────────
+// Returns estimated riding time in ms from km=0 to targetKm
+// Speed varies by gradient: steep climb=6-8, moderate=12, flat=18, descent=25
+function estimateRidingTimeToKm(gpxProfile, targetKm) {
+  var totalSeconds = 0;
+  for (var i = 1; i < gpxProfile.length; i++) {
+    if (gpxProfile[i].d > targetKm) break;
+    var segDist = (gpxProfile[i].d - gpxProfile[i-1].d); // km
+    if (segDist <= 0) continue;
+    var segEle = gpxProfile[i].e - gpxProfile[i-1].e; // meters
+    var gradient = (segDist > 0.005) ? (segEle / (segDist * 1000)) * 100 : 0; // percent
+
+    // Speed model (km/h) by gradient
+    var speed;
+    if (gradient > 12)       speed = 5;   // extreme climb
+    else if (gradient > 8)   speed = 7;   // steep climb
+    else if (gradient > 5)   speed = 10;  // moderate climb
+    else if (gradient > 2)   speed = 14;  // gentle climb
+    else if (gradient > -2)  speed = 18;  // flat
+    else if (gradient > -5)  speed = 22;  // gentle descent
+    else if (gradient > -10) speed = 28;  // moderate descent
+    else                     speed = 32;  // steep descent (limited by MTB safety)
+
+    totalSeconds += (segDist / speed) * 3600;
+  }
+  return totalSeconds * 1000; // ms
 }
 
 // ── Timeline / Chronogram ───────────────────────────────────────────────────
@@ -2113,10 +2140,10 @@ function renderTimeline(gpxPoints, gpxProfile, segments, data) {
     }
   }
 
-  // Calculate cumulative times accounting for stops
+  // Calculate cumulative times using gradient-based speed + stops
   var cumulativeStopMs = 0;
   filtered.forEach(function(e) {
-    var ridingMs = (e.km / avgSpeed) * 3600 * 1000;
+    var ridingMs = estimateRidingTimeToKm(gpxProfile, e.km);
     e.arrivalMs = rideStart.getTime() + ridingMs + cumulativeStopMs;
     e.time = new Date(e.arrivalMs);
     e.departureMs = e.arrivalMs + (e.stop_min || 0) * 60 * 1000;
@@ -2128,7 +2155,8 @@ function renderTimeline(gpxPoints, gpxProfile, segments, data) {
   var totalTimeMs = lastEntry.arrivalMs - rideStart.getTime();
   var totalH = Math.floor(totalTimeMs / 3600000);
   var totalM = Math.floor((totalTimeMs % 3600000) / 60000);
-  $('timeline-desc').textContent = totalH + 'h' + String(totalM).padStart(2, '0') + ' total \u00B7 15 km/h medio \u00B7 paragens incluidas';
+  var effectiveSpeed = totalTimeMs > 0 ? (totalDist / (totalTimeMs / 3600000)).toFixed(1) : '—';
+  $('timeline-desc').textContent = totalH + 'h' + String(totalM).padStart(2, '0') + ' total \u00B7 ~' + effectiveSpeed + ' km/h medio efetivo \u00B7 paragens incluidas';
 
   if (filtered.length < 2) return;
   $('section-timeline').style.display = '';
