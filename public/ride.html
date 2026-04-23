@@ -1912,7 +1912,7 @@ function renderTimeline(gpxPoints, gpxProfile, segments, data) {
     segments.forEach(function(seg) {
       var startKm = seg.profile ? seg.profile[0].d : (seg.distance_km ? gpxProfile[seg.start_idx || 0].d : null);
       if (startKm == null) return;
-      var arrivalMs = scheduledAt.getTime() + (startKm / avgSpeed) * 3600 * 1000;
+      var arrivalMs = rideStart.getTime() + (startKm / avgSpeed) * 3600 * 1000;
       var isUp = seg.direction > 0;
       entries.push({
         time: new Date(arrivalMs),
