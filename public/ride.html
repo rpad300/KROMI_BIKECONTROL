@@ -110,7 +110,7 @@ body {
 }
 .hero-content {
   position: relative; z-index: 2;
-  max-width: 900px; width: 100%;
+  max-width: 1400px; width: 100%;
   margin: 0 auto;
   padding: 64px 40px 80px;
 }
@@ -199,7 +199,7 @@ body {
   opacity: 0.4;
 }
 .stats-inner {
-  max-width: 900px; margin: 0 auto;
+  max-width: 1400px; margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 0;
@@ -226,7 +226,7 @@ body {
 
 /* ── Sections ────────────────────────────────────── */
 .section {
-  max-width: 900px; margin: 0 auto;
+  max-width: 1400px; margin: 0 auto;
   padding: 80px 40px;
   position: relative;
 }
@@ -275,10 +275,8 @@ body {
   position: relative; overflow: hidden;
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
-  margin: 0 auto;
-  max-width: 900px;
 }
-#ride-map { width: 100%; height: 500px; background: #111; }
+#ride-map { width: 100%; height: 600px; background: #111; }
 .map-legend {
   background: var(--bg-deep);
   padding: 16px 24px;
@@ -316,7 +314,7 @@ body {
 /* ── Altimetry ───────────────────────────────────── */
 .alt-wrap {
   padding: 28px 24px 16px;
-  max-width: 900px; margin: 0 auto;
+  max-width: 1400px; margin: 0 auto;
 }
 .alt-svg { width: 100%; height: auto; display: block; }
 .alt-caption {
@@ -370,16 +368,21 @@ body {
   font-size: 14px; color: var(--text-muted);
 }
 
-.seg-list { display: flex; flex-direction: column; gap: 16px; }
+.seg-list { display: flex; flex-direction: column; gap: 20px; }
 .seg-card {
   background: var(--bg-card); border: 1px solid var(--border);
-  padding: 22px 24px; position: relative;
+  position: relative;
   transition: all 0.3s cubic-bezier(0.2,0.9,0.3,1);
+  display: grid; grid-template-columns: 280px 1fr; overflow: hidden;
 }
-.seg-card:hover { transform: translateX(4px); box-shadow: var(--shadow-md); }
-.seg-card.seg-up { border-left: 3px solid var(--accent); }
-.seg-card.seg-down { border-left: 3px solid #60a5fa; }
+@media (max-width: 800px) { .seg-card { grid-template-columns: 1fr; } }
+.seg-card:hover { box-shadow: var(--shadow-md); }
+.seg-card.seg-up { border-left: 4px solid var(--accent); }
+.seg-card.seg-down { border-left: 4px solid #60a5fa; }
 .seg-card:hover { border-left-width: 6px; }
+.seg-map-col { position: relative; min-height: 200px; background: #111; }
+.seg-map-col .seg-mini-leaflet { width: 100%; height: 100%; }
+.seg-details-col { padding: 22px 24px; }
 
 .seg-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .seg-ident { display: flex; gap: 12px; align-items: center; }
@@ -537,7 +540,7 @@ tbody tr:hover { background: rgba(255,255,255,0.02); }
   opacity: 0.3;
 }
 .footer-inner {
-  max-width: 900px; margin: 0 auto;
+  max-width: 1400px; margin: 0 auto;
   display: flex; flex-wrap: wrap;
   justify-content: space-between; align-items: center; gap: 16px;
 }
@@ -652,8 +655,8 @@ tbody tr:hover { background: rgba(255,255,255,0.02); }
   </div>
 
   <!-- Map -->
-  <div class="section" id="section-map" style="display:none" data-reveal>
-    <div class="section-header">
+  <div class="section" id="section-map" style="display:none;max-width:none;padding-left:0;padding-right:0" data-reveal>
+    <div class="section-header" style="padding-left:40px;padding-right:40px;max-width:1400px;margin:0 auto">
       <div>
         <div class="section-num">01 &middot; Rota</div>
         <h2 class="section-title">O <span class="italic">percurso</span></h2>
@@ -1341,9 +1344,10 @@ function renderSegments(segments, profile) {
       '<div class="seg-box-sub">' + descentCount + ' descida' + (descentCount!==1?'s':'') + ' \u00B7 ' + fmt(totalDescentDist,1) + ' km</div>' +
     '</div>';
 
-  // Segment cards
+  // Segment cards with mini Leaflet maps
   var list = $('seg-list');
-  segments.forEach(function(seg) {
+  var segMapIds = [];
+  segments.forEach(function(seg, idx) {
     var avgGrad = seg.avg_gradient_pct != null ? seg.avg_gradient_pct : (seg.avg_gradient ?? 0);
     var maxGrad = seg.max_gradient_pct != null ? seg.max_gradient_pct : (seg.max_gradient ?? 0);
     var diff = getDifficulty(avgGrad);
@@ -1354,10 +1358,14 @@ function renderSegments(segments, profile) {
 
     var barPct = Math.min(100, (Math.abs(avgGrad) / 15) * 100);
     var miniHtml = buildMiniSvg(seg.profile, seg.direction);
+    var mapId = 'seg-map-' + idx;
 
     var card = document.createElement('div');
     card.className = 'seg-card ' + (isUp ? 'seg-up' : 'seg-down');
+    card.setAttribute('data-reveal', '');
     card.innerHTML =
+      '<div class="seg-map-col"><div id="' + mapId + '" class="seg-mini-leaflet"></div></div>' +
+      '<div class="seg-details-col">' +
       '<div class="seg-top">' +
         '<div class="seg-ident">' +
           '<span class="seg-icon">' + (isUp ? '\u2B06' : '\u2B07') + '</span>' +
@@ -1382,9 +1390,37 @@ function renderSegments(segments, profile) {
         '<div class="seg-stat"><span class="ss-label">D+</span><span class="ss-value">+' + fmtInt(gain) + ' m</span></div>' +
         '<div class="seg-stat"><span class="ss-label">D\u2212</span><span class="ss-value">\u2212' + fmtInt(loss) + ' m</span></div>' +
         '<div class="seg-stat"><span class="ss-label">Max</span><span class="ss-value">' + fmt(maxGrad,1) + '%</span></div>' +
+      '</div>' +
       '</div>';
     list.appendChild(card);
+    segMapIds.push({ id: mapId, seg: seg, diff: diff });
   });
+
+  // Render mini Leaflet maps for each segment after DOM insertion
+  setTimeout(function() {
+    segMapIds.forEach(function(item) {
+      var seg = item.seg;
+      if (!seg.trackPoints || seg.trackPoints.length < 2) return;
+      var container = document.getElementById(item.id);
+      if (!container) return;
+      try {
+        var miniMap = L.map(container, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, attributionControl: false });
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 }).addTo(miniMap);
+        var segLatLngs = seg.trackPoints.map(function(p) { return [p.lat, p.lon]; });
+        // Draw full track faded
+        if (window._allTrackPoints) {
+          var fullLatLngs = window._allTrackPoints.map(function(p) { return [p.lat, p.lon]; });
+          L.polyline(fullLatLngs, { color: '#fff', weight: 1.5, opacity: 0.15 }).addTo(miniMap);
+        }
+        // Draw segment highlighted
+        L.polyline(segLatLngs, { color: item.diff.color, weight: 3.5, opacity: 0.9, lineJoin: 'round' }).addTo(miniMap);
+        // Start/end dots
+        L.circleMarker(segLatLngs[0], { radius: 4, color: '#000', fillColor: '#22c55e', fillOpacity: 1, weight: 1.5 }).addTo(miniMap);
+        L.circleMarker(segLatLngs[segLatLngs.length-1], { radius: 4, color: '#000', fillColor: '#ef4444', fillOpacity: 1, weight: 1.5 }).addTo(miniMap);
+        miniMap.fitBounds(L.latLngBounds(segLatLngs), { padding: [15, 15] });
+      } catch(e) { console.warn('Mini-map error for segment', item.id, e); }
+    });
+  }, 100);
 }
 
 // ── Render Rider Stats ───────────────────────────────────────────────────────────
@@ -1536,6 +1572,7 @@ async function main() {
     if (data.route_gpx) {
       gpxRawData = data.route_gpx;
       gpxPoints = parseGpx(data.route_gpx);
+      window._allTrackPoints = gpxPoints; // for segment mini-maps
       if (gpxPoints.length >= 2) gpxProfile = buildProfile(gpxPoints);
       $('btn-gpx').style.display = '';
     }
@@ -1579,6 +1616,12 @@ async function main() {
       renderSegments(segments, gpxProfile);
     } else if (gpxProfile && gpxProfile.length >= 10) {
       var autoSegs = autoDetectSegments(gpxProfile);
+      // Attach track points for mini-maps
+      if (gpxPoints) {
+        autoSegs.forEach(function(seg) {
+          seg.trackPoints = gpxPoints.slice(seg.start_idx, seg.end_idx + 1);
+        });
+      }
       if (autoSegs.length) renderSegments(autoSegs, gpxProfile);
     }
 
