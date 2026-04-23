@@ -1505,6 +1505,14 @@ function renderSegments(segments, profile) {
         '<div class="seg-stat"><span class="ss-label">D+</span><span class="ss-value">+' + fmtInt(gain) + ' m</span></div>' +
         '<div class="seg-stat"><span class="ss-label">D\u2212</span><span class="ss-value">\u2212' + fmtInt(loss) + ' m</span></div>' +
         '<div class="seg-stat"><span class="ss-label">Max</span><span class="ss-value">' + fmt(maxGrad,1) + '%</span></div>' +
+        (seg.start_idx != null ? (function() {
+          var durAvg = estimateSegmentDuration(profile, seg.start_idx, seg.end_idx, 'avg');
+          var durFast = estimateSegmentDuration(profile, seg.start_idx, seg.end_idx, 'fast');
+          var durSlow = estimateSegmentDuration(profile, seg.start_idx, seg.end_idx, 'slow');
+          return '<div class="seg-stat"><span class="ss-label">\uD83D\uDD52 Grupo</span><span class="ss-value">' + fmtDuration(durAvg) + '</span></div>' +
+            '<div class="seg-stat"><span class="ss-label" style="color:#22c55e">\u26A1 Rapido</span><span class="ss-value" style="color:#22c55e">' + fmtDuration(durFast) + '</span></div>' +
+            '<div class="seg-stat"><span class="ss-label" style="color:#fbbf24">\uD83D\uDC22 Lento</span><span class="ss-value" style="color:#fbbf24">' + fmtDuration(durSlow) + '</span></div>';
+        })() : '') +
       '</div>' +
       '</div>';
     list.appendChild(card);
@@ -1953,32 +1961,72 @@ function renderPOIs(gpxPoints, gpxProfile, data) {
   initRevealForElement($('section-pois'));
 }
 
-// ── Gradient-based speed model ──────────────────────────────────────────────
+// ── Gradient-based speed model (calibrated from MTB group ride data) ────────
+// Sources: singletracks.com, mtbr.com, theclimbingcyclist.com, pedalchile.com
+// Three profiles: group average, fastest rider, slowest rider
+var SPEED_MODEL = {
+  // [gradient_min, gradient_max, avg_kmh, fast_kmh, slow_kmh]
+  bands: [
+    [ 12, 99,   6,  8,  4],   // extreme climb >12%
+    [  8, 12,   8, 11,  5],   // steep climb 8-12%
+    [  5,  8,  12, 15,  8],   // moderate climb 5-8%
+    [  2,  5,  16, 19, 12],   // gentle climb 2-5%
+    [ -2,  2,  20, 25, 15],   // flat ±2%
+    [ -5, -2,  28, 35, 20],   // gentle descent
+    [-10, -5,  35, 45, 22],   // moderate descent
+    [-99,-10,  28, 42, 15]    // steep/technical descent (slower than moderate due to terrain)
+  ]
+};
+
+function speedForGradient(gradient, profile) {
+  // profile: 'avg', 'fast', 'slow'
+  var col = profile === 'fast' ? 3 : profile === 'slow' ? 4 : 2;
+  for (var b = 0; b < SPEED_MODEL.bands.length; b++) {
+    var band = SPEED_MODEL.bands[b];
+    if (gradient >= band[0] && (gradient < band[1] || b === SPEED_MODEL.bands.length - 1)) {
+      return band[col];
+    }
+  }
+  return SPEED_MODEL.bands[4][col]; // flat as fallback
+}
+
 // Returns estimated riding time in ms from km=0 to targetKm
-// Speed varies by gradient: steep climb=6-8, moderate=12, flat=18, descent=25
-function estimateRidingTimeToKm(gpxProfile, targetKm) {
+function estimateRidingTimeToKm(gpxProfile, targetKm, speedProfile) {
+  if (!speedProfile) speedProfile = 'avg';
   var totalSeconds = 0;
   for (var i = 1; i < gpxProfile.length; i++) {
     if (gpxProfile[i].d > targetKm) break;
-    var segDist = (gpxProfile[i].d - gpxProfile[i-1].d); // km
+    var segDist = gpxProfile[i].d - gpxProfile[i-1].d;
     if (segDist <= 0) continue;
-    var segEle = gpxProfile[i].e - gpxProfile[i-1].e; // meters
-    var gradient = (segDist > 0.005) ? (segEle / (segDist * 1000)) * 100 : 0; // percent
-
-    // Speed model (km/h) by gradient
-    var speed;
-    if (gradient > 12)       speed = 5;   // extreme climb
-    else if (gradient > 8)   speed = 7;   // steep climb
-    else if (gradient > 5)   speed = 10;  // moderate climb
-    else if (gradient > 2)   speed = 14;  // gentle climb
-    else if (gradient > -2)  speed = 18;  // flat
-    else if (gradient > -5)  speed = 22;  // gentle descent
-    else if (gradient > -10) speed = 28;  // moderate descent
-    else                     speed = 32;  // steep descent (limited by MTB safety)
-
+    var segEle = gpxProfile[i].e - gpxProfile[i-1].e;
+    var gradient = (segDist > 0.005) ? (segEle / (segDist * 1000)) * 100 : 0;
+    var speed = speedForGradient(gradient, speedProfile);
     totalSeconds += (segDist / speed) * 3600;
   }
-  return totalSeconds * 1000; // ms
+  return totalSeconds * 1000;
+}
+
+// Estimate segment duration for a sub-section of the profile
+function estimateSegmentDuration(gpxProfile, startIdx, endIdx, speedProfile) {
+  if (!speedProfile) speedProfile = 'avg';
+  var totalSeconds = 0;
+  for (var i = startIdx + 1; i <= endIdx && i < gpxProfile.length; i++) {
+    var segDist = gpxProfile[i].d - gpxProfile[i-1].d;
+    if (segDist <= 0) continue;
+    var segEle = gpxProfile[i].e - gpxProfile[i-1].e;
+    var gradient = (segDist > 0.005) ? (segEle / (segDist * 1000)) * 100 : 0;
+    var speed = speedForGradient(gradient, speedProfile);
+    totalSeconds += (segDist / speed) * 3600;
+  }
+  return totalSeconds; // seconds
+}
+
+function fmtDuration(seconds) {
+  if (!seconds || seconds <= 0) return '-';
+  var h = Math.floor(seconds / 3600);
+  var m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return h + 'h' + String(m).padStart(2, '0');
+  return m + 'min';
 }
 
 // ── Timeline / Chronogram ───────────────────────────────────────────────────
