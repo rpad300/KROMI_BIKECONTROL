@@ -2041,48 +2041,81 @@ function fmtDuration(seconds) {
 // ── Timeline / Chronogram ───────────────────────────────────────────────────
 // Estimates stops based on distance/elevation patterns (like the Marao reference)
 function estimateStops(entries, totalDist) {
-  // Rules for auto-stops:
-  // - Start: briefing 10 min
-  // - Every ~20-25km or at major POIs: reagrupamento 10 min
-  // - After long descent (>500m D-): reagrupamento 12 min
-  // - Near 35-45km: almoco 60 min (if total > 50km)
-  // - Near 60-70% distance: pausa tecnica 15 min (if total > 60km)
-  // - End: 0 min
+  // Calibrated from Marao reference: 169 min stops for 75.6 km ride
+  // Smart stop assignment based on waypoint context, position, and terrain
   var lastStopKm = 0;
-  entries.forEach(function(e) {
+  var lunchAssigned = false;
+
+  entries.forEach(function(e, idx) {
     e.stop_min = 0;
     e.stop_reason = null;
     e.stop_type = null;
+    var frac = totalDist > 0 ? e.km / totalDist : 0;
+    var distSinceStop = e.km - lastStopKm;
+    var nameLower = (e.name || '').toLowerCase();
 
     if (e.type === 'start') {
       e.stop_min = 10; e.stop_reason = 'Briefing inicial e foto de grupo'; e.stop_type = 'briefing';
+      lastStopKm = e.km;
     } else if (e.type === 'end') {
       e.stop_min = 0;
-    } else if (e.type === 'summit') {
-      e.stop_min = 10; e.stop_reason = 'Reagrupar no cume'; e.stop_type = 'regroup';
-      lastStopKm = e.km;
-    } else if (e.type === 'valley' && totalDist > 40) {
-      // After major descent to valley
-      e.stop_min = 8; e.stop_reason = 'Reagrupar apos descida'; e.stop_type = 'regroup';
-      lastStopKm = e.km;
-    } else if (e.type === 'midpoint' && totalDist > 50) {
-      // Lunch near midpoint for long rides
-      var midFrac = e.km / totalDist;
-      if (midFrac > 0.35 && midFrac < 0.55) {
-        e.stop_min = 60; e.stop_reason = 'Almoco (grupo)'; e.stop_type = 'lunch';
-        lastStopKm = e.km;
-      } else {
-        e.stop_min = 15; e.stop_reason = 'Pausa tecnica, reagrupar'; e.stop_type = 'rest';
-        lastStopKm = e.km;
-      }
     } else if (e.type === 'climb' || e.type === 'descent') {
       // Segments are riding — never assign stops
-    } else if (e.type === 'waypoint') {
-      // Explicit waypoints from GPX get a short stop
-      e.stop_min = 5; e.stop_reason = 'Referencia de navegacao'; e.stop_type = 'regroup';
+    } else if (e.type === 'summit') {
+      e.stop_min = 12; e.stop_reason = 'Reagrupar no cume, reabastecer'; e.stop_type = 'regroup';
       lastStopKm = e.km;
-    } else if (e.km - lastStopKm > 20) {
-      // Auto regroup every ~20km if no stop assigned
+    } else if (e.type === 'valley') {
+      e.stop_min = 12; e.stop_reason = 'Reagrupar apos descida longa'; e.stop_type = 'regroup';
+      lastStopKm = e.km;
+    } else if (e.type === 'waypoint') {
+      // Smart stop based on waypoint name and context
+      var isFood = /restaurante|tasca|churras|cafe|caf[eé]|bar|snack|almo[cç]/i.test(nameLower);
+      var isWater = /[aá]gua|fonte|water/i.test(nameLower);
+      var isDanger = /aten[cç][aã]o|travessia|perigo|danger|cuidado/i.test(nameLower);
+      var isNav = /viragem|virar|esq|dir|nav|cruzamento/i.test(nameLower);
+
+      if (isFood && !lunchAssigned && frac > 0.3 && frac < 0.7 && totalDist > 40) {
+        // Restaurant/food near middle = lunch
+        e.stop_min = 75; e.stop_reason = 'Almoco (grupo)'; e.stop_type = 'lunch';
+        lunchAssigned = true;
+        lastStopKm = e.km;
+      } else if (isFood) {
+        // Food stop but not lunch (cafe/snack)
+        e.stop_min = 25; e.stop_reason = 'Cafe e snack'; e.stop_type = 'coffee';
+        lastStopKm = e.km;
+      } else if (isWater) {
+        e.stop_min = 12; e.stop_reason = 'Reabastecer agua'; e.stop_type = 'water';
+        lastStopKm = e.km;
+      } else if (isDanger && distSinceStop > 8) {
+        // Safety stop after descent or before crossing
+        e.stop_min = 12; e.stop_reason = 'Reagrupar antes de zona de atencao'; e.stop_type = 'regroup';
+        lastStopKm = e.km;
+      } else if (isNav && distSinceStop > 15) {
+        // Navigation point far from last stop
+        e.stop_min = 10; e.stop_reason = 'Pausa de navegacao e reagrupamento'; e.stop_type = 'regroup';
+        lastStopKm = e.km;
+      } else if (frac > 0.6 && frac < 0.85 && distSinceStop > 15 && totalDist > 50) {
+        // Late-ride technical pause
+        e.stop_min = 15; e.stop_reason = 'Pausa tecnica, ajustar material, reagrupar'; e.stop_type = 'rest';
+        lastStopKm = e.km;
+      } else if (distSinceStop > 20) {
+        // Auto regroup
+        e.stop_min = 10; e.stop_reason = 'Reagrupamento'; e.stop_type = 'regroup';
+        lastStopKm = e.km;
+      } else {
+        // Close to last stop — minimal or no stop
+        e.stop_min = distSinceStop > 5 ? 5 : 0;
+        if (e.stop_min > 0) { e.stop_reason = 'Referencia de navegacao'; e.stop_type = 'regroup'; }
+      }
+    } else if (e.type === 'midpoint') {
+      if (!lunchAssigned && totalDist > 50) {
+        e.stop_min = 60; e.stop_reason = 'Almoco (grupo)'; e.stop_type = 'lunch';
+        lunchAssigned = true;
+      } else {
+        e.stop_min = 15; e.stop_reason = 'Pausa tecnica, reagrupar'; e.stop_type = 'rest';
+      }
+      lastStopKm = e.km;
+    } else if (distSinceStop > 20) {
       e.stop_min = 10; e.stop_reason = 'Reagrupamento'; e.stop_type = 'regroup';
       lastStopKm = e.km;
     }
