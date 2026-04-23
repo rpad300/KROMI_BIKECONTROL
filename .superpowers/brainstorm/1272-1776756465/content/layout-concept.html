@@ -1,0 +1,120 @@
+<h2>KROMI GPX Navigation — Layout Principal</h2>
+<p class="subtitle">Como distribuir o mapa e os KPIs no ecrã portrait (handlebar mount)?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Mapa Dominante (70/30)</h3>
+      <div style="background:#1a1a1a;border-radius:8px;padding:8px;margin:8px 0">
+        <div style="background:#2d4a2d;height:180px;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#3fff8b;font-size:12px">
+          🗺️ MAPA SATÉLITE 70%<br>GPX line + posição
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px;margin-top:4px">
+          <div style="background:#262626;padding:6px;text-align:center;border-radius:2px">
+            <div style="color:#777;font-size:8px">SPEED</div>
+            <div style="color:#fff;font-size:16px;font-weight:bold">24</div>
+          </div>
+          <div style="background:#262626;padding:6px;text-align:center;border-radius:2px">
+            <div style="color:#777;font-size:8px">BATTERY</div>
+            <div style="color:#3fff8b;font-size:16px;font-weight:bold">75%</div>
+          </div>
+          <div style="background:#262626;padding:6px;text-align:center;border-radius:2px">
+            <div style="color:#777;font-size:8px">GEAR</div>
+            <div style="color:#6e9bff;font-size:16px;font-weight:bold">9/12</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px;margin-top:2px">
+          <div style="background:#262626;padding:6px;text-align:center;border-radius:2px">
+            <div style="color:#777;font-size:8px">FEITO</div>
+            <div style="color:#fff;font-size:14px;font-weight:bold">12.3 km</div>
+          </div>
+          <div style="background:#262626;padding:6px;text-align:center;border-radius:2px">
+            <div style="color:#777;font-size:8px">FALTA</div>
+            <div style="color:#fbbf24;font-size:14px;font-weight:bold">8.7 km</div>
+          </div>
+          <div style="background:#262626;padding:6px;text-align:center;border-radius:2px">
+            <div style="color:#777;font-size:8px">RANGE</div>
+            <div style="color:#3fff8b;font-size:14px;font-weight:bold">45 km</div>
+          </div>
+        </div>
+      </div>
+      <p>Mapa grande, KPIs compactos em grid 3x2 por baixo. Foco na navegação visual. Estilo Garmin Edge.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>HUD Overlay (mapa fullscreen)</h3>
+      <div style="background:#1a1a1a;border-radius:8px;padding:8px;margin:8px 0;position:relative">
+        <div style="background:#2d4a2d;height:260px;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#3fff8b;font-size:12px;position:relative">
+          🗺️ MAPA SATÉLITE 100%
+          <!-- Top overlay -->
+          <div style="position:absolute;top:4px;left:4px;right:4px;display:flex;justify-content:space-between">
+            <div style="background:rgba(14,14,14,0.85);padding:4px 8px;border-radius:4px">
+              <div style="color:#fff;font-size:18px;font-weight:bold">24 <span style="color:#777;font-size:9px">KM/H</span></div>
+            </div>
+            <div style="background:rgba(14,14,14,0.85);padding:4px 8px;border-radius:4px">
+              <div style="color:#3fff8b;font-size:18px;font-weight:bold">75% <span style="color:#777;font-size:9px">BAT</span></div>
+            </div>
+          </div>
+          <!-- Bottom overlay -->
+          <div style="position:absolute;bottom:4px;left:4px;right:4px;background:rgba(14,14,14,0.85);padding:6px;border-radius:4px;display:flex;justify-content:space-around">
+            <div style="text-align:center"><div style="color:#777;font-size:7px">FEITO</div><div style="color:#fff;font-size:12px;font-weight:bold">12.3</div></div>
+            <div style="text-align:center"><div style="color:#777;font-size:7px">FALTA</div><div style="color:#fbbf24;font-size:12px;font-weight:bold">8.7</div></div>
+            <div style="text-align:center"><div style="color:#777;font-size:7px">GEAR</div><div style="color:#6e9bff;font-size:12px;font-weight:bold">9/12</div></div>
+            <div style="text-align:center"><div style="color:#777;font-size:7px">RANGE</div><div style="color:#3fff8b;font-size:12px;font-weight:bold">45</div></div>
+            <div style="text-align:center"><div style="color:#777;font-size:7px">MODE</div><div style="color:#3fff8b;font-size:12px;font-weight:bold">KROMI</div></div>
+          </div>
+        </div>
+      </div>
+      <p>Mapa fullscreen com KPIs sobrepostos em painéis semi-transparentes. Máximo de mapa visível. Estilo Wahoo ELEMNT.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Split Vertical (50/50)</h3>
+      <div style="background:#1a1a1a;border-radius:8px;padding:8px;margin:8px 0">
+        <div style="background:#2d4a2d;height:130px;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#3fff8b;font-size:12px">
+          🗺️ MAPA SATÉLITE 50%
+        </div>
+        <div style="margin-top:4px">
+          <!-- Big speed -->
+          <div style="background:#262626;padding:8px;text-align:center;border-radius:2px">
+            <div style="color:#fff;font-size:32px;font-weight:bold;font-family:monospace">24 <span style="color:#777;font-size:14px">KM/H</span></div>
+          </div>
+          <!-- Progress bar -->
+          <div style="background:#333;height:6px;border-radius:3px;margin:4px 0;overflow:hidden">
+            <div style="background:linear-gradient(90deg,#3fff8b,#fbbf24);width:58%;height:100%;border-radius:3px"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:#777;padding:0 2px">
+            <span>12.3 km feito</span><span>8.7 km falta</span>
+          </div>
+          <!-- Grid -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:2px;margin-top:4px">
+            <div style="background:#262626;padding:6px;text-align:center;border-radius:2px">
+              <div style="color:#777;font-size:7px">BAT</div>
+              <div style="color:#3fff8b;font-size:14px;font-weight:bold">75%</div>
+            </div>
+            <div style="background:#262626;padding:6px;text-align:center;border-radius:2px">
+              <div style="color:#777;font-size:7px">GEAR</div>
+              <div style="color:#6e9bff;font-size:14px;font-weight:bold">9/12</div>
+            </div>
+            <div style="background:#262626;padding:6px;text-align:center;border-radius:2px">
+              <div style="color:#777;font-size:7px">RANGE</div>
+              <div style="color:#3fff8b;font-size:14px;font-weight:bold">45</div>
+            </div>
+            <div style="background:#262626;padding:6px;text-align:center;border-radius:2px">
+              <div style="color:#777;font-size:7px">MODE</div>
+              <div style="color:#3fff8b;font-size:14px;font-weight:bold">KRM</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p>Metade mapa, metade dados. Speed grande e legível, barra de progresso visual, grid de KPIs. Mais dados visíveis sem mover os olhos. Estilo Hammerhead Karoo.</p>
+    </div>
+  </div>
+</div>

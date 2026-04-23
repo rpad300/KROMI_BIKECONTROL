@@ -1,0 +1,215 @@
+<h2>KROMI NAV Dashboard — Layout Detalhado</h2>
+<p class="subtitle">Mapa 70% + KPIs + Elevation Profile — portrait handlebar mount</p>
+
+<div class="mockup">
+  <div class="mockup-header">NAV Dashboard — Rota Activa</div>
+  <div class="mockup-body" style="background:#0e0e0e;padding:0;max-width:380px;margin:0 auto">
+
+    <!-- PersistentBar -->
+    <div style="background:#131313;display:flex;justify-content:space-between;align-items:center;padding:4px 10px;border-bottom:1px solid #262626">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="color:#3fff8b;font-size:10px;font-weight:bold">KROMI</span>
+        <span style="color:#3fff8b;font-size:9px">●</span>
+        <span style="color:#777;font-size:9px">75%</span>
+      </div>
+      <span style="color:#777;font-size:9px">21:45</span>
+    </div>
+
+    <!-- Dashboard Dots -->
+    <div style="display:flex;justify-content:center;gap:4px;padding:3px 0;background:#0e0e0e">
+      <div style="width:5px;height:5px;border-radius:50%;background:#494847"></div>
+      <div style="width:5px;height:5px;border-radius:50%;background:#494847"></div>
+      <div style="width:5px;height:5px;border-radius:50%;background:#494847"></div>
+      <div style="width:5px;height:5px;border-radius:50%;background:#494847"></div>
+      <div style="width:5px;height:5px;border-radius:50%;background:#494847"></div>
+      <div style="width:14px;height:5px;border-radius:3px;background:#3fff8b"></div>
+    </div>
+
+    <!-- Trip Control -->
+    <div style="background:#0e0e0e;display:flex;justify-content:center;align-items:center;padding:2px 0">
+      <span style="color:#3fff8b;font-size:9px;font-weight:bold;letter-spacing:1px">● REC 01:24:30</span>
+    </div>
+
+    <!-- ═══ MAP AREA (70%) ═══ -->
+    <div style="position:relative;height:340px;background:linear-gradient(135deg,#1a3a1a,#2d4a2d,#1a3020);overflow:hidden">
+
+      <!-- Simulated satellite map texture -->
+      <div style="position:absolute;inset:0;opacity:0.15;background:repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 0 0/20px 20px"></div>
+
+      <!-- GPX Route line -->
+      <svg style="position:absolute;inset:0;width:100%;height:100%" viewBox="0 0 380 340">
+        <!-- Route already done (green) -->
+        <path d="M 40 300 Q 80 280 120 250 Q 160 220 180 200 Q 200 180 210 170" stroke="#3fff8b" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.9"/>
+        <!-- Route remaining (white dashed) -->
+        <path d="M 210 170 Q 230 150 260 120 Q 290 90 310 70 Q 330 55 350 50" stroke="#ffffff" stroke-width="3" fill="none" stroke-dasharray="8,6" stroke-linecap="round" opacity="0.7"/>
+        <!-- Current position dot -->
+        <circle cx="210" cy="170" r="8" fill="#3fff8b" opacity="0.3"/>
+        <circle cx="210" cy="170" r="5" fill="#3fff8b"/>
+        <circle cx="210" cy="170" r="2" fill="#fff"/>
+        <!-- Direction arrow -->
+        <polygon points="210,158 206,166 214,166" fill="#3fff8b"/>
+      </svg>
+
+      <!-- Speed overlay — top right -->
+      <div style="position:absolute;top:8px;right:8px;background:rgba(14,14,14,0.88);padding:6px 12px;border-radius:6px;border:1px solid #333">
+        <div style="display:flex;align-items:baseline;gap:3px">
+          <span style="color:#fff;font-size:28px;font-weight:bold;font-family:monospace">24</span>
+          <span style="color:#777;font-size:10px">KM/H</span>
+        </div>
+      </div>
+
+      <!-- Mode + Gear — top left -->
+      <div style="position:absolute;top:8px;left:8px;display:flex;gap:4px">
+        <div style="background:rgba(14,14,14,0.88);padding:5px 8px;border-radius:6px;border:1px solid #3fff8b30">
+          <div style="color:#3fff8b;font-size:9px;font-weight:bold;letter-spacing:0.5px">KROMI</div>
+        </div>
+        <div style="background:rgba(14,14,14,0.88);padding:5px 8px;border-radius:6px;border:1px solid #6e9bff30">
+          <div style="color:#6e9bff;font-size:14px;font-weight:bold;font-family:monospace">9<span style="color:#555;font-size:10px">/12</span></div>
+        </div>
+      </div>
+
+      <!-- Off-route warning (hidden by default, shown when deviation > 50m) -->
+      <!--
+      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(239,68,68,0.9);padding:8px 16px;border-radius:8px">
+        <span style="color:#fff;font-size:12px;font-weight:bold">⚠ FORA DA ROTA — 120m</span>
+      </div>
+      -->
+    </div>
+
+    <!-- ═══ PROGRESS BAR ═══ -->
+    <div style="padding:0 10px;background:#0e0e0e">
+      <div style="background:#262626;height:6px;border-radius:3px;overflow:hidden;margin:6px 0 2px">
+        <div style="background:linear-gradient(90deg,#3fff8b 0%,#3fff8b 58%,#fbbf24 58%,#fbbf24 100%);width:100%;height:100%;border-radius:3px;position:relative">
+          <div style="position:absolute;right:42%;top:-1px;width:2px;height:8px;background:#fff;border-radius:1px"></div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:0 2px">
+        <span style="color:#3fff8b;font-size:9px;font-weight:bold">12.3 km feito</span>
+        <span style="color:#777;font-size:9px">21.0 km total</span>
+        <span style="color:#fbbf24;font-size:9px;font-weight:bold">8.7 km falta</span>
+      </div>
+    </div>
+
+    <!-- ═══ ELEVATION PROFILE ═══ -->
+    <div style="padding:4px 10px;background:#0e0e0e">
+      <div style="background:#1a1919;border-radius:4px;padding:6px 8px;position:relative;height:60px;overflow:hidden">
+        <svg width="100%" height="48" viewBox="0 0 340 48" preserveAspectRatio="none">
+          <!-- Elevation fill -->
+          <path d="M 0 40 L 20 38 L 50 35 L 80 30 L 110 22 L 130 18 L 150 20 L 170 15 L 200 10 L 220 12 L 250 18 L 280 25 L 310 30 L 340 35 L 340 48 L 0 48 Z"
+                fill="url(#elevGrad)" opacity="0.4"/>
+          <!-- Elevation line -->
+          <path d="M 0 40 L 20 38 L 50 35 L 80 30 L 110 22 L 130 18 L 150 20 L 170 15 L 200 10 L 220 12 L 250 18 L 280 25 L 310 30 L 340 35"
+                stroke="#3fff8b" stroke-width="1.5" fill="none"/>
+          <!-- Done portion highlight -->
+          <path d="M 0 40 L 20 38 L 50 35 L 80 30 L 110 22 L 130 18 L 150 20 L 170 15 L 197 10.5"
+                stroke="#3fff8b" stroke-width="2" fill="none"/>
+          <!-- Current position marker -->
+          <line x1="197" y1="0" x2="197" y2="48" stroke="#fff" stroke-width="1" stroke-dasharray="2,2" opacity="0.5"/>
+          <circle cx="197" cy="10.5" r="3" fill="#3fff8b" stroke="#fff" stroke-width="1"/>
+          <defs>
+            <linearGradient id="elevGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#3fff8b"/>
+              <stop offset="100%" stop-color="#0e0e0e"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <!-- Altitude labels -->
+        <div style="position:absolute;top:2px;left:8px;color:#777;font-size:7px">580m</div>
+        <div style="position:absolute;bottom:2px;right:8px;color:#777;font-size:7px">320m</div>
+        <!-- Current altitude -->
+        <div style="position:absolute;top:2px;right:8px;display:flex;align-items:baseline;gap:2px">
+          <span style="color:#fff;font-size:10px;font-weight:bold">485m</span>
+          <span style="color:#3fff8b;font-size:8px">▲ 680m</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ KPI GRID (3x2) ═══ -->
+    <div style="padding:4px 10px 8px;background:#0e0e0e">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px">
+
+        <!-- Battery -->
+        <div style="background:#1a1919;padding:8px 6px;text-align:center;border-radius:4px;border-left:2px solid #3fff8b">
+          <div style="color:#777;font-size:7px;font-weight:bold;letter-spacing:0.5px">BATTERY</div>
+          <div style="color:#3fff8b;font-size:20px;font-weight:bold;font-family:monospace">75<span style="color:#777;font-size:11px">%</span></div>
+        </div>
+
+        <!-- Range -->
+        <div style="background:#1a1919;padding:8px 6px;text-align:center;border-radius:4px;border-left:2px solid #3fff8b">
+          <div style="color:#777;font-size:7px;font-weight:bold;letter-spacing:0.5px">RANGE</div>
+          <div style="color:#3fff8b;font-size:20px;font-weight:bold;font-family:monospace">45<span style="color:#777;font-size:11px">km</span></div>
+        </div>
+
+        <!-- ETA -->
+        <div style="background:#1a1919;padding:8px 6px;text-align:center;border-radius:4px;border-left:2px solid #fbbf24">
+          <div style="color:#777;font-size:7px;font-weight:bold;letter-spacing:0.5px">ETA</div>
+          <div style="color:#fbbf24;font-size:20px;font-weight:bold;font-family:monospace">0:32</div>
+        </div>
+
+        <!-- Power -->
+        <div style="background:#1a1919;padding:8px 6px;text-align:center;border-radius:4px;border-left:2px solid #6e9bff">
+          <div style="color:#777;font-size:7px;font-weight:bold;letter-spacing:0.5px">POWER</div>
+          <div style="color:#6e9bff;font-size:20px;font-weight:bold;font-family:monospace">185<span style="color:#777;font-size:11px">W</span></div>
+        </div>
+
+        <!-- HR -->
+        <div style="background:#1a1919;padding:8px 6px;text-align:center;border-radius:4px;border-left:2px solid #ff716c">
+          <div style="color:#777;font-size:7px;font-weight:bold;letter-spacing:0.5px">HR</div>
+          <div style="color:#ff716c;font-size:20px;font-weight:bold;font-family:monospace">142<span style="color:#777;font-size:11px">bpm</span></div>
+        </div>
+
+        <!-- Cadence -->
+        <div style="background:#1a1919;padding:8px 6px;text-align:center;border-radius:4px;border-left:2px solid #e966ff">
+          <div style="color:#777;font-size:7px;font-weight:bold;letter-spacing:0.5px">CADENCE</div>
+          <div style="color:#e966ff;font-size:20px;font-weight:bold;font-family:monospace">72<span style="color:#777;font-size:11px">rpm</span></div>
+        </div>
+
+      </div>
+
+      <!-- Intelligence footer — W' balance + feasibility -->
+      <div style="background:#1a1919;margin-top:3px;padding:5px 8px;border-radius:4px;display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="color:#3fff8b;font-size:8px;font-weight:bold">W'</span>
+          <div style="width:60px;height:4px;background:#333;border-radius:2px;overflow:hidden">
+            <div style="width:72%;height:100%;background:#3fff8b;border-radius:2px"></div>
+          </div>
+          <span style="color:#777;font-size:8px">72%</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <span style="color:#3fff8b;font-size:8px">●</span>
+          <span style="color:#3fff8b;font-size:8px;font-weight:bold">ROTA VIÁVEL</span>
+          <span style="color:#777;font-size:8px">bat OK</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="section" style="margin-top:16px">
+  <h3>Elementos no ecrã</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
+    <div>
+      <p style="color:#3fff8b;font-weight:bold;margin-bottom:4px">Mapa (70%)</p>
+      <ul style="color:#ccc;line-height:1.6">
+        <li>Vista satélite (hybrid)</li>
+        <li>Linha GPX: verde (feito) + branco tracejado (falta)</li>
+        <li>Posição actual com seta direcção</li>
+        <li>Speed overlay (canto sup. direito)</li>
+        <li>Mode + Gear overlay (canto sup. esquerdo)</li>
+        <li>Alerta off-route (>50m desvio)</li>
+      </ul>
+    </div>
+    <div>
+      <p style="color:#fbbf24;font-weight:bold;margin-bottom:4px">KPIs (30%)</p>
+      <ul style="color:#ccc;line-height:1.6">
+        <li>Barra progresso (feito/falta/total)</li>
+        <li>Perfil elevação com posição actual</li>
+        <li>Battery % + Range km</li>
+        <li>ETA (tempo estimado chegada)</li>
+        <li>Power W + HR bpm + Cadence rpm</li>
+        <li>W' balance + viabilidade rota</li>
+      </ul>
+    </div>
+  </div>
+</div>
