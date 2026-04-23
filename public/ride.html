@@ -1512,9 +1512,12 @@ function renderSegments(segments, profile) {
           var durAvg = estimateSegmentDuration(profile, seg.start_idx, seg.end_idx, 'avg');
           var durFast = estimateSegmentDuration(profile, seg.start_idx, seg.end_idx, 'fast');
           var durSlow = estimateSegmentDuration(profile, seg.start_idx, seg.end_idx, 'slow');
-          return '<div class="seg-stat"><span class="ss-label">\uD83D\uDD52 Grupo</span><span class="ss-value">' + fmtDuration(durAvg) + '</span></div>' +
-            '<div class="seg-stat"><span class="ss-label" style="color:#22c55e">\u26A1 Rapido</span><span class="ss-value" style="color:#22c55e">' + fmtDuration(durFast) + '</span></div>' +
-            '<div class="seg-stat"><span class="ss-label" style="color:#fbbf24">\uD83D\uDC22 Lento</span><span class="ss-value" style="color:#fbbf24">' + fmtDuration(durSlow) + '</span></div>';
+          var spdAvg = durAvg > 0 ? (distKm / (durAvg / 3600)).toFixed(1) : '-';
+          var spdFast = durFast > 0 ? (distKm / (durFast / 3600)).toFixed(1) : '-';
+          var spdSlow = durSlow > 0 ? (distKm / (durSlow / 3600)).toFixed(1) : '-';
+          return '<div class="seg-stat"><span class="ss-label">\uD83D\uDD52 Grupo</span><span class="ss-value">' + fmtDuration(durAvg) + '</span><span style="font-size:9px;color:var(--text-muted);margin-top:2px;display:block">' + spdAvg + ' km/h</span></div>' +
+            '<div class="seg-stat"><span class="ss-label" style="color:#22c55e">\u26A1 Rapido</span><span class="ss-value" style="color:#22c55e">' + fmtDuration(durFast) + '</span><span style="font-size:9px;color:#22c55e80;margin-top:2px;display:block">' + spdFast + ' km/h</span></div>' +
+            '<div class="seg-stat"><span class="ss-label" style="color:#fbbf24">\uD83D\uDC22 Lento</span><span class="ss-value" style="color:#fbbf24">' + fmtDuration(durSlow) + '</span><span style="font-size:9px;color:#fbbf2480;margin-top:2px;display:block">' + spdSlow + ' km/h</span></div>';
         })() : '') +
       '</div>' +
       '</div>';
