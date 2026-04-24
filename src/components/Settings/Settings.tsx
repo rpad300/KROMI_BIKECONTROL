@@ -1782,6 +1782,9 @@ function EmergencyPage() {
 
   const addContact = () => {
     if (!newName || !newPhone) return;
+    // Validate phone: at least 7 digits
+    const digits = newPhone.replace(/[^0-9]/g, '');
+    if (digits.length < 7) { alert('Numero de telefone invalido (minimo 7 digitos)'); return; }
     const updated = [...contacts, { name: newName, phone: newPhone, relation: newRelation }];
     setContacts(updated);
     setNewName(''); setNewPhone('');

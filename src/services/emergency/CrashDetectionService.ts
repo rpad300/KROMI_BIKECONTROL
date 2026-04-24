@@ -190,8 +190,8 @@ async function escalateToSOS(alert: CrashAlertState): Promise<void> {
 
   // 3. Send notifications to emergency contacts via edge function
   if (emergencyContacts.length === 0) {
-    console.warn('[CrashDetection] No emergency contacts configured.');
-    return;
+    console.warn('[CrashDetection] No emergency contacts configured — SOS persisted to DB only.');
+    // Don't return — rescue_request is already in DB for rescuers to find
   }
 
   try {
@@ -223,15 +223,32 @@ async function escalateToSOS(alert: CrashAlertState): Promise<void> {
         riderName: riderProfile.name ?? 'Ciclista KROMI',
         token: riderProfile.emergency_qr_token ?? null,
       }));
-      window.addEventListener('online', retryPendingSOS, { once: true });
+      // Persistent retry: check every 30s + on every online event
+      if (!_sosRetryActive) {
+        _sosRetryActive = true;
+        window.addEventListener('online', retryPendingSOS);
+        _sosRetryInterval = setInterval(retryPendingSOS, 30_000);
+      }
     } catch { /* localStorage may be unavailable */ }
   }
 }
 
-/** Retry pending SOS when network comes back */
+let _sosRetryActive = false;
+let _sosRetryInterval: ReturnType<typeof setInterval> | null = null;
+
+/** Retry pending SOS — called on online event + every 30s */
 async function retryPendingSOS(): Promise<void> {
   const raw = localStorage.getItem('kromi_pending_sos');
-  if (!raw) return;
+  if (!raw) {
+    // Nothing to retry — clean up listeners
+    if (_sosRetryActive) {
+      window.removeEventListener('online', retryPendingSOS);
+      if (_sosRetryInterval) clearInterval(_sosRetryInterval);
+      _sosRetryActive = false;
+    }
+    return;
+  }
+  if (!navigator.onLine) return; // Don't try if offline
   try {
     const data = JSON.parse(raw);
     const { supaInvokeFunction: invoke } = await import('../../lib/supaFetch');
@@ -245,10 +262,12 @@ async function retryPendingSOS(): Promise<void> {
     });
     localStorage.removeItem('kromi_pending_sos');
     console.log('[CrashDetection] Pending SOS retried successfully');
+    // Clean up
+    window.removeEventListener('online', retryPendingSOS);
+    if (_sosRetryInterval) clearInterval(_sosRetryInterval);
+    _sosRetryActive = false;
   } catch (err) {
-    console.error('[CrashDetection] SOS retry failed:', err);
-    // Re-listen for next online event
-    window.addEventListener('online', retryPendingSOS, { once: true });
+    console.error('[CrashDetection] SOS retry failed, will retry in 30s:', err);
   }
 }
 
