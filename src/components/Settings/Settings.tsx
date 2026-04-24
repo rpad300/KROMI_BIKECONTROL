@@ -454,7 +454,8 @@ function ClubPage() {
   const [enrichResult, setEnrichResult] = useState<Record<string, string>>({});
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
   const [generatingHero, setGeneratingHero] = useState(false);
-  const [aiInstructions, setAiInstructions] = useState('');
+  const [refiningSection, setRefiningSection] = useState<string | null>(null);
+  const [sectionInstructions, setSectionInstructions] = useState('');
   const [tab, setTab] = useState('geral');
   const [userRole, setUserRole] = useState('member');
   const [clubSlug, setClubSlug] = useState('');
@@ -667,7 +668,7 @@ function ClubPage() {
           const updated = await supaGet<any[]>(`/rest/v1/club_rides?id=eq.${rideId}&select=*&limit=1`);
           if (updated?.[0]) setRides(prev => prev.map(r => r.id === rideId ? updated[0] : r));
         } catch {}
-        if (instructions) setAiInstructions('');
+        if (instructions) setSectionInstructions('');
       }
     } catch (err) {
       setEnrichResult(prev => ({ ...prev, [rideId]: `Erro: ${(err as Error).message}` }));
@@ -921,12 +922,33 @@ function ClubPage() {
                         );
                       })()}
 
-                      {/* AI Content Preview */}
+                      {/* AI Content Preview — full content with per-section refinement */}
                       {hasAI && (() => {
                         const ai = ride.ride_data.ai_enrichment;
+                        const sectionHeader = (label: string, color: string, sectionKey: string) => (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', marginTop: '10px' }}>
+                            <div style={{ fontSize: '9px', color, fontWeight: 700 }}>{label}</div>
+                            <button onClick={(e) => { e.stopPropagation(); setRefiningSection(refiningSection === sectionKey ? null : sectionKey); setSectionInstructions(''); }}
+                              style={{ padding: '2px 6px', backgroundColor: refiningSection === sectionKey ? 'rgba(233,102,255,0.2)' : 'transparent', color: '#e966ff', border: 'none', fontSize: '9px', cursor: 'pointer', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                              <span className="material-symbols-outlined" style={{ fontSize: '11px' }}>edit</span> Refinar
+                            </button>
+                          </div>
+                        );
+                        const refineBox = (sectionKey: string, sectionLabel: string) => refiningSection === sectionKey ? (
+                          <div style={{ marginBottom: '6px', padding: '6px', backgroundColor: '#1f1f1f', borderRadius: '4px', border: '1px solid rgba(233,102,255,0.2)' }}>
+                            <textarea value={sectionInstructions} onChange={(e) => setSectionInstructions(e.target.value)} onClick={(e) => e.stopPropagation()}
+                              placeholder={`Como queres alterar ${sectionLabel.toLowerCase()}?`}
+                              style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '6px', border: '1px solid #444', fontSize: '10px', minHeight: '36px', resize: 'vertical', borderRadius: '4px' }} />
+                            <button onClick={(e) => { e.stopPropagation(); enrichRideAI(ride.id, `Altera APENAS a seccao "${sectionLabel}": ${sectionInstructions}. Mantém todas as outras seccoes iguais.`); }}
+                              disabled={enrichingRideId === ride.id || !sectionInstructions.trim()}
+                              style={{ marginTop: '4px', padding: '5px 10px', backgroundColor: sectionInstructions.trim() ? '#e966ff' : '#333', color: sectionInstructions.trim() ? '#fff' : '#666', border: 'none', fontWeight: 700, fontSize: '10px', cursor: sectionInstructions.trim() ? 'pointer' : 'default', borderRadius: '4px' }}>
+                              Regenerar {sectionLabel}
+                            </button>
+                          </div>
+                        ) : null;
                         return (
                           <div style={{ marginTop: '12px' }}>
-                            <div style={{ fontSize: '9px', color: '#777', fontWeight: 700, marginBottom: '6px' }}>PREVIEW CONTEUDO AI</div>
+                            <div style={{ fontSize: '9px', color: '#777', fontWeight: 700, marginBottom: '4px' }}>CONTEUDO AI GERADO</div>
 
                             {/* Hero image */}
                             {hasHero && (
@@ -936,61 +958,84 @@ function ClubPage() {
                             )}
 
                             {/* Narrative */}
-                            {ai.narrative && (
-                              <div style={{ marginBottom: '8px' }}>
-                                <div style={{ fontSize: '9px', color: '#e966ff', fontWeight: 700, marginBottom: '2px' }}>NARRATIVA</div>
-                                <div style={{ fontSize: '10px', color: '#adaaaa', lineHeight: 1.5, maxHeight: '60px', overflow: 'hidden', position: 'relative' }}>
-                                  {ai.narrative.slice(0, 250)}...
-                                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '20px', background: 'linear-gradient(transparent, #1a1919)' }} />
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Stats row */}
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                              {ai.pois?.length > 0 && <span style={{ fontSize: '9px', color: '#3fff8b', padding: '2px 6px', backgroundColor: 'rgba(63,255,139,0.1)', borderRadius: '4px' }}>{ai.pois.length} POIs</span>}
-                              {ai.segments?.length > 0 && <span style={{ fontSize: '9px', color: '#6e9bff', padding: '2px 6px', backgroundColor: 'rgba(110,155,255,0.1)', borderRadius: '4px' }}>{ai.segments.length} Segmentos</span>}
-                              {ai.safety_notes?.length > 0 && <span style={{ fontSize: '9px', color: '#fbbf24', padding: '2px 6px', backgroundColor: 'rgba(251,191,36,0.1)', borderRadius: '4px' }}>{ai.safety_notes.length} Avisos</span>}
-                              {ai.terrain_analysis && <span style={{ fontSize: '9px', color: '#a78bfa', padding: '2px 6px', backgroundColor: 'rgba(167,139,250,0.1)', borderRadius: '4px' }}>Terreno</span>}
-                              {ai.gear_tips?.length > 0 && <span style={{ fontSize: '9px', color: '#adaaaa', padding: '2px 6px', backgroundColor: 'rgba(173,170,170,0.1)', borderRadius: '4px' }}>{ai.gear_tips.length} Dicas</span>}
-                            </div>
+                            {ai.narrative && (<>
+                              {sectionHeader('NARRATIVA', '#e966ff', 'narrative')}
+                              {refineBox('narrative', 'Narrativa')}
+                              <div style={{ fontSize: '10px', color: '#adaaaa', lineHeight: 1.6, whiteSpace: 'pre-line' }}>{ai.narrative}</div>
+                            </>)}
 
                             {/* Difficulty */}
-                            {ai.difficulty_text && (
-                              <div style={{ fontSize: '10px', color: '#fbbf24', marginBottom: '8px', padding: '4px 8px', backgroundColor: 'rgba(251,191,36,0.08)', borderRadius: '4px', borderLeft: '2px solid #fbbf24' }}>
-                                {ai.difficulty_text.slice(0, 150)}{ai.difficulty_text.length > 150 ? '...' : ''}
-                              </div>
-                            )}
+                            {ai.difficulty_text && (<>
+                              {sectionHeader('DIFICULDADE', '#fbbf24', 'difficulty')}
+                              {refineBox('difficulty', 'Dificuldade')}
+                              <div style={{ fontSize: '10px', color: '#fbbf24', padding: '4px 8px', backgroundColor: 'rgba(251,191,36,0.08)', borderRadius: '4px', borderLeft: '2px solid #fbbf24' }}>{ai.difficulty_text}</div>
+                            </>)}
 
-                            {/* Terrain + tires */}
-                            {ai.terrain_analysis?.tire_recommendation && (
-                              <div style={{ fontSize: '10px', color: '#a78bfa', marginBottom: '8px', padding: '4px 8px', backgroundColor: 'rgba(167,139,250,0.08)', borderRadius: '4px', borderLeft: '2px solid #a78bfa' }}>
-                                🛞 {ai.terrain_analysis.tire_recommendation.slice(0, 120)}
-                              </div>
-                            )}
+                            {/* Terrain */}
+                            {ai.terrain_analysis && (<>
+                              {sectionHeader('TERRENO E PNEUS', '#a78bfa', 'terrain')}
+                              {refineBox('terrain', 'Terreno e Pneus')}
+                              {ai.terrain_analysis.summary && <div style={{ fontSize: '10px', color: '#adaaaa', lineHeight: 1.5, marginBottom: '4px' }}>{ai.terrain_analysis.summary}</div>}
+                              {ai.terrain_analysis.tire_recommendation && <div style={{ fontSize: '10px', color: '#a78bfa', padding: '4px 8px', backgroundColor: 'rgba(167,139,250,0.08)', borderRadius: '4px', marginBottom: '2px' }}>🛞 {ai.terrain_analysis.tire_recommendation}</div>}
+                              {ai.terrain_analysis.pressure_tip && <div style={{ fontSize: '9px', color: '#777', fontStyle: 'italic' }}>{ai.terrain_analysis.pressure_tip}</div>}
+                            </>)}
 
-                            {/* Custom instructions */}
-                            <div style={{ marginTop: '8px' }}>
-                              <div style={{ fontSize: '9px', color: '#e966ff', fontWeight: 700, marginBottom: '4px' }}>REFINAR COM INSTRUCOES</div>
-                              <textarea
-                                value={aiInstructions}
-                                onChange={(e) => setAiInstructions(e.target.value)}
-                                onClick={(e) => e.stopPropagation()}
-                                placeholder="Ex: torna a narrativa mais dramatica, muda o POI da Fonte do Mel, adiciona mais humor nos tips..."
-                                style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: '1px solid #444', fontSize: '11px', minHeight: '50px', resize: 'vertical', borderRadius: '4px' }}
-                              />
-                              <button
-                                onClick={(e) => { e.stopPropagation(); enrichRideAI(ride.id, aiInstructions); }}
-                                disabled={enrichingRideId === ride.id || !aiInstructions.trim()}
-                                style={{
-                                  marginTop: '4px', padding: '8px 14px', backgroundColor: aiInstructions.trim() ? '#e966ff' : '#333', color: aiInstructions.trim() ? '#fff' : '#666',
-                                  border: 'none', fontWeight: 700, fontSize: '11px', cursor: aiInstructions.trim() ? 'pointer' : 'default', borderRadius: '4px',
-                                  display: 'flex', alignItems: 'center', gap: '4px',
-                                }}>
-                                <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>auto_awesome</span>
-                                Regenerar com instrucoes
-                              </button>
-                            </div>
+                            {/* POIs */}
+                            {ai.pois?.length > 0 && (<>
+                              {sectionHeader(`PONTOS DE INTERESSE (${ai.pois.length})`, '#3fff8b', 'pois')}
+                              {refineBox('pois', 'Pontos de Interesse')}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                {ai.pois.map((p: any, i: number) => (
+                                  <div key={i} style={{ fontSize: '10px', padding: '4px 8px', backgroundColor: '#1f1f1f', borderRadius: '4px', borderLeft: '2px solid #3fff8b' }}>
+                                    <div style={{ color: '#3fff8b', fontWeight: 700, fontSize: '9px' }}>POI {p.index ?? i}</div>
+                                    <div style={{ color: '#adaaaa', lineHeight: 1.5 }}>{p.description}</div>
+                                    {p.curiosity && <div style={{ color: '#e966ff', fontSize: '9px', marginTop: '2px', fontStyle: 'italic' }}>💡 {p.curiosity}</div>}
+                                    {p.food_tip && p.food_tip !== 'null' && <div style={{ color: '#fbbf24', fontSize: '9px', marginTop: '2px' }}>🍽️ {p.food_tip}</div>}
+                                  </div>
+                                ))}
+                              </div>
+                            </>)}
+
+                            {/* Segments */}
+                            {ai.segments?.length > 0 && (<>
+                              {sectionHeader(`SEGMENTOS (${ai.segments.length})`, '#6e9bff', 'segments')}
+                              {refineBox('segments', 'Segmentos')}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                {ai.segments.map((s: any, i: number) => (
+                                  <div key={i} style={{ fontSize: '10px', padding: '4px 8px', backgroundColor: '#1f1f1f', borderRadius: '4px', borderLeft: '2px solid #6e9bff' }}>
+                                    <div style={{ color: '#6e9bff', fontWeight: 700, fontSize: '9px' }}>SEG {s.index ?? i} · {s.surface || ''}</div>
+                                    <div style={{ color: '#adaaaa', lineHeight: 1.5 }}>{s.description}</div>
+                                    {s.tip && <div style={{ color: '#3fff8b', fontSize: '9px', marginTop: '2px' }}>💬 {s.tip}</div>}
+                                  </div>
+                                ))}
+                              </div>
+                            </>)}
+
+                            {/* Safety */}
+                            {ai.safety_notes?.length > 0 && (<>
+                              {sectionHeader(`AVISOS DE SEGURANCA (${ai.safety_notes.length})`, '#ff716c', 'safety')}
+                              {refineBox('safety', 'Avisos de Seguranca')}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                {ai.safety_notes.map((n: any, i: number) => (
+                                  <div key={i} style={{ fontSize: '10px', padding: '4px 8px', backgroundColor: 'rgba(255,113,108,0.05)', borderRadius: '4px', borderLeft: '2px solid #ff716c' }}>
+                                    <div style={{ color: '#ff716c', fontWeight: 700, fontSize: '9px' }}>⚠️ {n.zone} ({n.km_range})</div>
+                                    <div style={{ color: '#adaaaa' }}>{n.warning}</div>
+                                    {n.tip && <div style={{ color: '#888', fontSize: '9px', marginTop: '2px' }}>💡 {n.tip}</div>}
+                                  </div>
+                                ))}
+                              </div>
+                            </>)}
+
+                            {/* Gear tips */}
+                            {ai.gear_tips?.length > 0 && (<>
+                              {sectionHeader('DICAS DE EQUIPAMENTO', '#adaaaa', 'gear')}
+                              {refineBox('gear', 'Dicas de Equipamento')}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                {ai.gear_tips.map((tip: string, i: number) => (
+                                  <div key={i} style={{ fontSize: '10px', color: '#adaaaa', padding: '3px 8px', backgroundColor: '#1f1f1f', borderRadius: '4px' }}>🎒 {tip}</div>
+                                ))}
+                              </div>
+                            </>)}
                           </div>
                         );
                       })()}
