@@ -378,7 +378,44 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Save to ride_data.ai_enrichment (merge with existing ride_data)
+    // Merge strategy: if refining with custom_instructions and previous enrichment exists,
+    // keep unchanged sections from the old enrichment (Gemini may drop/alter sections we didn't ask to change)
+    const prevAI = existing?.ride_data?.ai_enrichment;
+    if (custom_instructions && prevAI && typeof prevAI === 'object') {
+      // Preserve arrays that Gemini might have shortened or dropped
+      const arrays = ['pois', 'segments', 'safety_notes', 'gear_tips'] as const;
+      for (const key of arrays) {
+        if (prevAI[key]?.length > 0 && (!enrichment[key] || enrichment[key].length === 0)) {
+          enrichment[key] = prevAI[key]; // Gemini dropped it — restore
+        }
+        // Merge individual items by index (keep old items Gemini didn't regenerate)
+        if (Array.isArray(prevAI[key]) && Array.isArray(enrichment[key])) {
+          const merged = [...prevAI[key]];
+          for (const newItem of enrichment[key]) {
+            const idx = newItem.index ?? -1;
+            if (idx >= 0 && idx < merged.length) {
+              merged[idx] = newItem; // Replace specific item
+            }
+          }
+          // If new array is longer (e.g. Gemini added items), append
+          if (enrichment[key].length > merged.length) {
+            for (let i = merged.length; i < enrichment[key].length; i++) {
+              merged.push(enrichment[key][i]);
+            }
+          }
+          enrichment[key] = merged;
+        }
+      }
+      // Preserve scalar fields Gemini might have emptied
+      const scalars = ['narrative', 'difficulty_text'] as const;
+      for (const key of scalars) {
+        if (prevAI[key] && !enrichment[key]) enrichment[key] = prevAI[key];
+      }
+      if (prevAI.terrain_analysis && !enrichment.terrain_analysis) {
+        enrichment.terrain_analysis = prevAI.terrain_analysis;
+      }
+    }
+
     const currentRideData = existing?.ride_data || {};
     const updatedRideData = { ...currentRideData, ai_enrichment: enrichment };
 
