@@ -62,8 +62,8 @@ export const useMapStore = create<MapState>((set) => ({
         const dLon = (lng - s.longitude) * Math.PI / 180;
         const a = Math.sin(dLat / 2) ** 2 + Math.cos(s.latitude * Math.PI / 180) * Math.cos(lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
         addedKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        // Reject jumps > 500m (GPS glitch)
-        if (addedKm > 0.5) addedKm = 0;
+        // Reject jumps > 1km per fix (GPS glitch — covers highway speeds + tunnel exits)
+        if (addedKm > 1.0) addedKm = 0;
       }
       return {
         latitude: lat, longitude: lng, heading, accuracy,

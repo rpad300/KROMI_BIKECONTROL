@@ -249,10 +249,18 @@ async function startBroadcasting(): Promise<void> {
 
     // Broadcast immediately, then every 10s
     await broadcastUpdate();
-    _intervalHandle = setInterval(() => {
-      broadcastUpdate().catch((err) =>
-        console.warn('[LiveTracking] Broadcast error:', err),
-      );
+    let _failCount = 0;
+    _intervalHandle = setInterval(async () => {
+      try {
+        await broadcastUpdate();
+        if (_failCount > 0) {
+          console.info('[LiveTracking] Broadcast recovered after', _failCount, 'failures');
+          _failCount = 0;
+        }
+      } catch (err) {
+        _failCount++;
+        console.warn(`[LiveTracking] Broadcast error (${_failCount}):`, err);
+      }
     }, BROADCAST_INTERVAL_MS);
 
     console.info(`[LiveTracking] Broadcasting started — session ${_sessionId}`);

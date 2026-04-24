@@ -15,6 +15,9 @@ interface CacheEntry {
   ts: number;
 }
 
+// 5000 entries ~ 500KB — enough for 10h rides across varied terrain
+const MAX_MEM_CACHE = 5000;
+
 class ElevationCache {
   private dbName = 'kromi-elevation-cache';
   private memCache = new Map<string, CacheEntry>();
@@ -46,10 +49,19 @@ class ElevationCache {
     return null;
   }
 
+  private evictIfNeeded(): void {
+    if (this.memCache.size <= MAX_MEM_CACHE) return;
+    // Remove oldest 20% by timestamp
+    const entries = [...this.memCache.entries()].sort((a, b) => a[1].ts - b[1].ts);
+    const toRemove = Math.floor(MAX_MEM_CACHE * 0.2);
+    for (let i = 0; i < toRemove && i < entries.length; i++) this.memCache.delete(entries[i]![0]);
+  }
+
   async set(lat: number, lng: number, elevation: number): Promise<void> {
     const key = this.gridKey(lat, lng);
     const entry: CacheEntry = { elevation, ts: Date.now() };
     this.memCache.set(key, entry);
+    this.evictIfNeeded();
 
     try {
       const db = await this.getDB();
