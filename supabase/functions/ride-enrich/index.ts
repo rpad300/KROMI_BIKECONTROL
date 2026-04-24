@@ -318,7 +318,7 @@ Deno.serve(async (req) => {
     if (!GEMINI_KEY) return json({ error: 'GEMINI_API_KEY not configured' }, 500);
     if (!SUPABASE_URL || !SERVICE_ROLE) return json({ error: 'Missing Supabase config' }, 500);
 
-    const { ride_id, pois: inputPois, ride_data: inputRideData, segments: inputSegments, force } = await req.json();
+    const { ride_id, pois: inputPois, ride_data: inputRideData, segments: inputSegments, force, custom_instructions } = await req.json();
     if (!ride_id) return json({ error: 'ride_id required' }, 400);
 
     const sb = createClient(SUPABASE_URL, SERVICE_ROLE);
@@ -358,7 +358,10 @@ Deno.serve(async (req) => {
     if (!rideData.description && existing?.description) rideData.description = existing.description;
 
     // Build prompt and call Gemini
-    const prompt = buildPrompt(rideData, pois, segments);
+    let prompt = buildPrompt(rideData, pois, segments);
+    if (custom_instructions) {
+      prompt += `\n\nINSTRUCOES ADICIONAIS DO UTILIZADOR:\n${custom_instructions}\nSegue estas instrucoes ao gerar o conteudo. Mantém o formato JSON igual.`;
+    }
     const rawResponse = await callGemini(prompt);
 
     // Parse response

@@ -454,6 +454,7 @@ function ClubPage() {
   const [enrichResult, setEnrichResult] = useState<Record<string, string>>({});
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
   const [generatingHero, setGeneratingHero] = useState(false);
+  const [aiInstructions, setAiInstructions] = useState('');
   const [tab, setTab] = useState('geral');
   const [userRole, setUserRole] = useState('member');
   const [clubSlug, setClubSlug] = useState('');
@@ -650,15 +651,23 @@ function ClubPage() {
     } catch {}
   };
 
-  const enrichRideAI = async (rideId: string) => {
+  const enrichRideAI = async (rideId: string, instructions?: string) => {
     setEnrichingRideId(rideId);
     setEnrichResult(prev => ({ ...prev, [rideId]: '' }));
     try {
-      const res = await supaInvokeFunction<{ cached?: boolean; enrichment?: unknown; error?: string }>('ride-enrich', { ride_id: rideId });
+      const body: Record<string, unknown> = { ride_id: rideId, force: !!instructions };
+      if (instructions) body.custom_instructions = instructions;
+      const res = await supaInvokeFunction<{ cached?: boolean; enrichment?: unknown; error?: string }>('ride-enrich', body);
       if (res.error) {
         setEnrichResult(prev => ({ ...prev, [rideId]: `Erro: ${res.error}` }));
       } else {
         setEnrichResult(prev => ({ ...prev, [rideId]: res.cached ? 'Conteudo AI ja existia (cache)' : 'Conteudo AI gerado com sucesso!' }));
+        // Refresh ride data to show updated preview
+        try {
+          const updated = await supaGet<any[]>(`/rest/v1/club_rides?id=eq.${rideId}&select=*&limit=1`);
+          if (updated?.[0]) setRides(prev => prev.map(r => r.id === rideId ? updated[0] : r));
+        } catch {}
+        if (instructions) setAiInstructions('');
       }
     } catch (err) {
       setEnrichResult(prev => ({ ...prev, [rideId]: `Erro: ${(err as Error).message}` }));
@@ -908,6 +917,80 @@ function ClubPage() {
                             color: isErr ? '#ff716c' : '#3fff8b',
                           }}>
                             {msg}
+                          </div>
+                        );
+                      })()}
+
+                      {/* AI Content Preview */}
+                      {hasAI && (() => {
+                        const ai = ride.ride_data.ai_enrichment;
+                        return (
+                          <div style={{ marginTop: '12px' }}>
+                            <div style={{ fontSize: '9px', color: '#777', fontWeight: 700, marginBottom: '6px' }}>PREVIEW CONTEUDO AI</div>
+
+                            {/* Hero image */}
+                            {hasHero && (
+                              <div style={{ marginBottom: '8px', borderRadius: '8px', overflow: 'hidden' }}>
+                                <img src={ride.ride_data.hero_image_url || ride.ride_data.hero_image} alt="Hero" style={{ width: '100%', height: '120px', objectFit: 'cover' }} />
+                              </div>
+                            )}
+
+                            {/* Narrative */}
+                            {ai.narrative && (
+                              <div style={{ marginBottom: '8px' }}>
+                                <div style={{ fontSize: '9px', color: '#e966ff', fontWeight: 700, marginBottom: '2px' }}>NARRATIVA</div>
+                                <div style={{ fontSize: '10px', color: '#adaaaa', lineHeight: 1.5, maxHeight: '60px', overflow: 'hidden', position: 'relative' }}>
+                                  {ai.narrative.slice(0, 250)}...
+                                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '20px', background: 'linear-gradient(transparent, #1a1919)' }} />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Stats row */}
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                              {ai.pois?.length > 0 && <span style={{ fontSize: '9px', color: '#3fff8b', padding: '2px 6px', backgroundColor: 'rgba(63,255,139,0.1)', borderRadius: '4px' }}>{ai.pois.length} POIs</span>}
+                              {ai.segments?.length > 0 && <span style={{ fontSize: '9px', color: '#6e9bff', padding: '2px 6px', backgroundColor: 'rgba(110,155,255,0.1)', borderRadius: '4px' }}>{ai.segments.length} Segmentos</span>}
+                              {ai.safety_notes?.length > 0 && <span style={{ fontSize: '9px', color: '#fbbf24', padding: '2px 6px', backgroundColor: 'rgba(251,191,36,0.1)', borderRadius: '4px' }}>{ai.safety_notes.length} Avisos</span>}
+                              {ai.terrain_analysis && <span style={{ fontSize: '9px', color: '#a78bfa', padding: '2px 6px', backgroundColor: 'rgba(167,139,250,0.1)', borderRadius: '4px' }}>Terreno</span>}
+                              {ai.gear_tips?.length > 0 && <span style={{ fontSize: '9px', color: '#adaaaa', padding: '2px 6px', backgroundColor: 'rgba(173,170,170,0.1)', borderRadius: '4px' }}>{ai.gear_tips.length} Dicas</span>}
+                            </div>
+
+                            {/* Difficulty */}
+                            {ai.difficulty_text && (
+                              <div style={{ fontSize: '10px', color: '#fbbf24', marginBottom: '8px', padding: '4px 8px', backgroundColor: 'rgba(251,191,36,0.08)', borderRadius: '4px', borderLeft: '2px solid #fbbf24' }}>
+                                {ai.difficulty_text.slice(0, 150)}{ai.difficulty_text.length > 150 ? '...' : ''}
+                              </div>
+                            )}
+
+                            {/* Terrain + tires */}
+                            {ai.terrain_analysis?.tire_recommendation && (
+                              <div style={{ fontSize: '10px', color: '#a78bfa', marginBottom: '8px', padding: '4px 8px', backgroundColor: 'rgba(167,139,250,0.08)', borderRadius: '4px', borderLeft: '2px solid #a78bfa' }}>
+                                🛞 {ai.terrain_analysis.tire_recommendation.slice(0, 120)}
+                              </div>
+                            )}
+
+                            {/* Custom instructions */}
+                            <div style={{ marginTop: '8px' }}>
+                              <div style={{ fontSize: '9px', color: '#e966ff', fontWeight: 700, marginBottom: '4px' }}>REFINAR COM INSTRUCOES</div>
+                              <textarea
+                                value={aiInstructions}
+                                onChange={(e) => setAiInstructions(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                placeholder="Ex: torna a narrativa mais dramatica, muda o POI da Fonte do Mel, adiciona mais humor nos tips..."
+                                style={{ width: '100%', backgroundColor: '#262626', color: 'white', padding: '8px', border: '1px solid #444', fontSize: '11px', minHeight: '50px', resize: 'vertical', borderRadius: '4px' }}
+                              />
+                              <button
+                                onClick={(e) => { e.stopPropagation(); enrichRideAI(ride.id, aiInstructions); }}
+                                disabled={enrichingRideId === ride.id || !aiInstructions.trim()}
+                                style={{
+                                  marginTop: '4px', padding: '8px 14px', backgroundColor: aiInstructions.trim() ? '#e966ff' : '#333', color: aiInstructions.trim() ? '#fff' : '#666',
+                                  border: 'none', fontWeight: 700, fontSize: '11px', cursor: aiInstructions.trim() ? 'pointer' : 'default', borderRadius: '4px',
+                                  display: 'flex', alignItems: 'center', gap: '4px',
+                                }}>
+                                <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>auto_awesome</span>
+                                Regenerar com instrucoes
+                              </button>
+                            </div>
                           </div>
                         );
                       })()}
