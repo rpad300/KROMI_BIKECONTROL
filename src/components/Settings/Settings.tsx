@@ -980,34 +980,75 @@ function ClubPage() {
                               {ai.terrain_analysis.pressure_tip && <div style={{ fontSize: '9px', color: '#777', fontStyle: 'italic' }}>{ai.terrain_analysis.pressure_tip}</div>}
                             </>)}
 
-                            {/* POIs */}
+                            {/* POIs — per-POI refinement */}
                             {ai.pois?.length > 0 && (<>
-                              {sectionHeader(`PONTOS DE INTERESSE (${ai.pois.length})`, '#3fff8b', 'pois')}
-                              {refineBox('pois', 'Pontos de Interesse')}
+                              <div style={{ fontSize: '9px', color: '#3fff8b', fontWeight: 700, marginTop: '10px', marginBottom: '4px' }}>PONTOS DE INTERESSE ({ai.pois.length})</div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                {ai.pois.map((p: any, i: number) => (
-                                  <div key={i} style={{ fontSize: '10px', padding: '4px 8px', backgroundColor: '#1f1f1f', borderRadius: '4px', borderLeft: '2px solid #3fff8b' }}>
-                                    <div style={{ color: '#3fff8b', fontWeight: 700, fontSize: '9px' }}>POI {p.index ?? i}</div>
-                                    <div style={{ color: '#adaaaa', lineHeight: 1.5 }}>{p.description}</div>
-                                    {p.curiosity && <div style={{ color: '#e966ff', fontSize: '9px', marginTop: '2px', fontStyle: 'italic' }}>💡 {p.curiosity}</div>}
-                                    {p.food_tip && p.food_tip !== 'null' && <div style={{ color: '#fbbf24', fontSize: '9px', marginTop: '2px' }}>🍽️ {p.food_tip}</div>}
-                                  </div>
-                                ))}
+                                {ai.pois.map((p: any, i: number) => {
+                                  const poiKey = `poi-${p.index ?? i}`;
+                                  return (
+                                    <div key={i} style={{ fontSize: '10px', padding: '6px 8px', backgroundColor: '#1f1f1f', borderRadius: '4px', borderLeft: '2px solid #3fff8b' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ color: '#3fff8b', fontWeight: 700, fontSize: '9px' }}>POI {p.index ?? i}</div>
+                                        <button onClick={(e) => { e.stopPropagation(); setRefiningSection(refiningSection === poiKey ? null : poiKey); setSectionInstructions(''); }}
+                                          style={{ padding: '1px 4px', backgroundColor: 'transparent', color: '#e966ff', border: 'none', fontSize: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                          <span className="material-symbols-outlined" style={{ fontSize: '10px' }}>edit</span>
+                                        </button>
+                                      </div>
+                                      <div style={{ color: '#adaaaa', lineHeight: 1.5 }}>{p.description}</div>
+                                      {p.curiosity && <div style={{ color: '#e966ff', fontSize: '9px', marginTop: '2px', fontStyle: 'italic' }}>💡 {p.curiosity}</div>}
+                                      {p.food_tip && p.food_tip !== 'null' && <div style={{ color: '#fbbf24', fontSize: '9px', marginTop: '2px' }}>🍽️ {p.food_tip}</div>}
+                                      {refiningSection === poiKey && (
+                                        <div style={{ marginTop: '4px', padding: '4px', backgroundColor: '#262626', borderRadius: '4px', border: '1px solid rgba(233,102,255,0.2)' }}>
+                                          <textarea value={sectionInstructions} onChange={(e) => setSectionInstructions(e.target.value)} onClick={(e) => e.stopPropagation()}
+                                            placeholder={`Como alterar o POI ${p.index ?? i}?`}
+                                            style={{ width: '100%', backgroundColor: '#1a1919', color: 'white', padding: '4px', border: '1px solid #444', fontSize: '10px', minHeight: '30px', resize: 'vertical', borderRadius: '4px' }} />
+                                          <button onClick={(e) => { e.stopPropagation(); enrichRideAI(ride.id, `Altera APENAS o POI com index ${p.index ?? i}: ${sectionInstructions}. Mantém todos os outros POIs e seccoes iguais.`); }}
+                                            disabled={enrichingRideId === ride.id || !sectionInstructions.trim()}
+                                            style={{ marginTop: '3px', padding: '4px 8px', backgroundColor: sectionInstructions.trim() ? '#e966ff' : '#333', color: sectionInstructions.trim() ? '#fff' : '#666', border: 'none', fontWeight: 700, fontSize: '9px', cursor: sectionInstructions.trim() ? 'pointer' : 'default', borderRadius: '4px' }}>
+                                            Regenerar POI {p.index ?? i}
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </>)}
 
-                            {/* Segments */}
+                            {/* Segments — per-segment refinement */}
                             {ai.segments?.length > 0 && (<>
-                              {sectionHeader(`SEGMENTOS (${ai.segments.length})`, '#6e9bff', 'segments')}
-                              {refineBox('segments', 'Segmentos')}
+                              <div style={{ fontSize: '9px', color: '#6e9bff', fontWeight: 700, marginTop: '10px', marginBottom: '4px' }}>SEGMENTOS ({ai.segments.length})</div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                {ai.segments.map((s: any, i: number) => (
-                                  <div key={i} style={{ fontSize: '10px', padding: '4px 8px', backgroundColor: '#1f1f1f', borderRadius: '4px', borderLeft: '2px solid #6e9bff' }}>
-                                    <div style={{ color: '#6e9bff', fontWeight: 700, fontSize: '9px' }}>SEG {s.index ?? i} · {s.surface || ''}</div>
-                                    <div style={{ color: '#adaaaa', lineHeight: 1.5 }}>{s.description}</div>
-                                    {s.tip && <div style={{ color: '#3fff8b', fontSize: '9px', marginTop: '2px' }}>💬 {s.tip}</div>}
-                                  </div>
-                                ))}
+                                {ai.segments.map((s: any, i: number) => {
+                                  const segKey = `seg-${s.index ?? i}`;
+                                  return (
+                                    <div key={i} style={{ fontSize: '10px', padding: '6px 8px', backgroundColor: '#1f1f1f', borderRadius: '4px', borderLeft: '2px solid #6e9bff' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ color: '#6e9bff', fontWeight: 700, fontSize: '9px' }}>SEG {s.index ?? i} · {s.surface || ''}</div>
+                                        <button onClick={(e) => { e.stopPropagation(); setRefiningSection(refiningSection === segKey ? null : segKey); setSectionInstructions(''); }}
+                                          style={{ padding: '1px 4px', backgroundColor: 'transparent', color: '#e966ff', border: 'none', fontSize: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                          <span className="material-symbols-outlined" style={{ fontSize: '10px' }}>edit</span>
+                                        </button>
+                                      </div>
+                                      <div style={{ color: '#adaaaa', lineHeight: 1.5 }}>{s.description}</div>
+                                      {s.tip && <div style={{ color: '#3fff8b', fontSize: '9px', marginTop: '2px' }}>💬 {s.tip}</div>}
+                                      {s.curiosity && <div style={{ color: '#888', fontSize: '9px', marginTop: '2px', fontStyle: 'italic' }}>{s.curiosity}</div>}
+                                      {refiningSection === segKey && (
+                                        <div style={{ marginTop: '4px', padding: '4px', backgroundColor: '#262626', borderRadius: '4px', border: '1px solid rgba(233,102,255,0.2)' }}>
+                                          <textarea value={sectionInstructions} onChange={(e) => setSectionInstructions(e.target.value)} onClick={(e) => e.stopPropagation()}
+                                            placeholder={`Como alterar o segmento ${s.index ?? i}?`}
+                                            style={{ width: '100%', backgroundColor: '#1a1919', color: 'white', padding: '4px', border: '1px solid #444', fontSize: '10px', minHeight: '30px', resize: 'vertical', borderRadius: '4px' }} />
+                                          <button onClick={(e) => { e.stopPropagation(); enrichRideAI(ride.id, `Altera APENAS o segmento com index ${s.index ?? i}: ${sectionInstructions}. Mantém todos os outros segmentos e seccoes iguais.`); }}
+                                            disabled={enrichingRideId === ride.id || !sectionInstructions.trim()}
+                                            style={{ marginTop: '3px', padding: '4px 8px', backgroundColor: sectionInstructions.trim() ? '#e966ff' : '#333', color: sectionInstructions.trim() ? '#fff' : '#666', border: 'none', fontWeight: 700, fontSize: '9px', cursor: sectionInstructions.trim() ? 'pointer' : 'default', borderRadius: '4px' }}>
+                                            Regenerar SEG {s.index ?? i}
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </>)}
 
