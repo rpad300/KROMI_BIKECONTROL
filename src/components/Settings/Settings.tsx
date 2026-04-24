@@ -452,6 +452,8 @@ function ClubPage() {
   const rideGpxRef = useRef<HTMLInputElement>(null);
   const [enrichingRideId, setEnrichingRideId] = useState<string | null>(null);
   const [enrichResult, setEnrichResult] = useState<Record<string, string>>({});
+  const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
+  const [generatingHero, setGeneratingHero] = useState(false);
   const [tab, setTab] = useState('geral');
   const [userRole, setUserRole] = useState('member');
   const [clubSlug, setClubSlug] = useState('');
@@ -732,113 +734,187 @@ function ClubPage() {
           const isJoined = parts.some((p: any) => p.user_id === userId);
           const isCreator = ride.created_by === userId;
           const isActive = ride.status === 'active';
+          const isSelected = selectedRideId === ride.id;
           const scheduledDate = new Date(ride.scheduled_at);
           const dateStr = scheduledDate.toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' });
           const timeStr = scheduledDate.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+          const rideUrl = `https://www.kromi.online/ride.html?ride=${ride.id}`;
+          const liveUrl = `https://www.kromi.online/live.html?ride=${ride.id}`;
+          const hasAI = !!ride.ride_data?.ai_enrichment;
+          const hasHero = !!ride.ride_data?.hero_image_url;
 
           return (
             <Card key={ride.id}>
-              <div style={{ borderLeft: `3px solid ${isActive ? '#3fff8b' : '#6e9bff'}`, paddingLeft: '10px' }}>
-                {/* Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
+              {/* Compact card — click to expand */}
+              <div
+                onClick={() => setSelectedRideId(isSelected ? null : ride.id)}
+                style={{ borderLeft: `3px solid ${isActive ? '#3fff8b' : '#6e9bff'}`, paddingLeft: '10px', cursor: 'pointer' }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '14px', fontWeight: 800, color: 'white' }}>{ride.name}</div>
                     <div style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>
-                      {dateStr} · {timeStr}
+                      {dateStr} · {timeStr} · {parts.length} participante{parts.length !== 1 ? 's' : ''}
                     </div>
-                    {ride.description && <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>{ride.description}</div>}
-                    {ride.meeting_address && <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>{ride.meeting_address}</div>}
-                    {ride.route_gpx && <div style={{ fontSize: '9px', color: '#3fff8b', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}><span className="material-symbols-outlined" style={{ fontSize: '12px' }}>route</span> Rota GPX incluida</div>}
                   </div>
-                  <span style={{
-                    fontSize: '9px', fontWeight: 800, padding: '2px 8px', borderRadius: '4px',
-                    backgroundColor: isActive ? 'rgba(63,255,139,0.15)' : 'rgba(110,155,255,0.15)',
-                    color: isActive ? '#3fff8b' : '#6e9bff',
-                  }}>
-                    {isActive ? 'ATIVA' : 'PLANEADA'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    {hasAI && <span style={{ fontSize: '12px', color: '#e966ff' }} title="Conteudo AI gerado">✨</span>}
+                    {ride.route_gpx && <span style={{ fontSize: '12px', color: '#3fff8b' }} title="GPX">📍</span>}
+                    <span style={{
+                      fontSize: '9px', fontWeight: 800, padding: '2px 8px', borderRadius: '4px',
+                      backgroundColor: isActive ? 'rgba(63,255,139,0.15)' : 'rgba(110,155,255,0.15)',
+                      color: isActive ? '#3fff8b' : '#6e9bff',
+                    }}>
+                      {isActive ? 'ATIVA' : 'PLANEADA'}
+                    </span>
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#555', transform: isSelected ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>expand_more</span>
+                  </div>
                 </div>
+              </div>
 
-                {/* Participants */}
-                <div style={{ marginTop: '8px' }}>
-                  <div style={{ fontSize: '9px', color: '#777', fontWeight: 700, marginBottom: '4px' }}>
+              {/* Expanded detail panel */}
+              {isSelected && (
+                <div style={{ marginTop: '12px', paddingLeft: '10px', borderLeft: '3px solid #333' }}>
+
+                  {/* Info section */}
+                  <div style={{ fontSize: '9px', color: '#777', fontWeight: 700, marginBottom: '6px' }}>DETALHES</div>
+                  {ride.description && <div style={{ fontSize: '11px', color: '#adaaaa', marginBottom: '4px' }}>{ride.description}</div>}
+                  {ride.meeting_address && <div style={{ fontSize: '10px', color: '#888', marginBottom: '4px' }}>📍 {ride.meeting_address}</div>}
+                  {ride.route_gpx && <div style={{ fontSize: '9px', color: '#3fff8b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '3px' }}><span className="material-symbols-outlined" style={{ fontSize: '12px' }}>route</span> Rota GPX incluida</div>}
+
+                  {/* Participants */}
+                  <div style={{ fontSize: '9px', color: '#777', fontWeight: 700, marginBottom: '4px', marginTop: '8px' }}>
                     PARTICIPANTES ({parts.length})
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '10px' }}>
                     {parts.map((p: any, i: number) => (
                       <div key={i} style={{
                         display: 'flex', alignItems: 'center', gap: '4px',
                         padding: '3px 8px', backgroundColor: '#262626', borderRadius: '12px',
                         fontSize: '10px', color: p.user_id === userId ? '#3fff8b' : '#adaaaa',
                       }}>
-                        <span style={{ fontSize: '8px' }}>{p.status === 'riding' ? '\u{1F7E2}' : '\u26AA'}</span>
+                        <span style={{ fontSize: '8px' }}>{p.status === 'riding' ? '🟢' : '⚪'}</span>
                         {p.display_name || 'Rider'}
+                        {p.user_id === ride.created_by && <span style={{ fontSize: '8px', color: '#e966ff' }}>👑</span>}
                       </div>
                     ))}
                     {parts.length === 0 && <span style={{ fontSize: '10px', color: '#555' }}>Nenhum participante</span>}
                   </div>
-                </div>
 
-                {/* Actions */}
-                <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
-                  {!isJoined ? (
-                    <button onClick={() => joinRide(ride.id)} style={{
-                      flex: 1, padding: '8px', backgroundColor: '#3fff8b', color: 'black',
-                      border: 'none', fontWeight: 700, fontSize: '11px', cursor: 'pointer', borderRadius: '4px',
-                    }}>Juntar-me</button>
-                  ) : (
-                    <button onClick={() => leaveRide(ride.id)} style={{
-                      flex: 1, padding: '8px', backgroundColor: '#262626', color: '#ff716c',
-                      border: '1px solid rgba(255,113,108,0.3)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', borderRadius: '4px',
-                    }}>Sair</button>
-                  )}
-                  {isCreator && !isActive && (
-                    <button onClick={() => activateRide(ride.id)} style={{
-                      padding: '8px 12px', backgroundColor: 'rgba(63,255,139,0.15)', color: '#3fff8b',
-                      border: '1px solid rgba(63,255,139,0.3)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', borderRadius: '4px',
-                    }}>Iniciar</button>
-                  )}
-                  {isCreator && ride.route_gpx && (
-                    <button
-                      onClick={() => enrichRideAI(ride.id)}
-                      disabled={enrichingRideId === ride.id}
-                      style={{
-                        padding: '8px 10px', backgroundColor: 'rgba(233,102,255,0.15)', color: '#e966ff',
-                        border: '1px solid rgba(233,102,255,0.3)', fontWeight: 700, fontSize: '10px',
-                        cursor: enrichingRideId === ride.id ? 'wait' : 'pointer', borderRadius: '4px',
-                        opacity: enrichingRideId === ride.id ? 0.6 : 1,
-                        display: 'flex', alignItems: 'center', gap: '4px',
-                      }}>
-                      {enrichingRideId === ride.id ? (
-                        <><span className="material-symbols-outlined" style={{ fontSize: '13px', animation: 'spin 1s linear infinite' }}>progress_activity</span> A gerar...</>
-                      ) : (
-                        <><span className="material-symbols-outlined" style={{ fontSize: '13px' }}>auto_awesome</span> AI</>
-                      )}
-                    </button>
-                  )}
+                  {/* Share links */}
+                  <div style={{ fontSize: '9px', color: '#777', fontWeight: 700, marginBottom: '4px' }}>LINKS</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '14px', color: '#6e9bff' }}>language</span>
+                      <a href={rideUrl} target="_blank" rel="noopener" style={{ fontSize: '10px', color: '#6e9bff', textDecoration: 'none', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Pagina Publica</a>
+                      <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(rideUrl); }} style={{ padding: '3px 8px', backgroundColor: '#262626', color: '#adaaaa', border: 'none', fontSize: '9px', cursor: 'pointer', borderRadius: '4px' }}>Copiar</button>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '14px', color: '#3fff8b' }}>location_on</span>
+                      <a href={liveUrl} target="_blank" rel="noopener" style={{ fontSize: '10px', color: '#3fff8b', textDecoration: 'none', flex: 1 }}>Live Tracking</a>
+                      <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(liveUrl); }} style={{ padding: '3px 8px', backgroundColor: '#262626', color: '#adaaaa', border: 'none', fontSize: '9px', cursor: 'pointer', borderRadius: '4px' }}>Copiar</button>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '14px', color: '#22c55e' }}>share</span>
+                      <a href={`https://wa.me/?text=${encodeURIComponent(ride.name + ' - ' + rideUrl)}`} target="_blank" rel="noopener" style={{ fontSize: '10px', color: '#22c55e', textDecoration: 'none' }}>Partilhar WhatsApp</a>
+                    </div>
+                  </div>
+
+                  {/* Actions row */}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {!isJoined ? (
+                      <button onClick={(e) => { e.stopPropagation(); joinRide(ride.id); }} style={{
+                        padding: '8px 12px', backgroundColor: '#3fff8b', color: 'black',
+                        border: 'none', fontWeight: 700, fontSize: '11px', cursor: 'pointer', borderRadius: '4px',
+                      }}>Juntar-me</button>
+                    ) : (
+                      <button onClick={(e) => { e.stopPropagation(); leaveRide(ride.id); }} style={{
+                        padding: '8px 12px', backgroundColor: '#262626', color: '#ff716c',
+                        border: '1px solid rgba(255,113,108,0.3)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', borderRadius: '4px',
+                      }}>Sair</button>
+                    )}
+                    {isCreator && !isActive && (
+                      <button onClick={(e) => { e.stopPropagation(); activateRide(ride.id); }} style={{
+                        padding: '8px 12px', backgroundColor: 'rgba(63,255,139,0.15)', color: '#3fff8b',
+                        border: '1px solid rgba(63,255,139,0.3)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', borderRadius: '4px',
+                      }}>Iniciar Ride</button>
+                    )}
+                  </div>
+
+                  {/* AI + Creator tools */}
                   {isCreator && (
-                    <button onClick={() => { if (confirm('Apagar esta ride?')) deleteRide(ride.id); }} style={{
-                      padding: '8px', backgroundColor: '#262626', color: '#ff716c',
-                      border: 'none', cursor: 'pointer', borderRadius: '4px',
-                    }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>delete</span>
-                    </button>
+                    <div style={{ marginTop: '10px' }}>
+                      <div style={{ fontSize: '9px', color: '#777', fontWeight: 700, marginBottom: '6px' }}>FERRAMENTAS</div>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {ride.route_gpx && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); enrichRideAI(ride.id); }}
+                            disabled={enrichingRideId === ride.id}
+                            style={{
+                              padding: '8px 12px', backgroundColor: 'rgba(233,102,255,0.15)', color: '#e966ff',
+                              border: '1px solid rgba(233,102,255,0.3)', fontWeight: 700, fontSize: '10px',
+                              cursor: enrichingRideId === ride.id ? 'wait' : 'pointer', borderRadius: '4px',
+                              opacity: enrichingRideId === ride.id ? 0.6 : 1,
+                              display: 'flex', alignItems: 'center', gap: '4px',
+                            }}>
+                            {enrichingRideId === ride.id ? (
+                              <><span className="material-symbols-outlined" style={{ fontSize: '13px', animation: 'spin 1s linear infinite' }}>progress_activity</span> A gerar texto...</>
+                            ) : (
+                              <><span className="material-symbols-outlined" style={{ fontSize: '13px' }}>auto_awesome</span> {hasAI ? 'Regenerar AI' : 'Gerar Conteudo AI'}</>
+                            )}
+                          </button>
+                        )}
+                        {ride.route_gpx && (
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              setGeneratingHero(true);
+                              try {
+                                await supaInvokeFunction('ride-hero-image', { ride_id: ride.id, force: hasHero });
+                                setEnrichResult(prev => ({ ...prev, [ride.id]: 'Imagem hero gerada!' }));
+                              } catch { setEnrichResult(prev => ({ ...prev, [ride.id]: 'Erro ao gerar imagem' })); }
+                              setGeneratingHero(false);
+                            }}
+                            disabled={generatingHero}
+                            style={{
+                              padding: '8px 12px', backgroundColor: 'rgba(110,155,255,0.15)', color: '#6e9bff',
+                              border: '1px solid rgba(110,155,255,0.3)', fontWeight: 700, fontSize: '10px',
+                              cursor: generatingHero ? 'wait' : 'pointer', borderRadius: '4px',
+                              opacity: generatingHero ? 0.6 : 1,
+                              display: 'flex', alignItems: 'center', gap: '4px',
+                            }}>
+                            {generatingHero ? (
+                              <><span className="material-symbols-outlined" style={{ fontSize: '13px', animation: 'spin 1s linear infinite' }}>progress_activity</span> A gerar imagem...</>
+                            ) : (
+                              <><span className="material-symbols-outlined" style={{ fontSize: '13px' }}>image</span> {hasHero ? 'Regenerar Imagem' : 'Gerar Imagem Hero'}</>
+                            )}
+                          </button>
+                        )}
+                        <button onClick={(e) => { e.stopPropagation(); if (confirm('Apagar esta ride?')) deleteRide(ride.id); }} style={{
+                          padding: '8px 12px', backgroundColor: '#262626', color: '#ff716c',
+                          border: 'none', cursor: 'pointer', borderRadius: '4px', fontSize: '10px', fontWeight: 700,
+                          display: 'flex', alignItems: 'center', gap: '4px',
+                        }}>
+                          <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>delete</span> Apagar
+                        </button>
+                      </div>
+                      {enrichResult[ride.id] && (() => {
+                        const msg = enrichResult[ride.id] ?? '';
+                        const isErr = msg.startsWith('Erro');
+                        return (
+                          <div style={{
+                            fontSize: '10px', marginTop: '6px', padding: '6px 8px', borderRadius: '4px',
+                            backgroundColor: isErr ? 'rgba(255,113,108,0.1)' : 'rgba(63,255,139,0.1)',
+                            color: isErr ? '#ff716c' : '#3fff8b',
+                          }}>
+                            {msg}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   )}
                 </div>
-                {enrichResult[ride.id] && (() => {
-                  const msg = enrichResult[ride.id] ?? '';
-                  const isErr = msg.startsWith('Erro');
-                  return (
-                    <div style={{
-                      fontSize: '10px', marginTop: '6px', padding: '6px 8px', borderRadius: '4px',
-                      backgroundColor: isErr ? 'rgba(255,113,108,0.1)' : 'rgba(63,255,139,0.1)',
-                      color: isErr ? '#ff716c' : '#3fff8b',
-                    }}>
-                      {msg}
-                    </div>
-                  );
-                })()}
-              </div>
+              )}
             </Card>
           );
         })}
