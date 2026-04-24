@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useMapStore } from '../store/mapStore';
 import { useBikeStore } from '../store/bikeStore';
+import { useTripStore } from '../store/tripStore';
 import { processGPSFix } from '../services/gps/GPSFilterEngine';
 
 /**
@@ -56,12 +57,11 @@ export function useGeolocation() {
           store.setGpsSpeed(pos.coords.speed);
         }
 
-        // GPS fallback: update bikeStore speed/distance when BLE not connected
-        // This makes all dashboard widgets show GPS data automatically
+        // GPS fallback: update bikeStore speed when BLE not connected AND trip is running
+        // Only during active ride — prevents speed showing when idle
         const bike = useBikeStore.getState();
-        if (bike.ble_status !== 'connected' || bike.speed_kmh === 0) {
+        if (useTripStore.getState().state === 'running' && (bike.ble_status !== 'connected' || bike.speed_kmh === 0)) {
           if (gpsSpeedKmh > 0) bike.setSpeed(gpsSpeedKmh);
-          // Distance is tracked via mapStore.gpsDistanceKm (see setPosition)
         }
 
         // Update live elevation gain in bikeStore

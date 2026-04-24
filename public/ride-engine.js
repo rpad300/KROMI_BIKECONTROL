@@ -16,7 +16,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    Google Maps Loader  (MUST be global — referenced in script callback URL)
    ═══════════════════════════════════════════════════════════════════════════════ */
-var MAPS_KEY = 'AIzaSyCEc91kCV1y-EjmZtyhDCvNxy6OjFUdRQU';
+var MAPS_KEY = 'AIzaSyBip-WjHT8ZEJ4sWtYPH0pfUwwj9VAsZFE';
 var _mapsPromise = null;
 
 function loadGoogleMaps() {

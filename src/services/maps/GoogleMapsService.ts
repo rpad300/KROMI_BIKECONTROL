@@ -14,9 +14,16 @@ export async function initGoogleMaps(): Promise<void> {
   const loader = new Loader({
     apiKey,
     version: 'weekly',
-    libraries: ['geometry', 'places', 'visualization'],
+    libraries: ['geometry', 'places'],
     language: 'pt',
   });
+
+  // Detect Maps auth/billing failures
+  (window as any).gm_authFailure = () => {
+    const msg = '[Maps] gm_authFailure — billing not enabled or API key invalid';
+    console.error(msg);
+    if ((window as any).__dlog) (window as any).__dlog(msg, 'error');
+  };
 
   await loader.load();
   mapsLoaded = true;
