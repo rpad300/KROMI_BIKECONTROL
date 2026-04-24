@@ -284,6 +284,7 @@ class SensorManager(private val context: Context) {
                     })
                 }
                 "2A26" -> { // Firmware Revision
+                    if (data.isEmpty()) return
                     val fw = String(data).trim()
                     Log.i(TAG, "$sensorKey firmware: $fw")
                     onData?.invoke(JSONObject().apply {

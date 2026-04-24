@@ -259,6 +259,10 @@ class BLEManager(private val context: Context) {
                     onDataReceived?.invoke(JSONObject().put("type", "disconnected"))
                     onStatusChanged?.invoke("Disconnected")
 
+                    // Clear pending queues to prevent memory leak across reconnections
+                    pendingNotifications.clear()
+                    pendingReads.clear()
+
                     // Auto-reconnect after 3s if not intentionally disconnected
                     if (shouldAutoReconnect && lastConnectedDevice != null) {
                         Log.i(TAG, "★ Auto-reconnect in 3s to ${lastConnectedDevice?.name}")
@@ -744,6 +748,10 @@ class BLEManager(private val context: Context) {
                                 }
                                 0x42 -> {
                                     // SENSOR/ESHIFT DATA (indexTwo) — from resolveTd23Data decompilation
+                                    if (data.size < 19) {
+                                        Log.w(TAG, "FC23 cmd42 packet too short: ${data.size}")
+                                        return
+                                    }
                                     // byte[7] (raw offset, = extracted[5]) contains eShift gear info:
                                     //   bits 5-7: front gear level (0-7)
                                     //   bits 0-4: rear gear level (0-31)
@@ -831,6 +839,10 @@ class BLEManager(private val context: Context) {
                                 val keyIdx = data[18].toInt() and 0xFF
                                 val aesBlock = data.copyOfRange(2, 18)
                                 val dec = GEVCrypto.decrypt(aesBlock, keyIdx)
+                                if (dec.isEmpty()) {
+                                    Log.w(TAG, "SG21 decryption returned empty")
+                                    return
+                                }
                                 val dHex = dec.joinToString("") { "%02x".format(it) }
                                 Log.i(TAG, "★ SG21 decrypted K$keyIdx: $dHex")
 
@@ -1063,6 +1075,10 @@ class BLEManager(private val context: Context) {
                                             .put("hex", fullDec)
                                             .put("chunk", rideDataAccum.size / 14 + 1))
                                         if (rideDataPending) {
+                                            if (dec.size < 16) {
+                                                Log.w(TAG, "FC21 ride data too short: ${dec.size}")
+                                                return
+                                            }
                                             val chunk = dec.copyOfRange(2, 16)
                                             for (b in chunk) rideDataAccum.add(b)
                                             Log.i(TAG, "★ RIDE_DATA chunk: ${chunk.joinToString("") { "%02x".format(it) }} (total=${rideDataAccum.size}/28)")
