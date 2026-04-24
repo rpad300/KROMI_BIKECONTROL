@@ -239,16 +239,7 @@ function loadGoogleMaps() {
     <div class="gallery-grid" id="gallery-grid"></div>
   </section>
 
-  <!-- CTA -->
-  <section class="cta-section" data-reveal aria-label="Call to action">
-    <div class="cta-inner">
-      <div class="cta-title" id="cta-title">Junta-te a esta pedalada</div>
-      <div class="cta-sub">Descarrega a app KROMI BikeControl e faz parte da comunidade. Pedaladas em grupo, leaderboards, e muito mais.</div>
-      <a class="cta-btn" href="https://www.kromi.online" target="_blank" rel="noopener">Abrir KROMI BikeControl</a>
-    </div>
-  </section>
-
-  <!-- Footer -->
+  <!-- Footer (extra bottom padding for live-bar) -->
   <footer class="ride-footer">
     <div class="footer-inner">
       <div class="footer-brand">
@@ -276,11 +267,15 @@ function loadGoogleMaps() {
   <div class="live-bar" id="live-bar" style="display:none" role="banner" aria-label="Live tracking">
     <div class="live-bar-inner">
       <span class="live-dot" id="live-bar-dot"></span>
-      <div>
+      <div style="flex:1;min-width:0">
         <span class="live-bar-text" id="live-bar-text">Acompanhar em tempo real</span>
         <span class="live-bar-sub" id="live-bar-sub"></span>
+        <span class="live-bar-sub" id="live-bar-participants" style="display:none"></span>
       </div>
-      <a class="live-bar-btn" id="live-bar-link" href="#" target="_blank" rel="noopener">Ver Live Tracking</a>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="live-bar-btn" id="btn-join-bar" style="display:none;background:var(--accent);color:#000;border:none;cursor:pointer" onclick="joinRidePublic()">Juntar-me</button>
+        <a class="live-bar-btn" id="live-bar-link" href="#" target="_blank" rel="noopener">Ver Live Tracking</a>
+      </div>
     </div>
   </div>
 </div>

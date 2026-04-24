@@ -1,10 +1,14 @@
 ble-bridge-android/
+APKRIDECONTROL/
 node_modules/
 .git/
 .claude/
 .superpowers/
 *.apk
+*.dex
+*.dat
 kromi-doc/
+.kromi-doc-index.json
 claude-code-skills/
 claude-code-blueprint/
 docs/

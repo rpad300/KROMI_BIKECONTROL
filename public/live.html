@@ -248,10 +248,47 @@ let photoMarkers = [];
 async function init() {
   const params = new URLSearchParams(window.location.search);
   const token = params.get('t');
+  const rideId = params.get('ride') || params.get('id');
 
-  if (!token) {
+  if (!token && !rideId) {
     showError('Link invalido', 'Este link nao contem um token de tracking valido.');
     return;
+  }
+
+  // If ?ride= param, find the creator's tracking token and redirect
+  if (!token && rideId) {
+    try {
+      // Get ride creator
+      const rideRes = await fetch(
+        `${SB_URL}/rest/v1/club_rides?id=eq.${encodeURIComponent(rideId)}&select=created_by&limit=1`,
+        { headers: sbHeaders }
+      );
+      const rides = await rideRes.json();
+      const creatorId = rides?.[0]?.created_by;
+
+      if (creatorId) {
+        // Find creator's tracking token from emergency_profiles
+        const profRes = await fetch(
+          `${SB_URL}/rest/v1/emergency_profiles?user_id=eq.${creatorId}&active=eq.true&select=tracking_token&limit=1`,
+          { headers: sbHeaders }
+        );
+        const profs = await profRes.json();
+        const creatorToken = profs?.[0]?.tracking_token;
+
+        if (creatorToken) {
+          // Redirect to the creator's live tracking page — it handles "no session" natively
+          window.location.replace(`/live.html?t=${encodeURIComponent(creatorToken)}`);
+          return;
+        }
+      }
+
+      showError('Tracking nao disponivel', 'O criador desta ride ainda nao tem tracking configurado.');
+      return;
+    } catch (err) {
+      console.error('Ride lookup error:', err);
+      showError('Erro ao carregar', 'Nao foi possivel carregar os dados desta pedalada.');
+      return;
+    }
   }
 
   try {

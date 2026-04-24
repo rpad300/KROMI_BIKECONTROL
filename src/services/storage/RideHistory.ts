@@ -461,9 +461,14 @@ class RideSessionManager {
 
     this.snapshotCount++;
 
+    // GPS fallbacks when BLE not connected
+    const hasBLE = bike.ble_status === 'connected' && bike.speed_kmh > 0;
+    const effectiveSpeed = hasBLE ? bike.speed_kmh : (map.speed != null ? map.speed * 3.6 : 0);
+    const effectiveDistance = hasBLE ? bike.distance_km : map.gpsDistanceKm;
+
     // Update in-memory metrics
-    this.metrics.distance_km = Math.max(this.metrics.distance_km, bike.distance_km);
-    this.metrics.speed_max = Math.max(this.metrics.speed_max, bike.speed_kmh);
+    this.metrics.distance_km = Math.max(this.metrics.distance_km, effectiveDistance);
+    this.metrics.speed_max = Math.max(this.metrics.speed_max, effectiveSpeed);
     if (bike.power_watts > 0) {
       this.metrics.power_sum += bike.power_watts;
       this.metrics.power_count++;
@@ -489,12 +494,12 @@ class RideSessionManager {
       altitude_m: map.altitude,
       heading: map.heading,
       gps_accuracy: map.accuracy,
-      speed_kmh: bike.speed_kmh,
+      speed_kmh: effectiveSpeed,
       cadence_rpm: bike.cadence_rpm,
       power_watts: bike.power_watts,
       battery_pct: bike.battery_percent,
       assist_mode: bike.assist_mode,
-      distance_km: bike.distance_km,
+      distance_km: effectiveDistance,
       hr_bpm: bike.hr_bpm,
       hr_zone: bike.hr_zone,
       gear: bike.gear,

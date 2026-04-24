@@ -21,6 +21,9 @@ interface MapState {
   accuracyMin: number;
   accuracyMax: number;
 
+  // GPS-derived distance (for rides without BLE)
+  gpsDistanceKm: number;
+
   // Actions
   setPosition: (lat: number, lng: number, heading: number, accuracy: number) => void;
   setAltitude: (alt: number | null, raw?: number | null) => void;
@@ -29,6 +32,7 @@ interface MapState {
   setGpsError: (error: string | null) => void;
   setGpsQuality: (quality: 'good' | 'degraded' | 'poor') => void;
   resetAccuracyStats: () => void;
+  resetGpsDistance: () => void;
 }
 
 export const useMapStore = create<MapState>((set) => ({
@@ -46,15 +50,30 @@ export const useMapStore = create<MapState>((set) => ({
   accuracySamples: 0,
   accuracyMin: 999,
   accuracyMax: 0,
+  gpsDistanceKm: 0,
 
   setPosition: (lat, lng, heading, accuracy) =>
-    set((s) => ({
-      latitude: lat, longitude: lng, heading, accuracy,
-      accuracySum: s.accuracySum + accuracy,
-      accuracySamples: s.accuracySamples + 1,
-      accuracyMin: Math.min(s.accuracyMin, accuracy),
-      accuracyMax: Math.max(s.accuracyMax, accuracy),
-    })),
+    set((s) => {
+      // Accumulate GPS distance via Haversine
+      let addedKm = 0;
+      if (s.latitude !== 0 && s.longitude !== 0 && accuracy < 30) {
+        const R = 6371;
+        const dLat = (lat - s.latitude) * Math.PI / 180;
+        const dLon = (lng - s.longitude) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(s.latitude * Math.PI / 180) * Math.cos(lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+        addedKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        // Reject jumps > 500m (GPS glitch)
+        if (addedKm > 0.5) addedKm = 0;
+      }
+      return {
+        latitude: lat, longitude: lng, heading, accuracy,
+        accuracySum: s.accuracySum + accuracy,
+        accuracySamples: s.accuracySamples + 1,
+        accuracyMin: Math.min(s.accuracyMin, accuracy),
+        accuracyMax: Math.max(s.accuracyMax, accuracy),
+        gpsDistanceKm: s.gpsDistanceKm + addedKm,
+      };
+    }),
 
   setAltitude: (alt, raw) => set({ altitude: alt, ...(raw !== undefined ? { rawAltitude: raw } : {}) }),
 
@@ -67,6 +86,8 @@ export const useMapStore = create<MapState>((set) => ({
   setGpsQuality: (quality) => set({ gpsQuality: quality }),
 
   resetAccuracyStats: () => set({ accuracySum: 0, accuracySamples: 0, accuracyMin: 999, accuracyMax: 0 }),
+
+  resetGpsDistance: () => set({ gpsDistanceKm: 0 }),
 }));
 
 // Expose getter for dlog (no React dependency)

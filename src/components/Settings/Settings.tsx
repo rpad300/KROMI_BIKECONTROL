@@ -34,7 +34,7 @@ import { importKomootRoute } from '../../services/maps/KomootService';
 import { useRouteStore } from '../../store/routeStore';
 import { parseGPXFile } from '../../services/routes/GPXParser';
 import { saveRoute, listRoutes, deleteRoute } from '../../services/routes/RouteService';
-import { supaFetch, supaGet } from '../../lib/supaFetch';
+import { supaFetch, supaGet, supaInvokeFunction } from '../../lib/supaFetch';
 import { analyzeRoute } from '../../services/routes/PreRideAnalysis';
 import { ComplianceSettings as ComplianceSettingsSection } from './ComplianceSettings';
 import { isLiveBroadcasting, getShareUrl } from '../../services/tracking/LiveTrackingService';
@@ -450,6 +450,8 @@ function ClubPage() {
   const [rideGpxFile, setRideGpxFile] = useState<File | null>(null);
   const [rideGpxName, setRideGpxName] = useState('');
   const rideGpxRef = useRef<HTMLInputElement>(null);
+  const [enrichingRideId, setEnrichingRideId] = useState<string | null>(null);
+  const [enrichResult, setEnrichResult] = useState<Record<string, string>>({});
   const [tab, setTab] = useState('geral');
   const [userRole, setUserRole] = useState('member');
   const [clubSlug, setClubSlug] = useState('');
@@ -585,7 +587,7 @@ function ClubPage() {
         body: JSON.stringify({
           club_ride_id: rideId,
           user_id: userId,
-          status: 'confirmed',
+          status: 'joined',
           display_name: profile.name || 'Rider',
           tracking_token: token,
           phone: profile.phone || null,
@@ -644,6 +646,23 @@ function ClubPage() {
       await supaFetch(`/rest/v1/club_rides?id=eq.${rideId}`, { method: 'DELETE' });
       setRides(prev => prev.filter(r => r.id !== rideId));
     } catch {}
+  };
+
+  const enrichRideAI = async (rideId: string) => {
+    setEnrichingRideId(rideId);
+    setEnrichResult(prev => ({ ...prev, [rideId]: '' }));
+    try {
+      const res = await supaInvokeFunction<{ cached?: boolean; enrichment?: unknown; error?: string }>('ride-enrich', { ride_id: rideId });
+      if (res.error) {
+        setEnrichResult(prev => ({ ...prev, [rideId]: `Erro: ${res.error}` }));
+      } else {
+        setEnrichResult(prev => ({ ...prev, [rideId]: res.cached ? 'Conteudo AI ja existia (cache)' : 'Conteudo AI gerado com sucesso!' }));
+      }
+    } catch (err) {
+      setEnrichResult(prev => ({ ...prev, [rideId]: `Erro: ${(err as Error).message}` }));
+    } finally {
+      setEnrichingRideId(null);
+    }
   };
 
   // Has club — show club info
@@ -779,6 +798,24 @@ function ClubPage() {
                       border: '1px solid rgba(63,255,139,0.3)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', borderRadius: '4px',
                     }}>Iniciar</button>
                   )}
+                  {isCreator && ride.route_gpx && (
+                    <button
+                      onClick={() => enrichRideAI(ride.id)}
+                      disabled={enrichingRideId === ride.id}
+                      style={{
+                        padding: '8px 10px', backgroundColor: 'rgba(233,102,255,0.15)', color: '#e966ff',
+                        border: '1px solid rgba(233,102,255,0.3)', fontWeight: 700, fontSize: '10px',
+                        cursor: enrichingRideId === ride.id ? 'wait' : 'pointer', borderRadius: '4px',
+                        opacity: enrichingRideId === ride.id ? 0.6 : 1,
+                        display: 'flex', alignItems: 'center', gap: '4px',
+                      }}>
+                      {enrichingRideId === ride.id ? (
+                        <><span className="material-symbols-outlined" style={{ fontSize: '13px', animation: 'spin 1s linear infinite' }}>progress_activity</span> A gerar...</>
+                      ) : (
+                        <><span className="material-symbols-outlined" style={{ fontSize: '13px' }}>auto_awesome</span> AI</>
+                      )}
+                    </button>
+                  )}
                   {isCreator && (
                     <button onClick={() => { if (confirm('Apagar esta ride?')) deleteRide(ride.id); }} style={{
                       padding: '8px', backgroundColor: '#262626', color: '#ff716c',
@@ -788,6 +825,19 @@ function ClubPage() {
                     </button>
                   )}
                 </div>
+                {enrichResult[ride.id] && (() => {
+                  const msg = enrichResult[ride.id] ?? '';
+                  const isErr = msg.startsWith('Erro');
+                  return (
+                    <div style={{
+                      fontSize: '10px', marginTop: '6px', padding: '6px 8px', borderRadius: '4px',
+                      backgroundColor: isErr ? 'rgba(255,113,108,0.1)' : 'rgba(63,255,139,0.1)',
+                      color: isErr ? '#ff716c' : '#3fff8b',
+                    }}>
+                      {msg}
+                    </div>
+                  );
+                })()}
               </div>
             </Card>
           );

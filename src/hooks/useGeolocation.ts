@@ -27,7 +27,11 @@ export function useGeolocation() {
         store.setGpsActive(true);
         store.setGpsError(null);
 
-        const bikeSpeed = useBikeStore.getState().speed_kmh;
+        // Use BLE speed if available, fallback to GPS speed for ride recording without bike
+        const bleSpeed = useBikeStore.getState().speed_kmh;
+        const gpsSpeedMs = pos.coords.speed;
+        const gpsSpeedKmh = gpsSpeedMs != null && gpsSpeedMs >= 0 ? gpsSpeedMs * 3.6 : 0;
+        const bikeSpeed = bleSpeed > 0 ? bleSpeed : gpsSpeedKmh;
 
         const result = processGPSFix(
           {
@@ -50,6 +54,14 @@ export function useGeolocation() {
         }
         if (pos.coords.speed !== null) {
           store.setGpsSpeed(pos.coords.speed);
+        }
+
+        // GPS fallback: update bikeStore speed/distance when BLE not connected
+        // This makes all dashboard widgets show GPS data automatically
+        const bike = useBikeStore.getState();
+        if (bike.ble_status !== 'connected' || bike.speed_kmh === 0) {
+          if (gpsSpeedKmh > 0) bike.setSpeed(gpsSpeedKmh);
+          // Distance is tracked via mapStore.gpsDistanceKm (see setPosition)
         }
 
         // Update live elevation gain in bikeStore

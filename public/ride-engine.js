@@ -495,39 +495,83 @@ function renderMap(gpxPoints) {
     var container = document.getElementById('ride-map');
     if (!container) return;
 
-    var map = new google.maps.Map(container, {
-      mapTypeId: 'hybrid',
-      zoomControl: true,
-      scrollwheel: false,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: false
-    });
+    try {
+      var map = new google.maps.Map(container, {
+        mapTypeId: 'hybrid',
+        zoomControl: true,
+        scrollwheel: false,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false
+      });
 
-    google.maps.event.addListenerOnce(map, 'click', function () {
-      map.setOptions({ scrollwheel: true });
-    });
+      // Detect billing error and fallback to Embed API
+      google.maps.event.addListenerOnce(map, 'tilesloaded', function () {
+        // Map loaded successfully — remove fallback if any
+        var fb = document.getElementById('map-embed-fallback');
+        if (fb) fb.remove();
+      });
 
-    var path = gpxPoints.map(function (p) { return { lat: p.lat, lng: p.lon }; });
-    var accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#3fff8b';
+      google.maps.event.addListenerOnce(map, 'click', function () {
+        map.setOptions({ scrollwheel: true });
+      });
 
-    new google.maps.Polyline({ path: path, strokeColor: '#ffffff', strokeWeight: 6, strokeOpacity: 0.2, map: map });
-    new google.maps.Polyline({ path: path, strokeColor: accent, strokeWeight: 3, strokeOpacity: 0.9, map: map });
+      var path = gpxPoints.map(function (p) { return { lat: p.lat, lng: p.lon }; });
+      var accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#3fff8b';
 
-    new google.maps.Marker({ position: path[0], map: map, icon: {
-      path: google.maps.SymbolPath.CIRCLE, scale: 8,
-      fillColor: '#22c55e', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 3
-    }, title: 'Partida' });
+      new google.maps.Polyline({ path: path, strokeColor: '#ffffff', strokeWeight: 6, strokeOpacity: 0.2, map: map });
+      new google.maps.Polyline({ path: path, strokeColor: accent, strokeWeight: 3, strokeOpacity: 0.9, map: map });
 
-    new google.maps.Marker({ position: path[path.length - 1], map: map, icon: {
-      path: google.maps.SymbolPath.CIRCLE, scale: 8,
-      fillColor: '#ef4444', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 3
-    }, title: 'Chegada' });
+      new google.maps.Marker({ position: path[0], map: map, icon: {
+        path: google.maps.SymbolPath.CIRCLE, scale: 8,
+        fillColor: '#22c55e', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 3
+      }, title: 'Partida' });
 
-    var bounds = new google.maps.LatLngBounds();
-    path.forEach(function (p) { bounds.extend(p); });
-    map.fitBounds(bounds, 40);
+      new google.maps.Marker({ position: path[path.length - 1], map: map, icon: {
+        path: google.maps.SymbolPath.CIRCLE, scale: 8,
+        fillColor: '#ef4444', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 3
+      }, title: 'Chegada' });
+
+      var bounds = new google.maps.LatLngBounds();
+      path.forEach(function (p) { bounds.extend(p); });
+      map.fitBounds(bounds, 40);
+
+      // Fallback after 3s if billing error shows
+      setTimeout(function () {
+        var errDivs = container.querySelectorAll('.gm-err-container, .dismissButton');
+        if (errDivs.length > 0) renderMapEmbedFallback(container, gpxPoints);
+      }, 3000);
+    } catch (e) {
+      console.warn('[ride-engine] Maps JS error, using embed fallback:', e);
+      renderMapEmbedFallback(container, gpxPoints);
+    }
   });
+}
+
+function renderMapEmbedFallback(container, gpxPoints) {
+  // Calculate center and zoom from bounding box
+  var minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+  gpxPoints.forEach(function (p) {
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+    if (p.lon < minLon) minLon = p.lon;
+    if (p.lon > maxLon) maxLon = p.lon;
+  });
+  var cLat = (minLat + maxLat) / 2;
+  var cLon = (minLon + maxLon) / 2;
+  var latSpan = maxLat - minLat;
+  var lonSpan = maxLon - minLon;
+  var span = Math.max(latSpan, lonSpan);
+  var zoom = span > 0.5 ? 9 : span > 0.2 ? 11 : span > 0.05 ? 13 : 14;
+
+  container.innerHTML = '';
+  var iframe = document.createElement('iframe');
+  iframe.id = 'map-embed-fallback';
+  iframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:12px';
+  iframe.loading = 'lazy';
+  iframe.allowFullscreen = true;
+  iframe.src = 'https://www.google.com/maps/embed/v1/view?key=' + MAPS_KEY + '&center=' + cLat.toFixed(6) + ',' + cLon.toFixed(6) + '&zoom=' + zoom + '&maptype=satellite';
+  container.appendChild(iframe);
 }
 
 // ── Render Altimetry SVG ─────────────────────────────────────────────────────
@@ -1040,16 +1084,21 @@ function generatePOIs(gpxPoints, gpxProfile, data) {
   return pois;
 }
 
-// ── Enrich POIs with Street View images ─────────────────────────────────────
+// ── Enrich POIs with map images ──────────────────────────────────────────────
 function enrichPOIsWithImages(pois) {
+  var typeColors = { start: '#22c55e', end: '#ef4444', summit: '#a78bfa', valley: '#3b82f6', midpoint: '#fbbf24', waypoint: '#f97316' };
+  var typeLabels = { start: 'PARTIDA', end: 'CHEGADA', summit: 'CUME', valley: 'VALE', midpoint: 'MEIO', waypoint: 'WAYPOINT' };
   pois.forEach(function (poi) {
     if (!poi.lat || !poi.lon) return;
     var imgEl = document.getElementById('poi-img-' + poi._idx);
-    if (imgEl) {
-      imgEl.src = 'https://maps.googleapis.com/maps/api/staticmap?center=' + poi.lat + ',' + poi.lon + '&zoom=14&size=400x200&maptype=hybrid&markers=color:green%7C' + poi.lat + ',' + poi.lon + '&key=' + MAPS_KEY;
-      imgEl.style.display = 'block';
-      imgEl.onerror = function () { this.style.display = 'none'; };
-    }
+    if (!imgEl) return;
+    // Try Maps Embed API (works with referrer-restricted keys)
+    var iframe = document.createElement('iframe');
+    iframe.className = 'poi-img';
+    iframe.style.cssText = 'width:100%;height:160px;border:none;border-radius:8px 8px 0 0;display:block;pointer-events:none';
+    iframe.loading = 'lazy';
+    iframe.src = 'https://www.google.com/maps/embed/v1/view?key=' + MAPS_KEY + '&center=' + poi.lat + ',' + poi.lon + '&zoom=14&maptype=satellite';
+    imgEl.parentNode.replaceChild(iframe, imgEl);
   });
 }
 
@@ -2010,12 +2059,19 @@ async function main() {
       $('btn-gpx').style.display = '';
     }
 
-    // Street View hero background (when no club banner)
-    if (gpxPoints && gpxPoints.length > 0 && !(club && club.banner_url)) {
-      var startPt = gpxPoints[0];
-      var heroImg = 'https://maps.googleapis.com/maps/api/staticmap?center=' + startPt.lat + ',' + startPt.lon + '&zoom=12&size=1200x600&maptype=hybrid&key=' + MAPS_KEY;
-      var heroSection = $('hero-section');
-      if (heroSection) {
+    // Hero background: AI image (Nano Banana) > club banner > Static Maps fallback
+    var heroSection = $('hero-section');
+    if (heroSection && !(club && club.banner_url)) {
+      var rideDataHero = data.ride_data || {};
+      if (rideDataHero.hero_image) {
+        // AI-generated hero image from Nano Banana
+        heroSection.style.backgroundImage = 'linear-gradient(180deg, rgba(14,14,14,0.2) 0%, rgba(14,14,14,0.6) 40%, var(--bg) 100%), url(' + rideDataHero.hero_image + ')';
+        heroSection.style.backgroundSize = 'cover';
+        heroSection.style.backgroundPosition = 'center 30%';
+      } else if (gpxPoints && gpxPoints.length > 0) {
+        // Fallback: satellite map of start point
+        var startPt = gpxPoints[0];
+        var heroImg = 'https://maps.googleapis.com/maps/api/staticmap?center=' + startPt.lat + ',' + startPt.lon + '&zoom=12&size=1200x600&maptype=hybrid&key=' + MAPS_KEY;
         heroSection.style.backgroundImage = 'linear-gradient(180deg, rgba(14,14,14,0.3) 0%, rgba(14,14,14,0.7) 50%, var(--bg) 100%), url(' + heroImg + ')';
         heroSection.style.backgroundSize = 'cover';
         heroSection.style.backgroundPosition = 'center';
@@ -2107,10 +2163,230 @@ async function main() {
     showApp();
     initReveal();
 
+    // Load participants for CTA section
+    loadParticipants(data);
+
   } catch (err) {
     console.error('[ride.html]', err);
     showError(err.message || 'Erro ao carregar dados.');
   }
+}
+
+// ── Participants + Join ──────────────────────────────────────────────────────
+function loadParticipants(data) {
+  var rideId = data.ride_id || data.id;
+  if (!rideId) return;
+
+  sbGet('club_ride_participants?club_ride_id=eq.' + rideId + '&select=display_name,status')
+    .then(function (parts) {
+      if (!Array.isArray(parts)) return;
+
+      // Show in live-bar
+      var barParts = $('live-bar-participants');
+      if (barParts && parts.length > 0) {
+        barParts.style.display = '';
+        barParts.textContent = parts.length + ' participante' + (parts.length !== 1 ? 's' : '') + ' confirmados';
+      }
+
+      // Participants are shown in live-bar only (CTA section removed)
+    })
+    .catch(function () {});
+
+  // Show join button in live-bar
+  var joinBar = $('btn-join-bar');
+  if (joinBar) joinBar.style.display = '';
+}
+
+// ── Join Ride (public) — OTP flow with auto-register + auto-join club ────────
+var _joinState = { step: 'idle', email: '', rideId: '', clubId: '' };
+
+window.joinRidePublic = function () {
+  var params = parseParams();
+  var rideId = params.rideId || params.postId;
+  if (!rideId) return;
+  _joinState.rideId = rideId;
+
+  // Check if already logged in
+  var authRaw = null;
+  try { authRaw = localStorage.getItem('kromi-auth'); } catch (e) {}
+  var auth = authRaw ? JSON.parse(authRaw) : null;
+  var jwt = auth && auth.state && auth.state.jwt;
+
+  if (jwt) {
+    // Already logged in — join directly
+    _doJoinRide(jwt, auth.state.user);
+    return;
+  }
+
+  // Show email modal
+  _showJoinModal('email');
+};
+
+function _showJoinModal(step) {
+  _joinState.step = step;
+  var existing = document.getElementById('join-modal');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'join-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+
+  var card = '<div style="background:#1a1919;border:1px solid #333;border-radius:16px;padding:28px 24px;max-width:380px;width:90%;text-align:center">';
+  card += '<div style="font-size:11px;font-weight:900;letter-spacing:2px;color:#3fff8b;margin-bottom:16px">KROMI BIKECONTROL</div>';
+
+  if (step === 'email') {
+    card += '<div style="font-size:18px;font-weight:800;color:#fff;margin-bottom:6px">Juntar-me a esta Ride</div>';
+    card += '<div style="font-size:12px;color:#888;margin-bottom:20px">Insere o teu email para receberes um codigo de acesso</div>';
+    card += '<input id="join-email" type="email" placeholder="o.teu@email.com" style="width:100%;padding:14px;background:#262626;border:1px solid #444;border-radius:8px;color:#fff;font-size:15px;text-align:center;outline:none" autofocus />';
+    card += '<div id="join-error" style="color:#ff716c;font-size:11px;margin-top:8px;display:none"></div>';
+    card += '<button id="join-send-btn" onclick="_sendOTP()" style="width:100%;margin-top:14px;padding:14px;background:#3fff8b;color:#000;border:none;border-radius:8px;font-size:14px;font-weight:800;cursor:pointer">Enviar Codigo</button>';
+  } else if (step === 'otp') {
+    card += '<div style="font-size:18px;font-weight:800;color:#fff;margin-bottom:6px">Codigo de Verificacao</div>';
+    card += '<div style="font-size:12px;color:#888;margin-bottom:6px">Enviamos um codigo para</div>';
+    card += '<div style="font-size:13px;color:#3fff8b;font-weight:700;margin-bottom:20px">' + escHtml(_joinState.email) + '</div>';
+    card += '<input id="join-otp" type="text" inputmode="numeric" maxlength="6" placeholder="000000" style="width:160px;padding:14px;background:#262626;border:1px solid #444;border-radius:8px;color:#fff;font-size:28px;font-weight:900;text-align:center;letter-spacing:8px;outline:none;font-family:monospace" autofocus />';
+    card += '<div id="join-error" style="color:#ff716c;font-size:11px;margin-top:8px;display:none"></div>';
+    card += '<button id="join-verify-btn" onclick="_verifyOTP()" style="width:100%;margin-top:14px;padding:14px;background:#3fff8b;color:#000;border:none;border-radius:8px;font-size:14px;font-weight:800;cursor:pointer">Verificar</button>';
+    card += '<div onclick="_showJoinModal(\'email\')" style="margin-top:12px;font-size:11px;color:#666;cursor:pointer">Alterar email</div>';
+  } else if (step === 'success') {
+    card += '<div style="font-size:48px;margin-bottom:12px">&#127881;</div>';
+    card += '<div style="font-size:18px;font-weight:800;color:#3fff8b;margin-bottom:8px">Juntaste-te a esta Ride!</div>';
+    card += '<div style="font-size:12px;color:#888;margin-bottom:20px">Bem-vindo ao grupo. Vemo-nos no dia da pedalada.</div>';
+    card += '<button onclick="document.getElementById(\'join-modal\').remove()" style="padding:12px 32px;background:#3fff8b;color:#000;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">Fechar</button>';
+  }
+
+  card += '</div>';
+  modal.innerHTML = card;
+
+  // Close on backdrop click
+  modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+
+  document.body.appendChild(modal);
+
+  // Auto-focus + enter key
+  setTimeout(function () {
+    var input = document.getElementById('join-email') || document.getElementById('join-otp');
+    if (input) {
+      input.focus();
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          if (step === 'email') _sendOTP();
+          else if (step === 'otp') _verifyOTP();
+        }
+      });
+    }
+  }, 100);
+}
+
+window._sendOTP = function () {
+  var emailEl = document.getElementById('join-email');
+  var email = emailEl ? emailEl.value.trim().toLowerCase() : '';
+  if (!email || email.indexOf('@') < 0) {
+    _showJoinError('Email invalido');
+    return;
+  }
+  _joinState.email = email;
+
+  var btn = document.getElementById('join-send-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'A enviar...'; }
+
+  fetch(SB_URL + '/functions/v1/send-otp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': ANON_KEY },
+    body: JSON.stringify({ email: email })
+  }).then(function (r) { return r.json(); }).then(function (data) {
+    if (data.error) {
+      _showJoinError(data.error);
+      if (btn) { btn.disabled = false; btn.textContent = 'Enviar Codigo'; }
+    } else {
+      _showJoinModal('otp');
+    }
+  }).catch(function () {
+    _showJoinError('Erro de rede. Tenta novamente.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Enviar Codigo'; }
+  });
+};
+
+window._verifyOTP = function () {
+  var otpEl = document.getElementById('join-otp');
+  var code = otpEl ? otpEl.value.trim() : '';
+  if (code.length !== 6) { _showJoinError('Codigo deve ter 6 digitos'); return; }
+
+  var btn = document.getElementById('join-verify-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'A verificar...'; }
+
+  fetch(SB_URL + '/functions/v1/verify-otp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': ANON_KEY },
+    body: JSON.stringify({ email: _joinState.email, code: code })
+  }).then(function (r) { return r.json(); }).then(function (data) {
+    if (data.error) {
+      _showJoinError(data.error);
+      if (btn) { btn.disabled = false; btn.textContent = 'Verificar'; }
+      return;
+    }
+    // Success — we have JWT + user
+    var jwt = data.jwt;
+    var user = data.user;
+    if (!jwt || !user) { _showJoinError('Erro de autenticacao'); return; }
+
+    // Save session to localStorage for future visits
+    try {
+      localStorage.setItem('kromi-auth', JSON.stringify({ state: { jwt: jwt, user: user } }));
+    } catch (e) {}
+
+    // Join club + ride
+    _doJoinRide(jwt, user);
+  }).catch(function () {
+    _showJoinError('Erro de rede');
+    if (btn) { btn.disabled = false; btn.textContent = 'Verificar'; }
+  });
+};
+
+function _doJoinRide(jwt, user) {
+  var rideId = _joinState.rideId;
+  var userId = user.id;
+  var displayName = user.name || user.email || 'Rider';
+
+  // 1. Get the club_id for this ride
+  sbGet('club_rides?id=eq.' + rideId + '&select=club_id&limit=1')
+    .then(function (rides) {
+      var clubId = rides && rides[0] && rides[0].club_id;
+      if (!clubId) throw new Error('Ride not found');
+
+      // 2. Auto-join club (ignore conflict if already member)
+      return fetch(SB_URL + '/rest/v1/club_members', {
+        method: 'POST',
+        headers: { 'apikey': ANON_KEY, 'Authorization': 'Bearer ' + jwt, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ club_id: clubId, user_id: userId, display_name: displayName, role: 'member' })
+      }).then(function () {
+        // 3. Join ride
+        return fetch(SB_URL + '/rest/v1/club_ride_participants', {
+          method: 'POST',
+          headers: { 'apikey': ANON_KEY, 'Authorization': 'Bearer ' + jwt, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ club_ride_id: rideId, user_id: userId, display_name: displayName, status: 'joined' })
+        });
+      });
+    })
+    .then(function () {
+      // Show success
+      _showJoinModal('success');
+      // Update participants list
+      loadParticipants({ id: rideId, ride_id: rideId });
+      // Hide join button
+      var b2 = $('btn-join-bar'); if (b2) b2.style.display = 'none';
+    })
+    .catch(function (err) {
+      console.warn('Join error:', err);
+      // Might be duplicate — still show success
+      _showJoinModal('success');
+      loadParticipants({ id: rideId, ride_id: rideId });
+    });
+}
+
+function _showJoinError(msg) {
+  var el = document.getElementById('join-error');
+  if (el) { el.style.display = ''; el.textContent = msg; }
 }
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────

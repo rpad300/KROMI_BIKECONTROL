@@ -13,6 +13,8 @@
     }
   ],
   "rewrites": [
-    { "source": "/api/og", "destination": "/api/og.js" }
+    { "source": "/api/og", "destination": "/api/og.js" },
+    { "source": "/api/ride-og", "destination": "/api/ride-og.js" },
+    { "source": "/api/ride-hero", "destination": "/api/ride-hero.js" }
   ]
 }

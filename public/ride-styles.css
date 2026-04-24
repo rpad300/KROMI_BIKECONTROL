@@ -239,8 +239,8 @@ body {
   left: 50%;
   transform: translateX(-50%);
   z-index: 200;
-  max-width: 480px;
-  width: calc(100% - 32px);
+  max-width: 680px;
+  width: calc(100% - 24px);
   background: rgba(10,10,10,0.95);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -1018,7 +1018,7 @@ tbody tr:hover { background: rgba(255,255,255,0.02); }
 .ride-footer {
   background: var(--bg-deep);
   border-top: 1px solid var(--border);
-  padding: 48px 40px;
+  padding: 48px 40px 120px;
   margin-top: 40px;
   position: relative;
   overflow: hidden;

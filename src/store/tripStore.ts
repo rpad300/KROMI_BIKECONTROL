@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useBikeStore } from './bikeStore';
+import { useMapStore } from './mapStore';
 import { rideSessionManager } from '../services/storage/RideHistory';
 import { resetEngine } from '../services/gps/GPSFilterEngine';
 
@@ -54,6 +55,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     // Reset GPS engine synchronously before anything else (Kalman, elevation gain, etc.)
     resetEngine();
     useBikeStore.getState().setElevationGain(0);
+    useMapStore.getState().resetGpsDistance();
     const bike = useBikeStore.getState();
     const startKm = bike.trip_distance_km ?? 0;
     set({
