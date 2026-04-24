@@ -208,12 +208,14 @@ async function startBroadcasting(): Promise<void> {
     if (existing && existing.length > 0 && existing[0]) {
       // Reuse existing row — PATCH to reactivate
       _sessionId = existing[0].id;
+      const wasActive = existing[0].is_active === true;
       await supaFetch(`${SESSIONS_PATH}?id=eq.${_sessionId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           is_active: true,
-          started_at: new Date().toISOString(),
+          // Only reset started_at if session was inactive (prevents time drift on reconnect)
+          ...(wasActive ? {} : { started_at: new Date().toISOString() }),
           ended_at: null,
           rider_name: riderName,
           bike_name: bikeName,

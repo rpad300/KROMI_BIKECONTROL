@@ -2360,11 +2360,19 @@ function _doJoinRide(jwt, user) {
         headers: { 'apikey': ANON_KEY, 'Authorization': 'Bearer ' + jwt, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ club_id: clubId, user_id: userId, display_name: displayName, role: 'member' })
       }).then(function () {
-        // 3. Join ride
-        return fetch(SB_URL + '/rest/v1/club_ride_participants', {
-          method: 'POST',
-          headers: { 'apikey': ANON_KEY, 'Authorization': 'Bearer ' + jwt, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ club_ride_id: rideId, user_id: userId, display_name: displayName, status: 'joined' })
+        // 3. Get user's tracking token (from emergency_profiles)
+        return fetch(SB_URL + '/rest/v1/emergency_profiles?user_id=eq.' + userId + '&active=eq.true&select=tracking_token&limit=1', {
+          headers: { 'apikey': ANON_KEY, 'Authorization': 'Bearer ' + jwt }
+        }).then(function (r) { return r.json(); }).then(function (profiles) {
+          var trackingToken = (profiles && profiles[0]) ? profiles[0].tracking_token : null;
+          // 4. Join ride with tracking token
+          var body = { club_ride_id: rideId, user_id: userId, display_name: displayName, status: 'joined' };
+          if (trackingToken) body.tracking_token = trackingToken;
+          return fetch(SB_URL + '/rest/v1/club_ride_participants', {
+            method: 'POST',
+            headers: { 'apikey': ANON_KEY, 'Authorization': 'Bearer ' + jwt, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify(body)
+          });
         });
       });
     })

@@ -393,6 +393,16 @@ async function init() {
       pollInterval = setInterval(() => pollUpdates(sessionData), 10000);
     }
 
+    // 9. Pause polling when tab hidden, resume when visible (saves battery/data)
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) {
+        if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+      } else if (sessionData && sessionData.is_active && !pollInterval) {
+        pollUpdates(sessionData);
+        pollInterval = setInterval(() => pollUpdates(sessionData), 10000);
+      }
+    });
+
   } catch (err) {
     console.error('Init error:', err);
     showError('Erro de ligacao', 'Nao foi possivel carregar os dados de tracking. Tente novamente.');
