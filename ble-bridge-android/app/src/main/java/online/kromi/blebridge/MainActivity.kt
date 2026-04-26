@@ -193,20 +193,14 @@ class MainActivity : AppCompatActivity() {
             ble.testSGWrite()
         }
 
-        // Start foreground service
-        val serviceIntent = Intent(this, BLEBridgeService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
+        // Start foreground service only if BLE permissions already granted
+        // (if not, service starts after user grants permissions in onRequestPermissionsResult)
+        if (hasBLEPermissions()) {
+            startBridgeService()
         }
 
         ContextCompat.registerReceiver(this, statusReceiver, IntentFilter("online.kromi.blebridge.STATUS"),
             ContextCompat.RECEIVER_NOT_EXPORTED)
-
-        val versionName = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }
-        appendLog("INIT", "BLE Bridge v$versionName started")
-        appendLog("WS", "Server on ws://localhost:8765")
 
         // Setup service logging after a short delay (service may not be ready immediately)
         handler.postDelayed({ setupServiceLogging() }, 500)
@@ -670,6 +664,33 @@ class MainActivity : AppCompatActivity() {
             logLines.subList(0, excess).clear()
         }
         scheduleLogUpdate()
+    }
+
+    private fun hasBLEPermissions(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        }
+        return true
+    }
+
+    private fun startBridgeService() {
+        if (BLEBridgeService.instance != null) return // Already running
+        val serviceIntent = Intent(this, BLEBridgeService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+        val versionName = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }
+        appendLog("INIT", "BLE Bridge v$versionName started")
+        appendLog("WS", "Server on ws://localhost:8765")
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1 && hasBLEPermissions()) {
+            startBridgeService()
+        }
     }
 
     private fun requestPermissions() {

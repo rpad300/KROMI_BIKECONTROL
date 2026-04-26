@@ -2,12 +2,14 @@ package online.kromi.blebridge
 
 import android.app.*
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.IBinder
 import android.os.Build
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import org.json.JSONObject
 
 class BLEBridgeService : Service() {
@@ -38,7 +40,16 @@ class BLEBridgeService : Service() {
         createNotificationChannel()
 
         // Start foreground FIRST to avoid ForegroundServiceDidNotStartInTimeException
-        startForeground(NOTIFICATION_ID, buildNotification("Initializing..."))
+        // Android 14+ (SDK 34+): FGS type connectedDevice requires BLE permissions granted
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification("Initializing..."))
+        } catch (e: SecurityException) {
+            Log.e(TAG, "FGS start failed — BLE permissions not yet granted: ${e.message}")
+            // Fallback: start without foreground service type (will be killed by OS eventually)
+            // The user needs to grant permissions first via MainActivity
+            stopSelf()
+            return
+        }
 
         bleManager = BLEManager(this)
         kromiCore = KromiCore(bleManager)
