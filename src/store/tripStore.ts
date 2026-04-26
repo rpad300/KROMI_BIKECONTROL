@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { useBikeStore } from './bikeStore';
 import { useMapStore } from './mapStore';
 import { rideSessionManager } from '../services/storage/RideHistory';
@@ -37,7 +38,7 @@ interface TripStore {
 const AUTOPAUSE_SPEED = 1.5; // km/h — below this = paused
 const AUTOPAUSE_DELAY = 5;   // seconds of zero speed before auto-pause
 
-export const useTripStore = create<TripStore>()((set, get) => ({
+export const useTripStore = create<TripStore>()(persist((set, get) => ({
   state: 'idle',
   startedAt: 0,
   movingTime: 0,
@@ -147,5 +148,33 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     const avgSpeed = movingTime > 0 ? (tripKm / (movingTime / 3600)) : 0;
 
     set({ totalTime, movingTime, tripKm, autoPaused, autoPausedAt, maxSpeed, avgSpeed });
+  },
+}), {
+  name: 'kromi-trip',
+  storage: createJSONStorage(() => localStorage),
+  // Only persist state fields, not actions
+  partialize: (state) => ({
+    state: state.state,
+    startedAt: state.startedAt,
+    movingTime: state.movingTime,
+    totalTime: state.totalTime,
+    tripKm: state.tripKm,
+    startKm: state.startKm,
+    autoPaused: state.autoPaused,
+    autoPausedAt: state.autoPausedAt,
+    maxSpeed: state.maxSpeed,
+    avgSpeed: state.avgSpeed,
+    lastSessionId: state.lastSessionId,
+    batteryStart: state.batteryStart,
+  }),
+  // On rehydrate: if state was 'running', resume the ride session
+  onRehydrateStorage: () => (state) => {
+    if (state?.state === 'running' && state.startedAt > 0) {
+      console.info('[TripStore] Resuming active ride from', new Date(state.startedAt).toLocaleTimeString());
+      // Re-attach ride session manager (it checks IndexedDB for active session)
+      rideSessionManager.resumeSession().catch((err) => {
+        console.warn('[TripStore] Could not resume session:', err);
+      });
+    }
   },
 }));

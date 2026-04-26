@@ -96,6 +96,31 @@ class RideSessionManager {
   /** Get current session ID (for reading snapshots after stop) */
   getSessionId(): string | null { return this.sessionId; }
 
+  /** Resume an active session after app restart (rehydrate from IndexedDB) */
+  async resumeSession(): Promise<void> {
+    if (this.sessionId) return; // Already has a session
+    try {
+      const store = (await import('./LocalRideStore')).localRideStore;
+      const sessions = await store.getSessionList();
+      const active = sessions.find((s: any) => s.status === 'active');
+      if (active) {
+        this.sessionId = active.id;
+        this.startedAt = active.started_at;
+        this.metrics = active.metrics || this.emptyMetrics();
+        this.snapshotCount = 0; // Will continue counting from here
+        // Re-subscribe to GPS callbacks for continued recording
+        import('../../hooks/useGeolocation').then(({ onShouldRecord }) => {
+          this._gpsUnsub = onShouldRecord(() => this.captureSnapshot());
+        });
+        // Re-start flush interval
+        this.flushIntervalId = setInterval(() => this.flushSnapshots(), 10_000);
+        console.info(`[RideHistory] Resumed session ${this.sessionId} (started ${new Date(this.startedAt).toLocaleTimeString()})`);
+      }
+    } catch (err) {
+      console.warn('[RideHistory] Resume failed:', err);
+    }
+  }
+
   /** Get the in-memory metrics */
   getMetrics(): PersistedMetrics { return { ...this.metrics }; }
 
