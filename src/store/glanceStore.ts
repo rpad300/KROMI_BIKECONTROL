@@ -29,15 +29,19 @@ export const useGlanceStore = create<GlanceState>()((set, get) => ({
     const s = get();
     if (!s.enabled) return;
 
-    // Only tick during active ride — lazy import to avoid circular dependency
     const tripMod = getTripStore();
-    if (!tripMod || tripMod.useTripStore.getState().state !== 'running') {
+    const tripState = tripMod?.useTripStore.getState().state;
+
+    // During active or paused ride: NEVER activate glance
+    // Rider has hands on handlebars — glance is only for idle/parked between rides
+    if (tripState === 'running' || tripState === 'paused') {
       if (s.idleCounterS !== 0 || s.isGlanceActive) {
         set({ idleCounterS: 0, isGlanceActive: false });
       }
       return;
     }
 
+    // No active ride (idle/finished) — count idle time for glance activation
     const next = s.idleCounterS + 1;
     set({
       idleCounterS: next,

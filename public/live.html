@@ -1682,7 +1682,8 @@ function renderSparklines(points) {
   const speeds = points.map(p => p.speed_kmh || 0);
   const hrs = points.map(p => p.heart_rate || p.hr_bpm || 0);
   const maxSpd = Math.max(...speeds, 1);
-  const maxHr = Math.max(...hrs, 1);
+  const hasHrData = hrs.some(h => h > 0);
+  const maxHr = hasHrData ? Math.max(...hrs) : 0;
 
   let spdPath = '', hrPath = '';
   points.forEach((p, i) => {
@@ -1690,7 +1691,7 @@ function renderSparklines(points) {
     const ySpd = h - (speeds[i] / maxSpd) * h;
     const yHr = h - (hrs[i] / maxHr) * h;
     spdPath += (i === 0 ? 'M' : 'L') + ` ${x.toFixed(1)} ${ySpd.toFixed(1)}`;
-    if (hrs[i] > 0) hrPath += (i === 0 || (i > 0 && hrs[i-1] === 0) ? 'M' : 'L') + ` ${x.toFixed(1)} ${yHr.toFixed(1)}`;
+    if (hasHrData && hrs[i] > 0) hrPath += (i === 0 || (i > 0 && hrs[i-1] === 0) ? 'M' : 'L') + ` ${x.toFixed(1)} ${yHr.toFixed(1)}`;
   });
 
   let html = `<div class="route-section">`;
