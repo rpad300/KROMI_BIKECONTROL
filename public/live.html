@@ -267,17 +267,30 @@ async function init() {
       const creatorId = rides?.[0]?.created_by;
 
       if (creatorId) {
-        // Find creator's tracking token from emergency_profiles
-        const profRes = await fetch(
-          `${SB_URL}/rest/v1/emergency_profiles?user_id=eq.${creatorId}&active=eq.true&select=tracking_token&limit=1`,
+        // Find creator's token from tracking_sessions (public SELECT policy)
+        // This works with anon key — emergency_profiles is RLS-blocked for anon
+        const sessRes = await fetch(
+          `${SB_URL}/rest/v1/tracking_sessions?user_id=eq.${creatorId}&order=updated_at.desc&select=token&limit=1`,
           { headers: sbHeaders }
         );
-        const profs = await profRes.json();
-        const creatorToken = profs?.[0]?.tracking_token;
+        const sessions = await sessRes.json();
+        const creatorToken = sessions?.[0]?.token;
 
         if (creatorToken) {
-          // Redirect to the creator's live tracking page — it handles "no session" natively
           window.location.replace(`/live.html?t=${encodeURIComponent(creatorToken)}`);
+          return;
+        }
+
+        // Fallback: try club_ride_participants tracking_token
+        const partRes = await fetch(
+          `${SB_URL}/rest/v1/club_ride_participants?club_ride_id=eq.${encodeURIComponent(rideId)}&user_id=eq.${creatorId}&select=tracking_token&limit=1`,
+          { headers: sbHeaders }
+        );
+        const parts = await partRes.json();
+        const partToken = parts?.[0]?.tracking_token;
+
+        if (partToken) {
+          window.location.replace(`/live.html?t=${encodeURIComponent(partToken)}`);
           return;
         }
       }
